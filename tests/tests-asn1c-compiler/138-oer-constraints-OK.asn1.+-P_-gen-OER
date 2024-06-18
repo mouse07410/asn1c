@@ -17,7 +17,6 @@ ber_type_decoder_f A_noc_decode_ber;
 der_type_encoder_f A_noc_encode_der;
 xer_type_decoder_f A_noc_decode_xer;
 xer_type_encoder_f A_noc_encode_xer;
-jer_type_encoder_f A_noc_encode_jer;
 oer_type_decoder_f A_noc_decode_oer;
 oer_type_encoder_f A_noc_encode_oer;
 
@@ -50,6 +49,9 @@ asn_TYPE_descriptor_t asn_DEF_A_noc = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+              0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		NativeInteger_constraint
 	},
 	0, 0,	/* No members */
@@ -75,7 +77,6 @@ ber_type_decoder_f B_0_0_decode_ber;
 der_type_encoder_f B_0_0_encode_der;
 xer_type_decoder_f B_0_0_decode_xer;
 xer_type_encoder_f B_0_0_encode_xer;
-jer_type_encoder_f B_0_0_encode_jer;
 oer_type_decoder_f B_0_0_decode_oer;
 oer_type_encoder_f B_0_0_encode_oer;
 
@@ -141,6 +142,9 @@ asn_TYPE_descriptor_t asn_DEF_B_0_0 = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+              0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		B_0_0_constraint
 	},
 	0, 0,	/* No members */
@@ -166,7 +170,6 @@ ber_type_decoder_f C_1_2_decode_ber;
 der_type_encoder_f C_1_2_encode_der;
 xer_type_decoder_f C_1_2_decode_xer;
 xer_type_encoder_f C_1_2_encode_xer;
-jer_type_encoder_f C_1_2_encode_jer;
 oer_type_decoder_f C_1_2_decode_oer;
 oer_type_encoder_f C_1_2_encode_oer;
 
@@ -232,6 +235,9 @@ asn_TYPE_descriptor_t asn_DEF_C_1_2 = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+              0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		C_1_2_constraint
 	},
 	0, 0,	/* No members */
@@ -257,7 +263,6 @@ ber_type_decoder_f D_inv_decode_ber;
 der_type_encoder_f D_inv_encode_der;
 xer_type_decoder_f D_inv_decode_xer;
 xer_type_encoder_f D_inv_encode_xer;
-jer_type_encoder_f D_inv_encode_jer;
 oer_type_decoder_f D_inv_decode_oer;
 oer_type_encoder_f D_inv_encode_oer;
 
@@ -323,6 +328,9 @@ asn_TYPE_descriptor_t asn_DEF_D_inv = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+              0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		D_inv_constraint
 	},
 	0, 0,	/* No members */
@@ -348,7 +356,6 @@ ber_type_decoder_f E_2_5_decode_ber;
 der_type_encoder_f E_2_5_encode_der;
 xer_type_decoder_f E_2_5_decode_xer;
 xer_type_encoder_f E_2_5_encode_xer;
-jer_type_encoder_f E_2_5_encode_jer;
 oer_type_decoder_f E_2_5_decode_oer;
 oer_type_encoder_f E_2_5_encode_oer;
 
@@ -414,6 +421,9 @@ asn_TYPE_descriptor_t asn_DEF_E_2_5 = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+              0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		E_2_5_constraint
 	},
 	0, 0,	/* No members */
@@ -439,7 +449,6 @@ ber_type_decoder_f F_inv_decode_ber;
 der_type_encoder_f F_inv_encode_der;
 xer_type_decoder_f F_inv_decode_xer;
 xer_type_encoder_f F_inv_encode_xer;
-jer_type_encoder_f F_inv_encode_jer;
 oer_type_decoder_f F_inv_decode_oer;
 oer_type_encoder_f F_inv_encode_oer;
 
@@ -505,6 +514,9 @@ asn_TYPE_descriptor_t asn_DEF_F_inv = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+              0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		F_inv_constraint
 	},
 	0, 0,	/* No members */
@@ -530,7 +542,6 @@ ber_type_decoder_f G_3_3_decode_ber;
 der_type_encoder_f G_3_3_encode_der;
 xer_type_decoder_f G_3_3_decode_xer;
 xer_type_encoder_f G_3_3_encode_xer;
-jer_type_encoder_f G_3_3_encode_jer;
 oer_type_decoder_f G_3_3_decode_oer;
 oer_type_encoder_f G_3_3_encode_oer;
 
@@ -596,6 +607,9 @@ asn_TYPE_descriptor_t asn_DEF_G_3_3 = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+              0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		G_3_3_constraint
 	},
 	0, 0,	/* No members */
@@ -621,7 +635,6 @@ ber_type_decoder_f H_4_5_decode_ber;
 der_type_encoder_f H_4_5_encode_der;
 xer_type_decoder_f H_4_5_decode_xer;
 xer_type_encoder_f H_4_5_encode_xer;
-jer_type_encoder_f H_4_5_encode_jer;
 oer_type_decoder_f H_4_5_decode_oer;
 oer_type_encoder_f H_4_5_encode_oer;
 
@@ -687,6 +700,9 @@ asn_TYPE_descriptor_t asn_DEF_H_4_5 = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+              0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		H_4_5_constraint
 	},
 	0, 0,	/* No members */
@@ -712,7 +728,6 @@ ber_type_decoder_f I_1_5_decode_ber;
 der_type_encoder_f I_1_5_encode_der;
 xer_type_decoder_f I_1_5_decode_xer;
 xer_type_encoder_f I_1_5_encode_xer;
-jer_type_encoder_f I_1_5_encode_jer;
 oer_type_decoder_f I_1_5_decode_oer;
 oer_type_encoder_f I_1_5_encode_oer;
 
@@ -778,6 +793,9 @@ asn_TYPE_descriptor_t asn_DEF_I_1_5 = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+              0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		I_1_5_constraint
 	},
 	0, 0,	/* No members */
@@ -803,7 +821,6 @@ ber_type_decoder_f J_4_5_decode_ber;
 der_type_encoder_f J_4_5_encode_der;
 xer_type_decoder_f J_4_5_decode_xer;
 xer_type_encoder_f J_4_5_encode_xer;
-jer_type_encoder_f J_4_5_encode_jer;
 oer_type_decoder_f J_4_5_decode_oer;
 oer_type_encoder_f J_4_5_encode_oer;
 
@@ -869,6 +886,9 @@ asn_TYPE_descriptor_t asn_DEF_J_4_5 = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+              0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		J_4_5_constraint
 	},
 	0, 0,	/* No members */
@@ -894,7 +914,6 @@ ber_type_decoder_f K_1_4_decode_ber;
 der_type_encoder_f K_1_4_encode_der;
 xer_type_decoder_f K_1_4_decode_xer;
 xer_type_encoder_f K_1_4_encode_xer;
-jer_type_encoder_f K_1_4_encode_jer;
 oer_type_decoder_f K_1_4_decode_oer;
 oer_type_encoder_f K_1_4_encode_oer;
 
@@ -960,6 +979,9 @@ asn_TYPE_descriptor_t asn_DEF_K_1_4 = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+              0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		K_1_4_constraint
 	},
 	0, 0,	/* No members */
@@ -985,7 +1007,6 @@ ber_type_decoder_f L_0_5_decode_ber;
 der_type_encoder_f L_0_5_encode_der;
 xer_type_decoder_f L_0_5_decode_xer;
 xer_type_encoder_f L_0_5_encode_xer;
-jer_type_encoder_f L_0_5_encode_jer;
 oer_type_decoder_f L_0_5_decode_oer;
 oer_type_encoder_f L_0_5_encode_oer;
 
@@ -1051,6 +1072,9 @@ asn_TYPE_descriptor_t asn_DEF_L_0_5 = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+              0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		L_0_5_constraint
 	},
 	0, 0,	/* No members */
@@ -1076,7 +1100,6 @@ ber_type_decoder_f M_inv_decode_ber;
 der_type_encoder_f M_inv_encode_der;
 xer_type_decoder_f M_inv_decode_xer;
 xer_type_encoder_f M_inv_encode_xer;
-jer_type_encoder_f M_inv_encode_jer;
 oer_type_decoder_f M_inv_decode_oer;
 oer_type_encoder_f M_inv_encode_oer;
 
@@ -1142,6 +1165,9 @@ asn_TYPE_descriptor_t asn_DEF_M_inv = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+              0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		M_inv_constraint
 	},
 	0, 0,	/* No members */
@@ -1167,7 +1193,6 @@ ber_type_decoder_f N_0_5_decode_ber;
 der_type_encoder_f N_0_5_encode_der;
 xer_type_decoder_f N_0_5_decode_xer;
 xer_type_encoder_f N_0_5_encode_xer;
-jer_type_encoder_f N_0_5_encode_jer;
 oer_type_decoder_f N_0_5_decode_oer;
 oer_type_encoder_f N_0_5_encode_oer;
 
@@ -1233,6 +1258,9 @@ asn_TYPE_descriptor_t asn_DEF_N_0_5 = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+              0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		N_0_5_constraint
 	},
 	0, 0,	/* No members */
@@ -1258,7 +1286,6 @@ ber_type_decoder_f O_inv_decode_ber;
 der_type_encoder_f O_inv_encode_der;
 xer_type_decoder_f O_inv_decode_xer;
 xer_type_encoder_f O_inv_encode_xer;
-jer_type_encoder_f O_inv_encode_jer;
 oer_type_decoder_f O_inv_decode_oer;
 oer_type_encoder_f O_inv_encode_oer;
 
@@ -1324,6 +1351,9 @@ asn_TYPE_descriptor_t asn_DEF_O_inv = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+              0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		O_inv_constraint
 	},
 	0, 0,	/* No members */
@@ -1349,7 +1379,6 @@ ber_type_decoder_f EConstr_decode_ber;
 der_type_encoder_f EConstr_encode_der;
 xer_type_decoder_f EConstr_decode_xer;
 xer_type_encoder_f EConstr_encode_xer;
-jer_type_encoder_f EConstr_encode_jer;
 oer_type_decoder_f EConstr_decode_oer;
 oer_type_encoder_f EConstr_encode_oer;
 
@@ -1415,6 +1444,9 @@ asn_TYPE_descriptor_t asn_DEF_EConstr = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+              0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		EConstr_constraint
 	},
 	0, 0,	/* No members */
@@ -1440,7 +1472,6 @@ ber_type_decoder_f FConstr_decode_ber;
 der_type_encoder_f FConstr_encode_der;
 xer_type_decoder_f FConstr_decode_xer;
 xer_type_encoder_f FConstr_encode_xer;
-jer_type_encoder_f FConstr_encode_jer;
 oer_type_decoder_f FConstr_decode_oer;
 oer_type_encoder_f FConstr_encode_oer;
 
@@ -1506,6 +1537,9 @@ asn_TYPE_descriptor_t asn_DEF_FConstr = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+              0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		FConstr_constraint
 	},
 	0, 0,	/* No members */
@@ -1582,6 +1616,9 @@ static asn_TYPE_member_t asn_MBR_encoding_5[] = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+                    .jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = 0
 		},
 		0, 0, /* No default value */
@@ -1599,6 +1636,9 @@ static asn_TYPE_member_t asn_MBR_encoding_5[] = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+                    .jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = 0
 		},
 		0, 0, /* No default value */
@@ -1616,6 +1656,9 @@ static asn_TYPE_member_t asn_MBR_encoding_5[] = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+                    .jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = 0
 		},
 		0, 0, /* No default value */
@@ -1653,6 +1696,9 @@ asn_TYPE_descriptor_t asn_DEF_encoding_5 = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+              0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		CHOICE_constraint
 	},
 	asn_MBR_encoding_5,
@@ -1673,6 +1719,9 @@ static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+                    .jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = 0
 		},
 		0, 0, /* No default value */
@@ -1690,6 +1739,9 @@ static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+                    .jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = 0
 		},
 		0, 0, /* No default value */
@@ -1707,6 +1759,9 @@ static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+                    .jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = 0
 		},
 		0, 0, /* No default value */
@@ -1724,6 +1779,9 @@ static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+                    .jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = 0
 		},
 		0, 0, /* No default value */
@@ -1769,6 +1827,9 @@ asn_TYPE_descriptor_t asn_DEF_EXTERNAL = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+              0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		SEQUENCE_constraint
 	},
 	asn_MBR_EXTERNAL_1,

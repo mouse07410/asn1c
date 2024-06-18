@@ -33,6 +33,7 @@ typedef struct asn1cnst_range_s {
 	int incompatible;	/* Constraint incompatible with argument */
 	int not_OER_visible;	/* Contains not OER-visible components */
 	int not_PER_visible;	/* Contains not PER-visible components */
+	int not_JER_visible;	/* Contains not JER-visible components */
 } asn1cnst_range_t;
 
 /*
@@ -50,7 +51,8 @@ enum cpr_flags {
 	CPR_noflags			= 0x00,
 	CPR_strict_OER_visibility	= 0x01,
 	CPR_strict_PER_visibility	= 0x02,
-	CPR_simulate_fbless_SIZE	= 0x04,
+	CPR_strict_JER_visibility	= 0x04,
+	CPR_simulate_fbless_SIZE	= 0x08,
 };
 asn1cnst_range_t *asn1constraint_compute_OER_range(const char *dbg_name,
 	asn1p_expr_type_e expr_type,
@@ -60,6 +62,13 @@ asn1cnst_range_t *asn1constraint_compute_OER_range(const char *dbg_name,
 	int *expectation_met,
 	enum cpr_flags);
 asn1cnst_range_t *asn1constraint_compute_PER_range(const char *dbg_name,
+	asn1p_expr_type_e expr_type,
+	const asn1p_constraint_t *ct,
+	enum asn1p_constraint_type_e required_type,
+	const asn1cnst_range_t *minmax,
+	int *expectation_met,
+	enum cpr_flags);
+asn1cnst_range_t *asn1constraint_compute_JER_range(const char *dbg_name,
 	asn1p_expr_type_e expr_type,
 	const asn1p_constraint_t *ct,
 	enum asn1p_constraint_type_e required_type,

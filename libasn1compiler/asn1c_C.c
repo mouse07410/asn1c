@@ -49,8 +49,10 @@ static int expr_elements_count(arg_t *arg, asn1p_expr_t *expr);
 static int emit_single_member_OER_constraint_value(arg_t *arg, asn1cnst_range_t *range);
 static int emit_single_member_OER_constraint_size(arg_t *arg, asn1cnst_range_t *range);
 static int emit_single_member_PER_constraint(arg_t *arg, asn1cnst_range_t *range, int juscountvalues, const char *type);
+static int emit_single_member_JER_constraint_size(arg_t *arg, asn1cnst_range_t *range);
 static int emit_member_OER_constraints(arg_t *arg, asn1p_expr_t *expr, const char *pfx);
 static int emit_member_PER_constraints(arg_t *arg, asn1p_expr_t *expr, const char *pfx);
+static int emit_member_JER_constraints(arg_t *arg, asn1p_expr_t *expr, const char *pfx);
 static int emit_member_table(arg_t *arg, asn1p_expr_t *expr,
                              asn1c_ioc_table_and_objset_t *);
 static int emit_tag2member_map(arg_t *arg, tag2el_t *tag2el, int tag2el_count, const char *opt_modifier);
@@ -476,7 +478,7 @@ asn1c_lang_C_type_SEQUENCE_def(arg_t *arg, asn1c_ioc_table_and_objset_t *opt_ioc
 		});
 		OUT("};\n");
 
-		if((roms_count + aoms_count) && (arg->flags & (A1C_GEN_OER | A1C_GEN_UPER | A1C_GEN_APER))) {
+		if((roms_count + aoms_count) && (arg->flags & (A1C_GEN_OER | A1C_GEN_UPER | A1C_GEN_APER | A1C_GEN_JER))) {
 			int elm = 0;
 			int comma = 0;
 			comp_mode = 0;
@@ -2165,6 +2167,29 @@ emit_single_member_PER_constraint(arg_t *arg, asn1cnst_range_t *range, int alpha
 }
 
 static int
+emit_single_member_JER_constraint_size(arg_t *arg, asn1cnst_range_t *range) {
+    if(!range) {
+        /* jer_support.h: asn_jer_constraint_s */
+		OUT("-1");
+		return 0;
+    }
+
+    if(range->incompatible || range->not_JER_visible) {
+        OUT("-1");
+    } else {
+        if(range->left.type == ARE_VALUE && range->right.type == ARE_VALUE
+           && range->left.value == range->right.value
+           && range->left.value >= 0) {
+            OUT("%s", asn1p_itoa(range->left.value));
+        } else {
+            OUT("-1");
+        }
+    }
+
+	return 0;
+}
+
+static int
 emit_member_OER_constraints(arg_t *arg, asn1p_expr_t *expr, const char *pfx) {
     int save_target = arg->target->target;
     asn1cnst_range_t *range;
@@ -2383,6 +2408,49 @@ emit_member_PER_constraints(arg_t *arg, asn1p_expr_t *expr, const char *pfx) {
 	REDIR(save_target);
 
 	return 0;
+}
+
+static int
+emit_member_JER_constraints(arg_t *arg, asn1p_expr_t *expr, const char *pfx) {
+    int save_target = arg->target->target;
+    asn1cnst_range_t *range;
+	asn1p_expr_type_e etype;
+
+    etype = expr_get_type(arg, expr);
+
+    if((arg->flags & A1C_GEN_JER)
+       && (etype == ASN_BASIC_BIT_STRING)) {
+        /* Fall through */
+    } else {
+        return 0;
+    }
+
+    REDIR(OT_CTDEFS);
+
+    OUT("#if !defined(ASN_DISABLE_JER_SUPPORT)\n");
+    OUT("static asn_jer_constraints_t "
+        "asn_JER_%s_%s_constr_%d CC_NOTUSED = {\n",
+        pfx, MKID(expr), expr->_type_unique_index);
+
+    INDENT(+1);
+
+    /* .size */
+    range = asn1constraint_compute_JER_range(expr->Identifier, etype,
+                                             expr->combined_constraints,
+                                             ACT_CT_SIZE, 0, 0, 0);
+    if(emit_single_member_JER_constraint_size(arg, range)) {
+        return -1;
+    }
+    asn1constraint_range_free(range);
+
+    INDENT(-1);
+
+    OUT("};\n");
+    OUT("#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */\n");
+
+    REDIR(save_target);
+
+    return 0;
 }
 
 static int
@@ -2988,6 +3056,21 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 	}
     OUT(",\n");
     OUT_NOINDENT("#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */\n");
+    OUT_NOINDENT("#if !defined(ASN_DISABLE_JER_SUPPORT)\n");
+	if(C99_MODE) OUT(".jer_constraints = ");
+	if(arg->flags & A1C_GEN_JER) {
+		if(expr->constraints && expr->expr_type == ASN_BASIC_BIT_STRING) {
+			OUT("&asn_JER_memb_%s_constr_%d",
+				MKID(expr),
+				expr->_type_unique_index);
+		} else {
+			OUT("0");
+		}
+	} else {
+        OUT("0");
+	}
+    OUT(",\n");
+    OUT_NOINDENT("#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */\n");
 	if(C99_MODE) OUT(".general_constraints = ");
 	if(expr->constraints) {
 		if(arg->flags & A1C_NO_CONSTRAINTS) {
@@ -3050,6 +3133,9 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 	if(emit_member_PER_constraints(arg, expr, "memb"))
 		return -1;
 
+	if(emit_member_JER_constraints(arg, expr, "memb"))
+		return -1;
+
 	REDIR(save_target);
 
 	return 0;
@@ -3072,6 +3158,9 @@ emit_type_DEF(arg_t *arg, asn1p_expr_t *expr, enum tvm_compat tv_mode, int tags_
 		return -1;
 
 	if(emit_member_PER_constraints(arg, expr, "type"))
+		return -1;
+
+	if(emit_member_JER_constraints(arg, expr, "type"))
 		return -1;
 
 	if(HIDE_INNER_DEFS)
@@ -3177,6 +3266,19 @@ emit_type_DEF(arg_t *arg, asn1p_expr_t *expr, enum tvm_compat tv_mode, int tags_
 		}
         OUT(",\n");
         OUT_NOINDENT("#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */\n");
+        OUT_NOINDENT("#if !defined(ASN_DISABLE_JER_SUPPORT)\n");
+		if(arg->flags & A1C_GEN_JER) {
+            if(expr->expr_type == ASN_BASIC_BIT_STRING) {
+                OUT("&asn_JER_type_%s_constr_%d",
+					expr_id, expr->_type_unique_index);
+			} else {
+				OUT("0");
+			}
+		} else {
+			OUT("0");
+		}
+        OUT(",\n");
+        OUT_NOINDENT("#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */\n");
 #define FUNCREF(foo)                              \
     do {                                          \
         OUT("%s", p);                             \

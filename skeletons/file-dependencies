@@ -250,7 +250,7 @@ jer_support.h jer_support.c	# JSON parsing
 jer_decoder.h jer_decoder.c	# JER decoding support
 jer_encoder.h jer_encoder.c	# JER encoding support
 ANY.h ANY_jer.c
-BIT_STRING.h BIT_STRING_jer.c
+BIT_STRING.h BIT_STRING_jer.c INTEGER.h
 BMPString.h BMPString_jer.c
 BOOLEAN.h BOOLEAN_jer.c
 ENUMERATED.h ENUMERATED_jer.c
