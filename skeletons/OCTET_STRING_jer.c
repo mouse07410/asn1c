@@ -252,10 +252,6 @@ static ssize_t OCTET_STRING__convert_hexadecimal(void *sptr, const void *chunk_b
     for(; p < pend; p++) {
         int ch = *(const unsigned char *)p;
         switch(ch) {
-        case 0x09: case 0x0a: case 0x0c: case 0x0d:
-        case 0x20:
-            /* Ignore whitespace */
-            continue;
         case 0x30: case 0x31: case 0x32: case 0x33: case 0x34:  /*01234*/
         case 0x35: case 0x36: case 0x37: case 0x38: case 0x39:  /*56789*/
             clv = (clv << 4) + (ch - 0x30);
