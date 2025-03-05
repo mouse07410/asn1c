@@ -40,7 +40,7 @@ BIT_STRING_encode_jer(const asn_TYPE_descriptor_t *td,
     /*
      * Hex dump
      */
-    if(cts->size != -1) { /* Fixed size */
+    if(cts && cts->size != -1) { /* Fixed size */
         *p++ = '"';
         for(int i = 0; buf < end; buf++, i++) {
             if(!(i % 16) && (i || st->size > 16)) {
@@ -169,7 +169,7 @@ BIT_STRING_decode_jer(const asn_codec_ctx_t *opt_codec_ctx,
     const char *p = (const char*)buf_ptr;
     const char *pend = p + size;
 
-    if(cts->size == -1) {
+    if(!cts || cts->size == -1) {
         SKIPCHAR('{');
         SKIPCHAR('"');
         if(pend-p < 5) RETURN(RC_WMORE);
@@ -232,7 +232,7 @@ BIT_STRING_decode_jer(const asn_codec_ctx_t *opt_codec_ctx,
 
     SKIPCHAR('"');
 
-    if(cts->size == -1) {
+    if(!cts || cts->size == -1) {
         SKIPCHAR(',');
         SKIPCHAR('"');
         if(pend-p < 6) RETURN(RC_WMORE);
