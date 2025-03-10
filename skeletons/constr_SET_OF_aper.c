@@ -143,8 +143,17 @@ SET_OF_decode_aper(const asn_codec_ctx_t *opt_codec_ctx,
         int i;
         if(nelems < 0) {
             if (ct)
-                nelems = aper_get_length(pd, ct->lower_bound, ct->upper_bound,
-                                         ct->effective_bits, &repeat);
+                if (ct->upper_bound < ct->lower_bound)
+                {
+                    nelems = aper_get_length(pd, ct->lower_bound ? ct->lower_bound : -1, 
+                                             ct->upper_bound ? ct->upper_bound : -1,
+                                             ct->effective_bits, &repeat);
+                }
+                else
+                {
+                    nelems = aper_get_length(pd, ct->lower_bound, ct->upper_bound,
+                                             ct->effective_bits, &repeat);
+                }
             else
                 nelems = aper_get_length(pd, -1, -1, -1, &repeat);
             ASN_DEBUG("Got to decode %d elements (eff %d)",
