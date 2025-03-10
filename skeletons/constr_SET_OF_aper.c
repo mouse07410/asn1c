@@ -87,6 +87,10 @@ SET_OF_encode_aper(const asn_TYPE_descriptor_t *td,
             ASN__ENCODE_FAILED;  /* End of Message length */
     }
 
+    /* If element's count is zero, we still need to output 0x00 */
+    if (!list->count)
+        aper_put_length(po, -1, -1, list->count, 0);
+
     SET_OF__encode_sorted_free(encoded_els, list->count);
 
     ASN__ENCODED_OK(er);
