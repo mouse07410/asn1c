@@ -133,7 +133,9 @@ BIT_STRING_encode_uper(const asn_TYPE_descriptor_t *td,
         constraints ? constraints : td->encoding_constraints.per_constraints;
     const asn_per_constraint_t *csiz;
     const BIT_STRING_t *st = (const BIT_STRING_t *)sptr;
+#if defined(UPER_REMOVE_TRAILING_BITS)
     BIT_STRING_t compact_bstr;  /* Do not modify this directly! */
+#endif
     asn_enc_rval_t er = { 0, 0, 0 };
     int inext = 0;  /* Lies not within extension root */
     size_t size_in_bits;
