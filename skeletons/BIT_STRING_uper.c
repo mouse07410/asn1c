@@ -101,6 +101,10 @@ BIT_STRING_decode_uper(const asn_codec_ctx_t *opt_codec_ctx,
                                   &repeat);
         if(raw_len < 0) RETURN(RC_WMORE);
         if(raw_len == 0 && st->buf) break;
+	/* Check upper bound for Constrained Length */
+        if (csiz->effective_bits >= 0 && csiz->effective_bits <= 16 && raw_len > csiz->upper_bound && !(csiz->flags & APC_EXTENSIBLE)) {
+	    ASN__DECODE_FAILED;
+        }
 
         ASN_DEBUG("Got PER length eb %ld, len %ld, %s (%s)",
             (long)csiz->effective_bits, (long)raw_len,
