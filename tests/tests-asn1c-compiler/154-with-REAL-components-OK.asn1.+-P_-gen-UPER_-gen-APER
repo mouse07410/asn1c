@@ -201,7 +201,12 @@ Indirect_IEEE_binary32_constraint(const asn_TYPE_descriptor_t *td, const void *s
 		/* Nothing is here. See below */
 	}
 	
-	return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+	/* prevent infinite recursion */
+	if(td->encoding_constraints.general_constraints != Indirect_IEEE_binary32_constraint) {
+		return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+	} else {
+		return 0;
+	}
 }
 
 /*
@@ -297,7 +302,12 @@ IEEE_binary32_w_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		/* Nothing is here. See below */
 	}
 	
-	return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+	/* prevent infinite recursion */
+	if(td->encoding_constraints.general_constraints != IEEE_binary32_w_constraint) {
+		return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+	} else {
+		return 0;
+	}
 }
 
 /*
@@ -393,7 +403,12 @@ IEEE_binary32_0w_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		/* Nothing is here. See below */
 	}
 	
-	return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+	/* prevent infinite recursion */
+	if(td->encoding_constraints.general_constraints != IEEE_binary32_0w_constraint) {
+		return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+	} else {
+		return 0;
+	}
 }
 
 /*
@@ -489,7 +504,12 @@ IEEE_binary32_w0_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		/* Nothing is here. See below */
 	}
 	
-	return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+	/* prevent infinite recursion */
+	if(td->encoding_constraints.general_constraints != IEEE_binary32_w0_constraint) {
+		return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+	} else {
+		return 0;
+	}
 }
 
 /*
@@ -584,7 +604,12 @@ IEEE_binary64_w_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		/* Nothing is here. See below */
 	}
 	
-	return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+	/* prevent infinite recursion */
+	if(td->encoding_constraints.general_constraints != IEEE_binary64_w_constraint) {
+		return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+	} else {
+		return 0;
+	}
 }
 
 /*
@@ -676,7 +701,12 @@ IEEE_binary64_0w_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		/* Nothing is here. See below */
 	}
 	
-	return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+	/* prevent infinite recursion */
+	if(td->encoding_constraints.general_constraints != IEEE_binary64_0w_constraint) {
+		return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+	} else {
+		return 0;
+	}
 }
 
 /*
@@ -768,7 +798,12 @@ IEEE_binary64_w0_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		/* Nothing is here. See below */
 	}
 	
-	return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+	/* prevent infinite recursion */
+	if(td->encoding_constraints.general_constraints != IEEE_binary64_w0_constraint) {
+		return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+	} else {
+		return 0;
+	}
 }
 
 /*
@@ -870,7 +905,12 @@ indirect_ieee_binary32_2_constraint(const asn_TYPE_descriptor_t *td, const void 
 		/* Nothing is here. See below */
 	}
 	
-	return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+	/* prevent infinite recursion */
+	if(td->encoding_constraints.general_constraints != indirect_ieee_binary32_2_constraint) {
+		return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+	} else {
+		return 0;
+	}
 }
 
 /*
@@ -893,7 +933,12 @@ ieee_binary32_w_3_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		/* Nothing is here. See below */
 	}
 	
-	return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+	/* prevent infinite recursion */
+	if(td->encoding_constraints.general_constraints != ieee_binary32_w_3_constraint) {
+		return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+	} else {
+		return 0;
+	}
 }
 
 /*
@@ -916,7 +961,12 @@ ieee_binary32_0w_4_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		/* Nothing is here. See below */
 	}
 	
-	return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+	/* prevent infinite recursion */
+	if(td->encoding_constraints.general_constraints != ieee_binary32_0w_4_constraint) {
+		return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+	} else {
+		return 0;
+	}
 }
 
 /*
@@ -939,7 +989,12 @@ ieee_binary32_w0_5_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		/* Nothing is here. See below */
 	}
 	
-	return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+	/* prevent infinite recursion */
+	if(td->encoding_constraints.general_constraints != ieee_binary32_w0_5_constraint) {
+		return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+	} else {
+		return 0;
+	}
 }
 
 /*
