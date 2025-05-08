@@ -1415,8 +1415,21 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 		OUT("\n");
 		DEBUG("expr constraint checking code for %s", p);
 		if(asn1c_emit_constraint_checking_code(arg) == 1) {
+			OUT("/* prevent infinite recursion */\n");
+			OUT("if(td->encoding_constraints.general_constraints != ");
+			if(HIDE_INNER_DEFS)
+				OUT("%s_%d_constraint) {\n", p, expr->_type_unique_index);
+			else
+				OUT("%s_constraint) {\n", p);
+			INDENT(+1);
 			OUT("return td->encoding_constraints.general_constraints"
 				"(td, sptr, ctfailcb, app_key);\n");
+			INDENT(-1);
+			OUT("} else {\n");
+			INDENT(+1);
+			OUT("return 0;\n");
+			INDENT(-1);
+			OUT("}\n");
 		}
 		INDENT(-1);
 		OUT("}\n");
