@@ -4,8 +4,8 @@
  * Redistribution and modifications are permitted subject to BSD license.
  */
 #include <asn_internal.h>
-#include <NativeInteger.h>
 #include <INTEGER.h>
+#include <NativeEnumerated.h>
 
 /*
  * Decode NativeEnumerated type.
@@ -109,7 +109,7 @@ NativeEnumerated_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
                          asn_app_consume_bytes_f *cb, void *app_key) {
     const asn_INTEGER_specifics_t *specs =
         (const asn_INTEGER_specifics_t *)td->specifics;
-    unsigned long native = *(unsigned long *)sptr; /* Disable sign ext. */
+    unsigned long native = *(const unsigned long *)sptr; /* Disable sign ext. */
 
 
     asn_enc_rval_t erval = {0,0,0};

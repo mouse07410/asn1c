@@ -70,6 +70,7 @@ GeneralizedTime.h GeneralizedTime_ber.c
 INTEGER.h INTEGER_ber.c
 NULL.h NULL_ber.c
 NativeInteger.h NativeInteger_ber.c
+NativeEnumerated.h NativeEnumerated_ber.c
 NativeReal.h NativeReal_ber.c
 OCTET_STRING.h OCTET_STRING_ber.c
 OPEN_TYPE.h OPEN_TYPE_ber.c

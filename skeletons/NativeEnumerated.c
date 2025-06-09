@@ -82,7 +82,7 @@ NativeEnumerated_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
                       asn_app_constraint_failed_f *ctfailcb, void *app_key) {
     const asn_INTEGER_specifics_t *specs =
         (const asn_INTEGER_specifics_t *)td->specifics;
-    long *native = (long *)sptr;
+    const long *native = (const long *)sptr;
     const asn_INTEGER_enum_map_t *el;
     el = INTEGER_map_value2enum(specs, *native);
     if(el) {

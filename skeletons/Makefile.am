@@ -151,6 +151,7 @@ libasn1cskeletons_la_SOURCES =                  \
     NULL_xer.c                                  \
     NULL_jer.c                                  \
     NativeEnumerated_aper.c                     \
+    NativeEnumerated_ber.c                      \
     NativeEnumerated_uper.c                     \
     NativeEnumerated_xer.c                      \
     NativeEnumerated_jer.c                      \
@@ -263,4 +264,3 @@ check_converter_c89_32_example_CFLAGS = $(CFLAGS_M32) -DNO_ASN_PDU
 check_converter_c89_32_example_SOURCES = converter-example.c
 check_converter_c89_32_example_LDADD = libasn1cskeletons_c89_32.la
 endif
-
