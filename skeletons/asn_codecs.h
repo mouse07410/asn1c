@@ -33,6 +33,12 @@ typedef struct asn_codec_ctx_s {
 	 * stack size is rather limited.
 	 */
 	size_t  max_stack_size; /* 0 disables stack bounds checking */
+	
+	/*
+	 * Decoder validation flags. Used by PER/UPER decoders to control
+	 * canonical vs basic decoding behavior.
+	 */
+	unsigned int uper_canonical:1;  /* Enable canonical UPER validation */
 } asn_codec_ctx_t;
 
 /*
