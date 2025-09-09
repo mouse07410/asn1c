@@ -827,6 +827,57 @@ data_decode_from_file(enum asn_transfer_syntax isyntax, asn_TYPE_descriptor_t *p
         DynamicBuffer.nreallocs = 0;
     }
 
+    /*
+     * Special handling for JER (JSON Encoding Rules):
+     * JER parsing requires complete JSON tokens and doesn't handle 
+     * partial tokens across read boundaries well. For large JSON files,
+     * read the entire file into memory before parsing to avoid failures
+     * when the default buffer size (8192 bytes) is smaller than the JSON.
+     */
+    if((isyntax == ATS_JER || isyntax == ATS_JER_MINIFIED) && on_first_pdu) {
+        long file_size;
+        size_t total_read = 0;
+        
+        /* Get file size */
+        if(fseek(file, 0, SEEK_END) == 0) {
+            file_size = ftell(file);
+            fseek(file, 0, SEEK_SET);
+            
+            if(file_size > 0 && file_size > suggested_bufsize) {
+                /* File is larger than suggested buffer, read it all */
+                DEBUG("JER: File size %" ASN_PRI_SIZE " bytes, reading entire file", (size_t)file_size);
+                
+                /* Reallocate buffer to fit entire file */
+                fbuf = (uint8_t *)REALLOC(fbuf, file_size + 1);
+                if(!fbuf) {
+                    perror("realloc() for JER file");
+                    exit(EX_OSERR);
+                }
+                fbuf_size = file_size + 1;
+                
+                /* Read entire file */
+                total_read = fread(fbuf, 1, file_size, file);
+                if(total_read == (size_t)file_size) {
+                    fbuf[total_read] = '\0';  /* Null terminate for safety */
+                    
+                    /* Decode the entire file at once */
+                    DEBUG("JER: Decoding entire file (%" ASN_PRI_SIZE " bytes)", total_read);
+                    rval = asn_decode(opt_codec_ctx, isyntax, pduType,
+                                      (void **)&structure, fbuf, total_read);
+                    
+                    DEBUG("JER: Decode result: code=%d, consumed=%" ASN_PRI_SIZE,
+                          rval.code, rval.consumed);
+                    
+                    /* Return the structure directly, bypassing the chunk-based loop */
+                    return structure;
+                } else {
+                    DEBUG("JER: Failed to read entire file, falling back to chunked reading");
+                    fseek(file, 0, SEEK_SET);  /* Reset file position */
+                }
+            }
+        }
+    }
+
     old_offset = DynamicBuffer.bytes_shifted + DynamicBuffer.offset;
 
     /* Pretend immediate EOF */
