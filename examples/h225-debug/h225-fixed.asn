@@ -1,0 +1,363 @@
+H225-MESSAGES DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+-- Simplified H.225 RAS Messages for testing decoding issues
+
+RasMessage ::= CHOICE {
+    gatekeeperRequest        GatekeeperRequest,
+    gatekeeperConfirm        GatekeeperConfirm,
+    gatekeeperReject         GatekeeperReject,
+    registrationRequest      RegistrationRequest,
+    registrationConfirm      RegistrationConfirm,
+    registrationReject       RegistrationReject,
+    admissionRequest         AdmissionRequest,
+    admissionConfirm         AdmissionConfirm,
+    admissionReject          AdmissionReject
+}
+
+-- Basic types
+RequestSeqNum ::= INTEGER (1..65535)
+
+ProtocolIdentifier ::= OBJECT IDENTIFIER
+
+NonStandardParameter ::= SEQUENCE {
+    nonStandardIdentifier   NonStandardIdentifier,
+    data                    OCTET STRING
+}
+
+NonStandardIdentifier ::= CHOICE {
+    object                  OBJECT IDENTIFIER,
+    h221NonStandard         H221NonStandard
+}
+
+H221NonStandard ::= SEQUENCE {
+    t35CountryCode          INTEGER (0..255),
+    t35Extension            INTEGER (0..255),
+    manufacturerCode        INTEGER (0..65535)
+}
+
+TransportAddress ::= CHOICE {
+    ipAddress               SEQUENCE {
+        ip                  OCTET STRING (SIZE(4)),
+        port                INTEGER (0..65535)
+    },
+    ipxAddress              SEQUENCE {
+        node                OCTET STRING (SIZE(6)),
+        netnum              OCTET STRING (SIZE(4)),
+        port                OCTET STRING (SIZE(2))
+    },
+    ip6Address              SEQUENCE {
+        ip                  OCTET STRING (SIZE(16)),
+        port                INTEGER (0..65535)
+    },
+    netBios                 OCTET STRING (SIZE(16)),
+    nsap                    OCTET STRING (SIZE(1..20)),
+    nonStandardAddress      NonStandardParameter
+}
+
+EndpointType ::= SEQUENCE {
+    nonStandardData         NonStandardParameter OPTIONAL,
+    vendor                  VendorIdentifier OPTIONAL,
+    gatekeeper              GatekeeperInfo OPTIONAL,
+    gateway                 GatewayInfo OPTIONAL,
+    mcu                     McuInfo OPTIONAL,
+    terminal                TerminalInfo OPTIONAL,
+    mc                      BOOLEAN,
+    undefinedNode           BOOLEAN
+}
+
+VendorIdentifier ::= SEQUENCE {
+    vendor                  H221NonStandard,
+    productId               OCTET STRING (SIZE(1..256)) OPTIONAL,
+    versionId               OCTET STRING (SIZE(1..256)) OPTIONAL
+}
+
+GatekeeperInfo ::= SEQUENCE {
+    nonStandardData         NonStandardParameter OPTIONAL
+}
+
+GatewayInfo ::= SEQUENCE {
+    protocol                SEQUENCE OF SupportedProtocols OPTIONAL,
+    nonStandardData         NonStandardParameter OPTIONAL
+}
+
+McuInfo ::= SEQUENCE {
+    nonStandardData         NonStandardParameter OPTIONAL
+}
+
+TerminalInfo ::= SEQUENCE {
+    nonStandardData         NonStandardParameter OPTIONAL
+}
+
+SupportedProtocols ::= CHOICE {
+    nonStandardData         NonStandardParameter,
+    h310                    H310Caps,
+    h320                    H320Caps,
+    h323                    H323Caps,
+    h324                    H324Caps,
+    voice                   VoiceCaps,
+    t120-only               T120OnlyCaps
+}
+
+H310Caps ::= SEQUENCE {
+    nonStandardData         NonStandardParameter OPTIONAL,
+    dataRatesSupported      SEQUENCE OF DataRate OPTIONAL,
+    supportedPrefixes       SEQUENCE OF SupportedPrefix
+}
+
+H320Caps ::= SEQUENCE {
+    nonStandardData         NonStandardParameter OPTIONAL,
+    dataRatesSupported      SEQUENCE OF DataRate OPTIONAL,
+    supportedPrefixes       SEQUENCE OF SupportedPrefix
+}
+
+H323Caps ::= SEQUENCE {
+    nonStandardData         NonStandardParameter OPTIONAL,
+    dataRatesSupported      SEQUENCE OF DataRate OPTIONAL,
+    supportedPrefixes       SEQUENCE OF SupportedPrefix
+}
+
+H324Caps ::= SEQUENCE {
+    nonStandardData         NonStandardParameter OPTIONAL,
+    dataRatesSupported      SEQUENCE OF DataRate OPTIONAL,
+    supportedPrefixes       SEQUENCE OF SupportedPrefix
+}
+
+VoiceCaps ::= SEQUENCE {
+    nonStandardData         NonStandardParameter OPTIONAL,
+    dataRatesSupported      SEQUENCE OF DataRate OPTIONAL,
+    supportedPrefixes       SEQUENCE OF SupportedPrefix
+}
+
+T120OnlyCaps ::= SEQUENCE {
+    nonStandardData         NonStandardParameter OPTIONAL,
+    dataRatesSupported      SEQUENCE OF DataRate OPTIONAL,
+    supportedPrefixes       SEQUENCE OF SupportedPrefix
+}
+
+DataRate ::= SEQUENCE {
+    nonStandardData         NonStandardParameter OPTIONAL,
+    channelRate             BandWidth,
+    channelMultiplier       INTEGER (1..256) OPTIONAL
+}
+
+BandWidth ::= INTEGER (0..4294967295)
+
+SupportedPrefix ::= SEQUENCE {
+    nonStandardData         NonStandardParameter OPTIONAL,
+    prefix                  AliasAddress,
+    supportedProtocols      SEQUENCE OF SupportedProtocols
+}
+
+AliasAddress ::= CHOICE {
+    dialedDigits            DialedDigits,
+    h323-ID                 BMPString (SIZE(1..256)),
+    url-ID                  IA5String (SIZE(1..512)),
+    transportID             TransportAddress,
+    email-ID                IA5String (SIZE(1..512)),
+    partyNumber             PartyNumber
+}
+
+DialedDigits ::= IA5String (SIZE(1..128))
+
+PartyNumber ::= CHOICE {
+    e164Number              PublicPartyNumber,
+    dataPartyNumber         NumberDigits,
+    telexPartyNumber        NumberDigits,
+    privateNumber           PrivatePartyNumber,
+    nationalStandardPartyNumber OCTET STRING (SIZE(1..16))
+}
+
+PublicPartyNumber ::= SEQUENCE {
+    publicTypeOfNumber      PublicTypeOfNumber,
+    publicNumberDigits      NumberDigits
+}
+
+PrivatePartyNumber ::= SEQUENCE {
+    privateTypeOfNumber     PrivateTypeOfNumber,
+    privateNumberDigits     NumberDigits
+}
+
+NumberDigits ::= IA5String (SIZE(1..128))
+
+PublicTypeOfNumber ::= CHOICE {
+    unknown                 NULL,
+    internationalNumber     NULL,
+    nationalNumber          NULL,
+    networkSpecificNumber   NULL,
+    subscriberNumber        NULL,
+    abbreviatedNumber       NULL
+}
+
+PrivateTypeOfNumber ::= CHOICE {
+    unknown                 NULL,
+    level2RegionalNumber    NULL,
+    level1RegionalNumber    NULL,
+    pISNSpecificNumber      NULL,
+    localNumber             NULL,
+    abbreviatedNumber       NULL
+}
+
+GatekeeperIdentifier ::= BMPString (SIZE(1..128))
+
+QseriesOptions ::= SEQUENCE {
+    q932Full                BOOLEAN,
+    q951Full                BOOLEAN,
+    q952Full                BOOLEAN,
+    q953Full                BOOLEAN,
+    q955Full                BOOLEAN,
+    q956Full                BOOLEAN,
+    q957Full                BOOLEAN
+}
+
+-- Message definitions
+GatekeeperRequest ::= SEQUENCE {
+    requestSeqNum           RequestSeqNum,
+    protocolIdentifier      ProtocolIdentifier,
+    nonStandardData         NonStandardParameter OPTIONAL,
+    rasAddress              TransportAddress,
+    endpointType            EndpointType,
+    gatekeeperIdentifier    GatekeeperIdentifier OPTIONAL,
+    callServices            QseriesOptions OPTIONAL,
+    endpointAlias           SEQUENCE OF AliasAddress OPTIONAL
+}
+
+GatekeeperConfirm ::= SEQUENCE {
+    requestSeqNum           RequestSeqNum,
+    protocolIdentifier      ProtocolIdentifier,
+    nonStandardData         NonStandardParameter OPTIONAL,
+    gatekeeperIdentifier    GatekeeperIdentifier OPTIONAL,
+    rasAddress              TransportAddress
+}
+
+GatekeeperReject ::= SEQUENCE {
+    requestSeqNum           RequestSeqNum,
+    protocolIdentifier      ProtocolIdentifier,
+    nonStandardData         NonStandardParameter OPTIONAL,
+    gatekeeperIdentifier    GatekeeperIdentifier OPTIONAL,
+    rejectReason            GatekeeperRejectReason
+}
+
+GatekeeperRejectReason ::= CHOICE {
+    resourceUnavailable     NULL,
+    terminalExcluded        NULL,
+    invalidRevision         NULL,
+    undefinedReason         NULL,
+    securityDenial          NULL
+}
+
+EndpointIdentifier ::= BMPString (SIZE(1..128))
+
+RegistrationRequest ::= SEQUENCE {
+    requestSeqNum           RequestSeqNum,
+    protocolIdentifier      ProtocolIdentifier,
+    nonStandardData         NonStandardParameter OPTIONAL,
+    discoveryComplete       BOOLEAN,
+    callSignalAddress       SEQUENCE OF TransportAddress,
+    rasAddress              SEQUENCE OF TransportAddress,
+    endpointType            EndpointType,
+    terminalAlias           SEQUENCE OF AliasAddress OPTIONAL,
+    gatekeeperIdentifier    GatekeeperIdentifier OPTIONAL,
+    endpointVendor          VendorIdentifier OPTIONAL
+}
+
+RegistrationConfirm ::= SEQUENCE {
+    requestSeqNum           RequestSeqNum,
+    protocolIdentifier      ProtocolIdentifier,
+    nonStandardData         NonStandardParameter OPTIONAL,
+    callSignalAddress       SEQUENCE OF TransportAddress,
+    terminalAlias           SEQUENCE OF AliasAddress OPTIONAL,
+    gatekeeperIdentifier    GatekeeperIdentifier OPTIONAL,
+    endpointIdentifier      EndpointIdentifier
+}
+
+RegistrationReject ::= SEQUENCE {
+    requestSeqNum           RequestSeqNum,
+    protocolIdentifier      ProtocolIdentifier,
+    nonStandardData         NonStandardParameter OPTIONAL,
+    rejectReason            RegistrationRejectReason,
+    gatekeeperIdentifier    GatekeeperIdentifier OPTIONAL
+}
+
+RegistrationRejectReason ::= CHOICE {
+    discoveryRequired       NULL,
+    invalidRevision         NULL,
+    invalidCallSignalAddress NULL,
+    invalidRASAddress       NULL,
+    duplicateAlias          SEQUENCE OF AliasAddress,
+    invalidTerminalType     NULL,
+    undefinedReason         NULL,
+    transportNotSupported   NULL
+}
+
+CallType ::= CHOICE {
+    pointToPoint            NULL,
+    oneToN                  NULL,
+    nToOne                  NULL,
+    nToN                    NULL
+}
+
+CallModel ::= CHOICE {
+    direct                  NULL,
+    gatekeeperRouted        NULL
+}
+
+CallReferenceValue ::= INTEGER (0..65535)
+
+ConferenceIdentifier ::= OCTET STRING (SIZE(16))
+
+CallIdentifier ::= SEQUENCE {
+    guid                    GloballyUniqueID
+}
+
+GloballyUniqueID ::= OCTET STRING (SIZE(16))
+
+AdmissionRequest ::= SEQUENCE {
+    requestSeqNum           RequestSeqNum,
+    callType                CallType,
+    callModel               CallModel OPTIONAL,
+    endpointIdentifier      EndpointIdentifier,
+    destInfo                SEQUENCE OF AliasAddress OPTIONAL,
+    srcInfo                 SEQUENCE OF AliasAddress OPTIONAL,
+    bandWidth               BandWidth,
+    callReferenceValue      CallReferenceValue,
+    nonStandardData         NonStandardParameter OPTIONAL,
+    callServices            QseriesOptions OPTIONAL,
+    conferenceID            ConferenceIdentifier,
+    activeMC                BOOLEAN,
+    answerCall              BOOLEAN,
+    canMapAlias             BOOLEAN,
+    callIdentifier          CallIdentifier,
+    srcCallSignalAddress    TransportAddress OPTIONAL
+}
+
+AdmissionConfirm ::= SEQUENCE {
+    requestSeqNum           RequestSeqNum,
+    bandWidth               BandWidth,
+    callModel               CallModel,
+    destCallSignalAddress   TransportAddress,
+    irrFrequency            INTEGER (1..65535) OPTIONAL,
+    nonStandardData         NonStandardParameter OPTIONAL,
+    destInfo                SEQUENCE OF AliasAddress OPTIONAL,
+    destExtraCallInfo       SEQUENCE OF AliasAddress OPTIONAL,
+    destType                EndpointType OPTIONAL,
+    willRespondToIRR        BOOLEAN
+}
+
+AdmissionReject ::= SEQUENCE {
+    requestSeqNum           RequestSeqNum,
+    rejectReason            AdmissionRejectReason,
+    nonStandardData         NonStandardParameter OPTIONAL
+}
+
+AdmissionRejectReason ::= CHOICE {
+    calledPartyNotRegistered    NULL,
+    invalidPermission           NULL,
+    requestDenied               NULL,
+    undefinedReason             NULL,
+    callerNotRegistered         NULL,
+    routeCallToGatekeeper       NULL,
+    invalidEndpointIdentifier   NULL,
+    resourceUnavailable         NULL
+}
+
+END
