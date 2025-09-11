@@ -1,0 +1,784 @@
+-- Simplified H.323 Messages ASN.1 for testing the APER decoding issue
+-- Based on ITU-T H.225.0 (2006) standard
+
+H323-MESSAGES DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+-- Protocol identifiers
+ProtocolIdentifier ::= OBJECT IDENTIFIER
+
+-- Transport Address Definitions
+TransportAddress ::= CHOICE {
+    ipAddress        [0] SEQUENCE {
+        ip           OCTET STRING (SIZE(4)),
+        port         INTEGER (0..65535)
+    },
+    ipv6Address      [1] SEQUENCE {
+        ip           OCTET STRING (SIZE(16)),
+        port         INTEGER (0..65535)
+    },
+    ...
+}
+
+-- Alias Address Definitions
+AliasAddress ::= CHOICE {
+    dialedDigits     [0] DialedDigits,
+    h323ID          [1] BMPString (SIZE(1..256)),
+    url-ID          [2] IA5String (SIZE(1..512)),
+    transportID     [3] TransportAddress,
+    email-ID        [4] IA5String (SIZE(1..512)),
+    partyNumber     [5] PartyNumber,
+    mobileUIM       [6] MobileUIM,
+    ...
+}
+
+DialedDigits ::= IA5String (SIZE(1..128))
+
+PartyNumber ::= CHOICE {
+    publicPartyNumber      [0] PublicPartyNumber,
+    dataPartyNumber        [1] DataPartyNumber,
+    telexPartyNumber       [2] TelexPartyNumber,
+    privatePartyNumber     [3] PrivatePartyNumber,
+    nationalStandardPartyNumber [4] NationalStandardPartyNumber,
+    ...
+}
+
+PublicPartyNumber ::= SEQUENCE {
+    publicTypeOfNumber     PublicTypeOfNumber,
+    publicNumberDigits     NumberDigits
+}
+
+PublicTypeOfNumber ::= ENUMERATED {
+    unknown                        (0),
+    internationalNumber            (1),
+    nationalNumber                 (2),
+    networkSpecificNumber          (3),
+    subscriberNumber               (4),
+    abbreviatedNumber              (6),
+    ...
+}
+
+NumberDigits ::= IA5String (SIZE(1..128))
+
+DataPartyNumber ::= SEQUENCE {
+    dataTypeOfNumber       DataTypeOfNumber,
+    dataNumberDigits       NumberDigits
+}
+
+DataTypeOfNumber ::= ENUMERATED {
+    unknown                        (0),
+    internationalNumber            (1),
+    nationalNumber                 (2),
+    networkSpecificNumber          (3),
+    subscriberNumber               (4),
+    abbreviatedNumber              (6),
+    ...
+}
+
+TelexPartyNumber ::= SEQUENCE {
+    telexTypeOfNumber      TelexTypeOfNumber,
+    telexNumberDigits      NumberDigits
+}
+
+TelexTypeOfNumber ::= ENUMERATED {
+    unknown                        (0),
+    internationalNumber            (1),
+    nationalNumber                 (2),
+    networkSpecificNumber          (3),
+    subscriberNumber               (4),
+    abbreviatedNumber              (6),
+    ...
+}
+
+PrivatePartyNumber ::= SEQUENCE {
+    privateTypeOfNumber    PrivateTypeOfNumber,
+    privateNumberDigits    NumberDigits
+}
+
+PrivateTypeOfNumber ::= ENUMERATED {
+    unknown                        (0),
+    level2RegionalNumber           (1),
+    level1RegionalNumber           (2),
+    pISNSpecificNumber             (3),
+    localNumber                    (4),
+    abbreviatedNumber              (6),
+    ...
+}
+
+NationalStandardPartyNumber ::= SEQUENCE {
+    nationalStandardTypeOfNumber  NationalStandardTypeOfNumber,
+    nationalStandardNumberDigits   NumberDigits
+}
+
+NationalStandardTypeOfNumber ::= ENUMERATED {
+    unknown                        (0),
+    nationalStandardNumber         (1),
+    ...
+}
+
+MobileUIM ::= CHOICE {
+    ansi-41-uim    OCTET STRING,
+    gsm-uim        [0] SEQUENCE {
+        imsi           [0] OCTET STRING (SIZE(3..8)) OPTIONAL,
+        tmsi           [1] OCTET STRING (SIZE(1..4)) OPTIONAL,
+        msisdn         [2] OCTET STRING (SIZE(3..10)) OPTIONAL,
+        ...
+    },
+    ...
+}
+
+-- Endpoint Type Definitions
+EndpointType ::= SEQUENCE {
+    nonStandardData      NonStandardParameter OPTIONAL,
+    vendor               VendorIdentifier OPTIONAL,
+    gatekeeper           GatekeeperInfo OPTIONAL,
+    gateway              GatewayInfo OPTIONAL,
+    mcu                  McuInfo OPTIONAL,
+    terminal             TerminalInfo OPTIONAL,
+    mc                   BOOLEAN,
+    undefinedNode        BOOLEAN,
+    ...
+}
+
+NonStandardParameter ::= SEQUENCE {
+    nonStandardIdentifier  NonStandardIdentifier,
+    data                   OCTET STRING
+}
+
+NonStandardIdentifier ::= CHOICE {
+    object      OBJECT IDENTIFIER,
+    h221NonStandard  SEQUENCE {
+        t35CountryCode   INTEGER (0..255),
+        t35Extension     INTEGER (0..255),
+        manufacturerCode INTEGER (0..65535)
+    }
+}
+
+VendorIdentifier ::= SEQUENCE {
+    vendor          H221NonStandard,
+    productId       OCTET STRING (SIZE(1..256)) OPTIONAL,
+    versionId       OCTET STRING (SIZE(1..256)) OPTIONAL
+}
+
+H221NonStandard ::= SEQUENCE {
+    t35CountryCode   INTEGER (0..255),
+    t35Extension     INTEGER (0..255),
+    manufacturerCode INTEGER (0..65535)
+}
+
+GatekeeperInfo ::= SEQUENCE {
+    nonStandardData      NonStandardParameter OPTIONAL,
+    ...
+}
+
+GatewayInfo ::= SEQUENCE {
+    nonStandardData      NonStandardParameter OPTIONAL,
+    ...
+}
+
+McuInfo ::= SEQUENCE {
+    nonStandardData      NonStandardParameter OPTIONAL,
+    ...
+}
+
+TerminalInfo ::= SEQUENCE {
+    nonStandardData      NonStandardParameter OPTIONAL,
+    ...
+}
+
+-- Call Signaling related definitions
+CallType ::= ENUMERATED {
+    pointToPoint   (0),
+    oneToN         (1),
+    nToOne         (2),
+    nToN           (3)
+}
+
+CallModel ::= ENUMERATED {
+    direct         (0),
+    gatekeeperRouted (1)
+}
+
+ConferenceIdentifier ::= OCTET STRING (SIZE(16))
+
+-- Setup-UUIE Definition (the key structure for our issue)
+Setup-UUIE ::= SEQUENCE {
+    protocolIdentifier             ProtocolIdentifier,
+    h245Address                    TransportAddress OPTIONAL,
+    sourceAddress                  SEQUENCE OF AliasAddress OPTIONAL,
+    sourceInfo                     EndpointType,
+    destinationAddress             SEQUENCE OF AliasAddress OPTIONAL,
+    destCallSignalAddress          TransportAddress OPTIONAL,
+    destExtraCallInfo              SEQUENCE OF AliasAddress OPTIONAL,
+    destExtraCRV                   SEQUENCE OF CallReferenceValue OPTIONAL,
+    activeMC                       BOOLEAN,
+    conferenceID                   ConferenceIdentifier,
+    conferenceGoal                 ConferenceGoal,
+    callServices                   QseriesOptions OPTIONAL,
+    callType                       CallType,
+    sourceCallSignalAddress        TransportAddress OPTIONAL,
+    remoteExtensionAddress         AliasAddress OPTIONAL,
+    callIdentifier                 CallIdentifier,
+    h245SecurityCapability         SEQUENCE OF H245Security OPTIONAL,
+    tokens                         SEQUENCE OF ClearToken OPTIONAL,
+    cryptoTokens                   SEQUENCE OF CryptoH323Token OPTIONAL,
+    fastStart                      SEQUENCE OF OCTET STRING OPTIONAL,
+    mediaWaitForConnect            BOOLEAN,
+    canOverlapSend                 BOOLEAN,
+    endpointIdentifier             EndpointIdentifier OPTIONAL,
+    multipleCalls                  BOOLEAN,
+    maintainConnection             BOOLEAN,
+    connectionParameters           ConnectionParameters OPTIONAL,
+    language                       SEQUENCE OF Language OPTIONAL,
+    presentationIndicator          PresentationIndicator OPTIONAL,
+    screeningIndicator             ScreeningIndicator OPTIONAL,
+    serviceControl                 SEQUENCE OF ServiceControlSession OPTIONAL,
+    symmetricOperationRequired     NULL OPTIONAL,
+    capacity                       CallCapacity OPTIONAL,
+    circuitInfo                    CircuitInfo OPTIONAL,
+    desiredProtocols               SEQUENCE OF SupportedProtocols OPTIONAL,
+    neededFeatures                 SEQUENCE OF FeatureDescriptor OPTIONAL,
+    desiredFeatures                SEQUENCE OF FeatureDescriptor OPTIONAL,
+    supportedFeatures              SEQUENCE OF FeatureDescriptor OPTIONAL,
+    parallelH245Control            NULL OPTIONAL,
+    additionalSourceAddresses      SEQUENCE OF ExtendedAliasAddress OPTIONAL,
+    ...
+}
+
+-- Supporting types for Setup-UUIE
+CallReferenceValue ::= INTEGER (0..65535)
+
+ConferenceGoal ::= CHOICE {
+    create     NULL,
+    join       NULL,
+    invite     NULL,
+    ...
+}
+
+QseriesOptions ::= SEQUENCE {
+    q932Full      BOOLEAN,
+    q951Full      BOOLEAN,
+    q952Full      BOOLEAN,
+    q953Full      BOOLEAN,
+    q955Full      BOOLEAN,
+    q956Full      BOOLEAN,
+    q957Full      BOOLEAN,
+    ...
+}
+
+CallIdentifier ::= SEQUENCE {
+    guid     OCTET STRING (SIZE(16))
+}
+
+H245Security ::= CHOICE {
+    nonStandard      NonStandardParameter,
+    noSecurity       NULL,
+    tls              SecurityCapabilities,
+    ipsec            SecurityCapabilities,
+    ...
+}
+
+SecurityCapabilities ::= SEQUENCE {
+    nonStandard              NonStandardParameter OPTIONAL,
+    encryption               EncryptionCapability OPTIONAL,
+    authenticatedSupplier    BOOLEAN,
+    authenticatedSignalling  BOOLEAN,
+    certificateCapability    CertificateCapability OPTIONAL,
+    ...
+}
+
+EncryptionCapability ::= CHOICE {
+    nonStandard      NonStandardParameter,
+    des40            NULL,
+    des56            NULL,
+    triple-des       NULL,
+    ...
+}
+
+CertificateCapability ::= SEQUENCE {
+    nonStandard      NonStandardParameter OPTIONAL,
+    x509Capability   X509Capability OPTIONAL,
+    ...
+}
+
+X509Capability ::= SEQUENCE {
+    nonStandard      NonStandardParameter OPTIONAL,
+    ...
+}
+
+ClearToken ::= SEQUENCE {
+    tokenOID         OBJECT IDENTIFIER,
+    timeStamp        TimeStamp OPTIONAL,
+    password         Password OPTIONAL,
+    dhkey            DHset OPTIONAL,
+    challenge        ChallengeString OPTIONAL,
+    random           RandomVal OPTIONAL,
+    certificate      TypedCertificate OPTIONAL,
+    generalID        Identifier OPTIONAL,
+    nonStandard      NonStandardParameter OPTIONAL,
+    ...
+}
+
+TimeStamp ::= INTEGER
+
+Password ::= BMPString (SIZE(1..128))
+
+DHset ::= SEQUENCE {
+    halfkey          BIT STRING,
+    modSize          BIT STRING,
+    generator        BIT STRING,
+    ...
+}
+
+ChallengeString ::= OCTET STRING (SIZE(8..128))
+
+RandomVal ::= INTEGER
+
+TypedCertificate ::= CHOICE {
+    x509Certificate      X509Certificate,
+    ...
+}
+
+X509Certificate ::= OCTET STRING
+
+Identifier ::= BMPString (SIZE(1..128))
+
+CryptoH323Token ::= CHOICE {
+    cryptoEPPwdHash      CryptoEPPwdHash,
+    cryptoGKPwdHash      CryptoGKPwdHash,
+    cryptoEPPwdEncr      CryptoEPPwdEncr,
+    cryptoGKPwdEncr      CryptoGKPwdEncr,
+    cryptoEPCert         CryptoEPCert,
+    cryptoGKCert         CryptoGKCert,
+    cryptoFastStart      CryptoFastStart,
+    nestedcryptoToken    NestedcryptoToken,
+    ...
+}
+
+CryptoEPPwdHash ::= SEQUENCE {
+    alias            AliasAddress,
+    timeStamp        TimeStamp,
+    token            HASHED
+}
+
+HASHED ::= OCTET STRING (SIZE(20))
+
+CryptoGKPwdHash ::= SEQUENCE {
+    gatekeeperId     GatekeeperIdentifier,
+    timeStamp        TimeStamp,
+    token            HASHED
+}
+
+GatekeeperIdentifier ::= BMPString (SIZE(1..128))
+
+CryptoEPPwdEncr ::= SEQUENCE {
+    alias            AliasAddress,
+    timeStamp        TimeStamp,
+    token            ENCRYPTED
+}
+
+ENCRYPTED ::= OCTET STRING
+
+CryptoGKPwdEncr ::= SEQUENCE {
+    gatekeeperId     GatekeeperIdentifier,
+    timeStamp        TimeStamp,
+    token            ENCRYPTED
+}
+
+CryptoEPCert ::= SEQUENCE {
+    toBeSigned       EncodedCertificate,
+    algorithmOID     OBJECT IDENTIFIER,
+    paramS           Params,
+    signature        BIT STRING
+}
+
+EncodedCertificate ::= OCTET STRING
+
+Params ::= SEQUENCE {
+    ranInt           INTEGER OPTIONAL,
+    iv               OCTET STRING OPTIONAL,
+    ...
+}
+
+CryptoGKCert ::= SEQUENCE {
+    toBeSigned       EncodedCertificate,
+    algorithmOID     OBJECT IDENTIFIER,
+    paramS           Params,
+    signature        BIT STRING
+}
+
+CryptoFastStart ::= SEQUENCE {
+    toBeSigned       EncodedFastStart,
+    algorithmOID     OBJECT IDENTIFIER,
+    paramS           Params,
+    signature        BIT STRING
+}
+
+EncodedFastStart ::= OCTET STRING
+
+NestedcryptoToken ::= SEQUENCE {
+    tokenOID         OBJECT IDENTIFIER,
+    cryptoToken      CryptoH323Token
+}
+
+EndpointIdentifier ::= BMPString (SIZE(1..128))
+
+ConnectionParameters ::= SEQUENCE {
+    qosCapabilities      QOSCapabilities OPTIONAL,
+    ...
+}
+
+QOSCapabilities ::= SEQUENCE OF QOSCapability
+
+QOSCapability ::= CHOICE {
+    nonStandardData      NonStandardParameter,
+    rsvpParameters       RSVPParameters,
+    atmParameters        ATMParameters,
+    ...
+}
+
+RSVPParameters ::= SEQUENCE {
+    qosMode              QOSMode,
+    tokenRate            INTEGER (1..4294967295) OPTIONAL,
+    bucketSize           INTEGER (1..4294967295) OPTIONAL,
+    peakRate             INTEGER (1..4294967295) OPTIONAL,
+    minPoliced           INTEGER (1..4294967295) OPTIONAL,
+    maxPktSize           INTEGER (1..4294967295) OPTIONAL,
+    ...
+}
+
+QOSMode ::= ENUMERATED {
+    guaranteedQOS        (0),
+    controlledLoad       (1),
+    ...
+}
+
+ATMParameters ::= SEQUENCE {
+    maxNTUSize           INTEGER (0..65535),
+    atmUBR               NULL OPTIONAL,
+    atmrtVBR             NULL OPTIONAL,
+    atmABR               NULL OPTIONAL,
+    atmCBR               NULL OPTIONAL,
+    ...
+}
+
+Language ::= IA5String (SIZE(1..32))
+
+PresentationIndicator ::= ENUMERATED {
+    presentationAllowed          (0),
+    presentationRestricted       (1),
+    addressNotAvailable          (2),
+    ...
+}
+
+ScreeningIndicator ::= ENUMERATED {
+    userProvidedNotScreened      (0),
+    userProvidedVerifiedAndPassed (1),
+    userProvidedVerifiedAndFailed (2),
+    networkProvided              (3),
+    ...
+}
+
+ServiceControlSession ::= SEQUENCE {
+    sessionId            INTEGER (0..255),
+    contents             Contents OPTIONAL,
+    reason               ServiceControlSession-reason OPTIONAL,
+    ...
+}
+
+Contents ::= CHOICE {
+    raw                  OCTET STRING (SIZE(1..65535)),
+    text                 IA5String (SIZE(1..512)),
+    ...
+}
+
+ServiceControlSession-reason ::= ENUMERATED {
+    open                 (1),
+    refresh              (2),
+    close                (3),
+    ...
+}
+
+CallCapacity ::= SEQUENCE {
+    maximumCallCapacity          CallCapacityInfo OPTIONAL,
+    currentCallCapacity          CallCapacityInfo OPTIONAL,
+    ...
+}
+
+CallCapacityInfo ::= SEQUENCE {
+    maximumAudioConnections      INTEGER (0..4294967295) OPTIONAL,
+    maximumVideoConnections      INTEGER (0..4294967295) OPTIONAL,
+    maximumDataConnections       INTEGER (0..4294967295) OPTIONAL,
+    ...
+}
+
+CircuitInfo ::= SEQUENCE {
+    sourceCircuitID              CircuitIdentifier OPTIONAL,
+    destinationCircuitID         CircuitIdentifier OPTIONAL,
+    genericData                  SEQUENCE OF GenericData OPTIONAL,
+    ...
+}
+
+CircuitIdentifier ::= SEQUENCE {
+    cic                          CicInfo OPTIONAL,
+    group                        GroupInfo OPTIONAL,
+    ...
+}
+
+CicInfo ::= SEQUENCE {
+    cic                          INTEGER (0..4095),
+    pointCode                    OCTET STRING (SIZE(2..5)),
+    ...
+}
+
+GroupInfo ::= SEQUENCE {
+    groupIdentifier              INTEGER (0..65535),
+    member                       INTEGER (0..65535) OPTIONAL,
+    ...
+}
+
+GenericData ::= SEQUENCE {
+    id                           GenericIdentifier,
+    parameters                   SEQUENCE OF EnumeratedParameter OPTIONAL,
+    ...
+}
+
+GenericIdentifier ::= CHOICE {
+    standard                     INTEGER (0..16383),
+    oid                          OBJECT IDENTIFIER,
+    ...
+}
+
+EnumeratedParameter ::= SEQUENCE {
+    id                           ParameterIdentifier,
+    content                      Content OPTIONAL,
+    ...
+}
+
+ParameterIdentifier ::= CHOICE {
+    standard                     INTEGER (0..127),
+    oid                          OBJECT IDENTIFIER,
+    ...
+}
+
+Content ::= CHOICE {
+    raw                          OCTET STRING (SIZE(1..65535)),
+    text                         IA5String (SIZE(1..512)),
+    number                       INTEGER,
+    compound                     SEQUENCE OF EnumeratedParameter,
+    nested                       SEQUENCE OF GenericData,
+    ...
+}
+
+SupportedProtocols ::= CHOICE {
+    nonStandardData              NonStandardParameter,
+    h310                         H310Caps,
+    h320                         H320Caps,
+    h321                         H321Caps,
+    h322                         H322Caps,
+    h323                         H323Caps,
+    h324                         H324Caps,
+    voice                        VoiceCaps,
+    t120-only                    T120OnlyCaps,
+    nonStandardProtocol          NonStandardProtocol,
+    t38FaxAnnexbOnly             T38FaxAnnexbOnlyCaps,
+    ...
+}
+
+H310Caps ::= SEQUENCE {
+    nonStandardData              NonStandardParameter OPTIONAL,
+    ...
+}
+
+H320Caps ::= SEQUENCE {
+    nonStandardData              NonStandardParameter OPTIONAL,
+    ...
+}
+
+H321Caps ::= SEQUENCE {
+    nonStandardData              NonStandardParameter OPTIONAL,
+    ...
+}
+
+H322Caps ::= SEQUENCE {
+    nonStandardData              NonStandardParameter OPTIONAL,
+    ...
+}
+
+H323Caps ::= SEQUENCE {
+    nonStandardData              NonStandardParameter OPTIONAL,
+    ...
+}
+
+H324Caps ::= SEQUENCE {
+    nonStandardData              NonStandardParameter OPTIONAL,
+    ...
+}
+
+VoiceCaps ::= SEQUENCE {
+    nonStandardData              NonStandardParameter OPTIONAL,
+    ...
+}
+
+T120OnlyCaps ::= SEQUENCE {
+    nonStandardData              NonStandardParameter OPTIONAL,
+    ...
+}
+
+NonStandardProtocol ::= SEQUENCE {
+    nonStandardData              NonStandardParameter OPTIONAL,
+    ...
+}
+
+T38FaxAnnexbOnlyCaps ::= SEQUENCE {
+    nonStandardData              NonStandardParameter OPTIONAL,
+    ...
+}
+
+FeatureDescriptor ::= SEQUENCE {
+    id                           GenericIdentifier,
+    parameters                   SEQUENCE OF EnumeratedParameter OPTIONAL,
+    ...
+}
+
+ExtendedAliasAddress ::= SEQUENCE {
+    address                      AliasAddress,
+    presentationIndicator        PresentationIndicator OPTIONAL,
+    screeningIndicator           ScreeningIndicator OPTIONAL,
+    ...
+}
+
+-- H323-UserInformation (the top-level message)
+H323-UserInformation ::= SEQUENCE {
+    h323-uu-pdu      H323-UU-PDU,
+    user-data        OCTET STRING OPTIONAL,
+    ...
+}
+
+H323-UU-PDU ::= SEQUENCE {
+    h323-message-body    H323-message-body,
+    nonStandardData      NonStandardParameter OPTIONAL,
+    h4501SupplementaryService    SEQUENCE OF OCTET STRING OPTIONAL,
+    h245Tunneling        BOOLEAN,
+    h245Control          SEQUENCE OF OCTET STRING OPTIONAL,
+    nonStandardControl   SEQUENCE OF NonStandardParameter OPTIONAL,
+    callLinkage          CallLinkage OPTIONAL,
+    tunnelledSignallingMessage    TunnelledSignallingMessage OPTIONAL,
+    provisionalRespToH245Tunneling NULL OPTIONAL,
+    stimulusControl      StimulusControl OPTIONAL,
+    genericData          SEQUENCE OF GenericData OPTIONAL,
+    ...
+}
+
+H323-message-body ::= CHOICE {
+    setup                Setup-UUIE,
+    callProceeding       CallProceeding-UUIE,
+    connect              Connect-UUIE,
+    alerting             Alerting-UUIE,
+    information          Information-UUIE,
+    releaseComplete      ReleaseComplete-UUIE,
+    facility             Facility-UUIE,
+    progress             Progress-UUIE,
+    empty                NULL,
+    status               Status-UUIE,
+    statusInquiry        StatusInquiry-UUIE,
+    setupAcknowledge     SetupAcknowledge-UUIE,
+    notify               Notify-UUIE,
+    ...
+}
+
+-- Other message types (simplified for this test)
+CallProceeding-UUIE ::= SEQUENCE {
+    protocolIdentifier    ProtocolIdentifier,
+    ...
+}
+
+Connect-UUIE ::= SEQUENCE {
+    protocolIdentifier    ProtocolIdentifier,
+    ...
+}
+
+Alerting-UUIE ::= SEQUENCE {
+    protocolIdentifier    ProtocolIdentifier,
+    ...
+}
+
+Information-UUIE ::= SEQUENCE {
+    protocolIdentifier    ProtocolIdentifier,
+    ...
+}
+
+ReleaseComplete-UUIE ::= SEQUENCE {
+    protocolIdentifier    ProtocolIdentifier,
+    ...
+}
+
+Facility-UUIE ::= SEQUENCE {
+    protocolIdentifier    ProtocolIdentifier,
+    ...
+}
+
+Progress-UUIE ::= SEQUENCE {
+    protocolIdentifier    ProtocolIdentifier,
+    ...
+}
+
+Status-UUIE ::= SEQUENCE {
+    protocolIdentifier    ProtocolIdentifier,
+    ...
+}
+
+StatusInquiry-UUIE ::= SEQUENCE {
+    protocolIdentifier    ProtocolIdentifier,
+    ...
+}
+
+SetupAcknowledge-UUIE ::= SEQUENCE {
+    protocolIdentifier    ProtocolIdentifier,
+    ...
+}
+
+Notify-UUIE ::= SEQUENCE {
+    protocolIdentifier    ProtocolIdentifier,
+    ...
+}
+
+-- Supporting types
+CallLinkage ::= SEQUENCE {
+    globalCallId         GlobalCallId OPTIONAL,
+    threadId             OCTET STRING OPTIONAL,
+    ...
+}
+
+GlobalCallId ::= OCTET STRING (SIZE(16))
+
+TunnelledSignallingMessage ::= SEQUENCE {
+    tunnelledProtocolID   TunnelledProtocol,
+    messageContent        SEQUENCE OF OCTET STRING,
+    tunnellingRequired    NULL OPTIONAL,
+    nonStandardData       NonStandardParameter OPTIONAL,
+    ...
+}
+
+TunnelledProtocol ::= SEQUENCE {
+    id                    TunnelledProtocol-id,
+    subIdentifier         IA5String (SIZE(1..64)) OPTIONAL
+}
+
+TunnelledProtocol-id ::= CHOICE {
+    tunnelledProtocolObjectID        OBJECT IDENTIFIER,
+    tunnelledProtocolAlternateID     TunnelledProtocolAlternateIdentifier
+}
+
+TunnelledProtocolAlternateIdentifier ::= SEQUENCE {
+    protocolType          IA5String (SIZE(1..64)),
+    protocolVariant       IA5String (SIZE(1..64)) OPTIONAL
+}
+
+StimulusControl ::= SEQUENCE {
+    nonStandard           NonStandardParameter OPTIONAL,
+    isText                NULL OPTIONAL,
+    h248Message           OCTET STRING OPTIONAL,
+    ...
+}
+
+END

@@ -1,0 +1,475 @@
+ASN_MODULE_SRCS=	\
+	h323_generated/ProtocolIdentifier.c	\
+	h323_generated/TransportAddress.c	\
+	h323_generated/AliasAddress.c	\
+	h323_generated/DialedDigits.c	\
+	h323_generated/PartyNumber.c	\
+	h323_generated/PublicPartyNumber.c	\
+	h323_generated/PublicTypeOfNumber.c	\
+	h323_generated/NumberDigits.c	\
+	h323_generated/DataPartyNumber.c	\
+	h323_generated/DataTypeOfNumber.c	\
+	h323_generated/TelexPartyNumber.c	\
+	h323_generated/TelexTypeOfNumber.c	\
+	h323_generated/PrivatePartyNumber.c	\
+	h323_generated/PrivateTypeOfNumber.c	\
+	h323_generated/NationalStandardPartyNumber.c	\
+	h323_generated/NationalStandardTypeOfNumber.c	\
+	h323_generated/MobileUIM.c	\
+	h323_generated/EndpointType.c	\
+	h323_generated/NonStandardParameter.c	\
+	h323_generated/NonStandardIdentifier.c	\
+	h323_generated/VendorIdentifier.c	\
+	h323_generated/H221NonStandard.c	\
+	h323_generated/GatekeeperInfo.c	\
+	h323_generated/GatewayInfo.c	\
+	h323_generated/McuInfo.c	\
+	h323_generated/TerminalInfo.c	\
+	h323_generated/CallType.c	\
+	h323_generated/CallModel.c	\
+	h323_generated/ConferenceIdentifier.c	\
+	h323_generated/Setup-UUIE.c	\
+	h323_generated/CallReferenceValue.c	\
+	h323_generated/ConferenceGoal.c	\
+	h323_generated/QseriesOptions.c	\
+	h323_generated/CallIdentifier.c	\
+	h323_generated/H245Security.c	\
+	h323_generated/SecurityCapabilities.c	\
+	h323_generated/EncryptionCapability.c	\
+	h323_generated/CertificateCapability.c	\
+	h323_generated/X509Capability.c	\
+	h323_generated/ClearToken.c	\
+	h323_generated/TimeStamp.c	\
+	h323_generated/Password.c	\
+	h323_generated/DHset.c	\
+	h323_generated/ChallengeString.c	\
+	h323_generated/RandomVal.c	\
+	h323_generated/TypedCertificate.c	\
+	h323_generated/X509Certificate.c	\
+	h323_generated/Identifier.c	\
+	h323_generated/CryptoH323Token.c	\
+	h323_generated/CryptoEPPwdHash.c	\
+	h323_generated/HASHED.c	\
+	h323_generated/CryptoGKPwdHash.c	\
+	h323_generated/GatekeeperIdentifier.c	\
+	h323_generated/CryptoEPPwdEncr.c	\
+	h323_generated/ENCRYPTED.c	\
+	h323_generated/CryptoGKPwdEncr.c	\
+	h323_generated/CryptoEPCert.c	\
+	h323_generated/EncodedCertificate.c	\
+	h323_generated/Params.c	\
+	h323_generated/CryptoGKCert.c	\
+	h323_generated/CryptoFastStart.c	\
+	h323_generated/EncodedFastStart.c	\
+	h323_generated/NestedcryptoToken.c	\
+	h323_generated/EndpointIdentifier.c	\
+	h323_generated/ConnectionParameters.c	\
+	h323_generated/QOSCapabilities.c	\
+	h323_generated/QOSCapability.c	\
+	h323_generated/RSVPParameters.c	\
+	h323_generated/QOSMode.c	\
+	h323_generated/ATMParameters.c	\
+	h323_generated/Language.c	\
+	h323_generated/PresentationIndicator.c	\
+	h323_generated/ScreeningIndicator.c	\
+	h323_generated/ServiceControlSession.c	\
+	h323_generated/Contents.c	\
+	h323_generated/ServiceControlSession-reason.c	\
+	h323_generated/CallCapacity.c	\
+	h323_generated/CallCapacityInfo.c	\
+	h323_generated/CircuitInfo.c	\
+	h323_generated/CircuitIdentifier.c	\
+	h323_generated/CicInfo.c	\
+	h323_generated/GroupInfo.c	\
+	h323_generated/GenericData.c	\
+	h323_generated/GenericIdentifier.c	\
+	h323_generated/EnumeratedParameter.c	\
+	h323_generated/ParameterIdentifier.c	\
+	h323_generated/Content.c	\
+	h323_generated/SupportedProtocols.c	\
+	h323_generated/H310Caps.c	\
+	h323_generated/H320Caps.c	\
+	h323_generated/H321Caps.c	\
+	h323_generated/H322Caps.c	\
+	h323_generated/H323Caps.c	\
+	h323_generated/H324Caps.c	\
+	h323_generated/VoiceCaps.c	\
+	h323_generated/T120OnlyCaps.c	\
+	h323_generated/NonStandardProtocol.c	\
+	h323_generated/T38FaxAnnexbOnlyCaps.c	\
+	h323_generated/FeatureDescriptor.c	\
+	h323_generated/ExtendedAliasAddress.c	\
+	h323_generated/H323-UserInformation.c	\
+	h323_generated/H323-UU-PDU.c	\
+	h323_generated/H323-message-body.c	\
+	h323_generated/CallProceeding-UUIE.c	\
+	h323_generated/Connect-UUIE.c	\
+	h323_generated/Alerting-UUIE.c	\
+	h323_generated/Information-UUIE.c	\
+	h323_generated/ReleaseComplete-UUIE.c	\
+	h323_generated/Facility-UUIE.c	\
+	h323_generated/Progress-UUIE.c	\
+	h323_generated/Status-UUIE.c	\
+	h323_generated/StatusInquiry-UUIE.c	\
+	h323_generated/SetupAcknowledge-UUIE.c	\
+	h323_generated/Notify-UUIE.c	\
+	h323_generated/CallLinkage.c	\
+	h323_generated/GlobalCallId.c	\
+	h323_generated/TunnelledSignallingMessage.c	\
+	h323_generated/TunnelledProtocol.c	\
+	h323_generated/TunnelledProtocol-id.c	\
+	h323_generated/TunnelledProtocolAlternateIdentifier.c	\
+	h323_generated/StimulusControl.c	\
+	h323_generated/EXTERNAL.c
+
+ASN_MODULE_HDRS=	\
+	h323_generated/ProtocolIdentifier.h	\
+	h323_generated/TransportAddress.h	\
+	h323_generated/AliasAddress.h	\
+	h323_generated/DialedDigits.h	\
+	h323_generated/PartyNumber.h	\
+	h323_generated/PublicPartyNumber.h	\
+	h323_generated/PublicTypeOfNumber.h	\
+	h323_generated/NumberDigits.h	\
+	h323_generated/DataPartyNumber.h	\
+	h323_generated/DataTypeOfNumber.h	\
+	h323_generated/TelexPartyNumber.h	\
+	h323_generated/TelexTypeOfNumber.h	\
+	h323_generated/PrivatePartyNumber.h	\
+	h323_generated/PrivateTypeOfNumber.h	\
+	h323_generated/NationalStandardPartyNumber.h	\
+	h323_generated/NationalStandardTypeOfNumber.h	\
+	h323_generated/MobileUIM.h	\
+	h323_generated/EndpointType.h	\
+	h323_generated/NonStandardParameter.h	\
+	h323_generated/NonStandardIdentifier.h	\
+	h323_generated/VendorIdentifier.h	\
+	h323_generated/H221NonStandard.h	\
+	h323_generated/GatekeeperInfo.h	\
+	h323_generated/GatewayInfo.h	\
+	h323_generated/McuInfo.h	\
+	h323_generated/TerminalInfo.h	\
+	h323_generated/CallType.h	\
+	h323_generated/CallModel.h	\
+	h323_generated/ConferenceIdentifier.h	\
+	h323_generated/Setup-UUIE.h	\
+	h323_generated/CallReferenceValue.h	\
+	h323_generated/ConferenceGoal.h	\
+	h323_generated/QseriesOptions.h	\
+	h323_generated/CallIdentifier.h	\
+	h323_generated/H245Security.h	\
+	h323_generated/SecurityCapabilities.h	\
+	h323_generated/EncryptionCapability.h	\
+	h323_generated/CertificateCapability.h	\
+	h323_generated/X509Capability.h	\
+	h323_generated/ClearToken.h	\
+	h323_generated/TimeStamp.h	\
+	h323_generated/Password.h	\
+	h323_generated/DHset.h	\
+	h323_generated/ChallengeString.h	\
+	h323_generated/RandomVal.h	\
+	h323_generated/TypedCertificate.h	\
+	h323_generated/X509Certificate.h	\
+	h323_generated/Identifier.h	\
+	h323_generated/CryptoH323Token.h	\
+	h323_generated/CryptoEPPwdHash.h	\
+	h323_generated/HASHED.h	\
+	h323_generated/CryptoGKPwdHash.h	\
+	h323_generated/GatekeeperIdentifier.h	\
+	h323_generated/CryptoEPPwdEncr.h	\
+	h323_generated/ENCRYPTED.h	\
+	h323_generated/CryptoGKPwdEncr.h	\
+	h323_generated/CryptoEPCert.h	\
+	h323_generated/EncodedCertificate.h	\
+	h323_generated/Params.h	\
+	h323_generated/CryptoGKCert.h	\
+	h323_generated/CryptoFastStart.h	\
+	h323_generated/EncodedFastStart.h	\
+	h323_generated/NestedcryptoToken.h	\
+	h323_generated/EndpointIdentifier.h	\
+	h323_generated/ConnectionParameters.h	\
+	h323_generated/QOSCapabilities.h	\
+	h323_generated/QOSCapability.h	\
+	h323_generated/RSVPParameters.h	\
+	h323_generated/QOSMode.h	\
+	h323_generated/ATMParameters.h	\
+	h323_generated/Language.h	\
+	h323_generated/PresentationIndicator.h	\
+	h323_generated/ScreeningIndicator.h	\
+	h323_generated/ServiceControlSession.h	\
+	h323_generated/Contents.h	\
+	h323_generated/ServiceControlSession-reason.h	\
+	h323_generated/CallCapacity.h	\
+	h323_generated/CallCapacityInfo.h	\
+	h323_generated/CircuitInfo.h	\
+	h323_generated/CircuitIdentifier.h	\
+	h323_generated/CicInfo.h	\
+	h323_generated/GroupInfo.h	\
+	h323_generated/GenericData.h	\
+	h323_generated/GenericIdentifier.h	\
+	h323_generated/EnumeratedParameter.h	\
+	h323_generated/ParameterIdentifier.h	\
+	h323_generated/Content.h	\
+	h323_generated/SupportedProtocols.h	\
+	h323_generated/H310Caps.h	\
+	h323_generated/H320Caps.h	\
+	h323_generated/H321Caps.h	\
+	h323_generated/H322Caps.h	\
+	h323_generated/H323Caps.h	\
+	h323_generated/H324Caps.h	\
+	h323_generated/VoiceCaps.h	\
+	h323_generated/T120OnlyCaps.h	\
+	h323_generated/NonStandardProtocol.h	\
+	h323_generated/T38FaxAnnexbOnlyCaps.h	\
+	h323_generated/FeatureDescriptor.h	\
+	h323_generated/ExtendedAliasAddress.h	\
+	h323_generated/H323-UserInformation.h	\
+	h323_generated/H323-UU-PDU.h	\
+	h323_generated/H323-message-body.h	\
+	h323_generated/CallProceeding-UUIE.h	\
+	h323_generated/Connect-UUIE.h	\
+	h323_generated/Alerting-UUIE.h	\
+	h323_generated/Information-UUIE.h	\
+	h323_generated/ReleaseComplete-UUIE.h	\
+	h323_generated/Facility-UUIE.h	\
+	h323_generated/Progress-UUIE.h	\
+	h323_generated/Status-UUIE.h	\
+	h323_generated/StatusInquiry-UUIE.h	\
+	h323_generated/SetupAcknowledge-UUIE.h	\
+	h323_generated/Notify-UUIE.h	\
+	h323_generated/CallLinkage.h	\
+	h323_generated/GlobalCallId.h	\
+	h323_generated/TunnelledSignallingMessage.h	\
+	h323_generated/TunnelledProtocol.h	\
+	h323_generated/TunnelledProtocol-id.h	\
+	h323_generated/TunnelledProtocolAlternateIdentifier.h	\
+	h323_generated/StimulusControl.h	\
+	h323_generated/EXTERNAL.h
+
+ASN_MODULE_HDRS+=h323_generated/ANY.h
+ASN_MODULE_SRCS+=h323_generated/ANY.c
+ASN_MODULE_HDRS+=h323_generated/OCTET_STRING.h
+ASN_MODULE_HDRS+=h323_generated/OPEN_TYPE.h
+ASN_MODULE_SRCS+=h323_generated/OPEN_TYPE.c
+ASN_MODULE_HDRS+=h323_generated/constr_CHOICE.h
+ASN_MODULE_HDRS+=h323_generated/BMPString.h
+ASN_MODULE_SRCS+=h323_generated/BMPString.c
+ASN_MODULE_HDRS+=h323_generated/UTF8String.h
+ASN_MODULE_HDRS+=h323_generated/BOOLEAN.h
+ASN_MODULE_SRCS+=h323_generated/BOOLEAN.c
+ASN_MODULE_HDRS+=h323_generated/ENUMERATED.h
+ASN_MODULE_SRCS+=h323_generated/ENUMERATED.c
+ASN_MODULE_HDRS+=h323_generated/INTEGER.h
+ASN_MODULE_HDRS+=h323_generated/NativeEnumerated.h
+ASN_MODULE_HDRS+=h323_generated/GraphicString.h
+ASN_MODULE_SRCS+=h323_generated/GraphicString.c
+ASN_MODULE_HDRS+=h323_generated/IA5String.h
+ASN_MODULE_SRCS+=h323_generated/IA5String.c
+ASN_MODULE_SRCS+=h323_generated/INTEGER.c
+ASN_MODULE_HDRS+=h323_generated/NULL.h
+ASN_MODULE_SRCS+=h323_generated/NULL.c
+ASN_MODULE_SRCS+=h323_generated/NativeEnumerated.c
+ASN_MODULE_HDRS+=h323_generated/NativeInteger.h
+ASN_MODULE_SRCS+=h323_generated/NativeInteger.c
+ASN_MODULE_HDRS+=h323_generated/OBJECT_IDENTIFIER.h
+ASN_MODULE_SRCS+=h323_generated/OBJECT_IDENTIFIER.c
+ASN_MODULE_HDRS+=h323_generated/asn_codecs_prim.h
+ASN_MODULE_HDRS+=h323_generated/ObjectDescriptor.h
+ASN_MODULE_SRCS+=h323_generated/ObjectDescriptor.c
+ASN_MODULE_SRCS+=h323_generated/UTF8String.c
+ASN_MODULE_HDRS+=h323_generated/asn_SEQUENCE_OF.h
+ASN_MODULE_SRCS+=h323_generated/asn_SEQUENCE_OF.c
+ASN_MODULE_HDRS+=h323_generated/asn_SET_OF.h
+ASN_MODULE_SRCS+=h323_generated/asn_SET_OF.c
+ASN_MODULE_SRCS+=h323_generated/constr_CHOICE.c
+ASN_MODULE_HDRS+=h323_generated/constr_SEQUENCE.h
+ASN_MODULE_SRCS+=h323_generated/constr_SEQUENCE.c
+ASN_MODULE_HDRS+=h323_generated/constr_SEQUENCE_OF.h
+ASN_MODULE_SRCS+=h323_generated/constr_SEQUENCE_OF.c
+ASN_MODULE_HDRS+=h323_generated/constr_SET_OF.h
+ASN_MODULE_SRCS+=h323_generated/constr_SET_OF.c
+ASN_MODULE_HDRS+=h323_generated/asn_application.h
+ASN_MODULE_SRCS+=h323_generated/asn_application.c
+ASN_MODULE_HDRS+=h323_generated/asn_ioc.h
+ASN_MODULE_HDRS+=h323_generated/asn_system.h
+ASN_MODULE_HDRS+=h323_generated/asn_codecs.h
+ASN_MODULE_HDRS+=h323_generated/asn_internal.h
+ASN_MODULE_SRCS+=h323_generated/asn_internal.c
+ASN_MODULE_HDRS+=h323_generated/asn_bit_data.h
+ASN_MODULE_SRCS+=h323_generated/asn_bit_data.c
+ASN_MODULE_SRCS+=h323_generated/OCTET_STRING.c
+ASN_MODULE_HDRS+=h323_generated/BIT_STRING.h
+ASN_MODULE_SRCS+=h323_generated/BIT_STRING.c
+ASN_MODULE_SRCS+=h323_generated/asn_codecs_prim.c
+ASN_MODULE_HDRS+=h323_generated/ber_tlv_length.h
+ASN_MODULE_SRCS+=h323_generated/ber_tlv_length.c
+ASN_MODULE_HDRS+=h323_generated/ber_tlv_tag.h
+ASN_MODULE_SRCS+=h323_generated/ber_tlv_tag.c
+ASN_MODULE_HDRS+=h323_generated/constr_TYPE.h
+ASN_MODULE_SRCS+=h323_generated/constr_TYPE.c
+ASN_MODULE_HDRS+=h323_generated/constraints.h
+ASN_MODULE_SRCS+=h323_generated/constraints.c
+ASN_MODULE_HDRS+=h323_generated/ber_decoder.h
+ASN_MODULE_HDRS+=h323_generated/der_encoder.h
+ASN_MODULE_SRCS+=h323_generated/ber_decoder.c
+ASN_MODULE_SRCS+=h323_generated/der_encoder.c
+ASN_MODULE_SRCS+=h323_generated/ANY_ber.c
+ASN_MODULE_SRCS+=h323_generated/BOOLEAN_ber.c
+ASN_MODULE_SRCS+=h323_generated/INTEGER_ber.c
+ASN_MODULE_SRCS+=h323_generated/NULL_ber.c
+ASN_MODULE_SRCS+=h323_generated/NativeInteger_ber.c
+ASN_MODULE_SRCS+=h323_generated/NativeEnumerated_ber.c
+ASN_MODULE_SRCS+=h323_generated/OCTET_STRING_ber.c
+ASN_MODULE_SRCS+=h323_generated/OPEN_TYPE_ber.c
+ASN_MODULE_SRCS+=h323_generated/asn_codecs_prim_ber.c
+ASN_MODULE_SRCS+=h323_generated/constr_CHOICE_ber.c
+ASN_MODULE_SRCS+=h323_generated/constr_SEQUENCE_OF_ber.c
+ASN_MODULE_SRCS+=h323_generated/constr_SEQUENCE_ber.c
+ASN_MODULE_SRCS+=h323_generated/constr_SET_OF_ber.c
+ASN_MODULE_HDRS+=h323_generated/xer_support.h
+ASN_MODULE_HDRS+=h323_generated/xer_decoder.h
+ASN_MODULE_HDRS+=h323_generated/xer_encoder.h
+ASN_MODULE_SRCS+=h323_generated/xer_support.c
+ASN_MODULE_SRCS+=h323_generated/xer_decoder.c
+ASN_MODULE_SRCS+=h323_generated/xer_encoder.c
+ASN_MODULE_SRCS+=h323_generated/ANY_xer.c
+ASN_MODULE_SRCS+=h323_generated/BIT_STRING_xer.c
+ASN_MODULE_SRCS+=h323_generated/BMPString_xer.c
+ASN_MODULE_SRCS+=h323_generated/BOOLEAN_xer.c
+ASN_MODULE_SRCS+=h323_generated/INTEGER_xer.c
+ASN_MODULE_SRCS+=h323_generated/NULL_xer.c
+ASN_MODULE_SRCS+=h323_generated/NativeEnumerated_xer.c
+ASN_MODULE_SRCS+=h323_generated/NativeInteger_xer.c
+ASN_MODULE_SRCS+=h323_generated/OBJECT_IDENTIFIER_xer.c
+ASN_MODULE_SRCS+=h323_generated/OCTET_STRING_xer.c
+ASN_MODULE_SRCS+=h323_generated/OPEN_TYPE_xer.c
+ASN_MODULE_SRCS+=h323_generated/asn_codecs_prim_xer.c
+ASN_MODULE_SRCS+=h323_generated/constr_CHOICE_xer.c
+ASN_MODULE_SRCS+=h323_generated/constr_SEQUENCE_OF_xer.c
+ASN_MODULE_SRCS+=h323_generated/constr_SEQUENCE_xer.c
+ASN_MODULE_SRCS+=h323_generated/constr_SET_OF_xer.c
+ASN_MODULE_HDRS+=h323_generated/oer_decoder.h
+ASN_MODULE_HDRS+=h323_generated/oer_encoder.h
+ASN_MODULE_HDRS+=h323_generated/oer_support.h
+ASN_MODULE_SRCS+=h323_generated/oer_decoder.c
+ASN_MODULE_SRCS+=h323_generated/oer_encoder.c
+ASN_MODULE_SRCS+=h323_generated/oer_support.c
+ASN_MODULE_SRCS+=h323_generated/OPEN_TYPE_oer.c
+ASN_MODULE_SRCS+=h323_generated/INTEGER_oer.c
+ASN_MODULE_SRCS+=h323_generated/BIT_STRING_oer.c
+ASN_MODULE_SRCS+=h323_generated/OCTET_STRING_oer.c
+ASN_MODULE_SRCS+=h323_generated/NativeInteger_oer.c
+ASN_MODULE_SRCS+=h323_generated/NativeEnumerated_oer.c
+ASN_MODULE_SRCS+=h323_generated/constr_CHOICE_oer.c
+ASN_MODULE_SRCS+=h323_generated/constr_SEQUENCE_oer.c
+ASN_MODULE_SRCS+=h323_generated/constr_SET_OF_oer.c
+ASN_MODULE_SRCS+=h323_generated/BOOLEAN_oer.c
+ASN_MODULE_SRCS+=h323_generated/ENUMERATED_oer.c
+ASN_MODULE_SRCS+=h323_generated/NULL_oer.c
+ASN_MODULE_HDRS+=h323_generated/per_decoder.h
+ASN_MODULE_HDRS+=h323_generated/per_encoder.h
+ASN_MODULE_HDRS+=h323_generated/per_support.h
+ASN_MODULE_HDRS+=h323_generated/per_opentype.h
+ASN_MODULE_SRCS+=h323_generated/per_decoder.c
+ASN_MODULE_SRCS+=h323_generated/per_encoder.c
+ASN_MODULE_SRCS+=h323_generated/per_support.c
+ASN_MODULE_SRCS+=h323_generated/per_opentype.c
+ASN_MODULE_HDRS+=h323_generated/uper_decoder.h
+ASN_MODULE_HDRS+=h323_generated/uper_encoder.h
+ASN_MODULE_HDRS+=h323_generated/uper_support.h
+ASN_MODULE_HDRS+=h323_generated/uper_opentype.h
+ASN_MODULE_SRCS+=h323_generated/uper_decoder.c
+ASN_MODULE_SRCS+=h323_generated/uper_encoder.c
+ASN_MODULE_SRCS+=h323_generated/uper_support.c
+ASN_MODULE_SRCS+=h323_generated/uper_opentype.c
+ASN_MODULE_SRCS+=h323_generated/ANY_uper.c
+ASN_MODULE_SRCS+=h323_generated/BIT_STRING_uper.c
+ASN_MODULE_SRCS+=h323_generated/BOOLEAN_uper.c
+ASN_MODULE_SRCS+=h323_generated/ENUMERATED_uper.c
+ASN_MODULE_SRCS+=h323_generated/INTEGER_uper.c
+ASN_MODULE_SRCS+=h323_generated/NULL_uper.c
+ASN_MODULE_SRCS+=h323_generated/NativeEnumerated_uper.c
+ASN_MODULE_SRCS+=h323_generated/NativeInteger_uper.c
+ASN_MODULE_SRCS+=h323_generated/OCTET_STRING_uper.c
+ASN_MODULE_SRCS+=h323_generated/OPEN_TYPE_uper.c
+ASN_MODULE_SRCS+=h323_generated/constr_CHOICE_uper.c
+ASN_MODULE_SRCS+=h323_generated/constr_SEQUENCE_OF_uper.c
+ASN_MODULE_SRCS+=h323_generated/constr_SEQUENCE_uper.c
+ASN_MODULE_SRCS+=h323_generated/constr_SET_OF_uper.c
+ASN_MODULE_HDRS+=h323_generated/aper_decoder.h
+ASN_MODULE_HDRS+=h323_generated/aper_encoder.h
+ASN_MODULE_HDRS+=h323_generated/aper_support.h
+ASN_MODULE_HDRS+=h323_generated/aper_opentype.h
+ASN_MODULE_SRCS+=h323_generated/aper_decoder.c
+ASN_MODULE_SRCS+=h323_generated/aper_encoder.c
+ASN_MODULE_SRCS+=h323_generated/aper_support.c
+ASN_MODULE_SRCS+=h323_generated/aper_opentype.c
+ASN_MODULE_SRCS+=h323_generated/ANY_aper.c
+ASN_MODULE_SRCS+=h323_generated/BOOLEAN_aper.c
+ASN_MODULE_SRCS+=h323_generated/ENUMERATED_aper.c
+ASN_MODULE_SRCS+=h323_generated/INTEGER_aper.c
+ASN_MODULE_SRCS+=h323_generated/NULL_aper.c
+ASN_MODULE_SRCS+=h323_generated/NativeEnumerated_aper.c
+ASN_MODULE_SRCS+=h323_generated/NativeInteger_aper.c
+ASN_MODULE_SRCS+=h323_generated/OCTET_STRING_aper.c
+ASN_MODULE_SRCS+=h323_generated/OPEN_TYPE_aper.c
+ASN_MODULE_SRCS+=h323_generated/constr_CHOICE_aper.c
+ASN_MODULE_SRCS+=h323_generated/constr_SEQUENCE_OF_aper.c
+ASN_MODULE_SRCS+=h323_generated/constr_SEQUENCE_aper.c
+ASN_MODULE_SRCS+=h323_generated/constr_SET_OF_aper.c
+ASN_MODULE_SRCS+=h323_generated/BIT_STRING_print.c
+ASN_MODULE_SRCS+=h323_generated/BMPString_print.c
+ASN_MODULE_SRCS+=h323_generated/BOOLEAN_print.c
+ASN_MODULE_SRCS+=h323_generated/INTEGER_print.c
+ASN_MODULE_SRCS+=h323_generated/NULL_print.c
+ASN_MODULE_SRCS+=h323_generated/NativeInteger_print.c
+ASN_MODULE_SRCS+=h323_generated/OBJECT_IDENTIFIER_print.c
+ASN_MODULE_SRCS+=h323_generated/OCTET_STRING_print.c
+ASN_MODULE_SRCS+=h323_generated/UTF8String_print.c
+ASN_MODULE_SRCS+=h323_generated/constr_CHOICE_print.c
+ASN_MODULE_SRCS+=h323_generated/constr_SEQUENCE_print.c
+ASN_MODULE_SRCS+=h323_generated/constr_SET_OF_print.c
+ASN_MODULE_HDRS+=h323_generated/asn_random_fill.h
+ASN_MODULE_SRCS+=h323_generated/asn_random_fill.c
+ASN_MODULE_SRCS+=h323_generated/BIT_STRING_rfill.c
+ASN_MODULE_SRCS+=h323_generated/BOOLEAN_rfill.c
+ASN_MODULE_SRCS+=h323_generated/INTEGER_rfill.c
+ASN_MODULE_SRCS+=h323_generated/NULL_rfill.c
+ASN_MODULE_SRCS+=h323_generated/NativeInteger_rfill.c
+ASN_MODULE_SRCS+=h323_generated/OBJECT_IDENTIFIER_rfill.c
+ASN_MODULE_SRCS+=h323_generated/OCTET_STRING_rfill.c
+ASN_MODULE_SRCS+=h323_generated/UTF8String_rfill.c
+ASN_MODULE_SRCS+=h323_generated/constr_CHOICE_rfill.c
+ASN_MODULE_SRCS+=h323_generated/constr_SEQUENCE_rfill.c
+ASN_MODULE_SRCS+=h323_generated/constr_SET_OF_rfill.c
+ASN_MODULE_HDRS+=h323_generated/jer_support.h
+ASN_MODULE_HDRS+=h323_generated/jer_decoder.h
+ASN_MODULE_HDRS+=h323_generated/jer_encoder.h
+ASN_MODULE_SRCS+=h323_generated/jer_support.c
+ASN_MODULE_SRCS+=h323_generated/jer_decoder.c
+ASN_MODULE_SRCS+=h323_generated/jer_encoder.c
+ASN_MODULE_SRCS+=h323_generated/ANY_jer.c
+ASN_MODULE_SRCS+=h323_generated/BIT_STRING_jer.c
+ASN_MODULE_SRCS+=h323_generated/BMPString_jer.c
+ASN_MODULE_SRCS+=h323_generated/BOOLEAN_jer.c
+ASN_MODULE_SRCS+=h323_generated/ENUMERATED_jer.c
+ASN_MODULE_SRCS+=h323_generated/INTEGER_jer.c
+ASN_MODULE_SRCS+=h323_generated/NULL_jer.c
+ASN_MODULE_SRCS+=h323_generated/NativeEnumerated_jer.c
+ASN_MODULE_SRCS+=h323_generated/NativeInteger_jer.c
+ASN_MODULE_SRCS+=h323_generated/OBJECT_IDENTIFIER_jer.c
+ASN_MODULE_SRCS+=h323_generated/OCTET_STRING_jer.c
+ASN_MODULE_SRCS+=h323_generated/OPEN_TYPE_jer.c
+ASN_MODULE_SRCS+=h323_generated/asn_codecs_prim_jer.c
+ASN_MODULE_SRCS+=h323_generated/constr_CHOICE_jer.c
+ASN_MODULE_SRCS+=h323_generated/constr_SEQUENCE_OF_jer.c
+ASN_MODULE_SRCS+=h323_generated/constr_SEQUENCE_jer.c
+ASN_MODULE_SRCS+=h323_generated/constr_SET_OF_jer.c
+
+ASN_MODULE_CFLAGS=
+
+lib_LTLIBRARIES+=libasncodec.la
+libasncodec_la_SOURCES=$(ASN_MODULE_SRCS) $(ASN_MODULE_HDRS)
+libasncodec_la_CPPFLAGS=-I$(top_srcdir)/h323_generated/
+libasncodec_la_CFLAGS=$(ASN_MODULE_CFLAGS)
+libasncodec_la_LDFLAGS=-lm
