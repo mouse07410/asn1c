@@ -3260,7 +3260,8 @@ emit_type_DEF(arg_t *arg, asn1p_expr_t *expr, enum tvm_compat tv_mode, int tags_
             if(expr->combined_constraints
                || expr->expr_type == ASN_BASIC_ENUMERATED
                || expr->expr_type == ASN_CONSTR_CHOICE
-               || (expr->expr_type & ASN_STRING_KM_MASK)) {
+               || (expr->expr_type & ASN_STRING_KM_MASK)
+               || (expr->expr_type == A1TC_REFERENCE && terminal && terminal->expr_type == ASN_BASIC_ENUMERATED)) {
                 OUT("&asn_PER_type_%s_constr_%d",
 					expr_id, expr->_type_unique_index);
 			} else {
