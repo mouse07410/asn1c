@@ -68,6 +68,29 @@ asn_dec_rval_t uper_decode_canonical(
     int unused_bits     /* Number of unused tailing bits, 0..7 */
 );
 
+/*
+ * Lenient Canonical UPER decoder variants for interoperability.
+ * These perform canonical validation but allow non-canonical encodings
+ * from other implementations to decode successfully with warnings.
+ */
+asn_dec_rval_t uper_decode_complete_canonical_lenient(
+    const struct asn_codec_ctx_s *opt_codec_ctx,
+    const struct asn_TYPE_descriptor_s *type_descriptor, /* Type to decode */
+    void **struct_ptr,  /* Pointer to a target structure's pointer */
+    const void *buffer, /* Data to be decoded */
+    size_t size         /* Size of data buffer */
+);
+
+asn_dec_rval_t uper_decode_canonical_lenient(
+    const struct asn_codec_ctx_s *opt_codec_ctx,
+    const struct asn_TYPE_descriptor_s *type_descriptor, /* Type to decode */
+    void **struct_ptr,  /* Pointer to a target structure's pointer */
+    const void *buffer, /* Data to be decoded */
+    size_t size,        /* Size of the input data buffer, in bytes */
+    int skip_bits,      /* Number of unused leading bits, 0..7 */
+    int unused_bits     /* Number of unused tailing bits, 0..7 */
+);
+
 #ifdef __cplusplus
 }
 #endif

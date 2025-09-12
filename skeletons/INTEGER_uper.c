@@ -120,12 +120,20 @@ INTEGER_decode_uper(const asn_codec_ctx_t *opt_codec_ctx,
         /* Check for non-minimal encoding */
         if(st->buf[0] == 0x00 && (st->buf[1] & 0x80) == 0) {
             /* Leading zeros in positive number - not minimal */
-            ASN_DEBUG("Non-canonical UPER: leading zeros in positive integer");
-            ASN__DECODE_FAILED;
+            if(opt_codec_ctx->uper_canonical_lenient) {
+                ASN_DEBUG("Non-canonical UPER: leading zeros in positive integer (lenient mode - continuing)");
+            } else {
+                ASN_DEBUG("Non-canonical UPER: leading zeros in positive integer");
+                ASN__DECODE_FAILED;
+            }
         } else if(st->buf[0] == 0xFF && (st->buf[1] & 0x80) != 0) {
             /* Leading ones in negative number - not minimal */
-            ASN_DEBUG("Non-canonical UPER: leading ones in negative integer");
-            ASN__DECODE_FAILED;
+            if(opt_codec_ctx->uper_canonical_lenient) {
+                ASN_DEBUG("Non-canonical UPER: leading ones in negative integer (lenient mode - continuing)");
+            } else {
+                ASN_DEBUG("Non-canonical UPER: leading ones in negative integer");
+                ASN__DECODE_FAILED;
+            }
         }
     }
 

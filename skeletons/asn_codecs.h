@@ -39,6 +39,7 @@ typedef struct asn_codec_ctx_s {
 	 * canonical vs basic decoding behavior.
 	 */
 	unsigned int uper_canonical:1;  /* Enable canonical UPER validation */
+	unsigned int uper_canonical_lenient:1;  /* Enable lenient canonical validation for interoperability */
 } asn_codec_ctx_t;
 
 /*

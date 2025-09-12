@@ -134,12 +134,16 @@ SEQUENCE_decode_uper(const asn_codec_ctx_t *opt_codec_ctx,
                 /* Compare the decoded value with the default */
                 if(elm->type->op->compare_struct &&
                    elm->type->op->compare_struct(elm->type, *memb_ptr2, default_ptr) == 0) {
-                    ASN_DEBUG("Non-canonical UPER: encoded default value for %s", elm->name);
-                    /* Free the default value we created for comparison */
-                    ASN_STRUCT_FREE_CONTENTS_ONLY(*elm->type, default_ptr);
-                    FREEMEM(default_ptr);
-                    FREEMEM(opres);
-                    ASN__DECODE_FAILED;
+                    if(opt_codec_ctx->uper_canonical_lenient) {
+                        ASN_DEBUG("Non-canonical UPER: encoded default value for %s (lenient mode - continuing)", elm->name);
+                    } else {
+                        ASN_DEBUG("Non-canonical UPER: encoded default value for %s", elm->name);
+                        /* Free the default value we created for comparison */
+                        ASN_STRUCT_FREE_CONTENTS_ONLY(*elm->type, default_ptr);
+                        FREEMEM(default_ptr);
+                        FREEMEM(opres);
+                        ASN__DECODE_FAILED;
+                    }
                 }
                 /* Free the default value we created for comparison */
                 ASN_STRUCT_FREE_CONTENTS_ONLY(*elm->type, default_ptr);
@@ -207,9 +211,13 @@ SEQUENCE_decode_uper(const asn_codec_ctx_t *opt_codec_ctx,
             
             /* If no extensions are present but extension bit was set, it's non-canonical */
             if(!any_present) {
-                ASN_DEBUG("Non-canonical UPER: extension bit set but no extensions present");
-                FREEMEM(epres);
-                ASN__DECODE_FAILED;
+                if(opt_codec_ctx->uper_canonical_lenient) {
+                    ASN_DEBUG("Non-canonical UPER: extension bit set but no extensions present (lenient mode - continuing)");
+                } else {
+                    ASN_DEBUG("Non-canonical UPER: extension bit set but no extensions present");
+                    FREEMEM(epres);
+                    ASN__DECODE_FAILED;
+                }
             }
         }
 
