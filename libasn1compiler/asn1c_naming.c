@@ -264,14 +264,31 @@ c_expr_name(arg_t *arg, asn1p_expr_t *expr) {
 const char *
 c_member_name(arg_t *arg, asn1p_expr_t *expr) {
     static abuf ab;
+    static abuf typedef_name;
 
     abuf_clear(&ab);
+    abuf_clear(&typedef_name);
 
     /* NB: do not use part_name, doesn't work for -fcompound-names */
     abuf_str(&ab, asn1c_prefix_get());
     abuf_str(&ab, c_name_impl(arg, arg->expr, 0).base_name);
     abuf_str(&ab, "_");
     abuf_str(&ab, asn1c_make_identifier(0, expr, 0));
+
+    /* 
+     * Check for potential collision with typedef name.
+     * For ENUMERATED types, the typedef is named <base_name>_t,
+     * so if an enum member would have the same name, add a suffix to avoid clash.
+     */
+    if (arg->expr->expr_type == ASN_BASIC_ENUMERATED) {
+        abuf_str(&typedef_name, asn1c_prefix_get());
+        abuf_str(&typedef_name, c_name_impl(arg, arg->expr, 0).base_name);
+        abuf_str(&typedef_name, "_t");
+        
+        if (strcmp(ab.buffer, typedef_name.buffer) == 0) {
+            abuf_str(&ab, "_member");
+        }
+    }
 
     return ab.buffer;
 }
