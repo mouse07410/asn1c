@@ -310,6 +310,13 @@ aper_put_nsnnwn(asn_per_outp_t *po, int number) {
 int
 aper_put_constrained_whole_number(asn_per_outp_t *po, long lb, long ub, long number) {
 	assert(ub >= lb);
+	
+	/* Check for overflow in range calculation */
+	if (ub > LONG_MAX - 1 || (ub - lb) > LONG_MAX - 1) {
+		/* Range too large to calculate safely */
+		return -1;
+	}
+	
 	long range = ub - lb + 1;
 	long value = number - lb;
 	int range_len;
@@ -327,9 +334,12 @@ aper_put_constrained_whole_number(asn_per_outp_t *po, long lb, long ub, long num
 	/* X.691 2002 10.5.7.1 - The bit-field case. */
 	if (range <= 255) {
 		int bitfield_size = 8;
-		for (bitfield_size = 8; bitfield_size >= 2; bitfield_size--)
-			if ((range - 1) & (1 << (bitfield_size-1)))
+		for (bitfield_size = 8; bitfield_size >= 2; bitfield_size--) {
+			/* Defensive check: ensure shift is within safe range */
+			if ((bitfield_size-1) < (int)(sizeof(int) * 8) && 
+			    ((range - 1) & (1 << (bitfield_size-1))))
 				break;
+		}
 		return per_put_few_bits(po, value, bitfield_size);
 	}
 
@@ -352,12 +362,22 @@ aper_put_constrained_whole_number(asn_per_outp_t *po, long lb, long ub, long num
 	/* and so length determinant is stored as X.691 2002 10.9.3.3 */
 	/* number of bytes to store the range */
 	for (range_len = 3; ; range_len++) {
+		/* Prevent undefined behavior: limit shift to safe range for int */
+		if (8 * range_len >= (int)(sizeof(int) * 8)) {
+			/* Range too large to encode safely */
+			return -1;
+		}
 		int bits = 1 << (8 * range_len);
 		if (range - 1 < bits)
 			break;
 	}
 	/* number of bytes to store the value */
 	for (value_len = 1; ; value_len++) {
+		/* Prevent undefined behavior: limit shift to safe range for long */
+		if (8 * value_len >= (int)(sizeof(long) * 8)) {
+			/* Value too large to encode safely */
+			return -1;
+		}
 		long bits = ((long)1) << (8 * value_len);
 		if (value < bits)
 			break;
