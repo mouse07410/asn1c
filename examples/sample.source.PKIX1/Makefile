@@ -16,7 +16,7 @@ regen-makefile:
 	ASN_PROGRAM=x509dump \
 	../sample.makefile.regen
 
-check: ${ASN_PROGRAM} check-ber check-xer check-oer check-per
+check: ${ASN_PROGRAM} check-ber check-xer check-oer check-per check-aper
 	@echo ================
 	@echo All tests passed
 	@echo ================
@@ -94,6 +94,22 @@ check-per:
 	echo "Test junking $$f (please wait)..."; \
 	./${ASN_PROGRAM} -J0.0001 -n 1000 -p $$pdu -b $$b -iper -onull $$f || exit 7; \
 	./${ASN_PROGRAM} -J0.001 -n 1000 -p $$pdu -b $$b -iper -onull $$f || exit 8; \
+	done; done; fi
+
+check-aper:
+	@files=$$(find . -type f -regex '^.*\/sample-.*-[0-9]+.aper$$' | sort -V); \
+	if [ -n "$$files" ]; then \
+	for f in $$files; do \
+	pdu=`echo $$f | sed -E -e "s/.*sample-([A-Za-z0-9-]+)-[0-9]+.*/\1/"`; \
+	for b in 1 17 33 980 8192; do \
+	echo "Recoding $$f ($$pdu) into XER and back ($$b)..."; \
+	./${ASN_PROGRAM} -p $$pdu -b $$b -iaper -oxer $$f > ./.tmp.1.$$$$ || exit 3; \
+	./${ASN_PROGRAM} -p $$pdu -b $$b -ixer -oaper ./.tmp.1.$$$$ > ./.tmp.2.$$$$ || exit 4; \
+	diff $$f ./.tmp.2.$$$$ || exit 6; \
+	rm -f ./.tmp.[12].$$$$; \
+	echo "Test junking $$f (please wait)..."; \
+	./${ASN_PROGRAM} -J0.0001 -n 1000 -p $$pdu -b $$b -iaper -onull $$f || exit 7; \
+	./${ASN_PROGRAM} -J0.001 -n 1000 -p $$pdu -b $$b -iaper -onull $$f || exit 8; \
 	done; done; fi
 
 maybe-wip-pause:
