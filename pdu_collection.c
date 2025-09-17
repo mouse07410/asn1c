@@ -9,7 +9,7 @@ extern struct asn_TYPE_descriptor_s asn_DEF_EXTERNAL;
 
 
 struct asn_TYPE_descriptor_s *asn_pdu_collection[] = {
-	/* From module SimpleConstraint in ./test_simple_constraint.asn1 */
+	/* From module TestOctetConstraint in test_f1ap_issue.asn1 */
 	&asn_DEF_TestMessage,	
 	/* From module ASN1C-UsefulInformationObjectClasses in ./asn1c/../skeletons/standard-modules/ASN1C-UsefulInformationObjectClasses.asn1 */
 	&asn_DEF_EXTERNAL,	
