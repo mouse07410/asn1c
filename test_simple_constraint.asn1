@@ -1,0 +1,7 @@
+SimpleConstraint DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+TestMessage ::= SEQUENCE {
+    constrainedOctet OCTET STRING (SIZE(3))
+}
+
+END
