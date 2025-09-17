@@ -1,0 +1,25 @@
+F1AP-PDU-Descriptions DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+F1AP-PROTOCOL-EXTENSION ::= CLASS {
+    &id                 ProtocolExtensionID UNIQUE,
+    &criticality        Criticality,
+    &Extension,
+    &presence           Presence
+}
+WITH SYNTAX {
+    ID              &id
+    CRITICALITY     &criticality
+    EXTENSION       &Extension
+    PRESENCE        &presence
+}
+
+ProtocolExtensionID ::= INTEGER (0..65535)
+Criticality ::= ENUMERATED { reject(0), ignore(1), notify(2) }
+Presence ::= ENUMERATED { optional(0), conditional(1), mandatory(2) }
+
+RRC-Version-ExtIEs 	F1AP-PROTOCOL-EXTENSION ::= {
+	{ID 199		CRITICALITY ignore 	EXTENSION OCTET STRING (SIZE(3))		PRESENCE optional },
+	...
+}
+
+END
