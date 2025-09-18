@@ -2210,10 +2210,46 @@ emit_member_OER_constraints(arg_t *arg, asn1p_expr_t *expr, const char *pfx) {
         return 0;
     }
 
+    /* Generate extern declaration for potentially shared constraint functions */
+    const char *ident = MKID(expr);
+    int needs_extern_decl = expr->_type_referenced;
+    
+    /* Also generate extern declaration for generic type-based constraint names that could collide across files */
+    if (!needs_extern_decl && ident && pfx && 
+        strcmp(pfx, "memb") == 0 && /* Only for member constraints */
+        (strstr(ident, "OCTET_STRING_SIZE_") || strstr(ident, "BIT_STRING_SIZE_"))) {
+        needs_extern_decl = 1;
+    }
+    
+    if(needs_extern_decl) {
+        REDIR(OT_FUNC_DECLS);
+        OUT("extern asn_oer_constraints_t "
+            "asn_OER_%s_%s_constr_%d;\n",
+            pfx, MKID(expr), expr->_type_unique_index);
+    }
+
     REDIR(OT_CTDEFS);
 
     OUT("#if !defined(ASN_DISABLE_OER_SUPPORT)\n");
-    OUT("static asn_oer_constraints_t "
+    if(!(expr->_type_referenced)) {
+        /* 
+         * Make constraint functions non-static if they use type-based names
+         * that could be shared across multiple generated files to avoid
+         * undefined reference errors in complex specs with circular dependencies.
+         */
+        int make_non_static = 0;
+        
+        /* Check if this is a generic type-based constraint name that could collide (only for member constraints) */
+        if (ident && pfx && strcmp(pfx, "memb") == 0 && 
+            (strstr(ident, "OCTET_STRING_SIZE_") || strstr(ident, "BIT_STRING_SIZE_"))) {
+            make_non_static = 1;
+        }
+        
+        if (!make_non_static) {
+            OUT("static ");
+        }
+    }
+    OUT("asn_oer_constraints_t "
         "asn_OER_%s_%s_constr_%d CC_NOTUSED = {\n",
         pfx, MKID(expr), expr->_type_unique_index);
 
@@ -2271,7 +2307,18 @@ emit_member_PER_constraints(arg_t *arg, asn1p_expr_t *expr, const char *pfx) {
 		return 0;
 	}
 
-	if(expr->_type_referenced) {
+	/* Generate extern declaration for potentially shared constraint functions */
+	const char *ident = MKID(expr);
+	int needs_extern_decl = expr->_type_referenced;
+	
+	/* Also generate extern declaration for generic type-based constraint names that could collide across files */
+	if (!needs_extern_decl && ident && pfx && 
+	    strcmp(pfx, "memb") == 0 && /* Only for member constraints */
+	    (strstr(ident, "OCTET_STRING_SIZE_") || strstr(ident, "BIT_STRING_SIZE_"))) {
+		needs_extern_decl = 1;
+	}
+	
+	if(needs_extern_decl) {
 		REDIR(OT_FUNC_DECLS);
 
 		OUT("extern asn_per_constraints_t "
@@ -2282,7 +2329,25 @@ emit_member_PER_constraints(arg_t *arg, asn1p_expr_t *expr, const char *pfx) {
 	REDIR(OT_CTDEFS);
 
     OUT_NOINDENT("#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)\n");
-	if(!(expr->_type_referenced)) OUT("static ");
+	if(!(expr->_type_referenced)) {
+		/* 
+		 * Make constraint functions non-static if they use type-based names
+		 * that could be shared across multiple generated files to avoid
+		 * undefined reference errors in complex specs with circular dependencies.
+		 */
+		const char *ident = MKID(expr);
+		int make_non_static = 0;
+		
+		/* Check if this is a generic type-based constraint name that could collide (only for member constraints) */
+		if (ident && pfx && strcmp(pfx, "memb") == 0 && 
+		    (strstr(ident, "OCTET_STRING_SIZE_") || strstr(ident, "BIT_STRING_SIZE_"))) {
+			make_non_static = 1;
+		}
+		
+		if (!make_non_static) {
+			OUT("static ");
+		}
+	}
 	OUT("asn_per_constraints_t "
 		"asn_PER_%s_%s_constr_%d CC_NOTUSED = {\n",
 		pfx, MKID(expr), expr->_type_unique_index);
@@ -2430,10 +2495,46 @@ emit_member_JER_constraints(arg_t *arg, asn1p_expr_t *expr, const char *pfx) {
         return 0;
     }
 
+    /* Generate extern declaration for potentially shared constraint functions */
+    const char *ident = MKID(expr);
+    int needs_extern_decl = expr->_type_referenced;
+    
+    /* Also generate extern declaration for generic type-based constraint names that could collide across files */
+    if (!needs_extern_decl && ident && pfx && 
+        strcmp(pfx, "memb") == 0 && /* Only for member constraints */
+        strstr(ident, "BIT_STRING_SIZE_")) {
+        needs_extern_decl = 1;
+    }
+    
+    if(needs_extern_decl) {
+        REDIR(OT_FUNC_DECLS);
+        OUT("extern asn_jer_constraints_t "
+            "asn_JER_%s_%s_constr_%d;\n",
+            pfx, MKID(expr), expr->_type_unique_index);
+    }
+
     REDIR(OT_CTDEFS);
 
     OUT("#if !defined(ASN_DISABLE_JER_SUPPORT)\n");
-    OUT("static asn_jer_constraints_t "
+    if(!(expr->_type_referenced)) {
+        /* 
+         * Make constraint functions non-static if they use type-based names
+         * that could be shared across multiple generated files to avoid
+         * undefined reference errors in complex specs with circular dependencies.
+         */
+        int make_non_static = 0;
+        
+        /* Check if this is a generic type-based constraint name that could collide (only for member constraints) */
+        if (ident && pfx && strcmp(pfx, "memb") == 0 && 
+            strstr(ident, "BIT_STRING_SIZE_")) {
+            make_non_static = 1;
+        }
+        
+        if (!make_non_static) {
+            OUT("static ");
+        }
+    }
+    OUT("asn_jer_constraints_t "
         "asn_JER_%s_%s_constr_%d CC_NOTUSED = {\n",
         pfx, MKID(expr), expr->_type_unique_index);
 
