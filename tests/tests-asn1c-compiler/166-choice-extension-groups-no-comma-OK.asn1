@@ -1,0 +1,35 @@
+-- OK: Extension addition groups without comma after extension marker (CHOICE only)
+-- Based on issue #73 fix for grammar parse error
+
+-- iso.org.dod.internet.private.enterprise (1.3.6.1.4.1)
+-- .spelio.software.asn1c.test (9363.1.5.1)
+-- .166
+
+ModuleTestChoiceExtensionGroupsNoComma
+	{ iso org(3) dod(6) internet(1) private(4) enterprise(1)
+		spelio(9363) software(1) asn1c(5) test(1) 166 }
+	DEFINITIONS AUTOMATIC TAGS ::=
+BEGIN
+
+	-- Test CHOICE with extension addition group immediately after extension marker
+	ChoiceWithExtensionGroup ::= CHOICE {
+		base INTEGER,
+		...
+		[[
+		ext1 INTEGER,
+		ext2 BOOLEAN
+		]]
+	}
+
+	-- Test CHOICE with mixed extension elements and extension addition groups
+	ChoiceMixed ::= CHOICE {
+		base INTEGER,
+		...,
+		extElement INTEGER
+		[[
+		extGroup1 INTEGER,
+		extGroup2 BOOLEAN
+		]]
+	}
+
+END

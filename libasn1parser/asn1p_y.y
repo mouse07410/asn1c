@@ -1057,6 +1057,13 @@ ComponentTypeLists:
 		$4->marker.flags |= EM_OPTIONAL;
 		asn1p_expr_add($$, $4);
 	}
+	| ComponentTypeLists TOK_VBracketLeft ComponentTypeLists TOK_VBracketRight {
+		$$ = $1;
+		$3->meta_type = AMT_TYPE;
+		$3->expr_type = ASN_CONSTR_SEQUENCE;
+		$3->marker.flags |= EM_OPTIONAL;
+		asn1p_expr_add($$, $3);
+	}
 	;
 
 ComponentType:
@@ -1099,6 +1106,11 @@ AlternativeTypeLists:
 		$$ = $1;
 		asn1p_expr_add_many($$, $4);
 		asn1p_expr_free($4);
+	}
+	| AlternativeTypeLists TOK_VBracketLeft AlternativeTypeLists TOK_VBracketRight {
+		$$ = $1;
+		asn1p_expr_add_many($$, $3);
+		asn1p_expr_free($3);
 	}
 	;
 
