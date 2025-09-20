@@ -56,8 +56,14 @@ asn1c_get_ioc_table_from_objset(arg_t *arg, const asn1p_ref_t *objset_ref, asn1p
         ioc_tao.objset = objset;
         ioc_tao.fatal_error = 0;
     } else {
-        FATAL("Information Object Set %s contains no objects at line %d",
+        /* Information Object Set is empty, which is valid ASN.1.
+         * This can happen with empty extension sets in protocols like GSM MAP.
+         * Return a valid but empty ioc_tao structure to allow processing to continue. */
+        DEBUG("Information Object Set %s contains no objects at line %d (empty set)",
               objset->Identifier, objset->_lineno);
+        ioc_tao.ioct = NULL;
+        ioc_tao.objset = objset;
+        ioc_tao.fatal_error = 0;
     }
 
     return ioc_tao;
@@ -248,6 +254,11 @@ emit_ioc_table(arg_t *arg, asn1p_expr_t *context, asn1c_ioc_table_and_objset_t i
     GEN_INCLUDE_STD("asn_ioc");
 
     REDIR(OT_IOC_TABLES);
+
+    /* Handle the case where the IOC table is NULL (empty Information Object Set) */
+    if(!ioc_tao.ioct) {
+        return 0;
+    }
 
     /* Emit values that are used in the Information Object Set table first */
     for(size_t rn = 0; rn < ioc_tao.ioct->rows; rn++) {
