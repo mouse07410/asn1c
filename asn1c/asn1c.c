@@ -319,8 +319,7 @@ main(int ac, char **av) {
     if(skeletons_dir == NULL) {
         struct stat sb;
         skeletons_dir = DATADIR;
-        if((av[-optind][0] == '.' || av[-optind][1] == '/')
-           && stat(skeletons_dir, &sb)) {
+        if(stat(skeletons_dir, &sb)) {
             /*
              * The default skeletons directory does not exist,
              * compute it from my file name:
