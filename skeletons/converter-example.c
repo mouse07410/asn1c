@@ -950,6 +950,11 @@ data_decode_from_file(enum asn_transfer_syntax isyntax, asn_TYPE_descriptor_t *p
         }
         if(rval.code == RC_WMORE && !restartability_supported(isyntax)) {
             /* PER does not support restartability */
+            if(opt_partial && structure) {
+                fprintf(stderr, "\n=== Partial Decoding Results (RC_WMORE) ===\n");
+                asn_fprint(stderr, pduType, structure);
+                fprintf(stderr, "=== End of Partial Results ===\n\n");
+            }
             ASN_STRUCT_FREE(*pduType, structure);
             structure = 0;
             rval.consumed = 0;
@@ -1046,13 +1051,12 @@ data_decode_from_file(enum asn_transfer_syntax isyntax, asn_TYPE_descriptor_t *p
             (long)DynamicBuffer.length);
         
         /* Provide detailed error information */
-        if(rval.consumed > 0) {
+        if(rval.consumed > 0 || ecbits > 0) {
             /* We have position information about where the failure occurred */
-            size_t failed_byte = (rval.consumed + 7) / 8;  /* Convert bits to bytes (round up) */
-            size_t failed_bit = rval.consumed % 8;
+            /* rval.consumed is in bytes, ecbits is the remaining bits */
             fprintf(stderr, "%s: "
-                "Decode failed at byte %ld, bit %ld: %s\n",
-                name, (long)(new_offset + failed_byte), (long)failed_bit,
+                "Decode failed at byte %ld, bit %d: %s\n",
+                name, (long)(new_offset + rval.consumed), ecbits,
                 (rval.code == RC_WMORE)
                     ? "Unexpected end of input"
                     : "Input processing error");
