@@ -164,7 +164,12 @@ uper_decode(const asn_codec_ctx_t *opt_codec_ctx,
 		assert(rval.consumed == pd.moved);
 	} else {
 		/* PER codec is not a restartable */
-		rval.consumed = 0;
+		/* Report position where decoding failed */
+		rval.consumed = ((pd.buffer - (const uint8_t *)buffer) << 3)
+					+ pd.nboff - skip_bits;
+		ASN_DEBUG("PER decoding failed at bit %ld (byte %ld, bit %ld)",
+			(long)rval.consumed, (long)(rval.consumed >> 3), 
+			(long)(rval.consumed & 7));
 	}
 	return rval;
 }

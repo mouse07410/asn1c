@@ -40,6 +40,14 @@ typedef struct asn_codec_ctx_s {
 	 */
 	unsigned int uper_canonical:1;  /* Enable canonical UPER validation */
 	unsigned int uper_canonical_lenient:1;  /* Enable lenient canonical validation for interoperability */
+	
+	/*
+	 * Partial decoding support. When enabled, the decoder will preserve
+	 * partially decoded structures on failure instead of freeing them.
+	 * This allows inspection of what was successfully decoded before
+	 * the error occurred.
+	 */
+	unsigned int preserve_partial_decoding:1;
 } asn_codec_ctx_t;
 
 /*

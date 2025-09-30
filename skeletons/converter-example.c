@@ -60,6 +60,7 @@ static int opt_check;   /* -c (constraints checking) */
 static int opt_stack;   /* -s (maximum stack size) */
 static int opt_nopad;   /* -per-nopad (PER input is not padded between msgs) */
 static int opt_onepdu;  /* -1 (decode single PDU) */
+static int opt_partial; /* -P (print partial decoding results on failure) */
 
 #ifdef    JUNKTEST        /* Enable -J <probability> */
 #define JUNKOPT "J:"
@@ -249,7 +250,7 @@ main(int ac, char *av[]) {
     /*
      * Process the command-line arguments.
      */
-    while((ch = getopt(ac, av, "i:o:1b:cdn:p:hs:" JUNKOPT RANDOPT)) != -1)
+    while((ch = getopt(ac, av, "i:o:1b:cdn:p:Phs:" JUNKOPT RANDOPT)) != -1)
     switch(ch) {
     case 'i':
         sel = ats_by_name(optarg, anyPduType, input_encodings);
@@ -289,6 +290,9 @@ main(int ac, char *av[]) {
         break;
     case 'd':
         opt_debug++;    /* Double -dd means ASN.1 debug */
+        break;
+    case 'P':
+        opt_partial = 1;
         break;
     case 'n':
         number_of_iterations = atoi(optarg);
@@ -405,6 +409,7 @@ main(int ac, char *av[]) {
         "  -c           Check ASN.1 constraints after decoding\n"
         "  -d           Enable debugging (-dd is even better)\n"
         "  -n <num>     Process files <num> times\n"
+        "  -P           Print partial decoding results on failure\n"
         "  -s <size>    Set the stack usage limit (default is %d)\n"
 #ifdef    JUNKTEST
         "  -J <prob>    Set random junk test bit garbaging probability\n"
@@ -1003,6 +1008,14 @@ data_decode_from_file(enum asn_transfer_syntax isyntax, asn_TYPE_descriptor_t *p
     }
 
     DEBUG("Clean up partially decoded %s", pduType->name);
+    
+    /* If partial decoding option is enabled, print what we decoded so far */
+    if(opt_partial && structure) {
+        fprintf(stderr, "\n=== Partial Decoding Results ===\n");
+        asn_fprint(stderr, pduType, structure);
+        fprintf(stderr, "=== End of Partial Results ===\n\n");
+    }
+    
     ASN_STRUCT_FREE(*pduType, structure);
 
     new_offset = DynamicBuffer.bytes_shifted + DynamicBuffer.offset;
@@ -1031,12 +1044,26 @@ data_decode_from_file(enum asn_transfer_syntax isyntax, asn_TYPE_descriptor_t *p
         DEBUG("ofp %d, no=%ld, oo=%ld, dbl=%ld",
             on_first_pdu, (long)new_offset, (long)old_offset,
             (long)DynamicBuffer.length);
-        fprintf(stderr, "%s: "
-            "Decode failed past byte %ld: %s\n",
-            name, (long)new_offset,
-            (rval.code == RC_WMORE)
-                ? "Unexpected end of input"
-                : "Input processing error");
+        
+        /* Provide detailed error information */
+        if(rval.consumed > 0) {
+            /* We have position information about where the failure occurred */
+            size_t failed_byte = (rval.consumed + 7) / 8;  /* Convert bits to bytes (round up) */
+            size_t failed_bit = rval.consumed % 8;
+            fprintf(stderr, "%s: "
+                "Decode failed at byte %ld, bit %ld: %s\n",
+                name, (long)(new_offset + failed_byte), (long)failed_bit,
+                (rval.code == RC_WMORE)
+                    ? "Unexpected end of input"
+                    : "Input processing error");
+        } else {
+            fprintf(stderr, "%s: "
+                "Decode failed past byte %ld: %s\n",
+                name, (long)new_offset,
+                (rval.code == RC_WMORE)
+                    ? "Unexpected end of input"
+                    : "Input processing error");
+        }
 #ifndef    ENOMSG
 #define    ENOMSG EINVAL
 #endif
