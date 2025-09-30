@@ -1051,12 +1051,11 @@ data_decode_from_file(enum asn_transfer_syntax isyntax, asn_TYPE_descriptor_t *p
             (long)DynamicBuffer.length);
         
         /* Provide detailed error information */
-        if(rval.consumed > 0 || ecbits > 0) {
+        if(rval.consumed > 0) {
             /* We have position information about where the failure occurred */
-            /* rval.consumed is in bytes, ecbits is the remaining bits */
             fprintf(stderr, "%s: "
-                "Decode failed at byte %ld, bit %d: %s\n",
-                name, (long)(new_offset + rval.consumed), ecbits,
+                "Decode failed at byte %ld: %s\n",
+                name, (long)(new_offset + rval.consumed),
                 (rval.code == RC_WMORE)
                     ? "Unexpected end of input"
                     : "Input processing error");
