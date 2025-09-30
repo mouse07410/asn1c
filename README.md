@@ -124,6 +124,17 @@ after each stage of operation:
     <parser> => <fixer> => <compiler> => print              (-P)
     <parser> => <fixer> => <compiler> => save-compiled      [default]
 
+# Partial Decoding Support
+
+When decoding fails (e.g., due to truncated or malformed input), the converter
+tool can print partial decoding results to help with debugging. Use the `-P` 
+flag with the generated converter to see what was successfully decoded before
+the error occurred:
+
+    ./converter-example -iper -P truncated-message.uper
+
+For more details, see [PARTIAL_DECODING.md](PARTIAL_DECODING.md).
+
 
 -- 
 Lev Walkin
