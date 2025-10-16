@@ -92,10 +92,18 @@ INTEGER_decode_aper(const asn_codec_ctx_t *opt_codec_ctx,
                 }
 
                 value += ct->lower_bound;
-                if((specs && specs->field_unsigned)
-                        ? asn_umax2INTEGER(st, (uintmax_t)value)
-                        : asn_imax2INTEGER(st, value))
-                    ASN__DECODE_FAILED;
+                /* Validate the decoded value is within the constraint bounds */
+                if(specs && specs->field_unsigned) {
+                    if((uintmax_t)value > (uintmax_t)ct->upper_bound)
+                        ASN__DECODE_FAILED;
+                    if(asn_umax2INTEGER(st, (uintmax_t)value))
+                        ASN__DECODE_FAILED;
+                } else {
+                    if(value < ct->lower_bound || value > ct->upper_bound)
+                        ASN__DECODE_FAILED;
+                    if(asn_imax2INTEGER(st, value))
+                        ASN__DECODE_FAILED;
+                }
                 ASN_DEBUG("Got value %"ASN_PRIdMAX" + low %"ASN_PRIdMAX"",
                           value, (intmax_t)ct->lower_bound);
             } else {
@@ -116,10 +124,18 @@ INTEGER_decode_aper(const asn_codec_ctx_t *opt_codec_ctx,
                     if(value < 0) ASN__DECODE_STARVED;
                 }
                 value += ct->lower_bound;
-                if((specs && specs->field_unsigned)
-                        ? asn_umax2INTEGER(st, (uintmax_t)value)
-                        : asn_imax2INTEGER(st, value))
-                    ASN__DECODE_FAILED;
+                /* Validate the decoded value is within the constraint bounds */
+                if(specs && specs->field_unsigned) {
+                    if((uintmax_t)value > (uintmax_t)ct->upper_bound)
+                        ASN__DECODE_FAILED;
+                    if(asn_umax2INTEGER(st, (uintmax_t)value))
+                        ASN__DECODE_FAILED;
+                } else {
+                    if(value < ct->lower_bound || value > ct->upper_bound)
+                        ASN__DECODE_FAILED;
+                    if(asn_imax2INTEGER(st, value))
+                        ASN__DECODE_FAILED;
+                }
                 ASN_DEBUG("Got value %"ASN_PRIdMAX" + low %"ASN_PRIdMAX"",
                           value, (intmax_t)ct->lower_bound);
             }
