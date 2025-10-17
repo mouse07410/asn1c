@@ -238,7 +238,7 @@ emit_ioc_cell(arg_t *arg, struct asn1p_ioc_cell_s *cell) {
          * identifiers but need proper type descriptors.
          */
         const char *type_name = asn1c_type_name(arg, cell->value, TNF_SAFE);
-        if(strcmp(type_name, "SEQUENCE_OF") == 0 || strcmp(type_name, "SET_OF") == 0) {
+        if(cell->value->expr_type == ASN_CONSTR_SEQUENCE_OF || cell->value->expr_type == ASN_CONSTR_SET_OF) {
             /* 
              * For anonymous SEQUENCE OF/SET OF types in IOC context,
              * generate the proper type descriptor name based on the element type.
