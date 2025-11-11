@@ -215,6 +215,30 @@ emit_ioc_value(arg_t *arg, struct asn1p_ioc_cell_s *cell) {
     return 0;
 }
 
+/*
+ * Helper function to get constructor name and element name for SEQUENCE OF/SET OF types.
+ * Returns 1 if the expr is a SEQUENCE OF or SET OF type, 0 otherwise.
+ */
+static int
+get_sequence_of_element_info(asn1p_expr_t *expr, const char **constructor, const char **element_name) {
+    if(expr->expr_type != ASN_CONSTR_SEQUENCE_OF && expr->expr_type != ASN_CONSTR_SET_OF) {
+        return 0;
+    }
+    
+    *constructor = (expr->expr_type == ASN_CONSTR_SEQUENCE_OF) ? "SEQUENCE_OF" : "SET_OF";
+    
+    asn1p_expr_t *element = TQ_FIRST(&(expr->members));
+    *element_name = "Member";
+    
+    if(element && element->expr_type == A1TC_REFERENCE && element->reference) {
+        /* Get the referenced type name */
+        *element_name = element->reference->components[
+            element->reference->comp_count - 1].name;
+    }
+    
+    return 1;
+}
+
 static int
 emit_ioc_cell(arg_t *arg, struct asn1p_ioc_cell_s *cell) {
     OUT("{ \"%s\", ", cell->field->Identifier);
@@ -237,26 +261,18 @@ emit_ioc_cell(arg_t *arg, struct asn1p_ioc_cell_s *cell) {
          * These need special handling because they don't have their own
          * identifiers but need proper type descriptors.
          */
-        const char *type_name = asn1c_type_name(arg, cell->value, TNF_SAFE);
-        if(cell->value->expr_type == ASN_CONSTR_SEQUENCE_OF || cell->value->expr_type == ASN_CONSTR_SET_OF) {
+        const char *constructor = NULL;
+        const char *element_name = NULL;
+        
+        if(get_sequence_of_element_info(cell->value, &constructor, &element_name)) {
             /* 
              * For anonymous SEQUENCE OF/SET OF types in IOC context,
              * generate the proper type descriptor name based on the element type.
              */
-            const char *constructor = (cell->value->expr_type == ASN_CONSTR_SEQUENCE_OF) 
-                                     ? "SEQUENCE_OF" : "SET_OF";
-            asn1p_expr_t *element = TQ_FIRST(&(cell->value->members));
-            const char *element_name = "Member";
-            
-            if(element && element->expr_type == A1TC_REFERENCE && element->reference) {
-                /* Get the referenced type name */
-                element_name = element->reference->components[
-                    element->reference->comp_count - 1].name;
-            }
-            
             GEN_INCLUDE(asn1c_type_name(arg, cell->value, TNF_INCLUDE));
             OUT("aioc__type, &asn_DEF_%s_%s_%d", constructor, element_name, cell->value->_type_unique_index);
         } else {
+            const char *type_name = asn1c_type_name(arg, cell->value, TNF_SAFE);
             GEN_INCLUDE(asn1c_type_name(arg, cell->value, TNF_INCLUDE));
             OUT("aioc__type, &asn_DEF_%s", type_name);
         }
@@ -302,19 +318,10 @@ emit_ioc_table(arg_t *arg, asn1p_expr_t *context, asn1c_ioc_table_and_objset_t i
         for(size_t cn = 0; cn < row->columns; cn++) {
             struct asn1p_ioc_cell_s *cell = &row->column[cn];
             if(cell->value && cell->value->meta_type == AMT_TYPE) {
-                const char *type_name = asn1c_type_name(arg, cell->value, TNF_SAFE);
-                if(strcmp(type_name, "SEQUENCE_OF") == 0 || strcmp(type_name, "SET_OF") == 0) {
-                    const char *constructor = (cell->value->expr_type == ASN_CONSTR_SEQUENCE_OF) 
-                                             ? "SEQUENCE_OF" : "SET_OF";
-                    asn1p_expr_t *element = TQ_FIRST(&(cell->value->members));
-                    const char *element_name = "Member";
-                    
-                    if(element && element->expr_type == A1TC_REFERENCE && element->reference) {
-                        /* Get the referenced type name */
-                        element_name = element->reference->components[
-                            element->reference->comp_count - 1].name;
-                    }
-                    
+                const char *constructor = NULL;
+                const char *element_name = NULL;
+                
+                if(get_sequence_of_element_info(cell->value, &constructor, &element_name)) {
                     OUT("static asn_TYPE_descriptor_t asn_DEF_%s_%s_%d;\n", 
                         constructor, element_name, cell->value->_type_unique_index);
                 }
