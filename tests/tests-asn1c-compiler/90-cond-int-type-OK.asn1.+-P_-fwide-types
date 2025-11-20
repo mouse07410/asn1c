@@ -1821,8 +1821,7 @@ extern "C" {
 #define max_val_NO_IntegerInRange6 (4294967295)
 
 
-#Generated asn_constant.h
-ifdef __cplusplus
+#ifdef __cplusplus
 }
 #endif
 

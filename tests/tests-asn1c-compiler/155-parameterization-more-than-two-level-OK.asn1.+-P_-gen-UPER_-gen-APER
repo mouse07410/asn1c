@@ -1,22 +1,3 @@
-WARNING: Parameterized type max-items expected for max-items at line 41 in ../../tests/tests-asn1c
-WARNING: Parameterized type PACKET expected for PACKET at line 51 in ../../tests/tests-asn1c
-WARNING: Parameterized type PACKET expected for PACKET at line 52 in ../../tests/tests-asn1c
-WARNING: Parameterized type PACKET expected for PACKET at line 53 in ../../tests/tests-asn1c
-WARNING: Parameterized type PACKET expected for PACKET at line 51 in ../../tests/tests-asn1c
-WARNING: Parameterized type PACKET expected for PACKET at line 52 in ../../tests/tests-asn1c
-WARNING: Parameterized type PACKET expected for PACKET at line 53 in ../../tests/tests-asn1c
-WARNING: Parameterized type PACKET expected for PACKET at line 51 in ../../tests/tests-asn1c
-WARNING: Parameterized type PACKET expected for PACKET at line 52 in ../../tests/tests-asn1c
-WARNING: Parameterized type PACKET expected for PACKET at line 53 in ../../tests/tests-asn1c
-WARNING: Parameterized type PACKET expected for PACKET at line 51 in ../../tests/tests-asn1c
-WARNING: Parameterized type PACKET expected for PACKET at line 51 in ../../tests/tests-asn1c
-WARNING: Parameterized type PACKET expected for PACKET at line 51 in ../../tests/tests-asn1c
-WARNING: Parameterized type PACKET expected for PACKET at line 52 in ../../tests/tests-asn1c
-WARNING: Parameterized type PACKET expected for PACKET at line 52 in ../../tests/tests-asn1c
-WARNING: Parameterized type PACKET expected for PACKET at line 52 in ../../tests/tests-asn1c
-WARNING: Parameterized type PACKET expected for PACKET at line 53 in ../../tests/tests-asn1c
-WARNING: Parameterized type PACKET expected for PACKET at line 53 in ../../tests/tests-asn1c
-WARNING: Parameterized type PACKET expected for PACKET at line 53 in ../../tests/tests-asn1c
 
 /*** <<< INCLUDES [PacketId] >>> ***/
 
@@ -1314,8 +1295,7 @@ static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
 			.jer_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = 0
-		},Generated asn_constant.h
-
+		},
 		0, 0, /* No default value */
 		.name = "encoding"
 		},

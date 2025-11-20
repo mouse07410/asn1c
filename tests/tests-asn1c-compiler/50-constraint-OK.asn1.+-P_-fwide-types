@@ -3201,8 +3201,7 @@ static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
 		.type_selector = 0,
 		{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
-			.oer_constraints Generated asn_constant.h
-= 0,
+			.oer_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 			.per_constraints = 0,

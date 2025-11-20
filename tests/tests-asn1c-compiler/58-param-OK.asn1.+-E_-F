@@ -1,5 +1,3 @@
-WARNING: Parameterized type ub-name expected for ub-name at line 19 in ../../tests/tests-asn1c
-WARNING: Parameterized type ub-name expected for ub-name at line 19 in ../../tests/tests-asn1c
 ModuleTestParam { iso org(3) dod(6) internet(1) private(4) enterprise(1)
 	spelio(9363) software(1) asn1c(5) test(1) 58 }
 DEFINITIONS ::=

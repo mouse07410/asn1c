@@ -776,8 +776,7 @@ static const asn_TYPE_tag2member_t asn_MAP_EXTERNAL_tag2el_1[] = {
 static asn_SEQUENCE_specifics_t asn_SPC_EXTERNAL_specs_1 = {
 	sizeof(struct EXTERNAL),
 	offsetof(struct EXTERNAL, _asn_ctx),
-	.tag2el = aGenerated asn_constant.h
-sn_MAP_EXTERNAL_tag2el_1,
+	.tag2el = asn_MAP_EXTERNAL_tag2el_1,
 	.tag2el_count = 6,	/* Count of tags in the map */
 	0, 0, 0,	/* Optional elements (not needed) */
 	-1,	/* First extension addition */

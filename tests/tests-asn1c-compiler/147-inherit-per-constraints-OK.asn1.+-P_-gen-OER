@@ -567,8 +567,7 @@ static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
 		0, 0, /* No default value */
 		.name = "indirect-reference"
 		},
-	{ ATF_POINTER, 1, offsetoGenerated asn_constant.h
-f(struct EXTERNAL, data_value_descriptor),
+	{ ATF_POINTER, 1, offsetof(struct EXTERNAL, data_value_descriptor),
 		.tag = (ASN_TAG_CLASS_UNIVERSAL | (7 << 2)),
 		.tag_mode = 0,
 		.type = &asn_DEF_ObjectDescriptor,

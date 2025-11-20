@@ -1,7 +1,3 @@
-INFO: Directive <ASN1C:RepresentAsPointer> applied to INTEGER at ../../tests/tests-asn1c
-INFO: Directive <ASN1C:RepresentAsPointer> applied to member at ../../tests/tests-asn1c
-INFO: Directive <ASN1C:RepresentAsPointer> applied to SET OF at ../../tests/tests-asn1c
-INFO: Directive <ASN1C:RepresentAsPointer> applied to member at ../../tests/tests-asn1c
 
 /*** <<< INCLUDES [Sequence] >>> ***/
 

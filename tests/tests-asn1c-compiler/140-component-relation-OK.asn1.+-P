@@ -647,8 +647,7 @@ static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
 			.general_constraints = 0
 		},
 		0, 0, /* No default value */
-		.name = "data-value-descriGenerated asn_constant.h
-ptor"
+		.name = "data-value-descriptor"
 		},
 	{ ATF_NOFLAGS, 0, offsetof(struct EXTERNAL, encoding),
 		.tag = -1 /* Ambiguous tag (CHOICE?) */,

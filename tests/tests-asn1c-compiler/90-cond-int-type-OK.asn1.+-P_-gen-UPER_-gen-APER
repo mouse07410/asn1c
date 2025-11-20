@@ -1954,8 +1954,7 @@ static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
 		},
 };
 static const int asn_MAP_EXTERNAL_oms_1[] = { 0, 1, 2 };
-static const berGenerated asn_constant.h
-_tlv_tag_t asn_DEF_EXTERNAL_tags_1[] = {
+static const ber_tlv_tag_t asn_DEF_EXTERNAL_tags_1[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (8 << 2)),
 	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
 };

@@ -3325,7 +3325,7 @@ emit_type_DEF(arg_t *arg, asn1p_expr_t *expr, enum tvm_compat tv_mode, int tags_
 	if(HIDE_INNER_DEFS)
 		OUT("static /* Use -fall-defs-global to expose */\n");
 	OUT("asn_TYPE_descriptor_t asn_DEF_%s", p);
-    if(HIDE_INNER_DEFS || (arg->flags & A1C_ALL_DEFS_GLOBAL))
+    if(HIDE_INNER_DEFS || ((arg->flags & A1C_ALL_DEFS_GLOBAL) && arg->embed))
         OUT("_%d", expr->_type_unique_index);
     OUT(" = {\n");
 	INDENT(+1);
@@ -3553,7 +3553,7 @@ emit_type_DEF(arg_t *arg, asn1p_expr_t *expr, enum tvm_compat tv_mode, int tags_
 	 * (asn_DEF_<UserType>_<index>) when inner defs are hidden.
 	 * Only for named (non-anonymous) types.
 	 */
-	if(!expr->_anonymous_type && (HIDE_INNER_DEFS || (arg->flags & A1C_ALL_DEFS_GLOBAL))) {
+	if(!expr->_anonymous_type && HIDE_INNER_DEFS) {
 		int saved_target2 = arg->target->target;
 		REDIR(OT_CODE);
 

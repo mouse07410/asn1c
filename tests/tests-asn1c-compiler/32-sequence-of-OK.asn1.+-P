@@ -933,8 +933,7 @@ extern "C" {
 #define maxSize (10)
 
 
-#ifdef __cplusplGenerated asn_constant.h
-us
+#ifdef __cplusplus
 }
 #endif
 
