@@ -21,6 +21,6 @@ Stuff ::= SET {
             cup-of-coffee	 BIT STRING,        
             ...
         } OPTIONAL
-    }
+}
 
 END

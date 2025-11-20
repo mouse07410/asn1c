@@ -1,3 +1,22 @@
+WARNING: Parameterized type max-items expected for max-items at line 41 in ../../tests/tests-asn1c
+WARNING: Parameterized type PACKET expected for PACKET at line 51 in ../../tests/tests-asn1c
+WARNING: Parameterized type PACKET expected for PACKET at line 52 in ../../tests/tests-asn1c
+WARNING: Parameterized type PACKET expected for PACKET at line 53 in ../../tests/tests-asn1c
+WARNING: Parameterized type PACKET expected for PACKET at line 51 in ../../tests/tests-asn1c
+WARNING: Parameterized type PACKET expected for PACKET at line 52 in ../../tests/tests-asn1c
+WARNING: Parameterized type PACKET expected for PACKET at line 53 in ../../tests/tests-asn1c
+WARNING: Parameterized type PACKET expected for PACKET at line 51 in ../../tests/tests-asn1c
+WARNING: Parameterized type PACKET expected for PACKET at line 52 in ../../tests/tests-asn1c
+WARNING: Parameterized type PACKET expected for PACKET at line 53 in ../../tests/tests-asn1c
+WARNING: Parameterized type PACKET expected for PACKET at line 51 in ../../tests/tests-asn1c
+WARNING: Parameterized type PACKET expected for PACKET at line 51 in ../../tests/tests-asn1c
+WARNING: Parameterized type PACKET expected for PACKET at line 51 in ../../tests/tests-asn1c
+WARNING: Parameterized type PACKET expected for PACKET at line 52 in ../../tests/tests-asn1c
+WARNING: Parameterized type PACKET expected for PACKET at line 52 in ../../tests/tests-asn1c
+WARNING: Parameterized type PACKET expected for PACKET at line 52 in ../../tests/tests-asn1c
+WARNING: Parameterized type PACKET expected for PACKET at line 53 in ../../tests/tests-asn1c
+WARNING: Parameterized type PACKET expected for PACKET at line 53 in ../../tests/tests-asn1c
+WARNING: Parameterized type PACKET expected for PACKET at line 53 in ../../tests/tests-asn1c
 
 /*** <<< INCLUDES [PacketId] >>> ***/
 
@@ -89,7 +108,7 @@ asn_TYPE_descriptor_t asn_DEF_PacketId = {
 		&asn_PER_type_PacketId_constr_1,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
-              0,
+		0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		PacketId_constraint
 	},
@@ -190,7 +209,7 @@ asn_TYPE_descriptor_t asn_DEF_Color = {
 		&asn_PER_type_Color_constr_1,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
-              0,
+		0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		NativeEnumerated_constraint
 	},
@@ -288,7 +307,7 @@ asn_TYPE_descriptor_t asn_DEF_Valid = {
 		&asn_PER_type_Valid_constr_1,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
-              0,
+		0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		NativeEnumerated_constraint
 	},
@@ -386,7 +405,7 @@ asn_TYPE_descriptor_t asn_DEF_Packet_List = {
 		&asn_PER_type_Packet_List_constr_1,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
-              0,
+		0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		Packet_List_constraint
 	},
@@ -486,7 +505,7 @@ asn_TYPE_descriptor_t asn_DEF_UpperLayer_List_41P0 = {
 		&asn_PER_type_UpperLayer_List_41P0_constr_1,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
-              0,
+		0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		UpperLayer_List_41P0_constraint
 	},
@@ -503,7 +522,7 @@ asn_TYPE_descriptor_t asn_DEF_UpperLayer_List_41P0 = {
 
 /*** <<< FWD-DECLS [LowerLayer-List] >>> ***/
 
-struct SinglePacket;
+struct SinglePacket_48P0;
 
 /*** <<< TYPE-DECLS [LowerLayer-List] >>> ***/
 
@@ -551,7 +570,7 @@ asn_TYPE_member_t asn_MBR_LowerLayer_List_45P0_1[] = {
 			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
-                    .jer_constraints = 0,
+			.jer_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = 0
 		},
@@ -585,7 +604,7 @@ asn_TYPE_descriptor_t asn_DEF_LowerLayer_List_45P0 = {
 		&asn_PER_type_LowerLayer_List_45P0_constr_1,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
-              0,
+		0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		SEQUENCE_OF_constraint
 	},
@@ -648,7 +667,7 @@ asn_TYPE_descriptor_t asn_DEF_SinglePacket_48P0 = {
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
-              0,
+		0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		SEQUENCE_constraint
 	},
@@ -664,8 +683,9 @@ asn_TYPE_descriptor_t asn_DEF_SinglePacket_48P0 = {
 #include "Color.h"
 #include <ANY.h>
 #include <asn_ioc.h>
+#include <NativeInteger.h>
+#include <NativeEnumerated.h>
 #include <OCTET_STRING.h>
-#include "Valid.h"
 #include <OPEN_TYPE.h>
 #include <constr_CHOICE.h>
 #include <constr_SEQUENCE.h>
@@ -707,11 +727,13 @@ extern asn_TYPE_member_t asn_MBR_ClassItem_1[3];
 static const long asn_VAL_1_id_TYPE1 = 1;
 static const long asn_VAL_1_blue = 2;
 static const long asn_VAL_1_crc_ok = 1;
+static asn_TYPE_descriptor_t asn_DEF_OCTET_STRING_1;
+
 static const asn_ioc_cell_t asn_IOS_ClassItem_1_rows[] = {
-	{ "&id", aioc__value, &asn_DEF_PacketId, &asn_VAL_1_id_TYPE1 },
-	{ "&color", aioc__value, &asn_DEF_Color, &asn_VAL_1_blue },
-	{ "&Value", aioc__type, &asn_DEF_OCTET_STRING },
-	{ "&valid", aioc__value, &asn_DEF_Valid, &asn_VAL_1_crc_ok }
+	{ "&id", aioc__value, &asn_DEF_NativeInteger, &asn_VAL_1_id_TYPE1 },
+	{ "&color", aioc__value, &asn_DEF_NativeEnumerated, &asn_VAL_1_blue },
+	{ "&Value", aioc__type, &asn_DEF_OCTET_STRING_1 },
+	{ "&valid", aioc__value, &asn_DEF_NativeEnumerated, &asn_VAL_1_crc_ok }
 };
 static const asn_ioc_set_t asn_IOS_ClassItem_1[] = {
 	{ 1, 4, asn_IOS_ClassItem_1_rows }
@@ -719,6 +741,17 @@ static const asn_ioc_set_t asn_IOS_ClassItem_1[] = {
 
 /*** <<< CODE [Packet] >>> ***/
 
+#ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
+#if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
+asn_TYPE_descriptor_t asn_DEF_value __attribute__((alias("asn_DEF_value_4")));
+#else
+static asn_TYPE_descriptor_t asn_DEF_value_4;
+asn_TYPE_descriptor_t asn_DEF_value;
+__attribute__((constructor)) static void asn_DEF_value_alias_init(void) {
+	asn_DEF_value = asn_DEF_value_4;
+}
+#endif
+#endif /* ASN1C_NO_UNSUFFIXED_PDU_ALIAS */
 static int
 memb_id_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
 			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
@@ -877,7 +910,7 @@ static asn_TYPE_member_t asn_MBR_value_4[] = {
 			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
-                    .jer_constraints = 0,
+			.jer_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = 0
 		},
@@ -915,7 +948,7 @@ asn_TYPE_descriptor_t asn_DEF_value_4 = {
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
-              0,
+		0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		OPEN_TYPE_constraint
 	},
@@ -938,7 +971,7 @@ asn_TYPE_member_t asn_MBR_ClassItem_1[] = {
 			.per_constraints = &asn_PER_memb_id_constr_2,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
-                    .jer_constraints = 0,
+			.jer_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = memb_id_constraint_1
 		},
@@ -958,7 +991,7 @@ asn_TYPE_member_t asn_MBR_ClassItem_1[] = {
 			.per_constraints = &asn_PER_memb_color_constr_3,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
-                    .jer_constraints = 0,
+			.jer_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = memb_color_constraint_1
 		},
@@ -968,7 +1001,7 @@ asn_TYPE_member_t asn_MBR_ClassItem_1[] = {
 	{ ATF_OPEN_TYPE | ATF_NOFLAGS, 0, offsetof(struct ClassItem, value),
 		.tag = -1 /* Ambiguous tag (ANY?) */,
 		.tag_mode = 0,
-		.type = &asn_DEF_value_4,
+		.type = &asn_DEF_value,
 		.type_selector = select_ClassItem_value_type,
 		{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
@@ -978,7 +1011,7 @@ asn_TYPE_member_t asn_MBR_ClassItem_1[] = {
 			.per_constraints = &asn_PER_memb_value_constr_4,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
-                    .jer_constraints = 0,
+			.jer_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = memb_value_constraint_1
 		},
@@ -1019,7 +1052,7 @@ asn_TYPE_descriptor_t asn_DEF_ClassItem = {
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
-              0,
+		0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		SEQUENCE_constraint
 	},
@@ -1075,6 +1108,20 @@ typedef struct EXTERNAL {
 
 extern asn_TYPE_descriptor_t asn_DEF_EXTERNAL;
 
+/*** <<< CODE [EXTERNAL] >>> ***/
+
+#ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
+#if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
+asn_TYPE_descriptor_t asn_DEF_encoding __attribute__((alias("asn_DEF_encoding_5")));
+#else
+static asn_TYPE_descriptor_t asn_DEF_encoding_5;
+asn_TYPE_descriptor_t asn_DEF_encoding;
+__attribute__((constructor)) static void asn_DEF_encoding_alias_init(void) {
+	asn_DEF_encoding = asn_DEF_encoding_5;
+}
+#endif
+#endif /* ASN1C_NO_UNSUFFIXED_PDU_ALIAS */
+
 /*** <<< CTDEFS [EXTERNAL] >>> ***/
 
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
@@ -1101,7 +1148,7 @@ static asn_TYPE_member_t asn_MBR_encoding_5[] = {
 			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
-                    .jer_constraints = 0,
+			.jer_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = 0
 		},
@@ -1121,7 +1168,7 @@ static asn_TYPE_member_t asn_MBR_encoding_5[] = {
 			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
-                    .jer_constraints = 0,
+			.jer_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = 0
 		},
@@ -1141,7 +1188,7 @@ static asn_TYPE_member_t asn_MBR_encoding_5[] = {
 			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
-                    .jer_constraints = 0,
+			.jer_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = 0
 		},
@@ -1181,7 +1228,7 @@ asn_TYPE_descriptor_t asn_DEF_encoding_5 = {
 		&asn_PER_type_encoding_constr_5,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
-              0,
+		0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		CHOICE_constraint
 	},
@@ -1204,7 +1251,7 @@ static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
 			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
-                    .jer_constraints = 0,
+			.jer_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = 0
 		},
@@ -1224,7 +1271,7 @@ static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
 			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
-                    .jer_constraints = 0,
+			.jer_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = 0
 		},
@@ -1244,7 +1291,7 @@ static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
 			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
-                    .jer_constraints = 0,
+			.jer_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = 0
 		},
@@ -1254,7 +1301,7 @@ static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
 	{ ATF_NOFLAGS, 0, offsetof(struct EXTERNAL, encoding),
 		.tag = -1 /* Ambiguous tag (CHOICE?) */,
 		.tag_mode = 0,
-		.type = &asn_DEF_encoding_5,
+		.type = &asn_DEF_encoding,
 		.type_selector = 0,
 		{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
@@ -1264,10 +1311,11 @@ static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
 			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
-                    .jer_constraints = 0,
+			.jer_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = 0
-		},
+		},Generated asn_constant.h
+
 		0, 0, /* No default value */
 		.name = "encoding"
 		},
@@ -1312,7 +1360,7 @@ asn_TYPE_descriptor_t asn_DEF_EXTERNAL = {
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
-              0,
+		0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		SEQUENCE_constraint
 	},
@@ -1325,7 +1373,7 @@ asn_TYPE_descriptor_t asn_DEF_EXTERNAL = {
 /*** <<< asn_constant.h >>> ***/
 
 /*
- * Generated by asn1c-0.9.29 (http://lionet.info/asn1c)
+ * Generated by asn1c
  */
 
 #ifndef _ASN_CONSTANT_H

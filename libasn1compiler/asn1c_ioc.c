@@ -232,17 +232,25 @@ emit_ioc_value(arg_t *arg, struct asn1p_ioc_cell_s *cell) {
             }
 
         case ATV_UNPARSED:
-            if(prim_type && strcmp(prim_type, "OBJECT_IDENTIFIER_t") == 0
+            if(prim_type && (strcmp(prim_type, "OBJECT_IDENTIFIER_t") == 0 || strcmp(prim_type, "RELATIVE_OID_t") == 0)
                && expr_value->value->value.string.buf
                && expr_value->value->value.string.size > 0) {
                 const char *buf = (const char *)expr_value->value->value.string.buf;
                 int len = expr_value->value->value.string.size;
                 uint64_t arcs[64];
                 int n = parse_unparsed_oid(buf, len, arcs, (int)(sizeof(arcs)/sizeof(arcs[0])));
-                if(n >= 2) {
+                int is_relative_oid = (strcmp(prim_type, "RELATIVE_OID_t") == 0);
+                int min_arcs = is_relative_oid ? 1 : 2;
+                if(n >= min_arcs) {
                     unsigned char bytes[256]; size_t off = 0;
-                    off += oid_arc_encode(arcs[0]*40 + arcs[1], bytes + off);
-                    for(int i = 2; i < n; i++) {
+                    int start_arc = 0;
+                    if(!is_relative_oid) {
+                        /* OBJECT_IDENTIFIER: encode first two arcs as arcs[0]*40 + arcs[1] */
+                        off += oid_arc_encode(arcs[0]*40 + arcs[1], bytes + off);
+                        start_arc = 2;
+                    }
+                    /* Encode remaining arcs (or all arcs for RELATIVE-OID) */
+                    for(int i = start_arc; i < n; i++) {
                         off += oid_arc_encode(arcs[i], bytes + off);
                         if(off >= sizeof(bytes)) { FATAL("OID too long"); return -1; }
                     }
