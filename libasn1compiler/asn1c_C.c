@@ -1103,19 +1103,17 @@ find_column_index(arg_t *arg, asn1c_ioc_table_and_objset_t *opt_ioc, const char 
 }
 
 static int __attribute__((unused))
-emit_xer_open_type_finder(arg_t *arg, asn1p_expr_t *expr, 
-                          asn1c_ioc_table_and_objset_t *opt_ioc,
-                          const char *column_name) {
-    (void)expr;      /* Unused */
-    (void)opt_ioc;   /* Unused */
-    (void)column_name; /* Unused */
-    
-    // Similar to EndApplicationMessage_msg__op_finder in EndApplicationMessage.c
-    // but generated properly from the IOC table
+emit_xer_open_type_finder(arg_t *arg, 
+                          asn1p_expr_t *expr __attribute__((unused)), 
+                          asn1c_ioc_table_and_objset_t *opt_ioc __attribute__((unused)),
+                          const char *column_name __attribute__((unused))) {
+    /* Similar to EndApplicationMessage_msg__op_finder in EndApplicationMessage.c
+     * but generated properly from the IOC table
+     */
     
     OUT("static asn_TYPE_descriptor_t *\n");
     OUT("%s_xer_op_finder(const void *sptr) {\n", c_name(arg).compound_name);
-    // ... emit logic to use type selector and return proper descriptor
+    /* ... emit logic to use type selector and return proper descriptor */
     OUT("}\n");
     
     return 0;
