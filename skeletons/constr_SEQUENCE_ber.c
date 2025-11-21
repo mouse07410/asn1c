@@ -639,8 +639,8 @@ SEQUENCE_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
                                                       0, 0); /* NULL callback for size estimation */
         } else {
 	        erval = elm->type->op->der_encoder(elm->type, *memb_ptr2,
-	                                           0, 0,  /* NULL callback for size estimation */
-	                                           0, 0);
+	                                           elm->tag_mode, elm->tag,
+	                                           0, 0);  /* NULL callback for size estimation */
         }
 
         if(erval.encoded == -1)
