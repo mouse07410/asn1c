@@ -1102,10 +1102,14 @@ find_column_index(arg_t *arg, asn1c_ioc_table_and_objset_t *opt_ioc, const char 
 
 }
 
-static int
+static int __attribute__((unused))
 emit_xer_open_type_finder(arg_t *arg, asn1p_expr_t *expr, 
                           asn1c_ioc_table_and_objset_t *opt_ioc,
                           const char *column_name) {
+    (void)expr;      /* Unused */
+    (void)opt_ioc;   /* Unused */
+    (void)column_name; /* Unused */
+    
     // Similar to EndApplicationMessage_msg__op_finder in EndApplicationMessage.c
     // but generated properly from the IOC table
     
@@ -1113,6 +1117,8 @@ emit_xer_open_type_finder(arg_t *arg, asn1p_expr_t *expr,
     OUT("%s_xer_op_finder(const void *sptr) {\n", c_name(arg).compound_name);
     // ... emit logic to use type selector and return proper descriptor
     OUT("}\n");
+    
+    return 0;
 }
 
 static int
@@ -3559,10 +3565,9 @@ emit_type_DEF(arg_t *arg, asn1p_expr_t *expr, enum tvm_compat tv_mode, int tags_
 
 		OUT("#ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS\n");
 		OUT("#if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))\n");
-		/* Only use extern if the type was NOT defined as static */
-		if(!HIDE_INNER_DEFS) {
-			OUT("extern asn_TYPE_descriptor_t asn_DEF_%s_%d;\n",
-			    MKID(expr), expr->_type_unique_index);
+		/* Alias must have same storage class as target */
+		if(HIDE_INNER_DEFS) {
+			OUT("static ");
 		}
 		
 		OUT("asn_TYPE_descriptor_t asn_DEF_%s __attribute__((alias(\"asn_DEF_%s_%d\")));\n",

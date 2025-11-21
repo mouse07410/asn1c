@@ -115,6 +115,7 @@ SEQUENCE_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
 	                if(choice_ptr) {
 		                unsigned int *present = (unsigned int*)choice_ptr;
 		                ASN_DEBUG("OPEN_TYPE decoded: present=%u", *present);
+		                (void)present;  /* May be unused if ASN_DEBUG is disabled */
 	                }
                 }
             } else {

@@ -601,6 +601,7 @@ SEQUENCE_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
               */
              const asn_CHOICE_specifics_t *choice_specs = 
 	             (const asn_CHOICE_specifics_t *)elm->type->specifics;
+             (void)choice_specs;  /* Currently unused, reserved for future use */
     
              /* Find the matching element in the CHOICE */
              size_t choice_edx;
@@ -715,6 +716,7 @@ SEQUENCE_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
                
             const asn_CHOICE_specifics_t *choice_specs = 
 	            (const asn_CHOICE_specifics_t *)elm->type->specifics;
+            (void)choice_specs;  /* Currently unused, reserved for future use */
     
             /* Find the matching element in the CHOICE */
             size_t choice_edx;
