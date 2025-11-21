@@ -599,9 +599,8 @@ SEQUENCE_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
               * The elm->type descriptor describes the CHOICE structure.
               * We need to find the member offset based on the presence index.
               */
-             const asn_CHOICE_specifics_t *choice_specs = 
+             const asn_CHOICE_specifics_t *choice_specs __attribute__((unused)) = 
 	             (const asn_CHOICE_specifics_t *)elm->type->specifics;
-             (void)choice_specs;  /* Currently unused, reserved for future use */
     
              /* Find the matching element in the CHOICE */
              size_t choice_edx;
@@ -714,9 +713,8 @@ SEQUENCE_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
 	            ASN__ENCODE_FAILED;
             }
                
-            const asn_CHOICE_specifics_t *choice_specs = 
+            const asn_CHOICE_specifics_t *choice_specs __attribute__((unused)) = 
 	            (const asn_CHOICE_specifics_t *)elm->type->specifics;
-            (void)choice_specs;  /* Currently unused, reserved for future use */
     
             /* Find the matching element in the CHOICE */
             size_t choice_edx;
