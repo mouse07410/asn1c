@@ -13,6 +13,6 @@ SUBDIRS =                       \
 
 docsdir = $(datadir)/doc/asn1c
 
-docs_DATA = README.md INSTALL.md REQUIREMENTS.md FAQ ChangeLog BUGS COPILOT.md
+docs_DATA = README.md INSTALL.md REQUIREMENTS.md FAQ ChangeLog BUGS .github/copilot-instructions.md
 
-EXTRA_DIST = README.md INSTALL.md REQUIREMENTS.md FAQ LICENSE BUGS COPILOT.md
+EXTRA_DIST = README.md INSTALL.md REQUIREMENTS.md FAQ LICENSE BUGS .github/copilot-instructions.md
