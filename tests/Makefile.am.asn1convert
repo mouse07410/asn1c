@@ -1,0 +1,14 @@
+include Makefile.am.libasncodec
+
+bin_PROGRAMS += asn1convert
+asn1convert_CFLAGS = $(ASN_MODULE_CFLAGS) 
+asn1convert_CPPFLAGS = -I$(top_srcdir)/-DASN_PDU_COLLECTION 
+asn1convert_LDADD = libasncodec.la
+asn1convert_SOURCES = \
+	converter-example.c\
+	pdu_collection.c
+regen: regenerate-from-asn1-source
+
+regenerate-from-asn1-source:
+	/home/runner/work/asn1c/asn1c/asn1c/asn1c -S /home/runner/work/asn1c/asn1c/skeletons -flink-skeletons -Wdebug-compiler /home/runner/work/asn1c/asn1c/tests/tests-asn1c-compiler/70-xer-test-OK.asn1
+
