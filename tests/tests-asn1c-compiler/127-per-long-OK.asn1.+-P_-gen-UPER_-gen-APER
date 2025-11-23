@@ -51,7 +51,7 @@ unsigned32_4_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_unsigned32 __attribute__((alias("asn_DEF_unsigned32_4")));
+extern asn_TYPE_descriptor_t asn_DEF_unsigned32 __attribute__((weak, alias("asn_DEF_unsigned32_4")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_unsigned32_4;
 asn_TYPE_descriptor_t asn_DEF_unsigned32;
@@ -91,7 +91,7 @@ unsplit32_5_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_unsplit32 __attribute__((alias("asn_DEF_unsplit32_5")));
+extern asn_TYPE_descriptor_t asn_DEF_unsplit32 __attribute__((weak, alias("asn_DEF_unsplit32_5")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_unsplit32_5;
 asn_TYPE_descriptor_t asn_DEF_unsplit32;
@@ -501,7 +501,7 @@ extern asn_TYPE_descriptor_t asn_DEF_EXTERNAL;
 
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_encoding __attribute__((alias("asn_DEF_encoding_5")));
+extern asn_TYPE_descriptor_t asn_DEF_encoding __attribute__((weak, alias("asn_DEF_encoding_5")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_encoding_5;
 asn_TYPE_descriptor_t asn_DEF_encoding;

@@ -41,7 +41,7 @@ extern asn_TYPE_descriptor_t asn_DEF_LogLine;
 
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_varsets __attribute__((alias("asn_DEF_varsets_3")));
+extern asn_TYPE_descriptor_t asn_DEF_varsets __attribute__((weak, alias("asn_DEF_varsets_3")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_varsets_3;
 asn_TYPE_descriptor_t asn_DEF_varsets;
@@ -266,7 +266,7 @@ extern asn_TYPE_member_t asn_MBR_VariablePartSet_1[2];
 
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_vparts __attribute__((alias("asn_DEF_vparts_2")));
+extern asn_TYPE_descriptor_t asn_DEF_vparts __attribute__((weak, alias("asn_DEF_vparts_2")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_vparts_2;
 asn_TYPE_descriptor_t asn_DEF_vparts;
@@ -500,7 +500,7 @@ extern asn_TYPE_member_t asn_MBR_VariablePart_1[2];
 
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_vset __attribute__((alias("asn_DEF_vset_2")));
+extern asn_TYPE_descriptor_t asn_DEF_vset __attribute__((weak, alias("asn_DEF_vset_2")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_vset_2;
 asn_TYPE_descriptor_t asn_DEF_vset;
@@ -511,7 +511,7 @@ __attribute__((constructor)) static void asn_DEF_vset_alias_init(void) {
 #endif /* ASN1C_NO_UNSUFFIXED_PDU_ALIAS */
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_vrange __attribute__((alias("asn_DEF_vrange_4")));
+extern asn_TYPE_descriptor_t asn_DEF_vrange __attribute__((weak, alias("asn_DEF_vrange_4")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_vrange_4;
 asn_TYPE_descriptor_t asn_DEF_vrange;
@@ -834,7 +834,7 @@ extern asn_TYPE_member_t asn_MBR_ActionItem_1[2];
 
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_accept_as __attribute__((alias("asn_DEF_accept_as_2")));
+extern asn_TYPE_descriptor_t asn_DEF_accept_as __attribute__((weak, alias("asn_DEF_accept_as_2")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_accept_as_2;
 asn_TYPE_descriptor_t asn_DEF_accept_as;
@@ -849,7 +849,7 @@ __attribute__((constructor)) static void asn_DEF_accept_as_alias_init(void) {
  */
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_email __attribute__((alias("asn_DEF_email_9")));
+extern asn_TYPE_descriptor_t asn_DEF_email __attribute__((weak, alias("asn_DEF_email_9")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_email_9;
 asn_TYPE_descriptor_t asn_DEF_email;
@@ -860,7 +860,7 @@ __attribute__((constructor)) static void asn_DEF_email_alias_init(void) {
 #endif /* ASN1C_NO_UNSUFFIXED_PDU_ALIAS */
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_notify __attribute__((alias("asn_DEF_notify_7")));
+extern asn_TYPE_descriptor_t asn_DEF_notify __attribute__((weak, alias("asn_DEF_notify_7")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_notify_7;
 asn_TYPE_descriptor_t asn_DEF_notify;
@@ -1201,7 +1201,7 @@ extern asn_TYPE_descriptor_t asn_DEF_EXTERNAL;
 
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_encoding __attribute__((alias("asn_DEF_encoding_5")));
+extern asn_TYPE_descriptor_t asn_DEF_encoding __attribute__((weak, alias("asn_DEF_encoding_5")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_encoding_5;
 asn_TYPE_descriptor_t asn_DEF_encoding;

@@ -461,7 +461,7 @@ extern asn_TYPE_descriptor_t asn_DEF_EXTERNAL;
 
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_encoding __attribute__((alias("asn_DEF_encoding_5")));
+extern asn_TYPE_descriptor_t asn_DEF_encoding __attribute__((weak, alias("asn_DEF_encoding_5")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_encoding_5;
 asn_TYPE_descriptor_t asn_DEF_encoding;

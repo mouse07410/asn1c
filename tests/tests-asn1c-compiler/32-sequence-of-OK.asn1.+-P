@@ -272,7 +272,7 @@ extern asn_TYPE_descriptor_t asn_DEF_SeqWithMandatory;
 
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_seqOfMan __attribute__((alias("asn_DEF_seqOfMan_3")));
+extern asn_TYPE_descriptor_t asn_DEF_seqOfMan __attribute__((weak, alias("asn_DEF_seqOfMan_3")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_seqOfMan_3;
 asn_TYPE_descriptor_t asn_DEF_seqOfMan;
@@ -466,7 +466,7 @@ extern asn_TYPE_descriptor_t asn_DEF_SeqWithOptional;
 
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_seqOfOpt __attribute__((alias("asn_DEF_seqOfOpt_3")));
+extern asn_TYPE_descriptor_t asn_DEF_seqOfOpt __attribute__((weak, alias("asn_DEF_seqOfOpt_3")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_seqOfOpt_3;
 asn_TYPE_descriptor_t asn_DEF_seqOfOpt;
@@ -672,7 +672,7 @@ extern asn_TYPE_descriptor_t asn_DEF_EXTERNAL;
 
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_encoding __attribute__((alias("asn_DEF_encoding_5")));
+extern asn_TYPE_descriptor_t asn_DEF_encoding __attribute__((weak, alias("asn_DEF_encoding_5")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_encoding_5;
 asn_TYPE_descriptor_t asn_DEF_encoding;

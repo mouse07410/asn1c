@@ -619,7 +619,7 @@ extern asn_TYPE_member_t asn_MBR_Choice3_1[3];
 
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_a __attribute__((alias("asn_DEF_a_2")));
+extern asn_TYPE_descriptor_t asn_DEF_a __attribute__((weak, alias("asn_DEF_a_2")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_a_2;
 asn_TYPE_descriptor_t asn_DEF_a;
@@ -630,7 +630,7 @@ __attribute__((constructor)) static void asn_DEF_a_alias_init(void) {
 #endif /* ASN1C_NO_UNSUFFIXED_PDU_ALIAS */
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_c __attribute__((alias("asn_DEF_c_5")));
+extern asn_TYPE_descriptor_t asn_DEF_c __attribute__((weak, alias("asn_DEF_c_5")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_c_5;
 asn_TYPE_descriptor_t asn_DEF_c;
@@ -1384,7 +1384,7 @@ extern asn_TYPE_member_t asn_MBR_Alpha_1[2];
 
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_b __attribute__((alias("asn_DEF_b_3")));
+extern asn_TYPE_descriptor_t asn_DEF_b __attribute__((weak, alias("asn_DEF_b_3")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_b_3;
 asn_TYPE_descriptor_t asn_DEF_b;
@@ -2218,7 +2218,7 @@ extern asn_TYPE_descriptor_t asn_DEF_EXTERNAL;
 
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_encoding __attribute__((alias("asn_DEF_encoding_5")));
+extern asn_TYPE_descriptor_t asn_DEF_encoding __attribute__((weak, alias("asn_DEF_encoding_5")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_encoding_5;
 asn_TYPE_descriptor_t asn_DEF_encoding;

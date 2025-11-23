@@ -2500,7 +2500,7 @@ extern asn_TYPE_member_t asn_MBR_Sequence_1[7];
 
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_enum_c __attribute__((alias("asn_DEF_enum_c_6")));
+extern asn_TYPE_descriptor_t asn_DEF_enum_c __attribute__((weak, alias("asn_DEF_enum_c_6")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_enum_c_6;
 asn_TYPE_descriptor_t asn_DEF_enum_c;
@@ -3420,7 +3420,7 @@ extern asn_TYPE_descriptor_t asn_DEF_EXTERNAL;
 
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_encoding __attribute__((alias("asn_DEF_encoding_5")));
+extern asn_TYPE_descriptor_t asn_DEF_encoding __attribute__((weak, alias("asn_DEF_encoding_5")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_encoding_5;
 asn_TYPE_descriptor_t asn_DEF_encoding;

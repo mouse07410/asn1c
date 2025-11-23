@@ -37,7 +37,7 @@ extern asn_TYPE_member_t asn_MBR_Type_1[1];
 
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_data __attribute__((alias("asn_DEF_data_2")));
+extern asn_TYPE_descriptor_t asn_DEF_data __attribute__((weak, alias("asn_DEF_data_2")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_data_2;
 asn_TYPE_descriptor_t asn_DEF_data;
@@ -272,7 +272,7 @@ extern asn_TYPE_member_t asn_MBR_Epyt_1[3];
 
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_stype __attribute__((alias("asn_DEF_stype_2")));
+extern asn_TYPE_descriptor_t asn_DEF_stype __attribute__((weak, alias("asn_DEF_stype_2")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_stype_2;
 asn_TYPE_descriptor_t asn_DEF_stype;
@@ -540,7 +540,7 @@ static int check_permitted_alphabet_7(const void *sptr) {
 
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_senums __attribute__((alias("asn_DEF_senums_4")));
+extern asn_TYPE_descriptor_t asn_DEF_senums __attribute__((weak, alias("asn_DEF_senums_4")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_senums_4;
 asn_TYPE_descriptor_t asn_DEF_senums;
@@ -970,7 +970,7 @@ extern asn_TYPE_descriptor_t asn_DEF_EXTERNAL;
 
 #ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
 #if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-asn_TYPE_descriptor_t asn_DEF_encoding __attribute__((alias("asn_DEF_encoding_5")));
+extern asn_TYPE_descriptor_t asn_DEF_encoding __attribute__((weak, alias("asn_DEF_encoding_5")));
 #else
 static asn_TYPE_descriptor_t asn_DEF_encoding_5;
 asn_TYPE_descriptor_t asn_DEF_encoding;
