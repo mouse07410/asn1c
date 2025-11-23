@@ -6,7 +6,7 @@
 #include <OCTET_STRING.h>
 #include <BIT_STRING.h>
 
-enum encoding_type { HEX, BINARY, UTF8 };
+enum encoding_type { HEX, BINARY, UTF8, BASE64 };
 enum encoding_rules { XER, JER };
 
 #define check_xer(t, tag, buf, verify)  check_impl(__LINE__, XER, t, tag,  buf, verify)
@@ -35,6 +35,9 @@ check_impl(int lineno, enum encoding_rules rules, enum encoding_type type, char 
             break;
         case UTF8:
             xer_decoder = OCTET_STRING_decode_xer_utf8;
+            break;
+        case BASE64:
+            xer_decoder = OCTET_STRING_decode_xer_base64;
             break;
         }
 
@@ -186,6 +189,18 @@ main() {
 	check_jer(UTF8, "", 0);
 	check_jer(UTF8, "\"hi\"", "hi");
 	check_jer(UTF8, "\"h i\"", "h i");
+
+	/* Base64 XER tests */
+	check_xer(BASE64, "tag", "<tag>SGVsbG8sIFdvcmxkIQ==</tag>", "Hello, World!");
+	check_xer(BASE64, "z", "<z>AAECA//+/Q==</z>", "\x00\x01\x02\x03\xff\xfe\xfd");
+	check_xer(BASE64, "tag", "<tag></tag>", "");
+	check_xer(BASE64, "tag", "<tag>QQ==</tag>", "A");
+	check_xer(BASE64, "tag", "<tag>QUI=</tag>", "AB");
+	check_xer(BASE64, "tag", "<tag>QUJD</tag>", "ABC");
+	/* Base64 with whitespace */
+	check_xer(BASE64, "tag", "<tag>SGVs bG8s\nIFdv cmxk IQ==</tag>", "Hello, World!");
+	/* Invalid Base64 - should fail */
+	check_xer(BASE64, "tag", "<tag>SGVs!bG8</tag>", 0);
 
 	return 0;
 }
