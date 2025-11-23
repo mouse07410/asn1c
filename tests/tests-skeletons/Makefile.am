@@ -13,6 +13,7 @@ check_PROGRAMS =                \
     check-INTEGER               \
     check-REAL                  \
     check-XER                   \
+    check-XER-base64            \
     check-JER                   \
     check-OER-support           \
     check-OER-INTEGER           \
@@ -39,6 +40,7 @@ check_PROGRAMS +=                   \
     check-32-INTEGER                \
     check-32-REAL                   \
     check-32-XER                    \
+    check-32-XER-base64             \
     check-32-JER                    \
     check-32-OER-support            \
     check-32-OER-INTEGER            \
@@ -86,6 +88,9 @@ check_32_REAL_SOURCES=check-REAL.c
 check_32_XER_CFLAGS=$(CFLAGS_M32)
 check_32_XER_LDADD=$(LDADD_32)
 check_32_XER_SOURCES=check-XER.c
+check_32_XER_base64_CFLAGS=$(CFLAGS_M32)
+check_32_XER_base64_LDADD=$(LDADD_32)
+check_32_XER_base64_SOURCES=check-XER-base64.c
 check_32_JER_CFLAGS=$(CFLAGS_M32)
 check_32_JER_LDADD=$(LDADD_32)
 check_32_JER_SOURCES=check-JER.c
