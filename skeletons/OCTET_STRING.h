@@ -42,8 +42,10 @@ der_type_encoder_f OCTET_STRING_encode_der;
 xer_type_decoder_f OCTET_STRING_decode_xer_hex;     /* Hexadecimal */
 xer_type_decoder_f OCTET_STRING_decode_xer_binary;  /* 01010111010 */
 xer_type_decoder_f OCTET_STRING_decode_xer_utf8;    /* ASCII/UTF-8 */
+xer_type_decoder_f OCTET_STRING_decode_xer_base64;  /* Base64 */
 xer_type_encoder_f OCTET_STRING_encode_xer;
 xer_type_encoder_f OCTET_STRING_encode_xer_utf8;
+xer_type_encoder_f OCTET_STRING_encode_xer_base64;
 #endif  /* !defined(ASN_DISABLE_XER_SUPPORT) */
 
 #if !defined(ASN_DISABLE_JER_SUPPORT)

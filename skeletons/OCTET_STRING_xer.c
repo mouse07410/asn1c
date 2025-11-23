@@ -527,6 +527,193 @@ OCTET_STRING__convert_entrefs(void *sptr, const void *chunk_buf,
 }
 
 /*
+ * Base64 encoding table
+ */
+static const char base64_encode_table[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/*
+ * Encode OCTET STRING to Base64 format for XER
+ */
+asn_enc_rval_t
+OCTET_STRING_encode_xer_base64(const asn_TYPE_descriptor_t *td, const void *sptr,
+                               int ilevel, enum xer_encoder_flags_e flags,
+                               asn_app_consume_bytes_f *cb, void *app_key) {
+    const OCTET_STRING_t *st = (const OCTET_STRING_t *)sptr;
+    asn_enc_rval_t er = { 0, 0, 0 };
+    char scratch[80];  /* 76 chars per line + newline is typical for Base64 */
+    char *p = scratch;
+    const uint8_t *buf;
+    const uint8_t *end;
+    size_t i;
+    int chars_on_line = 0;
+    const int max_chars_per_line = 76;
+
+    (void)td;
+
+    if(!st || (!st->buf && st->size))
+        ASN__ENCODE_FAILED;
+
+    er.encoded = 0;
+    buf = st->buf;
+    end = buf + st->size;
+
+    /*
+     * Encode buffer in Base64.
+     * Process 3 bytes at a time into 4 Base64 characters.
+     */
+    while(buf < end) {
+        uint32_t value = 0;
+        int bytes_left = end - buf;
+        int bytes_to_encode = (bytes_left >= 3) ? 3 : bytes_left;
+        
+        /* Build a 24-bit value from up to 3 bytes */
+        for(i = 0; i < bytes_to_encode; i++) {
+            value = (value << 8) | buf[i];
+        }
+        
+        /* Shift to align if we have fewer than 3 bytes */
+        if(bytes_to_encode < 3) {
+            value <<= 8 * (3 - bytes_to_encode);
+        }
+        
+        buf += bytes_to_encode;
+        
+        /* Extract 4 6-bit values and encode them */
+        for(i = 0; i < 4; i++) {
+            if(p >= scratch + sizeof(scratch) - 2) {
+                /* Flush buffer */
+                ASN__CALLBACK(scratch, p - scratch);
+                er.encoded += (p - scratch);
+                p = scratch;
+                chars_on_line = 0;
+            }
+            
+            if(!(flags & XER_F_CANONICAL) && chars_on_line >= max_chars_per_line) {
+                /* Add line break for readability (not in canonical mode) */
+                *p++ = '\n';
+                ASN__TEXT_INDENT(1, ilevel);
+                ASN__CALLBACK(scratch, p - scratch);
+                er.encoded += (p - scratch);
+                p = scratch;
+                chars_on_line = 0;
+            }
+            
+            if(i < bytes_to_encode + 1) {
+                /* Valid data character */
+                int idx = (value >> (18 - i * 6)) & 0x3F;
+                *p++ = base64_encode_table[idx];
+                chars_on_line++;
+            } else {
+                /* Padding */
+                *p++ = '=';
+                chars_on_line++;
+            }
+        }
+    }
+
+    /* Flush any remaining data */
+    if(p > scratch) {
+        ASN__CALLBACK(scratch, p - scratch);
+        er.encoded += (p - scratch);
+    }
+
+    ASN__ENCODED_OK(er);
+cb_failed:
+    ASN__ENCODE_FAILED;
+}
+
+/*
+ * Base64 decoding table (inverse of encode table)
+ * Returns -1 for invalid characters, -2 for padding '='
+ */
+static int
+base64_decode_char(char c) {
+    if(c >= 'A' && c <= 'Z') return c - 'A';
+    if(c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if(c >= '0' && c <= '9') return c - '0' + 52;
+    if(c == '+') return 62;
+    if(c == '/') return 63;
+    if(c == '=') return -2;  /* Padding */
+    return -1;  /* Invalid character */
+}
+
+/*
+ * Convert from Base64 format
+ */
+static ssize_t
+OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
+                             size_t chunk_size, int have_more) {
+    OCTET_STRING_t *st = (OCTET_STRING_t *)sptr;
+    const char *p = (const char *)chunk_buf;
+    const char *pend = p + chunk_size;
+    const char *chunk_stop = p;
+    uint8_t *buf;
+    uint32_t value = 0;
+    int bits_collected = 0;
+    int padding_seen = 0;
+
+    /* Reallocate buffer - Base64 decodes to approximately 3/4 of input size */
+    size_t new_size = st->size + (chunk_size * 3 / 4) + 3;
+    void *nptr = REALLOC(st->buf, new_size + 1);
+    if(!nptr) return -1;
+    st->buf = (uint8_t *)nptr;
+    buf = st->buf + st->size;
+
+    /*
+     * Decode Base64 data
+     */
+    for(; p < pend; p++) {
+        int ch = *(const unsigned char *)p;
+        int decoded;
+        
+        /* Skip whitespace */
+        switch(ch) {
+        case 0x09: case 0x0a: case 0x0c: case 0x0d: case 0x20:
+            continue;
+        default:
+            break;
+        }
+        
+        decoded = base64_decode_char(ch);
+        
+        if(decoded == -1) {
+            /* Invalid character - error */
+            return -1;
+        }
+        
+        if(decoded == -2) {
+            /* Padding character */
+            padding_seen = 1;
+            continue;
+        }
+        
+        if(padding_seen) {
+            /* Data after padding is invalid */
+            return -1;
+        }
+        
+        /* Accumulate 6 bits */
+        value = (value << 6) | decoded;
+        bits_collected += 6;
+        
+        /* When we have 8 or more bits, extract a byte */
+        if(bits_collected >= 8) {
+            bits_collected -= 8;
+            *buf++ = (value >> bits_collected) & 0xFF;
+            chunk_stop = p + 1;
+        }
+    }
+
+    /* Update size */
+    st->size = buf - st->buf;
+    assert(st->size <= new_size);
+    st->buf[st->size] = 0;  /* Courtesy termination */
+
+    return chunk_stop - (const char *)chunk_buf;
+}
+
+/*
  * Decode OCTET STRING from the XML element's body.
  */
 static asn_dec_rval_t
@@ -624,4 +811,17 @@ OCTET_STRING_decode_xer_utf8(const asn_codec_ctx_t *opt_codec_ctx,
                                     buf_ptr, size,
                                     OCTET_STRING__handle_control_chars,
                                     OCTET_STRING__convert_entrefs);
+}
+
+/*
+ * Decode OCTET STRING from Base64-encoded data.
+ */
+asn_dec_rval_t
+OCTET_STRING_decode_xer_base64(const asn_codec_ctx_t *opt_codec_ctx,
+                               const asn_TYPE_descriptor_t *td, void **sptr,
+                               const char *opt_mname, const void *buf_ptr,
+                               size_t size) {
+    return OCTET_STRING__decode_xer(opt_codec_ctx, td, sptr, opt_mname,
+                                    buf_ptr, size, 0,
+                                    OCTET_STRING__convert_base64);
 }
