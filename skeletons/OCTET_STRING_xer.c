@@ -707,7 +707,10 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
 
     /* Update size */
     st->size = buf - st->buf;
-    assert(st->size <= new_size);
+    if(st->size > new_size) {
+        /* Buffer overflow - should not happen with correct size calculation */
+        return -1;
+    }
     st->buf[st->size] = 0;  /* Courtesy termination */
 
     return chunk_stop - (const char *)chunk_buf;
