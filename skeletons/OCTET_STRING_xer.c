@@ -591,11 +591,10 @@ OCTET_STRING_encode_xer_base64(const asn_TYPE_descriptor_t *td, const void *sptr
             
             if(!(flags & XER_F_CANONICAL) && chars_on_line >= max_chars_per_line) {
                 /* Add line break for readability (not in canonical mode) */
-                *p++ = '\n';
-                ASN__TEXT_INDENT(1, ilevel);
                 ASN__CALLBACK(scratch, p - scratch);
                 er.encoded += (p - scratch);
                 p = scratch;
+                ASN__TEXT_INDENT(1, ilevel);
                 chars_on_line = 0;
             }
             
