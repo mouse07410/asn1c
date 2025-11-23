@@ -646,7 +646,6 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
     OCTET_STRING_t *st = (OCTET_STRING_t *)sptr;
     const char *p = (const char *)chunk_buf;
     const char *pend = p + chunk_size;
-    const char *chunk_stop = p;
     uint8_t *buf;
     uint32_t value = 0;
     int bits_collected = 0;
@@ -700,7 +699,6 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
         if(bits_collected >= 8) {
             bits_collected -= 8;
             *buf++ = (value >> bits_collected) & 0xFF;
-            chunk_stop = p + 1;
         }
     }
 
@@ -712,7 +710,8 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
     }
     st->buf[st->size] = 0;  /* Courtesy termination */
 
-    return chunk_stop - (const char *)chunk_buf;
+    /* Return amount of input consumed (all of it) */
+    return pend - (const char *)chunk_buf;
 }
 
 /*

@@ -9,13 +9,14 @@
 enum encoding_type { HEX, BINARY, UTF8, BASE64 };
 enum encoding_rules { XER, JER };
 
-#define check_xer(t, tag, buf, verify)  check_impl(__LINE__, XER, t, tag,  buf, verify)
-#define check_jer(t, buf, verify)       check_impl(__LINE__, JER, t, NULL, buf, verify)
+#define check_xer(t, tag, buf, verify)  check_impl(__LINE__, XER, t, tag,  buf, verify, 0)
+#define check_xer_bin(t, tag, buf, verify, verify_len)  check_impl(__LINE__, XER, t, tag,  buf, verify, verify_len)
+#define check_jer(t, buf, verify)       check_impl(__LINE__, JER, t, NULL, buf, verify, 0)
 
 static void
-check_impl(int lineno, enum encoding_rules rules, enum encoding_type type, char *tagname, char *xmlbuf, char *verify) {
+check_impl(int lineno, enum encoding_rules rules, enum encoding_type type, char *tagname, char *xmlbuf, char *verify, size_t verify_len) {
 	size_t xmllen = strlen(xmlbuf);
-	size_t verlen = verify ? strlen(verify) : 0;
+	size_t verlen = verify_len ? verify_len : (verify ? strlen(verify) : 0);
 	asn_TYPE_descriptor_t *td = &asn_DEF_OCTET_STRING;
 	OCTET_STRING_t *st = 0;
 	OCTET_STRING_t **stp = &st;
@@ -192,7 +193,7 @@ main() {
 
 	/* Base64 XER tests */
 	check_xer(BASE64, "tag", "<tag>SGVsbG8sIFdvcmxkIQ==</tag>", "Hello, World!");
-	check_xer(BASE64, "z", "<z>AAECA//+/Q==</z>", "\x00\x01\x02\x03\xff\xfe\xfd");
+	check_xer_bin(BASE64, "z", "<z>AAECA//+/Q==</z>", "\x00\x01\x02\x03\xff\xfe\xfd", 7);
 	check_xer(BASE64, "tag", "<tag></tag>", "");
 	check_xer(BASE64, "tag", "<tag>QQ==</tag>", "A");
 	check_xer(BASE64, "tag", "<tag>QUI=</tag>", "AB");

@@ -188,7 +188,7 @@ test_edge_cases() {
     /* All 0xFF */
     uint8_t ones[10];
     memset(ones, 0xFF, sizeof(ones));
-    test_encode_decode("All 0xFF", ones, sizeof(ones), "//////////8=");
+    test_encode_decode("All 0xFF", ones, sizeof(ones), "/////////////w==");
     
     printf("  Edge cases: SUCCESS\n\n");
 }
