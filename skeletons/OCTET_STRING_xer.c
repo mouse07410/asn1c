@@ -704,11 +704,16 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
 
     /* Update size */
     st->size = buf - st->buf;
-    if(st->size > new_size) {
-        /* Buffer overflow - should not happen with correct size calculation */
+    
+    /* Always write null terminator to prevent buffer overflow in callers */
+    if(st->size <= new_size) {
+        st->buf[st->size] = 0;  /* Courtesy termination */
+    } else {
+        /* Buffer overflow - write null at last valid position */
+        st->buf[new_size] = 0;
+        st->size = new_size;  /* Truncate to valid size */
         return -1;
     }
-    st->buf[st->size] = 0;  /* Courtesy termination */
 
     /* Return amount of input consumed (all of it)
      * Note: pend = chunk_buf + chunk_size, so this is always >= 0 */
