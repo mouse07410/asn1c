@@ -3563,6 +3563,7 @@ emit_type_DEF(arg_t *arg, asn1p_expr_t *expr, enum tvm_compat tv_mode, int tags_
 
 		OUT("#ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS\n");
 		OUT("#if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))\n");
+		/* Use extern weak alias to work with static targets without storage class mismatch */
 		OUT("extern asn_TYPE_descriptor_t asn_DEF_%s __attribute__((weak, alias(\"asn_DEF_%s_%d\")));\n",
 		    MKID(expr), MKID(expr), expr->_type_unique_index);
 		OUT("#else\n");
