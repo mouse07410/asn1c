@@ -155,6 +155,9 @@ test_invalid_base64() {
             assert(0);
         }
         
+        /* Free the structure even on error to prevent memory leak */
+        if(decoded) ASN_STRUCT_FREE(asn_DEF_OCTET_STRING, decoded);
+        
         printf("  Input %zu: Correctly rejected\n", i + 1);
     }
     
