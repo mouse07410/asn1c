@@ -16,7 +16,7 @@ asn_TYPE_descriptor_t asn_DEF_SET_OF = {
     &asn_OP_SET_OF,
     0, 0,
     0, 0,
-    0,              /* No constraints */
+    {0},            /* No constraints */
     0, 0,           /* No members */
     0               /* No specifics */
 };
