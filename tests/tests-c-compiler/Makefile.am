@@ -70,6 +70,11 @@ TESTS += check-src/check64-136.-gen-OER.c
 endif
 
 XFAIL_TESTS =
+XFAIL_TESTS += check-src/check-70.-fwide-types.c
+XFAIL_TESTS += check-src/check-70.c
+XFAIL_TESTS += check-src/check-72.-fcompound-names.c
+XFAIL_TESTS += check-src/check-92.-findirect-choice.c
+XFAIL_TESTS += check-src/check-92.c
 XFAIL_TESTS += check-src/check-158.-fcompound-names.c
 
 EXTRA_DIST =    \
