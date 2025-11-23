@@ -710,7 +710,8 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
     }
     st->buf[st->size] = 0;  /* Courtesy termination */
 
-    /* Return amount of input consumed (all of it) */
+    /* Return amount of input consumed (all of it)
+     * Note: pend = chunk_buf + chunk_size, so this is always >= 0 */
     return pend - (const char *)chunk_buf;
 }
 
