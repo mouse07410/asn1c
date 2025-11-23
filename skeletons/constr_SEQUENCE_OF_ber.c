@@ -31,7 +31,7 @@ SEQUENCE_OF_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
 	    ASN__ENCODE_FAILED;
     }
 
-    if(!list->array && list->count != 0) {
+    if((!list->array) && (list->count != 0)) {
 	    ASN_DEBUG("SEQUENCE OF list->array is null");
 	    ASN__ENCODE_FAILED;
     }
