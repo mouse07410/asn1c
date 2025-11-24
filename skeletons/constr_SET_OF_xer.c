@@ -257,9 +257,20 @@ SET_OF_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
             }
             /* Fall through */
         case XCT_UNKNOWN_OP:
+        case XCT_UNKNOWN_CL:
         case XCT_UNKNOWN_BO:
 
             ASN_DEBUG("XER/SET OF: tcv=%d, ph=%d", tcv, ctx->phase);
+            
+            /* If we're in phase 1 and encounter an unknown closing tag,
+             * it's likely the closing tag of our parent wrapper (OPEN TYPE).
+             * Finish successfully and let parent handle the closing tag. */
+            if(tcv == XCT_UNKNOWN_CL && ctx->phase == 1) {
+                ASN_DEBUG("XER/SET OF: unknown closing tag in phase 1, completing successfully");
+                ctx->phase = 3;  /* Phase out successfully */
+                RETURN(RC_OK);
+            }
+            
             /* Robust handling in phase 0... */
  			if(ctx->phase == 0) {
 			    int is_container = (xml_tag && xer_token_name_equals_normalized(buf_ptr, ch_size, xml_tag));
