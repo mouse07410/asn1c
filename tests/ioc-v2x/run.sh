@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-d="$(cd "$(dirname "$0")" && pwd)"
-w="$(mktemp -d)"; trap 'rm -rf "$w"' EXIT
-cp -p "$d/C2X.asn" "$w/"
-cp -p "$d/s4.xer" "$w/"
-cd "$w"
+# For distcheck: srcdir points to source directory, current dir is build directory
+# For normal check: srcdir=. and we're in the source directory
+srcdir="${srcdir:-.}"
+abs_top_builddir="${abs_top_builddir:-$(cd ../.. && pwd)}"
 
-# Support both direct execution and automake test execution
-top_builddir="${abs_top_builddir:-${d}/../..}"
-ASN1C_EXE="${top_builddir}/asn1c/asn1c"
-#GEN_AUTOTOOLS="-gen-autotools"
+# Copy source files to current directory if not already present
+if [ ! -f C2X.asn ]; then
+  cp -p "${srcdir}/C2X.asn" .
+fi
+if [ ! -f s4.xer ]; then
+  cp -p "${srcdir}/s4.xer" .
+fi
 
-echo "d=${d} w=${w} pwd=${PWD}"
+ASN1C_EXE="${abs_top_builddir}/asn1c/asn1c"
+
+echo "srcdir=${srcdir} abs_top_builddir=${abs_top_builddir} pwd=${PWD}"
 
 ${ASN1C_EXE} -fall-defs-global -fcompound-names -fincludes-quoted \
   -fline-refs -fwide-types \
