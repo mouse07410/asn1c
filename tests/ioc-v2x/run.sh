@@ -28,13 +28,13 @@ CFLAGS="-g -DASN_EMIT_DEBUG" make -f converter-example.mk CC="${CC:-cc}" >/dev/n
 
 ./converter-example -p EndApplicationMessage -ixer s4.xer >/dev/null
 
-if grep -R --fixed-strings '&asn_DEF_SEQUENCE_OF_t' . ; then
+if grep -R --fixed-strings '&asn_DEF_SEQUENCE_OF_t' --exclude="*.sh" . ; then
   echo "ERROR: placeholder *_t descriptor leaked into IOC rows" >&2; exit 1
 fi
-if grep -R --fixed-strings '&asn_DEF_SEQUENCE_OF,' . ; then
+if grep -R --fixed-strings '&asn_DEF_SEQUENCE_OF,' --exclude="*.sh" . ; then
   echo "ERROR: bare &asn_DEF_SEQUENCE_OF leaked into IOC rows" >&2; exit 1
 fi
-if grep -R --fixed-strings '&asn_DEF_endApplication_Message_msg,' . ; then
+if grep -R --fixed-strings '&asn_DEF_endApplication_Message_msg,' --exclude="*.sh" . ; then
   echo "ERROR: unsuffixed Open Type wrapper descriptor leaked" >&2; exit 1
 fi
 echo "OK"
