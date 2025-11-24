@@ -314,6 +314,7 @@ tests/tests-asn1c-smoke/Makefile            \
 tests/tests-randomized/Makefile             \
 tests/tests-c-compiler/Makefile             \
 tests/tests-skeletons/Makefile              \
+tests/ioc-v2x/Makefile                      \
 asn1-tools/enber/Makefile                   \
 asn1-tools/unber/Makefile                   \
 asn1-tools/Makefile                         \

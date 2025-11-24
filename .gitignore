@@ -119,3 +119,5 @@ doc/docsrc/*.xdv
 #code coverage
 *.gcno
 *.gcda
+asn1c-*/
+*.tar.gz

@@ -7,7 +7,9 @@ cp -p "$d/C2X.asn" "$w/"
 cp -p "$d/s4.xer" "$w/"
 cd "$w"
 
-ASN1C_EXE="${d}/../../asn1c/asn1c"
+# Support both direct execution and automake test execution
+top_builddir="${abs_top_builddir:-${d}/../..}"
+ASN1C_EXE="${top_builddir}/asn1c/asn1c"
 #GEN_AUTOTOOLS="-gen-autotools"
 
 echo "d=${d} w=${w} pwd=${PWD}"
