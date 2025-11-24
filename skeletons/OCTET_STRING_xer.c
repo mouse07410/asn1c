@@ -677,6 +677,8 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
         
         if(decoded == -1) {
             /* Invalid character - error */
+            st->size = buf - st->buf;
+            st->buf[st->size] = 0;  /* Ensure null termination */
             return -1;
         }
         
@@ -688,6 +690,8 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
         
         if(padding_seen) {
             /* Data after padding is invalid */
+            st->size = buf - st->buf;
+            st->buf[st->size] = 0;  /* Ensure null termination */
             return -1;
         }
         
