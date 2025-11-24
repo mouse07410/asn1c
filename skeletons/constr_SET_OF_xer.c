@@ -152,6 +152,10 @@ SET_OF_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
     if(specs->as_XMLValueList) {
         elm_tag = (specs->as_XMLValueList == 1) ? 0 : "";
     } else {
+        if(!element) {
+            ASN_DEBUG("SET OF has no element type descriptor");
+            RETURN(RC_FAIL);
+        }
         elm_tag = (*element->name)
                 ? element->name : element->type->xml_tag;
     }
@@ -364,7 +368,14 @@ SET_OF_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr, int ilevel,
     const asn_SET_OF_specifics_t *specs = (const asn_SET_OF_specifics_t *)td->specifics;
     const asn_TYPE_member_t *elm = td->elements;
     const asn_anonymous_set_ *list = _A_CSET_FROM_VOID(sptr);
-    const char *mname = specs->as_XMLValueList
+    const char *mname;
+    
+    if(!elm && !specs->as_XMLValueList) {
+        ASN_DEBUG("SET OF has no element type descriptor");
+        ASN__ENCODE_FAILED;
+    }
+    
+    mname = specs->as_XMLValueList
         ? 0 : ((*elm->name) ? elm->name : elm->type->xml_tag);
     size_t mlen = mname ? strlen(mname) : 0;
     int xcan = (flags & XER_F_CANONICAL);

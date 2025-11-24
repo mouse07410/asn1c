@@ -15,9 +15,16 @@ SEQUENCE_OF_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr,
     const asn_SET_OF_specifics_t *specs = (const asn_SET_OF_specifics_t *)td->specifics;
     const asn_TYPE_member_t *elm = td->elements;
     const asn_anonymous_sequence_ *list = _A_CSEQUENCE_FROM_VOID(sptr);
-    const char *mname = specs->as_XMLValueList
-                            ? 0
-                            : ((*elm->name) ? elm->name : elm->type->xml_tag);
+    const char *mname;
+    
+    if(!elm && !specs->as_XMLValueList) {
+        ASN_DEBUG("SEQUENCE OF has no element type descriptor");
+        ASN__ENCODE_FAILED;
+    }
+    
+    mname = specs->as_XMLValueList
+                ? 0
+                : ((*elm->name) ? elm->name : elm->type->xml_tag);
     size_t mlen = mname ? strlen(mname) : 0;
     int xcan = (flags & XER_F_CANONICAL);
     int i;
