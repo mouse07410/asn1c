@@ -584,7 +584,6 @@ OCTET_STRING_encode_xer_base64(const asn_TYPE_descriptor_t *td, const void *sptr
             if(p >= scratch + sizeof(scratch) - 2) {
                 /* Flush buffer */
                 ASN__CALLBACK(scratch, p - scratch);
-                er.encoded += (p - scratch);
                 p = scratch;
                 chars_on_line = 0;
             }
@@ -592,7 +591,6 @@ OCTET_STRING_encode_xer_base64(const asn_TYPE_descriptor_t *td, const void *sptr
             if(!(flags & XER_F_CANONICAL) && chars_on_line >= max_chars_per_line) {
                 /* Add line break for readability (not in canonical mode) */
                 ASN__CALLBACK(scratch, p - scratch);
-                er.encoded += (p - scratch);
                 p = scratch;
                 ASN__TEXT_INDENT(1, ilevel);
                 chars_on_line = 0;
@@ -614,7 +612,6 @@ OCTET_STRING_encode_xer_base64(const asn_TYPE_descriptor_t *td, const void *sptr
     /* Flush any remaining data */
     if(p > scratch) {
         ASN__CALLBACK(scratch, p - scratch);
-        er.encoded += (p - scratch);
     }
 
     ASN__ENCODED_OK(er);
