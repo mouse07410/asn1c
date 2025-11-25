@@ -632,10 +632,10 @@ SEQUENCE_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
              ASN_DEBUG("Encoding OPEN TYPE %s at %p", type_descriptor->name, open_type_data_ptr);
             
              /* During size estimation, use NULL callback.
-              * For OPEN TYPE, use the type's default tags (tag_mode=0, tag=0)
-              * not the element's tags, to avoid tag conflicts. */
+              * For OPEN TYPE, use the element's tag_mode and tag to properly wrap
+              * the content with the expected tag (e.g., EXPLICIT context tag). */
              erval = type_descriptor->op->der_encoder(type_descriptor, open_type_data_ptr,
-                                                      0, 0,  /* Use type's default tags */
+                                                      elm->tag_mode, elm->tag,
                                                       0, 0); /* NULL callback for size estimation */
         } else {
 	        erval = elm->type->op->der_encoder(elm->type, *memb_ptr2,
@@ -745,9 +745,10 @@ SEQUENCE_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
             
             ASN_DEBUG("Encoding OPEN TYPE %s (pass 2) at %p", type_descriptor->name, open_type_data_ptr);
 
-            /* For OPEN TYPE, use the type's default tags to match what the decoder expects */
+            /* For OPEN TYPE, use the element's tag_mode and tag to properly wrap
+             * the content with the expected tag (e.g., EXPLICIT context tag). */
             tmperval = type_descriptor->op->der_encoder(type_descriptor, open_type_data_ptr,
-                                                        0, 0, cb, app_key);
+                                                        elm->tag_mode, elm->tag, cb, app_key);
         } else {
             tmperval = elm->type->op->der_encoder(elm->type, *memb_ptr2,
                                                   elm->tag_mode, elm->tag, cb, app_key);
