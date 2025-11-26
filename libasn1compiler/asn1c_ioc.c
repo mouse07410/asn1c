@@ -171,7 +171,7 @@ parse_unparsed_oid(const char *buf, int len, uint64_t arcs[], int max_arcs) {
  *      parse the textual OID and emit proper bytes+length.
  */
 static int
-emit_ioc_value(arg_t *arg, struct asn1p_ioc_cell_s *cell) {
+emit_ioc_value(arg_t *arg, struct asn1p_ioc_cell_s *cell, asn1p_expr_t *objset) {
 
     if(cell->value && cell->value->meta_type == AMT_VALUE) {
         const char *prim_type = NULL;
@@ -213,8 +213,10 @@ emit_ioc_value(arg_t *arg, struct asn1p_ioc_cell_s *cell) {
             return -1;
         }
         }
-        OUT("static const %s asn_VAL_%d_%s = ", prim_type,
-            cell->value->_type_unique_index, MKID(cell->value));
+        char *objset_name = strdup(MKID(objset));
+        OUT("static const %s asn_VAL_%s_%d_%s = ", prim_type,
+            objset_name, cell->value->_type_unique_index, MKID(cell->value));
+        free(objset_name);
 
         asn1p_expr_t *expr_value = cell->value;
         while(expr_value->value->type == ATV_REFERENCED) {
@@ -310,7 +312,7 @@ emit_ioc_value(arg_t *arg, struct asn1p_ioc_cell_s *cell) {
  *      the non-descriptor placeholder &asn_DEF_SEQUENCE_OF.
  */
 static int
-emit_ioc_cell(arg_t *arg, struct asn1p_ioc_cell_s *cell) {
+emit_ioc_cell(arg_t *arg, struct asn1p_ioc_cell_s *cell, asn1p_expr_t *objset) {
     OUT("{ \"%s\", ", cell->field->Identifier);
 
     if(!cell->value) {
@@ -323,7 +325,9 @@ emit_ioc_cell(arg_t *arg, struct asn1p_ioc_cell_s *cell) {
         if(!vt) return -1;
         GEN_INCLUDE(asn1c_type_name(arg, vt, TNF_INCLUDE));
         OUT("aioc__value, &asn_DEF_%s, ", asn1c_type_name(arg, vt, TNF_SAFE));
-        OUT("&asn_VAL_%d_%s", cell->value->_type_unique_index, MKID(cell->value));
+        char *objset_name = strdup(MKID(objset));
+        OUT("&asn_VAL_%s_%d_%s", objset_name, cell->value->_type_unique_index, MKID(cell->value));
+        free(objset_name);
 
     /* } else if(cell->value->meta_type == AMT_TYPE) { */
     /*     /\* Anonymous / constructed type (e.g., SEQUENCE OF CommTxPDU): */
@@ -396,7 +400,7 @@ emit_ioc_table(arg_t *arg, asn1p_expr_t *context, asn1c_ioc_table_and_objset_t i
     for(size_t rn = 0; rn < ioc_tao.ioct->rows; rn++) {
         asn1p_ioc_row_t *row = ioc_tao.ioct->row[rn];
         for(size_t cn = 0; cn < row->columns; cn++) {
-            if(emit_ioc_value(arg, &row->column[cn])) {
+            if(emit_ioc_value(arg, &row->column[cn], ioc_tao.objset)) {
                 return -1;
             }
         }
@@ -449,7 +453,7 @@ emit_ioc_table(arg_t *arg, asn1p_expr_t *context, asn1c_ioc_table_and_objset_t i
         }
         for(size_t cn = 0; cn < row->columns; cn++) {
             if(rn || cn) OUT(",\n");
-            emit_ioc_cell(arg, &row->column[cn]);
+            emit_ioc_cell(arg, &row->column[cn], ioc_tao.objset);
         }
     }
     OUT("\n");
