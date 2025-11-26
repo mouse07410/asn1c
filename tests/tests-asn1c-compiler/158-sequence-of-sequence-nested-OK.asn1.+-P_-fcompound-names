@@ -11,13 +11,7 @@
 typedef struct SeqWithNestedSOS__sos__Member {
 	UTF8String_t	 anotherString;
 	struct SeqWithNestedSOS__sos__Member__nested_sos {
-		A_SEQUENCE_OF(typedef struct SeqWithNestedSOS__sos__Member__nested_sos__Member {
-			UTF8String_t	 nested_string;
-			
-			/* Context for parsing across buffer boundaries */
-			asn_struct_ctx_t _asn_ctx;
-		} SeqWithNestedSOS__sos__Member__nested_sos__Member;
-		SeqWithNestedSOS__sos__Member__nested_sos__Member) list;
+		A_SEQUENCE_OF(SeqWithNestedSOS__sos__Member__nested_sos__Member) list;
 		
 		/* Context for parsing across buffer boundaries */
 		asn_struct_ctx_t _asn_ctx;

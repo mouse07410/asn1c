@@ -1356,7 +1356,7 @@ typedef enum Member {
 /*** <<< TYPE-DECLS [SetOfEnums] >>> ***/
 
 typedef struct SetOfEnums {
-	A_SET_OF(typedef ENUMERATED_t	 Member_t) list;
+	A_SET_OF(ENUMERATED_t) list;
 	
 	/* Context for parsing across buffer boundaries */
 	asn_struct_ctx_t _asn_ctx;
@@ -1364,14 +1364,7 @@ typedef struct SetOfEnums {
 
 /*** <<< FUNC-DECLS [SetOfEnums] >>> ***/
 
-extern asn_TYPE_descriptor_t asn_DEF_Member;
-asn_struct_free_f Member_free;
-asn_struct_print_f Member_print;
-asn_constr_check_f Member_constraint;
-ber_type_decoder_f Member_decode_ber;
-der_type_encoder_f Member_encode_der;
-xer_type_decoder_f Member_decode_xer;
-xer_type_encoder_f Member_encode_xer;
+/* extern asn_TYPE_descriptor_t asn_DEF_Member_2;	// (Use -fall-defs-global to expose) */
 extern asn_TYPE_descriptor_t asn_DEF_SetOfEnums;
 extern asn_SET_OF_specifics_t asn_SPC_SetOfEnums_specs_1;
 extern asn_TYPE_member_t asn_MBR_SetOfEnums_1[1];
@@ -1405,7 +1398,8 @@ static const asn_INTEGER_specifics_t asn_SPC_Member_specs_2 = {
 static const ber_tlv_tag_t asn_DEF_Member_tags_2[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (10 << 2))
 };
-asn_TYPE_descriptor_t asn_DEF_Member = {
+static /* Use -fall-defs-global to expose */
+asn_TYPE_descriptor_t asn_DEF_Member_2 = {
 	"ENUMERATED",
 	"ENUMERATED",
 	&asn_OP_ENUMERATED,
@@ -1667,7 +1661,7 @@ typedef enum name {
 /*** <<< TYPE-DECLS [NamedSetOfEnums] >>> ***/
 
 typedef struct NamedSetOfEnums {
-	A_SET_OF(typedef ENUMERATED_t	 name_t) list;
+	A_SET_OF(ENUMERATED_t) list;
 	
 	/* Context for parsing across buffer boundaries */
 	asn_struct_ctx_t _asn_ctx;
@@ -1675,14 +1669,7 @@ typedef struct NamedSetOfEnums {
 
 /*** <<< FUNC-DECLS [NamedSetOfEnums] >>> ***/
 
-extern asn_TYPE_descriptor_t asn_DEF_name;
-asn_struct_free_f name_free;
-asn_struct_print_f name_print;
-asn_constr_check_f name_constraint;
-ber_type_decoder_f name_decode_ber;
-der_type_encoder_f name_encode_der;
-xer_type_decoder_f name_decode_xer;
-xer_type_encoder_f name_encode_xer;
+/* extern asn_TYPE_descriptor_t asn_DEF_name_2;	// (Use -fall-defs-global to expose) */
 extern asn_TYPE_descriptor_t asn_DEF_NamedSetOfEnums;
 extern asn_SET_OF_specifics_t asn_SPC_NamedSetOfEnums_specs_1;
 extern asn_TYPE_member_t asn_MBR_NamedSetOfEnums_1[1];
@@ -1716,7 +1703,8 @@ static const asn_INTEGER_specifics_t asn_SPC_name_specs_2 = {
 static const ber_tlv_tag_t asn_DEF_name_tags_2[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (10 << 2))
 };
-asn_TYPE_descriptor_t asn_DEF_name = {
+static /* Use -fall-defs-global to expose */
+asn_TYPE_descriptor_t asn_DEF_name_2 = {
 	"ENUMERATED",
 	"ENUMERATED",
 	&asn_OP_ENUMERATED,

@@ -1,0 +1,23 @@
+-- Test for -pdu and -flist-deps functionality
+TestPDUDeps DEFINITIONS ::= BEGIN
+
+-- Simple type definitions
+SimpleInt ::= INTEGER
+SimpleStr ::= IA5String
+
+-- Compound type using simple types
+Compound ::= SEQUENCE {
+    num SimpleInt,
+    txt SimpleStr
+}
+
+-- PDU type using compound
+PDUType ::= SEQUENCE {
+    data Compound,
+    flag BOOLEAN
+}
+
+-- Independent type not used by PDU
+Unused ::= ENUMERATED { a, b, c }
+
+END

@@ -104,6 +104,34 @@ by the compiler.
 
     asn1c -EF <module-to-test.asn1>             # Check semantic validity
 
+## Working with large specifications (PDU selection)
+
+When working with large ASN.1 specifications (such as 3GPP 5G specs), you may
+only need to generate code for specific PDU (Protocol Data Unit) types and their
+dependencies. The asn1c compiler provides options for this:
+
+### List PDU dependencies
+
+To list all types that a specific PDU depends on without generating code:
+
+    asn1c -pdu=PDUType -flist-deps module.asn1
+
+This will output a list of type names that are dependencies of the specified PDU.
+
+### Generate code only for PDU dependencies
+
+To generate code only for a specific PDU and its dependencies (reducing the
+amount of generated code):
+
+    asn1c -pdu=PDUType -fgen-only-pdu-deps module.asn1
+
+This is particularly useful for large specifications where you only need a subset
+of the types. You can specify multiple PDUs:
+
+    asn1c -pdu=PDU1 -pdu=PDU2 -fgen-only-pdu-deps module.asn1
+
+The `-fgen-only-pdu-deps` option also works with `-pdu=all` and `-pdu=auto`.
+
 # Model of operation
 
 The asn1c compiler works by processing the ASN.1 module specifications

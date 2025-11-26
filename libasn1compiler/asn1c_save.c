@@ -53,7 +53,6 @@ static enum include_type_result include_type_to_pdu_collection(arg_t *arg);
 static int pdu_collection_has_unused_types(arg_t *arg);
 static const char *generate_pdu_C_definition(void);
 static void asn1c__cleanup_pdu_type(void);
-static int asn1c__pdu_type_lookup(const char *typename);
 static int generate_constant_file(arg_t *arg, const char *destdir);
 
 static int
@@ -461,6 +460,12 @@ asn1c_save_compiled_output(arg_t *arg, const char *datadir, const char *destdir,
 
         TQ_FOR(mod, &(arg->asn->modules), mod_next) {
             TQ_FOR(arg->expr, &(mod->members), next) {
+                /* Skip types that are not PDU dependencies if -fgen-only-pdu-deps is set */
+                if((arg->flags & A1C_GEN_ONLY_PDU_DEPS) && 
+                   !(arg->expr->_mark & TM_PDU_DEPENDENCY)) {
+                    continue;
+                }
+
                 if(asn1_lang_map[arg->expr->meta_type][arg->expr->expr_type]
                        .type_cb &&
                    (arg->expr->meta_type != AMT_VALUE)) {
@@ -952,7 +957,7 @@ asn1c__cleanup_pdu_type() {
     pduTypes = 0;
 }
 
-static int
+int
 asn1c__pdu_type_lookup(const char *typename) {
     for(size_t i = 0; i < pduTypes; i++) {
         struct PDUType *pt = &pduType[i];

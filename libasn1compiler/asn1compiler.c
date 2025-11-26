@@ -4,10 +4,13 @@
 #include "asn1c_save.h"
 #include "asn1c_ioc.h"
 #include "asn1c_naming.h"
+#include <asn1fix_export.h>
 
 static void default_logger_cb(int, const char *fmt, ...);
 static int asn1c_compile_expr(arg_t *arg, const asn1c_ioc_table_and_objset_t *);
 static int asn1c_detach_streams(asn1p_expr_t *expr);
+static void asn1c_mark_pdu_dependencies(arg_t *arg);
+static void asn1c_mark_expr_dependencies(arg_t *arg, asn1p_expr_t *expr);
 
 int
 asn1_compile(asn1p_t *asn, const char *datadir, const char *destdir, enum asn1c_flags flags,
@@ -32,10 +35,52 @@ asn1_compile(asn1p_t *asn, const char *datadir, const char *destdir, enum asn1c_
 	arg->asn = asn;
 
 	/*
+	 * If -flist-deps is specified, list dependencies and exit
+	 */
+	if(flags & A1C_LIST_DEPS) {
+		if(flags & (A1C_PDU_ALL | A1C_PDU_AUTO | A1C_PDU_TYPE)) {
+			asn1c_mark_pdu_dependencies(arg);
+			/* List all marked dependencies */
+			TQ_FOR(mod, &(asn->modules), mod_next) {
+				TQ_FOR(arg->expr, &(mod->members), next) {
+					if(arg->expr->_mark & TM_PDU_DEPENDENCY) {
+						printf("%s\n", arg->expr->Identifier);
+					}
+				}
+			}
+			return 0;
+		} else {
+			/* -flist-deps requires -pdu option */
+			FATAL("-flist-deps requires -pdu={all|auto|Type} option");
+			return -1;
+		}
+	}
+
+	/*
+	 * If -fgen-only-pdu-deps is specified, mark all PDU dependencies before compilation
+	 */
+	if(flags & A1C_GEN_ONLY_PDU_DEPS) {
+		if(flags & (A1C_PDU_ALL | A1C_PDU_AUTO | A1C_PDU_TYPE)) {
+			asn1c_mark_pdu_dependencies(arg);
+		} else {
+			/* -fgen-only-pdu-deps requires -pdu option */
+			FATAL("-fgen-only-pdu-deps requires -pdu={all|auto|Type} option");
+			return -1;
+		}
+	}
+
+	/*
 	 * Compile each individual top level structure.
 	 */
 	TQ_FOR(mod, &(asn->modules), mod_next) {
 		TQ_FOR(arg->expr, &(mod->members), next) {
+			/* Skip types that are not PDU dependencies if -fgen-only-pdu-deps is set */
+			if((flags & A1C_GEN_ONLY_PDU_DEPS) && 
+			   !(arg->expr->_mark & TM_PDU_DEPENDENCY)) {
+				DEBUG("Skipping non-PDU type: %s", arg->expr->Identifier);
+				continue;
+			}
+
 			arg->ns = asn1_namespace_new_from_module(mod, 0);
 
 			compiler_streams_t *cs = NULL;
@@ -279,4 +324,94 @@ asn1c_debug_type_naming(asn1p_t *asn, enum asn1c_flags flags,
 
 	c_name_clash_finder_destroy();
 }
+
+/*
+ * Recursively mark all dependencies of a given expression as PDU dependencies.
+ */
+static void
+asn1c_mark_expr_dependencies(arg_t *arg, asn1p_expr_t *expr) {
+	asn1p_expr_t *member;
+
+	if(!expr) return;
+
+	/* Avoid infinite recursion */
+	if(expr->_mark & TM_PDU_DEPENDENCY) return;
+	if(expr->_mark & TM_RECURSION) return;
+
+	/* Mark this expression as a PDU dependency */
+	expr->_mark |= TM_PDU_DEPENDENCY;
+
+	DEBUG("Marking %s as PDU dependency", expr->Identifier);
+
+	/* Mark recursion to avoid infinite loops */
+	expr->_mark |= TM_RECURSION;
+
+	/* For type references, find and mark the referenced type */
+	if(expr->expr_type == A1TC_REFERENCE && expr->reference) {
+		asn1p_expr_t *ref_expr = asn1f_lookup_symbol_ex(arg->asn, 
+			arg->ns, expr, expr->reference);
+		if(ref_expr) {
+			asn1c_mark_expr_dependencies(arg, ref_expr);
+		}
+	}
+
+	/* Recursively mark members of compound types */
+	TQ_FOR(member, &(expr->members), next) {
+		asn1c_mark_expr_dependencies(arg, member);
+	}
+
+	/* Clear recursion marker */
+	expr->_mark &= ~TM_RECURSION;
+}
+
+/*
+ * Mark all PDU types and their dependencies.
+ */
+static void
+asn1c_mark_pdu_dependencies(arg_t *arg) {
+	asn1p_module_t *mod;
+	asn1p_expr_t *expr;
+
+	/* First, mark the PDUs themselves */
+	TQ_FOR(mod, &(arg->asn->modules), mod_next) {
+		TQ_FOR(expr, &(mod->members), next) {
+			/* Skip types that shouldn't be included in PDU collection */
+			if(!asn1_lang_map[expr->meta_type][expr->expr_type].type_cb ||
+				(expr->meta_type == AMT_VALUE)) {
+				continue;
+			}
+
+			/* Skip parameterized types */
+			if(expr->lhs_params) {
+				continue;
+			}
+
+			/* Check if this is a PDU type we should generate */
+			int is_pdu = 0;
+			if((arg->flags & A1C_PDU_ALL)) {
+				is_pdu = 1;
+			} else if((arg->flags & A1C_PDU_AUTO) && !expr->_type_referenced) {
+				is_pdu = 1;
+			} else if(!(arg->flags & (A1C_PDU_ALL | A1C_PDU_AUTO | A1C_PDU_TYPE))
+				&& !expr->_type_referenced) {
+				is_pdu = 1;
+			} else if(arg->flags & A1C_PDU_TYPE) {
+				/* Check if this type is in the PDU list */
+				if(asn1c__pdu_type_lookup(expr->Identifier)) {
+					is_pdu = 1;
+				}
+			}
+
+			if(is_pdu) {
+				DEBUG("Found PDU type: %s", expr->Identifier);
+				/* Set up namespace for this module before marking dependencies */
+				arg->ns = asn1_namespace_new_from_module(mod, 0);
+				asn1c_mark_expr_dependencies(arg, expr);
+				asn1_namespace_free(arg->ns);
+				arg->ns = 0;
+			}
+		}
+	}
+}
+
 

@@ -7,16 +7,20 @@
 #include <constr_SEQUENCE.h>
 #include <constr_SET_OF.h>
 
+/*** <<< FWD-DEFS [Type] >>> ***/
+
+typedef struct Member {
+	Type1_t	 t1;
+	Type2_t	 t2;
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} Member;
+
 /*** <<< TYPE-DECLS [Type] >>> ***/
 
 typedef struct Type {
-	A_SET_OF(typedef struct Member {
-		Type1_t	 t1;
-		Type2_t	 t2;
-		
-		/* Context for parsing across buffer boundaries */
-		asn_struct_ctx_t _asn_ctx;
-	} ) list;
+	A_SET_OF(Member) list;
 	
 	/* Context for parsing across buffer boundaries */
 	asn_struct_ctx_t _asn_ctx;
@@ -24,7 +28,6 @@ typedef struct Type {
 
 /*** <<< FUNC-DECLS [Type] >>> ***/
 
-extern asn_TYPE_descriptor_t asn_DEF_Member;
 extern asn_TYPE_descriptor_t asn_DEF_Type;
 
 /*** <<< STAT-DEFS [Type] >>> ***/
@@ -87,7 +90,8 @@ static asn_SEQUENCE_specifics_t asn_SPC_Member_specs_2 = {
 	0, 0, 0,	/* Optional elements (not needed) */
 	-1,	/* First extension addition */
 };
-asn_TYPE_descriptor_t asn_DEF_Member = {
+static /* Use -fall-defs-global to expose */
+asn_TYPE_descriptor_t asn_DEF_Member_2 = {
 	"SEQUENCE",
 	"SEQUENCE",
 	&asn_OP_SEQUENCE,

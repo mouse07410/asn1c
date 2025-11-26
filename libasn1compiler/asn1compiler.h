@@ -128,6 +128,16 @@ enum asn1c_flags {
 	 * Generate JSON Encoding Rules support code
 	 */
 	A1C_GEN_JER                     = 0x100000000,
+	/*
+	 * -fgen-only-pdu-deps
+	 * Generate code only for PDU dependencies
+	 */
+	A1C_GEN_ONLY_PDU_DEPS           = 0x200000000,
+	/*
+	 * -flist-deps
+	 * List PDU dependencies without generating code
+	 */
+	A1C_LIST_DEPS                   = 0x400000000,
 };
 
 /*
