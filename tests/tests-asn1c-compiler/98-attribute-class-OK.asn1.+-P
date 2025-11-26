@@ -22,12 +22,12 @@ extern asn_TYPE_descriptor_t asn_DEF_Attribute;
 
 /*** <<< IOC-TABLES [Attribute] >>> ***/
 
-static const RELATIVE_OID_t asn_VAL_1_raf = { (uint8_t[]){ 3, 2, 1}, 3 }; /* {3 2 1} */
-static const RELATIVE_OID_t asn_VAL_2_rcf = { (uint8_t[]){ 3, 2, 2}, 3 }; /* {3 2 2} */
+static const RELATIVE_OID_t asn_VAL_Attributes_1_raf = { (uint8_t[]){ 3, 2, 1}, 3 }; /* {3 2 1} */
+static const RELATIVE_OID_t asn_VAL_Attributes_2_rcf = { (uint8_t[]){ 3, 2, 2}, 3 }; /* {3 2 2} */
 
 static const asn_ioc_cell_t asn_IOS_Attributes_1_rows[] = {
-	{ "&id", aioc__value, &asn_DEF_RELATIVE_OID, &asn_VAL_1_raf },
-	{ "&id", aioc__value, &asn_DEF_RELATIVE_OID, &asn_VAL_2_rcf }
+	{ "&id", aioc__value, &asn_DEF_RELATIVE_OID, &asn_VAL_Attributes_1_raf },
+	{ "&id", aioc__value, &asn_DEF_RELATIVE_OID, &asn_VAL_Attributes_2_rcf }
 };
 static const asn_ioc_set_t asn_IOS_Attributes_1[] = {
 	{ 2, 1, asn_IOS_Attributes_1_rows }

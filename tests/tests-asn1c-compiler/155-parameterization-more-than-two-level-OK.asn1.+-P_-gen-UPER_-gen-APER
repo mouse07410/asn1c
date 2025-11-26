@@ -732,16 +732,16 @@ extern asn_TYPE_member_t asn_MBR_ClassItem_1[3];
 
 /*** <<< IOC-TABLES [Packet] >>> ***/
 
-static const long asn_VAL_1_id_TYPE1 = 1;
-static const long asn_VAL_1_blue = 2;
-static const long asn_VAL_1_crc_ok = 1;
+static const long asn_VAL_ClassItem_1_id_TYPE1 = 1;
+static const long asn_VAL_ClassItem_1_blue = 2;
+static const long asn_VAL_ClassItem_1_crc_ok = 1;
 static asn_TYPE_descriptor_t asn_DEF_OCTET_STRING_1;
 
 static const asn_ioc_cell_t asn_IOS_ClassItem_1_rows[] = {
-	{ "&id", aioc__value, &asn_DEF_NativeInteger, &asn_VAL_1_id_TYPE1 },
-	{ "&color", aioc__value, &asn_DEF_NativeEnumerated, &asn_VAL_1_blue },
+	{ "&id", aioc__value, &asn_DEF_NativeInteger, &asn_VAL_ClassItem_1_id_TYPE1 },
+	{ "&color", aioc__value, &asn_DEF_NativeEnumerated, &asn_VAL_ClassItem_1_blue },
 	{ "&Value", aioc__type, &asn_DEF_OCTET_STRING_1 },
-	{ "&valid", aioc__value, &asn_DEF_NativeEnumerated, &asn_VAL_1_crc_ok }
+	{ "&valid", aioc__value, &asn_DEF_NativeEnumerated, &asn_VAL_ClassItem_1_crc_ok }
 };
 static const asn_ioc_set_t asn_IOS_ClassItem_1[] = {
 	{ 1, 4, asn_IOS_ClassItem_1_rows }

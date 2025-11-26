@@ -128,15 +128,15 @@ extern asn_TYPE_member_t asn_MBR_RegionalExtension_1[2];
 
 /*** <<< IOC-TABLES [SpecializedContent] >>> ***/
 
-static const long asn_VAL_1_1 = 1;
-static const long asn_VAL_2_2 = 2;
+static const long asn_VAL_RegionalExtension_1_1 = 1;
+static const long asn_VAL_RegionalExtension_2_2 = 2;
 static asn_TYPE_descriptor_t asn_DEF_INTEGER_1;
 static asn_TYPE_descriptor_t asn_DEF_BOOLEAN_2;
 
 static const asn_ioc_cell_t asn_IOS_RegionalExtension_1_rows[] = {
-	{ "&id", aioc__value, &asn_DEF_NativeInteger, &asn_VAL_1_1 },
+	{ "&id", aioc__value, &asn_DEF_NativeInteger, &asn_VAL_RegionalExtension_1_1 },
 	{ "&Type", aioc__type, &asn_DEF_INTEGER_1 },
-	{ "&id", aioc__value, &asn_DEF_NativeInteger, &asn_VAL_2_2 },
+	{ "&id", aioc__value, &asn_DEF_NativeInteger, &asn_VAL_RegionalExtension_2_2 },
 	{ "&Type", aioc__type, &asn_DEF_BOOLEAN_2 }
 };
 static const asn_ioc_set_t asn_IOS_RegionalExtension_1[] = {
