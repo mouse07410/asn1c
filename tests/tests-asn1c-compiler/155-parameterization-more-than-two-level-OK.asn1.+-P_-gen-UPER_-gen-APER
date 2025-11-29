@@ -625,6 +625,7 @@ asn_TYPE_descriptor_t asn_DEF_LowerLayer_List_45P0 = {
 /*** <<< INCLUDES [SinglePacket] >>> ***/
 
 #include "Packet.h"
+#include "ClassItem.h"
 
 /*** <<< TYPE-DECLS [SinglePacket] >>> ***/
 

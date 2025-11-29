@@ -1444,6 +1444,35 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 	} else {
 		GEN_POS_INCLUDE_BASE(OT_INCLUDES, expr);
 
+		/*
+		 * When the expression is a parameterized type reference (has rhs_pspecs),
+		 * the typedef source type may resolve to a different type than the base.
+		 * We need to ensure an include is generated for the actual type used.
+		 * Check if the type with rhs_pspecs resolves differently than without.
+		 */
+		if(expr->rhs_pspecs) {
+			char *base_include = NULL;
+			const char *resolved_include = NULL;
+			
+			/* Get include name without rhs_pspecs (same as GEN_POS_INCLUDE_BASE) */
+			asn1p_expr_t *saved_rhs = expr->rhs_pspecs;
+			expr->rhs_pspecs = NULL;
+			base_include = strdup(asn1c_type_name(arg, expr, TNF_INCLUDE));
+			expr->rhs_pspecs = saved_rhs;
+			
+			/* Get include name with rhs_pspecs */
+			resolved_include = asn1c_type_name(arg, expr, TNF_INCLUDE);
+			
+			/* If they differ, add the resolved include */
+			if(base_include && resolved_include && strcmp(base_include, resolved_include) != 0) {
+				int tmp_target = arg->target->target;
+				REDIR(OT_INCLUDES);
+				OUT_NOINDENT("#include %s\n", resolved_include);
+				REDIR(tmp_target);
+			}
+			free(base_include);
+		}
+
 		REDIR(OT_TYPE_DECLS);
 
 		OUT("typedef %s\t",
