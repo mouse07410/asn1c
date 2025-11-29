@@ -988,11 +988,48 @@ OCTET_STRING__is_hexadecimal(const void *chunk_buf, size_t chunk_size) {
 
 /*
  * Auto-detect and convert from either hexadecimal or Base64 format.
- * Detects the format by examining the content for Base64-only characters.
+ * Supports explicit prefixes per X.693:
+ *   - H'...' or h'...' for hexadecimal format
+ * Without explicit prefixes, detects the format by examining the content.
  */
 static ssize_t
 OCTET_STRING__convert_auto(void *sptr, const void *chunk_buf,
                            size_t chunk_size, int have_more) {
+    const unsigned char *buf_start = (const unsigned char *)chunk_buf;
+    const unsigned char *p = buf_start;
+    const unsigned char *pend = p + chunk_size;
+
+    /* Skip leading whitespace */
+    while(p < pend && (*p == 0x09 || *p == 0x0a || *p == 0x0c ||
+                       *p == 0x0d || *p == 0x20)) {
+        p++;
+    }
+
+    /* Check for explicit H' prefix (X.693 hexadecimal string notation) */
+    if(p < pend && (*p == 'H' || *p == 'h') && (p + 1) < pend && p[1] == '\'') {
+        /* Found H' prefix - parse as hexadecimal */
+        const unsigned char *content_start = p + 2;
+        const unsigned char *content_end = content_start;
+        ssize_t result;
+
+        /* Find the closing quote */
+        while(content_end < pend && *content_end != '\'') {
+            content_end++;
+        }
+        size_t content_size = content_end - content_start;
+
+        result = OCTET_STRING__convert_hexadecimal(sptr, content_start, content_size, have_more);
+        if(result < 0) return result;
+
+        /* Return total consumed from original buffer including prefix and closing quote */
+        size_t total_consumed = (content_end - buf_start);
+        if(content_end < pend && *content_end == '\'') {
+            total_consumed++;  /* Include closing quote */
+        }
+        return total_consumed;
+    }
+
+    /* No explicit prefix - auto-detect based on content */
     if(OCTET_STRING__is_hexadecimal(chunk_buf, chunk_size)) {
         return OCTET_STRING__convert_hexadecimal(sptr, chunk_buf, chunk_size, have_more);
     } else {

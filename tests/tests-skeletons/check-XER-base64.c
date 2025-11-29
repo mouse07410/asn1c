@@ -330,6 +330,76 @@ test_large_data() {
     printf("  Large data: SUCCESS\n\n");
 }
 
+static void
+test_hex_prefix() {
+    printf("Test: H'...' prefix notation (X.693)\n");
+    
+    struct {
+        const char *xml;
+        const char *tag;
+        const uint8_t *expected;
+        size_t expected_len;
+    } tests[] = {
+        /* Simple hex with H' prefix */
+        {"<tag>H'30030101FF'</tag>", "tag", 
+         (const uint8_t *)"\x30\x03\x01\x01\xFF", 5},
+        /* Lowercase h' prefix */
+        {"<tag>h'AABBCCDD'</tag>", "tag",
+         (const uint8_t *)"\xAA\xBB\xCC\xDD", 4},
+        /* H' prefix with whitespace before it */
+        {"<tag>  H'1234'</tag>", "tag",
+         (const uint8_t *)"\x12\x34", 2},
+        /* H' prefix with lowercase hex digits */
+        {"<tag>H'aabbccdd'</tag>", "tag",
+         (const uint8_t *)"\xAA\xBB\xCC\xDD", 4},
+        /* H' prefix with mixed case */
+        {"<tag>H'AaBbCcDd'</tag>", "tag",
+         (const uint8_t *)"\xAA\xBB\xCC\xDD", 4},
+        /* Empty hex string */
+        {"<tag>H''</tag>", "tag",
+         (const uint8_t *)"", 0},
+    };
+    
+    for(size_t i = 0; i < sizeof(tests)/sizeof(tests[0]); i++) {
+        OCTET_STRING_t *decoded = NULL;
+        asn_dec_rval_t dr;
+        
+        dr = OCTET_STRING_decode_xer_auto(NULL, &asn_DEF_OCTET_STRING,
+                                          (void **)&decoded, tests[i].tag,
+                                          tests[i].xml, strlen(tests[i].xml));
+        
+        if(dr.code != RC_OK) {
+            printf("  ERROR: Test %zu failed to decode: %s\n", i + 1, tests[i].xml);
+            printf("  Decode result: code=%d, consumed=%zu\n", dr.code, dr.consumed);
+            if(decoded) ASN_STRUCT_FREE(asn_DEF_OCTET_STRING, decoded);
+            assert(0);
+        }
+        
+        assert(decoded != NULL);
+        assert(decoded->size == tests[i].expected_len);
+        
+        if(tests[i].expected_len > 0) {
+            if(memcmp(decoded->buf, tests[i].expected, tests[i].expected_len) != 0) {
+                printf("  ERROR: Test %zu data mismatch\n", i + 1);
+                printf("  Expected: ");
+                for(size_t j = 0; j < tests[i].expected_len; j++)
+                    printf("%02X ", tests[i].expected[j]);
+                printf("\n  Got:      ");
+                for(size_t j = 0; j < decoded->size; j++)
+                    printf("%02X ", decoded->buf[j]);
+                printf("\n");
+                ASN_STRUCT_FREE(asn_DEF_OCTET_STRING, decoded);
+                assert(0);
+            }
+        }
+        
+        ASN_STRUCT_FREE(asn_DEF_OCTET_STRING, decoded);
+        printf("  Test %zu: PASS (%s)\n", i + 1, tests[i].xml);
+    }
+    
+    printf("  H' prefix notation: SUCCESS\n\n");
+}
+
 int
 main() {
     printf("=== XER Base64 OCTET_STRING Comprehensive Tests ===\n\n");
@@ -342,6 +412,7 @@ main() {
     test_invalid_base64();
     test_xml_context();
     test_large_data();
+    test_hex_prefix();
     
     printf("=== All tests passed ===\n");
     return 0;
