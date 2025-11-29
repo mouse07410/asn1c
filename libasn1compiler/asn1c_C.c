@@ -1451,11 +1451,12 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 		 * Check if the type with rhs_pspecs resolves differently than without.
 		 */
 		if(expr->rhs_pspecs) {
-			char *base_include = NULL;
-			const char *resolved_include = NULL;
+			char *base_include;
+			const char *resolved_include;
+			asn1p_expr_t *saved_rhs;
 			
 			/* Get include name without rhs_pspecs (same as GEN_POS_INCLUDE_BASE) */
-			asn1p_expr_t *saved_rhs = expr->rhs_pspecs;
+			saved_rhs = expr->rhs_pspecs;
 			expr->rhs_pspecs = NULL;
 			base_include = strdup(asn1c_type_name(arg, expr, TNF_INCLUDE));
 			expr->rhs_pspecs = saved_rhs;
