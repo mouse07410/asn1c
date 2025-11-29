@@ -400,6 +400,42 @@ test_hex_prefix() {
     printf("  H' prefix notation: SUCCESS\n\n");
 }
 
+static void
+test_invalid_hex_prefix() {
+    printf("Test: Invalid H' prefix notation rejection\n");
+    
+    const char *invalid_inputs[] = {
+        /* Unterminated string - no closing quote */
+        "<tag>H'30030101FF</tag>",
+        /* Invalid hex characters with H' prefix */
+        "<tag>H'GHIJ'</tag>",
+    };
+    
+    for(size_t i = 0; i < sizeof(invalid_inputs)/sizeof(invalid_inputs[0]); i++) {
+        OCTET_STRING_t *decoded = NULL;
+        asn_dec_rval_t dr;
+        
+        dr = OCTET_STRING_decode_xer_auto(NULL, &asn_DEF_OCTET_STRING,
+                                          (void **)&decoded, "tag",
+                                          invalid_inputs[i], strlen(invalid_inputs[i]));
+        
+        /* Should fail to decode invalid input */
+        if(dr.code == RC_OK) {
+            printf("  Input %zu FAILED: Should have rejected: %s\n", 
+                   i + 1, invalid_inputs[i]);
+            if(decoded) ASN_STRUCT_FREE(asn_DEF_OCTET_STRING, decoded);
+            assert(0);
+        }
+        
+        /* Free the structure even on error to prevent memory leak */
+        if(decoded) ASN_STRUCT_FREE(asn_DEF_OCTET_STRING, decoded);
+        
+        printf("  Input %zu: Correctly rejected\n", i + 1);
+    }
+    
+    printf("  Invalid H' prefix rejection: SUCCESS\n\n");
+}
+
 int
 main() {
     printf("=== XER Base64 OCTET_STRING Comprehensive Tests ===\n\n");
@@ -413,6 +449,7 @@ main() {
     test_xml_context();
     test_large_data();
     test_hex_prefix();
+    test_invalid_hex_prefix();
     
     printf("=== All tests passed ===\n");
     return 0;

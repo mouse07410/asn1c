@@ -1006,7 +1006,7 @@ OCTET_STRING__convert_auto(void *sptr, const void *chunk_buf,
     }
 
     /* Check for explicit H' prefix (X.693 hexadecimal string notation) */
-    if(p < pend && (*p == 'H' || *p == 'h') && (p + 1) < pend && p[1] == '\'') {
+    if((p + 1) < pend && (*p == 'H' || *p == 'h') && p[1] == '\'') {
         /* Found H' prefix - parse as hexadecimal */
         const unsigned char *content_start = p + 2;
         const unsigned char *content_end = content_start;
@@ -1016,16 +1016,21 @@ OCTET_STRING__convert_auto(void *sptr, const void *chunk_buf,
         while(content_end < pend && *content_end != '\'') {
             content_end++;
         }
+
+        /* Validate that we found the closing quote */
+        if(content_end >= pend || *content_end != '\'') {
+            /* Unterminated string - return error */
+            return -1;
+        }
+
         size_t content_size = content_end - content_start;
 
-        result = OCTET_STRING__convert_hexadecimal(sptr, content_start, content_size, have_more);
+        /* Content between quotes is complete, so pass have_more=0 */
+        result = OCTET_STRING__convert_hexadecimal(sptr, content_start, content_size, 0);
         if(result < 0) return result;
 
         /* Return total consumed from original buffer including prefix and closing quote */
-        size_t total_consumed = (content_end - buf_start);
-        if(content_end < pend && *content_end == '\'') {
-            total_consumed++;  /* Include closing quote */
-        }
+        size_t total_consumed = (content_end - buf_start) + 1;  /* +1 for closing quote */
         return total_consumed;
     }
 
