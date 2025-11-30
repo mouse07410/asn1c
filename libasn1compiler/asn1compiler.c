@@ -12,7 +12,6 @@ static int asn1c_detach_streams(asn1p_expr_t *expr);
 static void asn1c_mark_pdu_dependencies(arg_t *arg);
 static void asn1c_mark_expr_dependencies(arg_t *arg, asn1p_expr_t *expr);
 static void asn1c_mark_ioc_table_dependencies(arg_t *arg, asn1p_ioc_table_t *ioc_table);
-static void asn1c_mark_all_parameterized_type_deps(arg_t *arg, asn1p_expr_t *param_type);
 
 int
 asn1_compile(asn1p_t *asn, const char *datadir, const char *destdir, enum asn1c_flags flags,
@@ -351,27 +350,6 @@ asn1c_mark_ioc_table_dependencies(arg_t *arg, asn1p_ioc_table_t *ioc_table) {
 					asn1c_mark_expr_dependencies(arg, cell->value);
 				}
 			}
-		}
-	}
-}
-
-/*
- * When a parameterized type is marked, we need to mark ALL its existing
- * specializations and their dependencies, because the generated file for
- * the parameterized type includes all specializations.
- */
-static void
-asn1c_mark_all_parameterized_type_deps(arg_t *arg, asn1p_expr_t *param_type) {
-	if(!param_type || !param_type->lhs_params) return;
-	if(param_type->_mark & TM_PDU_DEPENDENCY) return;  /* Already processed */
-
-	param_type->_mark |= TM_PDU_DEPENDENCY;
-
-	/* Mark all specializations */
-	for(int i = 0; i < param_type->specializations.pspecs_count; i++) {
-		asn1p_expr_t *spec = param_type->specializations.pspec[i].my_clone;
-		if(spec) {
-			asn1c_mark_expr_dependencies(arg, spec);
 		}
 	}
 }
