@@ -338,10 +338,49 @@ asn1c_mark_ioc_table_dependencies(arg_t *arg, asn1p_ioc_table_t *ioc_table) {
 		for(size_t cn = 0; cn < row->columns; cn++) {
 			struct asn1p_ioc_cell_s *cell = &row->column[cn];
 			if(cell->value) {
-				/* For type references, resolve and mark the target type */
-				if(cell->value->expr_type == A1TC_REFERENCE && cell->value->reference) {
-					asn1p_expr_t *ref_expr = asn1f_lookup_symbol_ex(arg->asn,
-						arg->ns, cell->value, cell->value->reference);
+				DEBUG("IOC cell: meta=%d expr=%d has_ref=%d has_mod=%d id=%s",
+					cell->value->meta_type,
+					cell->value->expr_type,
+					cell->value->reference ? 1 : 0,
+					cell->value->module ? 1 : 0,
+					cell->value->Identifier ? cell->value->Identifier : "(null)");
+				/* 
+				 * For type references (AMT_TYPEREF), resolve and mark the target type.
+				 * We use the cell value's module namespace for symbol lookup since
+				 * the type may be defined in a different module than the current context.
+				 */
+				if(cell->value->meta_type == AMT_TYPEREF && cell->value->reference) {
+					asn1p_expr_t *ref_expr = NULL;
+					if(cell->value->module) {
+						ref_expr = WITH_MODULE_NAMESPACE(
+							cell->value->module, cell_ns,
+							asn1f_lookup_symbol_ex(arg->asn, cell_ns, 
+								cell->value, cell->value->reference));
+					} else {
+						ref_expr = asn1f_lookup_symbol_ex(arg->asn,
+							arg->ns, cell->value, cell->value->reference);
+					}
+					DEBUG("IOC cell ref resolved (AMT_TYPEREF): %s -> %s",
+						cell->value->Identifier ? cell->value->Identifier : "(null)",
+						ref_expr ? (ref_expr->Identifier ? ref_expr->Identifier : "(no id)") : "(not found)");
+					if(ref_expr) {
+						asn1c_mark_expr_dependencies(arg, ref_expr);
+					}
+				} else if(cell->value->expr_type == A1TC_REFERENCE && cell->value->reference) {
+					/* For other type references */
+					asn1p_expr_t *ref_expr = NULL;
+					if(cell->value->module) {
+						ref_expr = WITH_MODULE_NAMESPACE(
+							cell->value->module, cell_ns,
+							asn1f_lookup_symbol_ex(arg->asn, cell_ns, 
+								cell->value, cell->value->reference));
+					} else {
+						ref_expr = asn1f_lookup_symbol_ex(arg->asn,
+							arg->ns, cell->value, cell->value->reference);
+					}
+					DEBUG("IOC cell ref resolved (A1TC_REFERENCE): %s -> %s",
+						cell->value->Identifier ? cell->value->Identifier : "(null)",
+						ref_expr ? (ref_expr->Identifier ? ref_expr->Identifier : "(no id)") : "(not found)");
 					if(ref_expr) {
 						asn1c_mark_expr_dependencies(arg, ref_expr);
 					}
@@ -377,8 +416,20 @@ asn1c_mark_expr_dependencies(arg_t *arg, asn1p_expr_t *expr) {
 
 	/* For type references, find and mark the referenced type */
 	if(expr->expr_type == A1TC_REFERENCE && expr->reference) {
-		asn1p_expr_t *ref_expr = asn1f_lookup_symbol_ex(arg->asn, 
-			arg->ns, expr, expr->reference);
+		/*
+		 * Use the expression's module namespace if available, otherwise
+		 * fall back to arg->ns. This is important for members that
+		 * reference types in different modules.
+		 */
+		asn1p_expr_t *ref_expr = NULL;
+		if(expr->module) {
+			ref_expr = WITH_MODULE_NAMESPACE(
+				expr->module, expr_ns,
+				asn1f_lookup_symbol_ex(arg->asn, expr_ns, expr, expr->reference));
+		} else {
+			ref_expr = asn1f_lookup_symbol_ex(arg->asn, 
+				arg->ns, expr, expr->reference);
+		}
 		if(ref_expr) {
 			/*
 			 * If this is a forked/specialized type (spec_index >= 0),
@@ -462,8 +513,15 @@ asn1c_mark_expr_dependencies(arg_t *arg, asn1p_expr_t *expr) {
 			asn1p_ref_t *objset_ref =
 				asn1c_get_information_object_set_reference_from_constraint(arg, cr_ct);
 			if(objset_ref) {
-				asn1p_expr_t *objset = asn1f_lookup_symbol_ex(arg->asn,
-					arg->ns, expr, objset_ref);
+				asn1p_expr_t *objset = NULL;
+				if(expr->module) {
+					objset = WITH_MODULE_NAMESPACE(
+						expr->module, expr_ns,
+						asn1f_lookup_symbol_ex(arg->asn, expr_ns, expr, objset_ref));
+				} else {
+					objset = asn1f_lookup_symbol_ex(arg->asn,
+						arg->ns, expr, objset_ref);
+				}
 				if(objset && objset->ioc_table) {
 					asn1c_mark_ioc_table_dependencies(arg, objset->ioc_table);
 				}
@@ -482,8 +540,15 @@ asn1c_mark_expr_dependencies(arg_t *arg, asn1p_expr_t *expr) {
 			/* If the pspec is a reference to an information object set,
 			 * look it up and traverse its IOC table */
 			if(pspec->expr_type == A1TC_REFERENCE && pspec->reference) {
-				asn1p_expr_t *ref_expr = asn1f_lookup_symbol_ex(arg->asn,
-					arg->ns, pspec, pspec->reference);
+				asn1p_expr_t *ref_expr = NULL;
+				if(pspec->module) {
+					ref_expr = WITH_MODULE_NAMESPACE(
+						pspec->module, pspec_ns,
+						asn1f_lookup_symbol_ex(arg->asn, pspec_ns, pspec, pspec->reference));
+				} else {
+					ref_expr = asn1f_lookup_symbol_ex(arg->asn,
+						arg->ns, pspec, pspec->reference);
+				}
 				if(ref_expr && ref_expr->ioc_table) {
 					asn1c_mark_ioc_table_dependencies(arg, ref_expr->ioc_table);
 				}
@@ -492,8 +557,15 @@ asn1c_mark_expr_dependencies(arg_t *arg, asn1p_expr_t *expr) {
 			asn1p_expr_t *nested;
 			TQ_FOR(nested, &(pspec->members), next) {
 				if(nested->expr_type == A1TC_REFERENCE && nested->reference) {
-					asn1p_expr_t *ref_expr = asn1f_lookup_symbol_ex(arg->asn,
-						arg->ns, nested, nested->reference);
+					asn1p_expr_t *ref_expr = NULL;
+					if(nested->module) {
+						ref_expr = WITH_MODULE_NAMESPACE(
+							nested->module, nested_ns,
+							asn1f_lookup_symbol_ex(arg->asn, nested_ns, nested, nested->reference));
+					} else {
+						ref_expr = asn1f_lookup_symbol_ex(arg->asn,
+							arg->ns, nested, nested->reference);
+					}
 					if(ref_expr && ref_expr->ioc_table) {
 						asn1c_mark_ioc_table_dependencies(arg, ref_expr->ioc_table);
 					}
