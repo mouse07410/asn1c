@@ -11,6 +11,7 @@ static int asn1c_compile_expr(arg_t *arg, const asn1c_ioc_table_and_objset_t *);
 static int asn1c_detach_streams(asn1p_expr_t *expr);
 static void asn1c_mark_pdu_dependencies(arg_t *arg);
 static void asn1c_mark_expr_dependencies(arg_t *arg, asn1p_expr_t *expr);
+static void asn1c_mark_ioc_table_dependencies(arg_t *arg, asn1p_ioc_table_t *ioc_table);
 
 int
 asn1_compile(asn1p_t *asn, const char *datadir, const char *destdir, enum asn1c_flags flags,
@@ -326,6 +327,34 @@ asn1c_debug_type_naming(asn1p_t *asn, enum asn1c_flags flags,
 }
 
 /*
+ * Helper to mark IOC table types as dependencies.
+ */
+static void
+asn1c_mark_ioc_table_dependencies(arg_t *arg, asn1p_ioc_table_t *ioc_table) {
+	if(!ioc_table) return;
+
+	for(size_t rn = 0; rn < ioc_table->rows; rn++) {
+		asn1p_ioc_row_t *row = ioc_table->row[rn];
+		for(size_t cn = 0; cn < row->columns; cn++) {
+			struct asn1p_ioc_cell_s *cell = &row->column[cn];
+			if(cell->value) {
+				/* For type references, resolve and mark the target type */
+				if(cell->value->expr_type == A1TC_REFERENCE && cell->value->reference) {
+					asn1p_expr_t *ref_expr = asn1f_lookup_symbol_ex(arg->asn,
+						arg->ns, cell->value, cell->value->reference);
+					if(ref_expr) {
+						asn1c_mark_expr_dependencies(arg, ref_expr);
+					}
+				} else {
+					/* Recursively mark the cell value and its members */
+					asn1c_mark_expr_dependencies(arg, cell->value);
+				}
+			}
+		}
+	}
+}
+
+/*
  * Recursively mark all dependencies of a given expression as PDU dependencies.
  */
 static void
@@ -351,14 +380,134 @@ asn1c_mark_expr_dependencies(arg_t *arg, asn1p_expr_t *expr) {
 		asn1p_expr_t *ref_expr = asn1f_lookup_symbol_ex(arg->asn, 
 			arg->ns, expr, expr->reference);
 		if(ref_expr) {
+			/*
+			 * If this is a forked/specialized type (spec_index >= 0),
+			 * we need to also mark the base parameterized type.
+			 * The base type is what gets compiled into a .c/.h file.
+			 *
+			 * Since asn1f_lookup_symbol_ex returns a fork when rhs_pspecs is present,
+			 * we need to mark the base type separately.
+			 */
+			if(ref_expr->spec_index >= 0 && expr->reference->comp_count > 0) {
+				/* This is a fork - find and mark the base parameterized type */
+				const char *base_name = expr->reference->components[0].name;
+				asn1p_module_t *mod;
+				TQ_FOR(mod, &(arg->asn->modules), mod_next) {
+					asn1p_expr_t *base_type;
+					TQ_FOR(base_type, &(mod->members), next) {
+						if(base_type->Identifier 
+						   && strcmp(base_type->Identifier, base_name) == 0
+						   && base_type->lhs_params) {
+							/* Found the base parameterized type.
+							 * Mark it directly (but don't recurse into its formal
+							 * parameter members, which would fail).
+							 * Then mark all its specializations which have concrete types. */
+							if(!(base_type->_mark & TM_PDU_DEPENDENCY)) {
+								base_type->_mark |= TM_PDU_DEPENDENCY;
+								for(int i = 0; i < base_type->specializations.pspecs_count; i++) {
+									asn1p_expr_t *spec = base_type->specializations.pspec[i].my_clone;
+									if(spec) {
+										asn1c_mark_expr_dependencies(arg, spec);
+									}
+								}
+							}
+							break;
+						}
+					}
+				}
+			}
+
 			asn1c_mark_expr_dependencies(arg, ref_expr);
+
+			/*
+			 * For parameterized type references with rhs_pspecs,
+			 * also mark the appropriate specialization.
+			 */
+			if(expr->rhs_pspecs && ref_expr->lhs_params) {
+				for(int i = 0; i < ref_expr->specializations.pspecs_count; i++) {
+					asn1p_expr_t *spec = ref_expr->specializations.pspec[i].my_clone;
+					if(spec) {
+						asn1c_mark_expr_dependencies(arg, spec);
+					}
+				}
+			}
+		}
+	}
+
+	/*
+	 * For parameterized types, also mark all their specializations
+	 * since they may be needed for types that reference them.
+	 */
+	if(expr->lhs_params) {
+		for(int i = 0; i < expr->specializations.pspecs_count; i++) {
+			asn1p_expr_t *spec = expr->specializations.pspec[i].my_clone;
+			if(spec) {
+				asn1c_mark_expr_dependencies(arg, spec);
+			}
 		}
 	}
 
 	/* Recursively mark members of compound types */
 	TQ_FOR(member, &(expr->members), next) {
 		asn1c_mark_expr_dependencies(arg, member);
+
+		/*
+		 * Check if this member has a component relation constraint that
+		 * references an Information Object Set. If so, mark all types
+		 * in that IOC table as dependencies.
+		 */
+		const asn1p_constraint_t *cr_ct =
+			asn1p_get_component_relation_constraint(member->constraints);
+		if(cr_ct) {
+			asn1p_ref_t *objset_ref =
+				asn1c_get_information_object_set_reference_from_constraint(arg, cr_ct);
+			if(objset_ref) {
+				asn1p_expr_t *objset = asn1f_lookup_symbol_ex(arg->asn,
+					arg->ns, expr, objset_ref);
+				if(objset && objset->ioc_table) {
+					asn1c_mark_ioc_table_dependencies(arg, objset->ioc_table);
+				}
+			}
+		}
 	}
+
+	/* Mark rhs_pspecs (right-hand side parameter specs) as dependencies.
+	 * Also traverse IOC tables from pspecs which may be information object sets.
+	 * pspecs can have nested structures like { { SomeIOC } }, so we need to
+	 * traverse members recursively. */
+	if(expr->rhs_pspecs) {
+		asn1p_expr_t *pspec;
+		TQ_FOR(pspec, &(expr->rhs_pspecs->members), next) {
+			asn1c_mark_expr_dependencies(arg, pspec);
+			/* If the pspec is a reference to an information object set,
+			 * look it up and traverse its IOC table */
+			if(pspec->expr_type == A1TC_REFERENCE && pspec->reference) {
+				asn1p_expr_t *ref_expr = asn1f_lookup_symbol_ex(arg->asn,
+					arg->ns, pspec, pspec->reference);
+				if(ref_expr && ref_expr->ioc_table) {
+					asn1c_mark_ioc_table_dependencies(arg, ref_expr->ioc_table);
+				}
+			}
+			/* Also check nested members (for { { IOC } } style params) */
+			asn1p_expr_t *nested;
+			TQ_FOR(nested, &(pspec->members), next) {
+				if(nested->expr_type == A1TC_REFERENCE && nested->reference) {
+					asn1p_expr_t *ref_expr = asn1f_lookup_symbol_ex(arg->asn,
+						arg->ns, nested, nested->reference);
+					if(ref_expr && ref_expr->ioc_table) {
+						asn1c_mark_ioc_table_dependencies(arg, ref_expr->ioc_table);
+					}
+				}
+			}
+		}
+	}
+
+	/*
+	 * Mark types referenced in Information Object Class tables directly on this expr.
+	 * This ensures that when -fgen-only-pdu-deps is used, types referenced
+	 * in IOC tables (e.g., Reset, F1SetupRequest in F1AP) are also generated.
+	 */
+	asn1c_mark_ioc_table_dependencies(arg, expr->ioc_table);
 
 	/* Clear recursion marker */
 	expr->_mark &= ~TM_RECURSION;
