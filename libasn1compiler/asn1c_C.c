@@ -202,20 +202,25 @@ asn1c_lang_C_type_common_INTEGER(arg_t *arg) {
 		
 		/* Only generate custom validation for NativeEnumerated types */
 		if(expr->expr_type == ASN_BASIC_ENUMERATED && asn1c_type_fits_long(arg, expr)) {
-                OUT("static int asn_validate_%s(const asn_TYPE_descriptor_t *td,\n", MKID(expr));
+                /* Store expr name first since asn1c_make_identifier uses static buffer */
+                char *expr_name = strdup(MKID(expr));
+                OUT("static int asn_validate_%s(const asn_TYPE_descriptor_t *td,\n", expr_name);
                 OUT("                       const void *sptr,\n");
                 OUT("                       asn_app_constraint_failed_f *ctfailcb,\n");
                 OUT("                       void* app_key) {\n");
                 OUT("    if(! sptr) { return -1; }\n");
-                OUT("    e_%s value = *(e_%s*)sptr;\n", MKID(expr), MKID(expr));
+                OUT("    e_%s value = *(e_%s*)sptr;\n", expr_name, expr_name);
                 OUT("    switch(value) {\n");
 		for(eidx = 0; eidx < el_count; eidx++) {
-                    OUT("    case %s_%s:\n", MKID(expr), v2e[eidx].name);
+                    /* Convert ASN.1 identifier to C-safe identifier */
+                    const char *safe_name = asn1c_make_identifier(0, 0, v2e[eidx].name, 0);
+                    OUT("    case %s_%s:\n", expr_name, safe_name);
                 }
                 OUT("        return 0;\n");
                 OUT("    }\n");
                 OUT("    return -1;\n");
                 OUT("}\n");
+                free(expr_name);
                 arg->param.localvalidation_expr = expr;
                 }
 
