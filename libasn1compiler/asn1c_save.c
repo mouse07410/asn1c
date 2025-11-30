@@ -107,6 +107,11 @@ asn1c__save_library_makefile(arg_t *arg, const asn1c_dep_chainset *deps,
 	safe_fprintf(mkf, "ASN_MODULE_SRCS=");
 	TQ_FOR(mod, &(arg->asn->modules), mod_next) {
 		TQ_FOR(arg->expr, &(mod->members), next) {
+			/* Skip types that are not PDU dependencies if -fgen-only-pdu-deps is set */
+			if((arg->flags & A1C_GEN_ONLY_PDU_DEPS) && 
+			   !(arg->expr->_mark & TM_PDU_DEPENDENCY)) {
+				continue;
+			}
 			if(asn1_lang_map[arg->expr->meta_type]
 				[arg->expr->expr_type].type_cb &&
 				(arg->expr->meta_type != AMT_VALUE)) {
@@ -118,6 +123,11 @@ asn1c__save_library_makefile(arg_t *arg, const asn1c_dep_chainset *deps,
 	safe_fprintf(mkf, "\n\nASN_MODULE_HDRS=");
 	TQ_FOR(mod, &(arg->asn->modules), mod_next) {
 		TQ_FOR(arg->expr, &(mod->members), next) {
+			/* Skip types that are not PDU dependencies if -fgen-only-pdu-deps is set */
+			if((arg->flags & A1C_GEN_ONLY_PDU_DEPS) && 
+			   !(arg->expr->_mark & TM_PDU_DEPENDENCY)) {
+				continue;
+			}
 			if(asn1_lang_map[arg->expr->meta_type]
 				[arg->expr->expr_type].type_cb &&
 				(arg->expr->meta_type != AMT_VALUE)) {

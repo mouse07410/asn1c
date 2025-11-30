@@ -1,0 +1,14 @@
+-- Test for -fgen-only-pdu-deps with EXTERNAL type
+-- This ensures that EXTERNAL type from standard module is generated
+-- when it's a dependency of a PDU type
+TestPDUDepsExternal DEFINITIONS ::= BEGIN
+
+-- PDU type using EXTERNAL from standard modules
+PDUWithExternal ::= SEQUENCE {
+    data EXTERNAL
+}
+
+-- Type not used by PDU
+UnusedType ::= INTEGER
+
+END
