@@ -204,6 +204,10 @@ asn1c_lang_C_type_common_INTEGER(arg_t *arg) {
 		if(expr->expr_type == ASN_BASIC_ENUMERATED && asn1c_type_fits_long(arg, expr)) {
                 /* Store expr name first since asn1c_make_identifier uses static buffer */
                 char *expr_name = strdup(MKID(expr));
+                if(!expr_name) {
+                    free(v2e);
+                    return -1;
+                }
                 OUT("static int asn_validate_%s(const asn_TYPE_descriptor_t *td,\n", expr_name);
                 OUT("                       const void *sptr,\n");
                 OUT("                       asn_app_constraint_failed_f *ctfailcb,\n");
