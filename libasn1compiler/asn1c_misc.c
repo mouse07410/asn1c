@@ -63,6 +63,39 @@ asn1c_prefix_get() {
 }
 
 /*
+ * Find the parent parameterized type for a specialization.
+ * When a parameterized type is instantiated with parameters, a "fork"
+ * (specialization) is created. This specialization has spec_index >= 0.
+ * This function searches the module for the parent parameterized type
+ * that contains the given specialization.
+ * Returns NULL if not found.
+ */
+static asn1p_expr_t *
+asn1c_find_parent_parameterized_type(asn1p_t *asn, asn1p_expr_t *spec) {
+    asn1p_module_t *mod;
+    asn1p_expr_t *expr;
+    
+    if(!spec || spec->spec_index < 0) return NULL;
+    
+    /* Search all modules */
+    TQ_FOR(mod, &(asn->modules), mod_next) {
+        TQ_FOR(expr, &(mod->members), next) {
+            /* Only look at parameterized types */
+            if(!expr->lhs_params) continue;
+            
+            /* Check if spec is one of this type's specializations */
+            for(int i = 0; i < expr->specializations.pspecs_count; i++) {
+                if(expr->specializations.pspec[i].my_clone == spec) {
+                    return expr;
+                }
+            }
+        }
+    }
+    
+    return NULL;
+}
+
+/*
  * Construct identifier from multiple parts.
  * Convert unsafe characters to underscores.
  */
@@ -274,8 +307,26 @@ asn1c_type_name(arg_t *arg, asn1p_expr_t *expr, enum tnfmt _format) {
 		}
 
 		if(_format != TNF_RSAFE  && terminal && ((terminal->spec_index != -1) || (terminal->_mark & TM_NAMECLASH))) {
-			exprid = terminal;
-			typename = 0;
+			/*
+			 * For TNF_INCLUDE format, when the terminal is a specialization
+			 * (spec_index >= 0), we need to include the parent parameterized
+			 * type's file, not a non-existent specialization-specific file.
+			 * The specialization is defined inside the parent's .h file.
+			 */
+			if(_format == TNF_INCLUDE && terminal->spec_index >= 0) {
+				asn1p_expr_t *parent = asn1c_find_parent_parameterized_type(arg->asn, terminal);
+				if(parent) {
+					exprid = parent;
+					typename = 0;
+				} else {
+					/* Fall back to terminal if parent not found */
+					exprid = terminal;
+					typename = 0;
+				}
+			} else {
+				exprid = terminal;
+				typename = 0;
+			}
 		}
 
 		break;
