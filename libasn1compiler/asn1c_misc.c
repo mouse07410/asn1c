@@ -84,7 +84,7 @@ asn1c_find_parent_parameterized_type(asn1p_t *asn, asn1p_expr_t *spec) {
             if(!expr->lhs_params) continue;
             
             /* Check if spec is one of this type's specializations */
-            for(int i = 0; i < expr->specializations.pspecs_count; i++) {
+            for(size_t i = 0; i < (size_t)expr->specializations.pspecs_count; i++) {
                 if(expr->specializations.pspec[i].my_clone == spec) {
                     return expr;
                 }
