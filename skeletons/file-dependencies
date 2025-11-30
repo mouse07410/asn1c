@@ -93,8 +93,8 @@ BIT_STRING.h BIT_STRING_xer.c
 BMPString.h BMPString_xer.c
 BOOLEAN.h BOOLEAN_xer.c
 GeneralizedTime.h GeneralizedTime_xer.c
-INTEGER.h INTEGER_xer.c
-NULL.h NULL_xer.c
+INTEGER.h INTEGER_xer.c asn_codecs_prim_xer.c
+NULL.h NULL_xer.c asn_codecs_prim_xer.c
 NativeEnumerated.h NativeEnumerated_xer.c
 NativeInteger.h NativeInteger_xer.c
 NativeReal.h NativeReal_xer.c
