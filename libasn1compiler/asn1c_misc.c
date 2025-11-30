@@ -70,7 +70,7 @@ asn1c_prefix_get() {
  * that contains the given specialization.
  * Returns NULL if not found.
  */
-static asn1p_expr_t *
+asn1p_expr_t *
 asn1c_find_parent_parameterized_type(asn1p_t *asn, asn1p_expr_t *spec) {
     asn1p_module_t *mod;
     asn1p_expr_t *expr;

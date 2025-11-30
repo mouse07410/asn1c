@@ -1459,19 +1459,44 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 		 * We need to ensure an include is generated for the actual type used.
 		 * Check if the type with rhs_pspecs resolves differently than without.
 		 *
-		 * For parameterized type specializations where the include differs from
-		 * the base (different parameterized type), there can be circular include
+		 * For parameterized type specializations where the source type is from
+		 * a different parameterized type, there can be circular include
 		 * dependencies. To handle this, we:
 		 * 1. Add a forward declaration for the struct type
 		 * 2. Use struct form in the typedef (TNF_RSAFE)
 		 * 3. Add the include in POST_INCLUDE section (after header guard)
 		 */
 		int use_rsafe_typedef = 0;
+		asn1p_expr_t *terminal = NULL;
+		
+		/* First, check if the source type is a specialization from another file */
+		if(expr->expr_type == A1TC_REFERENCE) {
+			terminal = WITH_MODULE_NAMESPACE(
+				expr->module, expr_ns,
+				(expr->meta_type == AMT_TYPEREF) ?
+					asn1f_lookup_symbol_ex(arg->asn, expr_ns, expr, expr->reference) :
+					asn1f_find_terminal_type_ex(arg->asn, expr_ns, expr));
+			
+			/*
+			 * If the terminal type is a specialization (spec_index >= 0) and
+			 * it's from a different parameterized type than what we're compiling,
+			 * use struct form to avoid circular include issues.
+			 */
+			if(terminal && terminal->spec_index >= 0) {
+				/* Check if this specialization is from a different parent than our own */
+				asn1p_expr_t *our_parent = asn1c_find_parent_parameterized_type(arg->asn, arg->expr);
+				asn1p_expr_t *source_parent = asn1c_find_parent_parameterized_type(arg->asn, terminal);
+				
+				if(our_parent && source_parent && our_parent != source_parent) {
+					use_rsafe_typedef = 1;
+				}
+			}
+		}
+		
 		if(expr->rhs_pspecs) {
 			char *base_include;
 			const char *resolved_include;
 			asn1p_expr_t *saved_rhs;
-			asn1p_expr_t *terminal;
 			
 			/* Get include name without rhs_pspecs (same as GEN_POS_INCLUDE_BASE) */
 			saved_rhs = expr->rhs_pspecs;
@@ -1482,26 +1507,12 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 			/* Get include name with rhs_pspecs */
 			resolved_include = asn1c_type_name(arg, expr, TNF_INCLUDE);
 			
-			/* Check if resolved type is a specialization */
-			terminal = WITH_MODULE_NAMESPACE(
-				expr->module, expr_ns,
-				(expr->meta_type == AMT_TYPEREF) ?
-					asn1f_lookup_symbol_ex(arg->asn, expr_ns, expr, expr->reference) :
-					asn1f_find_terminal_type_ex(arg->asn, expr_ns, expr));
-			
-			/* If they differ, add the include (use POST_INCLUDE for specializations) */
+			/* If they differ, add the resolved include */
 			if(base_include && resolved_include && strcmp(base_include, resolved_include) != 0) {
 				int tmp_target = arg->target->target;
-				/*
-				 * Only use RSAFE typedef and POST_INCLUDE when the resolved include
-				 * points to a specialization in a DIFFERENT parameterized type.
-				 * This handles circular dependency cases like F1AP.
-				 */
-				int use_post_include = (terminal && terminal->spec_index >= 0);
 				
-				if(use_post_include) {
-					/* For specializations in different files, use struct form to avoid circular deps */
-					use_rsafe_typedef = 1;
+				if(use_rsafe_typedef) {
+					/* For cross-file specializations, use POST_INCLUDE */
 					REDIR(OT_FWD_DECLS);
 					OUT("%s;\n", asn1c_type_name(arg, arg->expr, TNF_RSAFE));
 					REDIR(OT_POST_INCLUDE);

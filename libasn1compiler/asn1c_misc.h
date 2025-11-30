@@ -53,4 +53,14 @@ enum asn1c_fitsfloat_e {
 };
 enum asn1c_fitsfloat_e asn1c_REAL_fits(arg_t *arg, asn1p_expr_t *expr);
 
+/*
+ * Find the parent parameterized type for a specialization.
+ * When a parameterized type is instantiated with parameters, a "fork"
+ * (specialization) is created. This specialization has spec_index >= 0.
+ * This function searches the module for the parent parameterized type
+ * that contains the given specialization.
+ * Returns NULL if not found.
+ */
+asn1p_expr_t *asn1c_find_parent_parameterized_type(asn1p_t *asn, asn1p_expr_t *spec);
+
 #endif	/* ASN1_COMPILER_MISC_H */
