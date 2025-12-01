@@ -37,6 +37,19 @@ OPEN_TYPE_xer_get(const asn_codec_ctx_t *opt_codec_ctx,
         ASN__DECODE_FAILED;
     }
 
+    /* Validate the selected variant */
+    if(!elm->type || !elm->type->elements) {
+        ASN_DEBUG("Open Type %s->%s: type descriptor has no elements",
+                  td->name, elm->name);
+        ASN__DECODE_FAILED;
+    }
+    if(selected.presence_index > elm->type->elements_count) {
+        ASN_DEBUG("Open Type %s->%s: presence index %u out of bounds (max %u)",
+                  td->name, elm->name, selected.presence_index,
+                  elm->type->elements_count);
+        ASN__DECODE_FAILED;
+    }
+
     /* Fetch the pointer to this member */
     assert(elm->flags == ATF_OPEN_TYPE);
     if(elm->flags & ATF_POINTER) {
@@ -60,14 +73,6 @@ OPEN_TYPE_xer_get(const asn_codec_ctx_t *opt_codec_ctx,
 	       != 0) {
 		    ASN__DECODE_FAILED;
 	    }
-    }
- 
-    if(*memb_ptr2 != NULL) {
-        /* Make sure we reset the structure first before encoding */
-        if(CHOICE_variant_set_presence(elm->type, *memb_ptr2, 0)
-           != 0) {
-            ASN__DECODE_FAILED;
-        }
     }
 
     /*

@@ -33,6 +33,19 @@ OPEN_TYPE_ber_get(const asn_codec_ctx_t *opt_codec_ctx,
         ASN__DECODE_FAILED;
     }
 
+    /* Validate the selected variant */
+    if(!elm->type || !elm->type->elements) {
+        ASN_DEBUG("Open Type %s->%s: type descriptor has no elements",
+                  td->name, elm->name);
+        ASN__DECODE_FAILED;
+    }
+    if(selected.presence_index > elm->type->elements_count) {
+        ASN_DEBUG("Open Type %s->%s: presence index %u out of bounds (max %u)",
+                  td->name, elm->name, selected.presence_index,
+                  elm->type->elements_count);
+        ASN__DECODE_FAILED;
+    }
+
     /* Fetch the pointer to this member */
     if(elm->flags & ATF_POINTER) {
         memb_ptr2 = (void **)((char *)sptr + elm->memb_offset);
