@@ -1,0 +1,39 @@
+-- OK: Test complex nesting with many members
+-- This tests the heuristic for using pointers when a type has many complex members
+-- to avoid deep nesting issues similar to F1AP ActiveULBWP/SRSConfig
+
+ModuleComplexNesting
+{ iso org(3) dod(6) internet (1) private(4) enterprise(1)
+spelio(9363) software(1) asn1c(5) test(1) 100 }
+DEFINITIONS ::=
+BEGIN
+
+Container ::= SEQUENCE {
+value INTEGER,
+complexMember  ComplexType
+}
+
+ComplexType ::= SEQUENCE {
+member1  StructureA,
+member2  StructureB,
+member3  StructureC,
+member4  StructureD
+}
+
+StructureA ::= SEQUENCE {
+field INTEGER
+}
+
+StructureB ::= SEQUENCE {
+field INTEGER
+}
+
+StructureC ::= SEQUENCE {
+field INTEGER
+}
+
+StructureD ::= SEQUENCE {
+field INTEGER
+}
+
+END
