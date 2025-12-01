@@ -27,6 +27,13 @@ OPEN_TYPE_jer_get(const asn_codec_ctx_t *opt_codec_ctx,
         ASN__DECODE_FAILED;
     }
 
+    /* Validate elm->type before accessing its members */
+    if(!elm->type) {
+        ASN_DEBUG("Open Type %s->%s: type descriptor is NULL",
+                  td->name, elm->name);
+        ASN__DECODE_FAILED;
+    }
+
     if(!elm->type_selector) {
         ASN_DEBUG("Type selector is not defined for Open Type %s->%s->%s",
                   td->name, elm->name, elm->type->name);
@@ -39,7 +46,7 @@ OPEN_TYPE_jer_get(const asn_codec_ctx_t *opt_codec_ctx,
     }
 
     /* Validate the selected variant */
-    if(!elm->type || !elm->type->elements) {
+    if(!elm->type->elements) {
         ASN_DEBUG("Open Type %s->%s: type descriptor has no elements",
                   td->name, elm->name);
         ASN__DECODE_FAILED;
