@@ -206,17 +206,16 @@ asn1c_lang_C_type_common_INTEGER(arg_t *arg) {
                  * Use the proper naming functions to get the enum type and
                  * constant names. c_name(arg).members_name gives us "e_xxx"
                  * which is the actual typedef name for the enum.
-                 * For enum constants, we need to match what c_member_name generates.
+                 * For enum constants, we iterate over members and use c_member_name
+                 * which generates the correct constant names.
                  * The function name must match MKID(expr) since that's used in emit_type_DEF.
                  */
                 struct c_names cnames = c_name(arg);
                 char *enum_type = strdup(cnames.members_name);
                 char *func_name = strdup(MKID(expr));
-                char *const_prefix = strdup(cnames.base_name);
-                if(!enum_type || !func_name || !const_prefix) {
+                if(!enum_type || !func_name) {
                     free(enum_type);
                     free(func_name);
-                    free(const_prefix);
                     free(v2e);
                     return -1;
                 }
@@ -227,10 +226,11 @@ asn1c_lang_C_type_common_INTEGER(arg_t *arg) {
                 OUT("    if(! sptr) { return -1; }\n");
                 OUT("    %s value = *(%s*)sptr;\n", enum_type, enum_type);
                 OUT("    switch(value) {\n");
-		for(eidx = 0; eidx < el_count; eidx++) {
-                    /* Use the const_prefix (base_name) + value name to match c_member_name */
-                    OUT("    case %s%s_%s:\n", asn1c_prefix_get(), const_prefix, 
-                        asn1c_make_identifier(0, 0, v2e[eidx].name, 0));
+                /* Iterate over enum members and use c_member_name for correct constant names */
+                TQ_FOR(v, &(expr->members), next) {
+                    if(v->expr_type == A1TC_UNIVERVAL) {
+                        OUT("    case %s:\n", c_member_name(arg, v));
+                    }
                 }
                 OUT("        return 0;\n");
                 OUT("    }\n");
@@ -238,7 +238,6 @@ asn1c_lang_C_type_common_INTEGER(arg_t *arg) {
                 OUT("}\n");
                 free(enum_type);
                 free(func_name);
-                free(const_prefix);
                 arg->param.localvalidation_expr = expr;
                 }
 
