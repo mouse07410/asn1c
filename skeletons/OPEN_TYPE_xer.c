@@ -45,16 +45,13 @@ OPEN_TYPE_xer_get(const asn_codec_ctx_t *opt_codec_ctx,
     }
 
     /* Validate the selected variant */
-    if(!elm->type->elements) {
-        ASN_DEBUG("Open Type %s->%s: type descriptor has no elements",
-                  td->name, elm->name);
-        ASN__DECODE_FAILED;
-    }
-    if(selected.presence_index > elm->type->elements_count) {
-        ASN_DEBUG("Open Type %s->%s: presence index %u out of bounds (max %u)",
-                  td->name, elm->name, selected.presence_index,
-                  elm->type->elements_count);
-        ASN__DECODE_FAILED;
+    if(elm->type->elements) {
+        if(selected.presence_index > elm->type->elements_count) {
+            ASN_DEBUG("Open Type %s->%s: presence index %u out of bounds (max %u)",
+                      td->name, elm->name, selected.presence_index,
+                      elm->type->elements_count);
+            ASN__DECODE_FAILED;
+        }
     }
 
     /* Fetch the pointer to this member */
@@ -116,9 +113,14 @@ OPEN_TYPE_xer_get(const asn_codec_ctx_t *opt_codec_ctx,
         ASN__DECODE_FAILED;
     }
 
-    inner_value =
-        (char *)*memb_ptr2
-        + elm->type->elements[selected.presence_index - 1].memb_offset;
+    /* Compute inner_value based on whether elements exist */
+    unsigned int memb_offset = 0;
+    if(elm->type->elements && selected.presence_index > 0 
+       && selected.presence_index <= elm->type->elements_count) {
+        memb_offset = elm->type->elements[selected.presence_index - 1].memb_offset;
+    }
+    
+    inner_value = (char *)*memb_ptr2 + memb_offset;
 
     rv = selected.type_descriptor->op->xer_decoder(
         opt_codec_ctx, selected.type_descriptor, &inner_value, NULL, ptr, size);
