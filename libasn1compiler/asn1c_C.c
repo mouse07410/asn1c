@@ -202,29 +202,43 @@ asn1c_lang_C_type_common_INTEGER(arg_t *arg) {
 		
 		/* Only generate custom validation for NativeEnumerated types */
 		if(expr->expr_type == ASN_BASIC_ENUMERATED && asn1c_type_fits_long(arg, expr)) {
-                /* Store expr name first since asn1c_make_identifier uses static buffer */
-                char *expr_name = strdup(MKID(expr));
-                if(!expr_name) {
+                /*
+                 * Use the proper naming functions to get the enum type and
+                 * constant names. c_name(arg).members_name gives us "e_xxx"
+                 * which is the actual typedef name for the enum.
+                 * For enum constants, we need to match what c_member_name generates.
+                 * The function name must match MKID(expr) since that's used in emit_type_DEF.
+                 */
+                struct c_names cnames = c_name(arg);
+                char *enum_type = strdup(cnames.members_name);
+                char *func_name = strdup(MKID(expr));
+                char *const_prefix = strdup(cnames.base_name);
+                if(!enum_type || !func_name || !const_prefix) {
+                    free(enum_type);
+                    free(func_name);
+                    free(const_prefix);
                     free(v2e);
                     return -1;
                 }
-                OUT("static int asn_validate_%s(const asn_TYPE_descriptor_t *td,\n", expr_name);
+                OUT("static int asn_validate_%s(const asn_TYPE_descriptor_t *td,\n", func_name);
                 OUT("                       const void *sptr,\n");
                 OUT("                       asn_app_constraint_failed_f *ctfailcb,\n");
                 OUT("                       void* app_key) {\n");
                 OUT("    if(! sptr) { return -1; }\n");
-                OUT("    e_%s value = *(e_%s*)sptr;\n", expr_name, expr_name);
+                OUT("    %s value = *(%s*)sptr;\n", enum_type, enum_type);
                 OUT("    switch(value) {\n");
 		for(eidx = 0; eidx < el_count; eidx++) {
-                    /* Convert ASN.1 identifier to C-safe identifier */
-                    const char *safe_name = asn1c_make_identifier(0, 0, v2e[eidx].name, 0);
-                    OUT("    case %s_%s:\n", expr_name, safe_name);
+                    /* Use the const_prefix (base_name) + value name to match c_member_name */
+                    OUT("    case %s%s_%s:\n", asn1c_prefix_get(), const_prefix, 
+                        asn1c_make_identifier(0, 0, v2e[eidx].name, 0));
                 }
                 OUT("        return 0;\n");
                 OUT("    }\n");
                 OUT("    return -1;\n");
                 OUT("}\n");
-                free(expr_name);
+                free(enum_type);
+                free(func_name);
+                free(const_prefix);
                 arg->param.localvalidation_expr = expr;
                 }
 

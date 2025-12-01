@@ -181,11 +181,11 @@ static int asn_validate_field(const asn_TYPE_descriptor_t *td,
                        asn_app_constraint_failed_f *ctfailcb,
                        void* app_key) {
     if(! sptr) { return -1; }
-    e_field value = *(e_field*)sptr;
+    e_Flag_15P1__field value = *(e_Flag_15P1__field*)sptr;
     switch(value) {
-    case field_red:
-    case field_green:
-    case field_blue:
+    case Flag_15P1__field_red:
+    case Flag_15P1__field_green:
+    case Flag_15P1__field_blue:
         return 0;
     }
     return -1;
