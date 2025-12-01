@@ -1,0 +1,1824 @@
+
+/*** <<< INCLUDES [ProtocolIE-ID] >>> ***/
+
+#include <NativeInteger.h>
+
+/*** <<< TYPE-DECLS [ProtocolIE-ID] >>> ***/
+
+typedef long	 ProtocolIE_ID_t;
+
+/*** <<< FUNC-DECLS [ProtocolIE-ID] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_ProtocolIE_ID;
+asn_struct_free_f ProtocolIE_ID_free;
+asn_struct_print_f ProtocolIE_ID_print;
+asn_constr_check_f ProtocolIE_ID_constraint;
+ber_type_decoder_f ProtocolIE_ID_decode_ber;
+der_type_encoder_f ProtocolIE_ID_encode_der;
+xer_type_decoder_f ProtocolIE_ID_decode_xer;
+xer_type_encoder_f ProtocolIE_ID_encode_xer;
+
+/*** <<< CODE [ProtocolIE-ID] >>> ***/
+
+int
+ProtocolIE_ID_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
+			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
+	long value;
+	
+	if(!sptr) {
+		ASN__CTFAIL(app_key, td, sptr,
+			"%s: value not given (%s:%d)",
+			td->name, __FILE__, __LINE__);
+		return -1;
+	}
+	
+	value = *(const long *)sptr;
+	
+	if((value >= 0L && value <= 65535L)) {
+		/* Constraint check succeeded */
+		return 0;
+	} else {
+		ASN__CTFAIL(app_key, td, sptr,
+			"%s: constraint failed (%s:%d)",
+			td->name, __FILE__, __LINE__);
+		return -1;
+	}
+}
+
+/*
+ * This type is implemented using NativeInteger,
+ * so here we adjust the DEF accordingly.
+ */
+
+/*** <<< STAT-DEFS [ProtocolIE-ID] >>> ***/
+
+static const ber_tlv_tag_t asn_DEF_ProtocolIE_ID_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (2 << 2))
+};
+asn_TYPE_descriptor_t asn_DEF_ProtocolIE_ID = {
+	"ProtocolIE-ID",
+	"ProtocolIE-ID",
+	&asn_OP_NativeInteger,
+	asn_DEF_ProtocolIE_ID_tags_1,
+	sizeof(asn_DEF_ProtocolIE_ID_tags_1)
+		/sizeof(asn_DEF_ProtocolIE_ID_tags_1[0]), /* 1 */
+	asn_DEF_ProtocolIE_ID_tags_1,	/* Same as above */
+	sizeof(asn_DEF_ProtocolIE_ID_tags_1)
+		/sizeof(asn_DEF_ProtocolIE_ID_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		ProtocolIE_ID_constraint
+	},
+	0, 0,	/* No members */
+	0	/* No specifics */
+};
+
+
+/*** <<< INCLUDES [Criticality] >>> ***/
+
+#include <NativeEnumerated.h>
+
+/*** <<< DEPS [Criticality] >>> ***/
+
+typedef enum Criticality {
+	Criticality_reject	= 0,
+	Criticality_ignore	= 1,
+	Criticality_notify	= 2
+} e_Criticality;
+
+/*** <<< TYPE-DECLS [Criticality] >>> ***/
+
+typedef long	 Criticality_t;
+
+/*** <<< FUNC-DECLS [Criticality] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_Criticality;
+extern const asn_INTEGER_specifics_t asn_SPC_Criticality_specs_1;
+asn_struct_free_f Criticality_free;
+asn_struct_print_f Criticality_print;
+asn_constr_check_f Criticality_constraint;
+ber_type_decoder_f Criticality_decode_ber;
+der_type_encoder_f Criticality_encode_der;
+xer_type_decoder_f Criticality_decode_xer;
+xer_type_encoder_f Criticality_encode_xer;
+
+/*** <<< CODE [Criticality] >>> ***/
+
+/*
+ * This type is implemented using NativeEnumerated,
+ * so here we adjust the DEF accordingly.
+ */
+
+/*** <<< STAT-DEFS [Criticality] >>> ***/
+
+static const asn_INTEGER_enum_map_t asn_MAP_Criticality_value2enum_1[] = {
+	{ 0,	6,	"reject" },
+	{ 1,	6,	"ignore" },
+	{ 2,	6,	"notify" }
+};
+static int asn_validate_Criticality(const asn_TYPE_descriptor_t *td,
+                       const void *sptr,
+                       asn_app_constraint_failed_f *ctfailcb,
+                       void* app_key) {
+    if(! sptr) { return -1; }
+    e_Criticality value = *(e_Criticality*)sptr;
+    switch(value) {
+    case Criticality_reject:
+    case Criticality_ignore:
+    case Criticality_notify:
+        return 0;
+    }
+    return -1;
+}
+static const unsigned int asn_MAP_Criticality_enum2value_1[] = {
+	1,	/* ignore(1) */
+	2,	/* notify(2) */
+	0	/* reject(0) */
+};
+const asn_INTEGER_specifics_t asn_SPC_Criticality_specs_1 = {
+	asn_MAP_Criticality_value2enum_1,	/* "tag" => N; sorted by tag */
+	asn_MAP_Criticality_enum2value_1,	/* N => "tag"; sorted by N */
+	3,	/* Number of elements in the maps */
+	0,	/* Enumeration is not extensible */
+	1,	/* Strict enumeration */
+	0,	/* Native long size */
+	0
+};
+static const ber_tlv_tag_t asn_DEF_Criticality_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (10 << 2))
+};
+asn_TYPE_descriptor_t asn_DEF_Criticality = {
+	"Criticality",
+	"Criticality",
+	&asn_OP_NativeEnumerated,
+	asn_DEF_Criticality_tags_1,
+	sizeof(asn_DEF_Criticality_tags_1)
+		/sizeof(asn_DEF_Criticality_tags_1[0]), /* 1 */
+	asn_DEF_Criticality_tags_1,	/* Same as above */
+	sizeof(asn_DEF_Criticality_tags_1)
+		/sizeof(asn_DEF_Criticality_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		asn_validate_Criticality
+	},
+	0, 0,	/* Defined elsewhere */
+	&asn_SPC_Criticality_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [Presence] >>> ***/
+
+#include <NativeEnumerated.h>
+
+/*** <<< DEPS [Presence] >>> ***/
+
+typedef enum Presence {
+	Presence_optional	= 0,
+	Presence_conditional	= 1,
+	Presence_mandatory	= 2
+} e_Presence;
+
+/*** <<< TYPE-DECLS [Presence] >>> ***/
+
+typedef long	 Presence_t;
+
+/*** <<< FUNC-DECLS [Presence] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_Presence;
+extern const asn_INTEGER_specifics_t asn_SPC_Presence_specs_1;
+asn_struct_free_f Presence_free;
+asn_struct_print_f Presence_print;
+asn_constr_check_f Presence_constraint;
+ber_type_decoder_f Presence_decode_ber;
+der_type_encoder_f Presence_encode_der;
+xer_type_decoder_f Presence_decode_xer;
+xer_type_encoder_f Presence_encode_xer;
+
+/*** <<< CODE [Presence] >>> ***/
+
+/*
+ * This type is implemented using NativeEnumerated,
+ * so here we adjust the DEF accordingly.
+ */
+
+/*** <<< STAT-DEFS [Presence] >>> ***/
+
+static const asn_INTEGER_enum_map_t asn_MAP_Presence_value2enum_1[] = {
+	{ 0,	8,	"optional" },
+	{ 1,	11,	"conditional" },
+	{ 2,	9,	"mandatory" }
+};
+static int asn_validate_Presence(const asn_TYPE_descriptor_t *td,
+                       const void *sptr,
+                       asn_app_constraint_failed_f *ctfailcb,
+                       void* app_key) {
+    if(! sptr) { return -1; }
+    e_Presence value = *(e_Presence*)sptr;
+    switch(value) {
+    case Presence_optional:
+    case Presence_conditional:
+    case Presence_mandatory:
+        return 0;
+    }
+    return -1;
+}
+static const unsigned int asn_MAP_Presence_enum2value_1[] = {
+	1,	/* conditional(1) */
+	2,	/* mandatory(2) */
+	0	/* optional(0) */
+};
+const asn_INTEGER_specifics_t asn_SPC_Presence_specs_1 = {
+	asn_MAP_Presence_value2enum_1,	/* "tag" => N; sorted by tag */
+	asn_MAP_Presence_enum2value_1,	/* N => "tag"; sorted by N */
+	3,	/* Number of elements in the maps */
+	0,	/* Enumeration is not extensible */
+	1,	/* Strict enumeration */
+	0,	/* Native long size */
+	0
+};
+static const ber_tlv_tag_t asn_DEF_Presence_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (10 << 2))
+};
+asn_TYPE_descriptor_t asn_DEF_Presence = {
+	"Presence",
+	"Presence",
+	&asn_OP_NativeEnumerated,
+	asn_DEF_Presence_tags_1,
+	sizeof(asn_DEF_Presence_tags_1)
+		/sizeof(asn_DEF_Presence_tags_1[0]), /* 1 */
+	asn_DEF_Presence_tags_1,	/* Same as above */
+	sizeof(asn_DEF_Presence_tags_1)
+		/sizeof(asn_DEF_Presence_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		asn_validate_Presence
+	},
+	0, 0,	/* Defined elsewhere */
+	&asn_SPC_Presence_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [ProtocolIE-Field] >>> ***/
+
+#include "ProtocolIE-ID.h"
+#include "Criticality.h"
+#include <ANY.h>
+#include <asn_ioc.h>
+#include <NativeInteger.h>
+#include <NativeEnumerated.h>
+#include <OPEN_TYPE.h>
+#include <constr_CHOICE.h>
+#include <constr_SEQUENCE.h>
+#include <BOOLEAN.h>
+
+/*** <<< DEPS [ProtocolIE-Field] >>> ***/
+
+typedef enum SampleIEs__value_PR {
+	SampleIEs__value_PR_NOTHING,	/* No components present */
+	SampleIEs__value_PR_INTEGER
+} SampleIEs__value_PR;
+typedef enum AnotherIEs__value_PR {
+	AnotherIEs__value_PR_NOTHING,	/* No components present */
+	AnotherIEs__value_PR_BOOLEAN
+} AnotherIEs__value_PR;
+
+/*** <<< TYPE-DECLS [ProtocolIE-Field] >>> ***/
+
+typedef struct SampleIEs {
+	ProtocolIE_ID_t	 id;
+	Criticality_t	 criticality;
+	struct SampleIEs__value {
+		SampleIEs__value_PR present;
+		union SampleIEs__value_u {
+			long	 INTEGER;
+		} choice;
+		
+		/* Context for parsing across buffer boundaries */
+		asn_struct_ctx_t _asn_ctx;
+	} value;
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} SampleIEs_t;
+typedef struct AnotherIEs {
+	ProtocolIE_ID_t	 id;
+	Criticality_t	 criticality;
+	struct AnotherIEs__value {
+		AnotherIEs__value_PR present;
+		union AnotherIEs__value_u {
+			BOOLEAN_t	 BOOLEAN;
+		} choice;
+		
+		/* Context for parsing across buffer boundaries */
+		asn_struct_ctx_t _asn_ctx;
+	} value;
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} AnotherIEs_t;
+
+/*** <<< FUNC-DECLS [ProtocolIE-Field] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_SampleIEs;
+extern asn_SEQUENCE_specifics_t asn_SPC_SampleIEs_specs_1;
+extern asn_TYPE_member_t asn_MBR_SampleIEs_1[3];
+extern asn_TYPE_descriptor_t asn_DEF_AnotherIEs;
+extern asn_SEQUENCE_specifics_t asn_SPC_AnotherIEs_specs_5;
+extern asn_TYPE_member_t asn_MBR_AnotherIEs_5[3];
+
+/*** <<< IOC-TABLES [ProtocolIE-Field] >>> ***/
+
+static const long asn_VAL_SampleIEs_1_1 = 1;
+static const long asn_VAL_SampleIEs_1_reject = 0;
+static const long asn_VAL_SampleIEs_1_mandatory = 2;
+static asn_TYPE_descriptor_t asn_DEF_INTEGER_1;
+
+static const asn_ioc_cell_t asn_IOS_SampleIEs_1_rows[] = {
+	{ "&id", aioc__value, &asn_DEF_NativeInteger, &asn_VAL_SampleIEs_1_1 },
+	{ "&criticality", aioc__value, &asn_DEF_NativeEnumerated, &asn_VAL_SampleIEs_1_reject },
+	{ "&Value", aioc__type, &asn_DEF_INTEGER_1 },
+	{ "&presence", aioc__value, &asn_DEF_NativeEnumerated, &asn_VAL_SampleIEs_1_mandatory }
+};
+static const asn_ioc_set_t asn_IOS_SampleIEs_1[] = {
+	{ 1, 4, asn_IOS_SampleIEs_1_rows }
+};
+static const long asn_VAL_AnotherIEs_2_2 = 2;
+static const long asn_VAL_AnotherIEs_2_ignore = 1;
+static const long asn_VAL_AnotherIEs_2_optional = 0;
+static asn_TYPE_descriptor_t asn_DEF_BOOLEAN_2;
+
+static const asn_ioc_cell_t asn_IOS_AnotherIEs_1_rows[] = {
+	{ "&id", aioc__value, &asn_DEF_NativeInteger, &asn_VAL_AnotherIEs_2_2 },
+	{ "&criticality", aioc__value, &asn_DEF_NativeEnumerated, &asn_VAL_AnotherIEs_2_ignore },
+	{ "&Value", aioc__type, &asn_DEF_BOOLEAN_2 },
+	{ "&presence", aioc__value, &asn_DEF_NativeEnumerated, &asn_VAL_AnotherIEs_2_optional }
+};
+static const asn_ioc_set_t asn_IOS_AnotherIEs_1[] = {
+	{ 1, 4, asn_IOS_AnotherIEs_1_rows }
+};
+
+/*** <<< CODE [ProtocolIE-Field] >>> ***/
+
+#ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
+#if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
+extern asn_TYPE_descriptor_t asn_DEF_value __attribute__((weak, alias("asn_DEF_value_4")));
+#else
+static asn_TYPE_descriptor_t asn_DEF_value_4;
+asn_TYPE_descriptor_t asn_DEF_value;
+__attribute__((constructor)) static void asn_DEF_value_4_alias_init(void) {
+	asn_DEF_value = asn_DEF_value_4;
+}
+#endif
+#endif /* ASN1C_NO_UNSUFFIXED_PDU_ALIAS */
+static int
+memb_id_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
+			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
+	long value;
+	
+	if(!sptr) {
+		ASN__CTFAIL(app_key, td, sptr,
+			"%s: value not given (%s:%d)",
+			td->name, __FILE__, __LINE__);
+		return -1;
+	}
+	
+	value = *(const long *)sptr;
+	
+	if((value >= 0L && value <= 65535L)) {
+		/* Constraint check succeeded */
+		return 0;
+	} else {
+		ASN__CTFAIL(app_key, td, sptr,
+			"%s: constraint failed (%s:%d)",
+			td->name, __FILE__, __LINE__);
+		return -1;
+	}
+}
+
+static asn_type_selector_result_t
+select_SampleIEs_criticality_type(const asn_TYPE_descriptor_t *parent_type, const void *parent_sptr) {
+	asn_type_selector_result_t result = {0, 0};
+	const asn_ioc_set_t *itable = asn_IOS_SampleIEs_1;
+	size_t constraining_column = 0; /* &id */
+	size_t for_column = 1; /* &criticality */
+	size_t row, presence_index = 0;
+	const long *constraining_value = (const long *)((const char *)parent_sptr + offsetof(struct SampleIEs, id));
+	
+	for(row=0; row < itable->rows_count; row++) {
+	    const asn_ioc_cell_t *constraining_cell = &itable->rows[row * itable->columns_count + constraining_column];
+	    const asn_ioc_cell_t *type_cell = &itable->rows[row * itable->columns_count + for_column];
+	
+	    if(type_cell->cell_kind == aioc__undefined)
+	        continue;
+	
+	    presence_index++;
+	    if(constraining_cell->type_descriptor->op->compare_struct(constraining_cell->type_descriptor, constraining_value, constraining_cell->value_sptr) == 0) {
+	        result.type_descriptor = type_cell->type_descriptor;
+	        result.presence_index = presence_index;
+	        break;
+	    }
+	}
+	
+	return result;
+}
+
+static int
+memb_criticality_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
+			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
+	
+	if(!sptr) {
+		ASN__CTFAIL(app_key, td, sptr,
+			"%s: value not given (%s:%d)",
+			td->name, __FILE__, __LINE__);
+		return -1;
+	}
+	
+	
+	if(1 /* No applicable constraints whatsoever */) {
+		/* Nothing is here. See below */
+	}
+	
+	return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+}
+
+static asn_type_selector_result_t
+select_SampleIEs_value_type(const asn_TYPE_descriptor_t *parent_type, const void *parent_sptr) {
+	asn_type_selector_result_t result = {0, 0};
+	const asn_ioc_set_t *itable = asn_IOS_SampleIEs_1;
+	size_t constraining_column = 0; /* &id */
+	size_t for_column = 2; /* &Value */
+	size_t row, presence_index = 0;
+	const long *constraining_value = (const long *)((const char *)parent_sptr + offsetof(struct SampleIEs, id));
+	
+	for(row=0; row < itable->rows_count; row++) {
+	    const asn_ioc_cell_t *constraining_cell = &itable->rows[row * itable->columns_count + constraining_column];
+	    const asn_ioc_cell_t *type_cell = &itable->rows[row * itable->columns_count + for_column];
+	
+	    if(type_cell->cell_kind == aioc__undefined)
+	        continue;
+	
+	    presence_index++;
+	    if(constraining_cell->type_descriptor->op->compare_struct(constraining_cell->type_descriptor, constraining_value, constraining_cell->value_sptr) == 0) {
+	        result.type_descriptor = type_cell->type_descriptor;
+	        result.presence_index = presence_index;
+	        break;
+	    }
+	}
+	
+	return result;
+}
+
+static int
+memb_value_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
+			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
+	
+	if(!sptr) {
+		ASN__CTFAIL(app_key, td, sptr,
+			"%s: value not given (%s:%d)",
+			td->name, __FILE__, __LINE__);
+		return -1;
+	}
+	
+	
+	if(1 /* No applicable constraints whatsoever */) {
+		/* Nothing is here. See below */
+	}
+	
+	return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+}
+
+#ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
+#if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
+extern asn_TYPE_descriptor_t asn_DEF_value __attribute__((weak, alias("asn_DEF_value_8")));
+#else
+static asn_TYPE_descriptor_t asn_DEF_value_8;
+asn_TYPE_descriptor_t asn_DEF_value;
+__attribute__((constructor)) static void asn_DEF_value_8_alias_init(void) {
+	asn_DEF_value = asn_DEF_value_8;
+}
+#endif
+#endif /* ASN1C_NO_UNSUFFIXED_PDU_ALIAS */
+static int
+memb_id_constraint_5(const asn_TYPE_descriptor_t *td, const void *sptr,
+			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
+	long value;
+	
+	if(!sptr) {
+		ASN__CTFAIL(app_key, td, sptr,
+			"%s: value not given (%s:%d)",
+			td->name, __FILE__, __LINE__);
+		return -1;
+	}
+	
+	value = *(const long *)sptr;
+	
+	if((value >= 0L && value <= 65535L)) {
+		/* Constraint check succeeded */
+		return 0;
+	} else {
+		ASN__CTFAIL(app_key, td, sptr,
+			"%s: constraint failed (%s:%d)",
+			td->name, __FILE__, __LINE__);
+		return -1;
+	}
+}
+
+static asn_type_selector_result_t
+select_AnotherIEs_criticality_type(const asn_TYPE_descriptor_t *parent_type, const void *parent_sptr) {
+	asn_type_selector_result_t result = {0, 0};
+	const asn_ioc_set_t *itable = asn_IOS_AnotherIEs_1;
+	size_t constraining_column = 0; /* &id */
+	size_t for_column = 1; /* &criticality */
+	size_t row, presence_index = 0;
+	const long *constraining_value = (const long *)((const char *)parent_sptr + offsetof(struct AnotherIEs, id));
+	
+	for(row=0; row < itable->rows_count; row++) {
+	    const asn_ioc_cell_t *constraining_cell = &itable->rows[row * itable->columns_count + constraining_column];
+	    const asn_ioc_cell_t *type_cell = &itable->rows[row * itable->columns_count + for_column];
+	
+	    if(type_cell->cell_kind == aioc__undefined)
+	        continue;
+	
+	    presence_index++;
+	    if(constraining_cell->type_descriptor->op->compare_struct(constraining_cell->type_descriptor, constraining_value, constraining_cell->value_sptr) == 0) {
+	        result.type_descriptor = type_cell->type_descriptor;
+	        result.presence_index = presence_index;
+	        break;
+	    }
+	}
+	
+	return result;
+}
+
+static int
+memb_criticality_constraint_5(const asn_TYPE_descriptor_t *td, const void *sptr,
+			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
+	
+	if(!sptr) {
+		ASN__CTFAIL(app_key, td, sptr,
+			"%s: value not given (%s:%d)",
+			td->name, __FILE__, __LINE__);
+		return -1;
+	}
+	
+	
+	if(1 /* No applicable constraints whatsoever */) {
+		/* Nothing is here. See below */
+	}
+	
+	return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+}
+
+static asn_type_selector_result_t
+select_AnotherIEs_value_type(const asn_TYPE_descriptor_t *parent_type, const void *parent_sptr) {
+	asn_type_selector_result_t result = {0, 0};
+	const asn_ioc_set_t *itable = asn_IOS_AnotherIEs_1;
+	size_t constraining_column = 0; /* &id */
+	size_t for_column = 2; /* &Value */
+	size_t row, presence_index = 0;
+	const long *constraining_value = (const long *)((const char *)parent_sptr + offsetof(struct AnotherIEs, id));
+	
+	for(row=0; row < itable->rows_count; row++) {
+	    const asn_ioc_cell_t *constraining_cell = &itable->rows[row * itable->columns_count + constraining_column];
+	    const asn_ioc_cell_t *type_cell = &itable->rows[row * itable->columns_count + for_column];
+	
+	    if(type_cell->cell_kind == aioc__undefined)
+	        continue;
+	
+	    presence_index++;
+	    if(constraining_cell->type_descriptor->op->compare_struct(constraining_cell->type_descriptor, constraining_value, constraining_cell->value_sptr) == 0) {
+	        result.type_descriptor = type_cell->type_descriptor;
+	        result.presence_index = presence_index;
+	        break;
+	    }
+	}
+	
+	return result;
+}
+
+static int
+memb_value_constraint_5(const asn_TYPE_descriptor_t *td, const void *sptr,
+			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
+	
+	if(!sptr) {
+		ASN__CTFAIL(app_key, td, sptr,
+			"%s: value not given (%s:%d)",
+			td->name, __FILE__, __LINE__);
+		return -1;
+	}
+	
+	
+	if(1 /* No applicable constraints whatsoever */) {
+		/* Nothing is here. See below */
+	}
+	
+	return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
+}
+
+
+/*** <<< STAT-DEFS [ProtocolIE-Field] >>> ***/
+
+static asn_TYPE_member_t asn_MBR_value_4[] = {
+	{ ATF_NOFLAGS, 0, offsetof(struct SampleIEs__value, choice.INTEGER),
+		.tag = (ASN_TAG_CLASS_UNIVERSAL | (2 << 2)),
+		.tag_mode = 0,
+		.type = &asn_DEF_NativeInteger,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "INTEGER"
+		},
+};
+static const asn_TYPE_tag2member_t asn_MAP_value_tag2el_4[] = {
+    { (ASN_TAG_CLASS_UNIVERSAL | (2 << 2)), 0, 0, 0 } /* INTEGER */
+};
+static asn_CHOICE_specifics_t asn_SPC_value_specs_4 = {
+	sizeof(struct SampleIEs__value),
+	offsetof(struct SampleIEs__value, _asn_ctx),
+	offsetof(struct SampleIEs__value, present),
+	sizeof(((struct SampleIEs__value *)0)->present),
+	.tag2el = asn_MAP_value_tag2el_4,
+	.tag2el_count = 1,	/* Count of tags in the map */
+	0, 0,
+	.first_extension = -1	/* Extensions start */
+};
+static /* Use -fall-defs-global to expose */
+asn_TYPE_descriptor_t asn_DEF_value_4 = {
+	"value",
+	"value",
+	&asn_OP_OPEN_TYPE,
+	0,	/* No effective tags (pointer) */
+	0,	/* No effective tags (count) */
+	0,	/* No tags (pointer) */
+	0,	/* No tags (count) */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		OPEN_TYPE_constraint
+	},
+	asn_MBR_value_4,
+	1,	/* Elements count */
+	&asn_SPC_value_specs_4	/* Additional specs */
+};
+
+asn_TYPE_member_t asn_MBR_SampleIEs_1[] = {
+	{ ATF_NOFLAGS, 0, offsetof(struct SampleIEs, id),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_ProtocolIE_ID,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = memb_id_constraint_1
+		},
+		0, 0, /* No default value */
+		.name = "id"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct SampleIEs, criticality),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_Criticality,
+		.type_selector = select_SampleIEs_criticality_type,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = memb_criticality_constraint_1
+		},
+		0, 0, /* No default value */
+		.name = "criticality"
+		},
+	{ ATF_OPEN_TYPE | ATF_NOFLAGS, 0, offsetof(struct SampleIEs, value),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (2 << 2)),
+		.tag_mode = +1,	/* EXPLICIT tag at current level */
+		.type = &asn_DEF_value,
+		.type_selector = select_SampleIEs_value_type,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = memb_value_constraint_1
+		},
+		0, 0, /* No default value */
+		.name = "value"
+		},
+};
+static const ber_tlv_tag_t asn_DEF_SampleIEs_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+static const asn_TYPE_tag2member_t asn_MAP_SampleIEs_tag2el_1[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* id */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 }, /* criticality */
+    { (ASN_TAG_CLASS_CONTEXT | (2 << 2)), 2, 0, 0 } /* value */
+};
+asn_SEQUENCE_specifics_t asn_SPC_SampleIEs_specs_1 = {
+	sizeof(struct SampleIEs),
+	offsetof(struct SampleIEs, _asn_ctx),
+	.tag2el = asn_MAP_SampleIEs_tag2el_1,
+	.tag2el_count = 3,	/* Count of tags in the map */
+	0, 0, 0,	/* Optional elements (not needed) */
+	-1,	/* First extension addition */
+};
+asn_TYPE_descriptor_t asn_DEF_SampleIEs = {
+	"SampleIEs",
+	"SampleIEs",
+	&asn_OP_SEQUENCE,
+	asn_DEF_SampleIEs_tags_1,
+	sizeof(asn_DEF_SampleIEs_tags_1)
+		/sizeof(asn_DEF_SampleIEs_tags_1[0]), /* 1 */
+	asn_DEF_SampleIEs_tags_1,	/* Same as above */
+	sizeof(asn_DEF_SampleIEs_tags_1)
+		/sizeof(asn_DEF_SampleIEs_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_constraint
+	},
+	asn_MBR_SampleIEs_1,
+	3,	/* Elements count */
+	&asn_SPC_SampleIEs_specs_1	/* Additional specs */
+};
+
+static asn_TYPE_member_t asn_MBR_value_8[] = {
+	{ ATF_NOFLAGS, 0, offsetof(struct AnotherIEs__value, choice.BOOLEAN),
+		.tag = (ASN_TAG_CLASS_UNIVERSAL | (1 << 2)),
+		.tag_mode = 0,
+		.type = &asn_DEF_BOOLEAN,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "BOOLEAN"
+		},
+};
+static const asn_TYPE_tag2member_t asn_MAP_value_tag2el_8[] = {
+    { (ASN_TAG_CLASS_UNIVERSAL | (1 << 2)), 0, 0, 0 } /* BOOLEAN */
+};
+static asn_CHOICE_specifics_t asn_SPC_value_specs_8 = {
+	sizeof(struct AnotherIEs__value),
+	offsetof(struct AnotherIEs__value, _asn_ctx),
+	offsetof(struct AnotherIEs__value, present),
+	sizeof(((struct AnotherIEs__value *)0)->present),
+	.tag2el = asn_MAP_value_tag2el_8,
+	.tag2el_count = 1,	/* Count of tags in the map */
+	0, 0,
+	.first_extension = -1	/* Extensions start */
+};
+static /* Use -fall-defs-global to expose */
+asn_TYPE_descriptor_t asn_DEF_value_8 = {
+	"value",
+	"value",
+	&asn_OP_OPEN_TYPE,
+	0,	/* No effective tags (pointer) */
+	0,	/* No effective tags (count) */
+	0,	/* No tags (pointer) */
+	0,	/* No tags (count) */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		OPEN_TYPE_constraint
+	},
+	asn_MBR_value_8,
+	1,	/* Elements count */
+	&asn_SPC_value_specs_8	/* Additional specs */
+};
+
+asn_TYPE_member_t asn_MBR_AnotherIEs_5[] = {
+	{ ATF_NOFLAGS, 0, offsetof(struct AnotherIEs, id),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_ProtocolIE_ID,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = memb_id_constraint_5
+		},
+		0, 0, /* No default value */
+		.name = "id"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct AnotherIEs, criticality),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_Criticality,
+		.type_selector = select_AnotherIEs_criticality_type,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = memb_criticality_constraint_5
+		},
+		0, 0, /* No default value */
+		.name = "criticality"
+		},
+	{ ATF_OPEN_TYPE | ATF_NOFLAGS, 0, offsetof(struct AnotherIEs, value),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (2 << 2)),
+		.tag_mode = +1,	/* EXPLICIT tag at current level */
+		.type = &asn_DEF_value,
+		.type_selector = select_AnotherIEs_value_type,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = memb_value_constraint_5
+		},
+		0, 0, /* No default value */
+		.name = "value"
+		},
+};
+static const ber_tlv_tag_t asn_DEF_AnotherIEs_tags_5[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+static const asn_TYPE_tag2member_t asn_MAP_AnotherIEs_tag2el_5[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* id */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 }, /* criticality */
+    { (ASN_TAG_CLASS_CONTEXT | (2 << 2)), 2, 0, 0 } /* value */
+};
+asn_SEQUENCE_specifics_t asn_SPC_AnotherIEs_specs_5 = {
+	sizeof(struct AnotherIEs),
+	offsetof(struct AnotherIEs, _asn_ctx),
+	.tag2el = asn_MAP_AnotherIEs_tag2el_5,
+	.tag2el_count = 3,	/* Count of tags in the map */
+	0, 0, 0,	/* Optional elements (not needed) */
+	-1,	/* First extension addition */
+};
+asn_TYPE_descriptor_t asn_DEF_AnotherIEs = {
+	"AnotherIEs",
+	"AnotherIEs",
+	&asn_OP_SEQUENCE,
+	asn_DEF_AnotherIEs_tags_5,
+	sizeof(asn_DEF_AnotherIEs_tags_5)
+		/sizeof(asn_DEF_AnotherIEs_tags_5[0]), /* 1 */
+	asn_DEF_AnotherIEs_tags_5,	/* Same as above */
+	sizeof(asn_DEF_AnotherIEs_tags_5)
+		/sizeof(asn_DEF_AnotherIEs_tags_5[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_constraint
+	},
+	asn_MBR_AnotherIEs_5,
+	3,	/* Elements count */
+	&asn_SPC_AnotherIEs_specs_5	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [ProtocolIE-SingleContainer] >>> ***/
+
+#include "ProtocolIE-Field.h"
+
+/*** <<< TYPE-DECLS [ProtocolIE-SingleContainer] >>> ***/
+
+typedef struct SampleIEs	 ProtocolIE_SingleContainer_52P0_t;
+typedef struct AnotherIEs	 ProtocolIE_SingleContainer_52P1_t;
+
+/*** <<< FUNC-DECLS [ProtocolIE-SingleContainer] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_ProtocolIE_SingleContainer_52P0;
+asn_struct_free_f ProtocolIE_SingleContainer_52P0_free;
+asn_struct_print_f ProtocolIE_SingleContainer_52P0_print;
+asn_constr_check_f ProtocolIE_SingleContainer_52P0_constraint;
+ber_type_decoder_f ProtocolIE_SingleContainer_52P0_decode_ber;
+der_type_encoder_f ProtocolIE_SingleContainer_52P0_encode_der;
+xer_type_decoder_f ProtocolIE_SingleContainer_52P0_decode_xer;
+xer_type_encoder_f ProtocolIE_SingleContainer_52P0_encode_xer;
+extern asn_TYPE_descriptor_t asn_DEF_ProtocolIE_SingleContainer_52P1;
+asn_struct_free_f ProtocolIE_SingleContainer_52P1_free;
+asn_struct_print_f ProtocolIE_SingleContainer_52P1_print;
+asn_constr_check_f ProtocolIE_SingleContainer_52P1_constraint;
+ber_type_decoder_f ProtocolIE_SingleContainer_52P1_decode_ber;
+der_type_encoder_f ProtocolIE_SingleContainer_52P1_encode_der;
+xer_type_decoder_f ProtocolIE_SingleContainer_52P1_decode_xer;
+xer_type_encoder_f ProtocolIE_SingleContainer_52P1_encode_xer;
+
+/*** <<< CODE [ProtocolIE-SingleContainer] >>> ***/
+
+/*
+ * This type is implemented using SampleIEs,
+ * so here we adjust the DEF accordingly.
+ */
+/*
+ * This type is implemented using AnotherIEs,
+ * so here we adjust the DEF accordingly.
+ */
+
+/*** <<< STAT-DEFS [ProtocolIE-SingleContainer] >>> ***/
+
+static const ber_tlv_tag_t asn_DEF_ProtocolIE_SingleContainer_52P0_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+asn_TYPE_descriptor_t asn_DEF_ProtocolIE_SingleContainer_52P0 = {
+	"ProtocolIE-SingleContainer",
+	"ProtocolIE-SingleContainer",
+	&asn_OP_SEQUENCE,
+	asn_DEF_ProtocolIE_SingleContainer_52P0_tags_1,
+	sizeof(asn_DEF_ProtocolIE_SingleContainer_52P0_tags_1)
+		/sizeof(asn_DEF_ProtocolIE_SingleContainer_52P0_tags_1[0]), /* 1 */
+	asn_DEF_ProtocolIE_SingleContainer_52P0_tags_1,	/* Same as above */
+	sizeof(asn_DEF_ProtocolIE_SingleContainer_52P0_tags_1)
+		/sizeof(asn_DEF_ProtocolIE_SingleContainer_52P0_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_constraint
+	},
+	asn_MBR_SampleIEs_1,
+	3,	/* Elements count */
+	&asn_SPC_SampleIEs_specs_1	/* Additional specs */
+};
+
+static const ber_tlv_tag_t asn_DEF_ProtocolIE_SingleContainer_52P1_tags_2[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+asn_TYPE_descriptor_t asn_DEF_ProtocolIE_SingleContainer_52P1 = {
+	"ProtocolIE-SingleContainer",
+	"ProtocolIE-SingleContainer",
+	&asn_OP_SEQUENCE,
+	asn_DEF_ProtocolIE_SingleContainer_52P1_tags_2,
+	sizeof(asn_DEF_ProtocolIE_SingleContainer_52P1_tags_2)
+		/sizeof(asn_DEF_ProtocolIE_SingleContainer_52P1_tags_2[0]), /* 1 */
+	asn_DEF_ProtocolIE_SingleContainer_52P1_tags_2,	/* Same as above */
+	sizeof(asn_DEF_ProtocolIE_SingleContainer_52P1_tags_2)
+		/sizeof(asn_DEF_ProtocolIE_SingleContainer_52P1_tags_2[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_constraint
+	},
+	asn_MBR_AnotherIEs_5,
+	3,	/* Elements count */
+	&asn_SPC_AnotherIEs_specs_5	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [ProtocolIE-Container] >>> ***/
+
+#include <asn_SEQUENCE_OF.h>
+#include <constr_SEQUENCE_OF.h>
+
+/*** <<< FWD-DECLS [ProtocolIE-Container] >>> ***/
+
+struct SampleIEs;
+
+/*** <<< TYPE-DECLS [ProtocolIE-Container] >>> ***/
+
+typedef struct ProtocolIE_Container_57P0 {
+	A_SEQUENCE_OF(struct SampleIEs) list;
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} ProtocolIE_Container_57P0_t;
+
+/*** <<< FUNC-DECLS [ProtocolIE-Container] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_ProtocolIE_Container_57P0;
+extern asn_SET_OF_specifics_t asn_SPC_ProtocolIE_Container_57P0_specs_1;
+extern asn_TYPE_member_t asn_MBR_ProtocolIE_Container_57P0_1[1];
+
+/*** <<< POST-INCLUDE [ProtocolIE-Container] >>> ***/
+
+#include "ProtocolIE-Field.h"
+
+/*** <<< STAT-DEFS [ProtocolIE-Container] >>> ***/
+
+asn_TYPE_member_t asn_MBR_ProtocolIE_Container_57P0_1[] = {
+	{ ATF_POINTER, 0, 0,
+		.tag = (ASN_TAG_CLASS_UNIVERSAL | (16 << 2)),
+		.tag_mode = 0,
+		.type = &asn_DEF_SampleIEs,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = ""
+		},
+};
+static const ber_tlv_tag_t asn_DEF_ProtocolIE_Container_57P0_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+asn_SET_OF_specifics_t asn_SPC_ProtocolIE_Container_57P0_specs_1 = {
+	sizeof(struct ProtocolIE_Container_57P0),
+	offsetof(struct ProtocolIE_Container_57P0, _asn_ctx),
+	0,	/* XER encoding is XMLDelimitedItemList */
+};
+asn_TYPE_descriptor_t asn_DEF_ProtocolIE_Container_57P0 = {
+	"ProtocolIE-Container",
+	"ProtocolIE-Container",
+	&asn_OP_SEQUENCE_OF,
+	asn_DEF_ProtocolIE_Container_57P0_tags_1,
+	sizeof(asn_DEF_ProtocolIE_Container_57P0_tags_1)
+		/sizeof(asn_DEF_ProtocolIE_Container_57P0_tags_1[0]), /* 1 */
+	asn_DEF_ProtocolIE_Container_57P0_tags_1,	/* Same as above */
+	sizeof(asn_DEF_ProtocolIE_Container_57P0_tags_1)
+		/sizeof(asn_DEF_ProtocolIE_Container_57P0_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_OF_constraint
+	},
+	asn_MBR_ProtocolIE_Container_57P0_1,
+	1,	/* Single element */
+	&asn_SPC_ProtocolIE_Container_57P0_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [SampleContainer] >>> ***/
+
+#include "ProtocolIE-SingleContainer.h"
+
+/*** <<< TYPE-DECLS [SampleContainer] >>> ***/
+
+typedef ProtocolIE_SingleContainer_52P0_t	 SampleContainer_t;
+
+/*** <<< FUNC-DECLS [SampleContainer] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_SampleContainer;
+asn_struct_free_f SampleContainer_free;
+asn_struct_print_f SampleContainer_print;
+asn_constr_check_f SampleContainer_constraint;
+ber_type_decoder_f SampleContainer_decode_ber;
+der_type_encoder_f SampleContainer_encode_der;
+xer_type_decoder_f SampleContainer_decode_xer;
+xer_type_encoder_f SampleContainer_encode_xer;
+
+/*** <<< CODE [SampleContainer] >>> ***/
+
+/*
+ * This type is implemented using ProtocolIE_SingleContainer_52P0,
+ * so here we adjust the DEF accordingly.
+ */
+
+/*** <<< STAT-DEFS [SampleContainer] >>> ***/
+
+static const ber_tlv_tag_t asn_DEF_SampleContainer_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+asn_TYPE_descriptor_t asn_DEF_SampleContainer = {
+	"SampleContainer",
+	"SampleContainer",
+	&asn_OP_SEQUENCE,
+	asn_DEF_SampleContainer_tags_1,
+	sizeof(asn_DEF_SampleContainer_tags_1)
+		/sizeof(asn_DEF_SampleContainer_tags_1[0]), /* 1 */
+	asn_DEF_SampleContainer_tags_1,	/* Same as above */
+	sizeof(asn_DEF_SampleContainer_tags_1)
+		/sizeof(asn_DEF_SampleContainer_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_constraint
+	},
+	asn_MBR_SampleIEs_1,
+	3,	/* Elements count */
+	&asn_SPC_SampleIEs_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [AnotherContainer] >>> ***/
+
+#include "ProtocolIE-SingleContainer.h"
+
+/*** <<< TYPE-DECLS [AnotherContainer] >>> ***/
+
+typedef ProtocolIE_SingleContainer_52P1_t	 AnotherContainer_t;
+
+/*** <<< FUNC-DECLS [AnotherContainer] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_AnotherContainer;
+asn_struct_free_f AnotherContainer_free;
+asn_struct_print_f AnotherContainer_print;
+asn_constr_check_f AnotherContainer_constraint;
+ber_type_decoder_f AnotherContainer_decode_ber;
+der_type_encoder_f AnotherContainer_encode_der;
+xer_type_decoder_f AnotherContainer_decode_xer;
+xer_type_encoder_f AnotherContainer_encode_xer;
+
+/*** <<< CODE [AnotherContainer] >>> ***/
+
+/*
+ * This type is implemented using ProtocolIE_SingleContainer_52P1,
+ * so here we adjust the DEF accordingly.
+ */
+
+/*** <<< STAT-DEFS [AnotherContainer] >>> ***/
+
+static const ber_tlv_tag_t asn_DEF_AnotherContainer_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+asn_TYPE_descriptor_t asn_DEF_AnotherContainer = {
+	"AnotherContainer",
+	"AnotherContainer",
+	&asn_OP_SEQUENCE,
+	asn_DEF_AnotherContainer_tags_1,
+	sizeof(asn_DEF_AnotherContainer_tags_1)
+		/sizeof(asn_DEF_AnotherContainer_tags_1[0]), /* 1 */
+	asn_DEF_AnotherContainer_tags_1,	/* Same as above */
+	sizeof(asn_DEF_AnotherContainer_tags_1)
+		/sizeof(asn_DEF_AnotherContainer_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_constraint
+	},
+	asn_MBR_AnotherIEs_5,
+	3,	/* Elements count */
+	&asn_SPC_AnotherIEs_specs_5	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [SampleList] >>> ***/
+
+#include "ProtocolIE-Container.h"
+
+/*** <<< TYPE-DECLS [SampleList] >>> ***/
+
+typedef ProtocolIE_Container_57P0_t	 SampleList_t;
+
+/*** <<< FUNC-DECLS [SampleList] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_SampleList;
+asn_struct_free_f SampleList_free;
+asn_struct_print_f SampleList_print;
+asn_constr_check_f SampleList_constraint;
+ber_type_decoder_f SampleList_decode_ber;
+der_type_encoder_f SampleList_encode_der;
+xer_type_decoder_f SampleList_decode_xer;
+xer_type_encoder_f SampleList_encode_xer;
+
+/*** <<< CODE [SampleList] >>> ***/
+
+int
+SampleList_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
+			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
+	size_t size;
+	
+	if(!sptr) {
+		ASN__CTFAIL(app_key, td, sptr,
+			"%s: value not given (%s:%d)",
+			td->name, __FILE__, __LINE__);
+		return -1;
+	}
+	
+	/* Determine the number of elements */
+	size = _A_CSEQUENCE_FROM_VOID(sptr)->count;
+	
+	if((size <= 65535UL)) {
+		/* Perform validation of the inner elements */
+		return SEQUENCE_OF_constraint(td, sptr, ctfailcb, app_key);
+	} else {
+		ASN__CTFAIL(app_key, td, sptr,
+			"%s: constraint failed (%s:%d)",
+			td->name, __FILE__, __LINE__);
+		return -1;
+	}
+}
+
+/*
+ * This type is implemented using ProtocolIE_Container_57P0,
+ * so here we adjust the DEF accordingly.
+ */
+
+/*** <<< STAT-DEFS [SampleList] >>> ***/
+
+static const ber_tlv_tag_t asn_DEF_SampleList_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+asn_TYPE_descriptor_t asn_DEF_SampleList = {
+	"SampleList",
+	"SampleList",
+	&asn_OP_SEQUENCE_OF,
+	asn_DEF_SampleList_tags_1,
+	sizeof(asn_DEF_SampleList_tags_1)
+		/sizeof(asn_DEF_SampleList_tags_1[0]), /* 1 */
+	asn_DEF_SampleList_tags_1,	/* Same as above */
+	sizeof(asn_DEF_SampleList_tags_1)
+		/sizeof(asn_DEF_SampleList_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SampleList_constraint
+	},
+	asn_MBR_ProtocolIE_Container_57P0_1,
+	1,	/* Single element */
+	&asn_SPC_ProtocolIE_Container_57P0_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [TestPDU] >>> ***/
+
+#include "SampleContainer.h"
+#include "SampleList.h"
+#include <constr_SEQUENCE.h>
+
+/*** <<< FWD-DECLS [TestPDU] >>> ***/
+
+struct AnotherContainer;
+
+/*** <<< TYPE-DECLS [TestPDU] >>> ***/
+
+typedef struct TestPDU {
+	SampleContainer_t	 sampleContainer;
+	struct AnotherContainer	*anotherContainer;	/* OPTIONAL */
+	SampleList_t	 sampleList;
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} TestPDU_t;
+
+/*** <<< FUNC-DECLS [TestPDU] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_TestPDU;
+
+/*** <<< POST-INCLUDE [TestPDU] >>> ***/
+
+#include "AnotherContainer.h"
+
+/*** <<< STAT-DEFS [TestPDU] >>> ***/
+
+static asn_TYPE_member_t asn_MBR_TestPDU_1[] = {
+	{ ATF_NOFLAGS, 0, offsetof(struct TestPDU, sampleContainer),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_SampleContainer,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "sampleContainer"
+		},
+	{ ATF_POINTER, 1, offsetof(struct TestPDU, anotherContainer),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_AnotherContainer,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "anotherContainer"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct TestPDU, sampleList),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (2 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_SampleList,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "sampleList"
+		},
+};
+static const ber_tlv_tag_t asn_DEF_TestPDU_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+static const asn_TYPE_tag2member_t asn_MAP_TestPDU_tag2el_1[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* sampleContainer */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 }, /* anotherContainer */
+    { (ASN_TAG_CLASS_CONTEXT | (2 << 2)), 2, 0, 0 } /* sampleList */
+};
+static asn_SEQUENCE_specifics_t asn_SPC_TestPDU_specs_1 = {
+	sizeof(struct TestPDU),
+	offsetof(struct TestPDU, _asn_ctx),
+	.tag2el = asn_MAP_TestPDU_tag2el_1,
+	.tag2el_count = 3,	/* Count of tags in the map */
+	0, 0, 0,	/* Optional elements (not needed) */
+	-1,	/* First extension addition */
+};
+asn_TYPE_descriptor_t asn_DEF_TestPDU = {
+	"TestPDU",
+	"TestPDU",
+	&asn_OP_SEQUENCE,
+	asn_DEF_TestPDU_tags_1,
+	sizeof(asn_DEF_TestPDU_tags_1)
+		/sizeof(asn_DEF_TestPDU_tags_1[0]), /* 1 */
+	asn_DEF_TestPDU_tags_1,	/* Same as above */
+	sizeof(asn_DEF_TestPDU_tags_1)
+		/sizeof(asn_DEF_TestPDU_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_constraint
+	},
+	asn_MBR_TestPDU_1,
+	3,	/* Elements count */
+	&asn_SPC_TestPDU_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [EXTERNAL] >>> ***/
+
+#include <OBJECT_IDENTIFIER.h>
+#include <NativeInteger.h>
+#include <ObjectDescriptor.h>
+#include <ANY.h>
+#include <OCTET_STRING.h>
+#include <BIT_STRING.h>
+#include <constr_CHOICE.h>
+#include <constr_SEQUENCE.h>
+
+/*** <<< DEPS [EXTERNAL] >>> ***/
+
+typedef enum EXTERNAL__encoding_PR {
+	EXTERNAL__encoding_PR_NOTHING,	/* No components present */
+	EXTERNAL__encoding_PR_single_ASN1_type,
+	EXTERNAL__encoding_PR_octet_aligned,
+	EXTERNAL__encoding_PR_arbitrary
+} EXTERNAL__encoding_PR;
+
+/*** <<< TYPE-DECLS [EXTERNAL] >>> ***/
+
+typedef struct EXTERNAL {
+	OBJECT_IDENTIFIER_t	*direct_reference;	/* OPTIONAL */
+	long	*indirect_reference;	/* OPTIONAL */
+	ObjectDescriptor_t	*data_value_descriptor;	/* OPTIONAL */
+	struct EXTERNAL__encoding {
+		EXTERNAL__encoding_PR present;
+		union EXTERNAL__encoding_u {
+			ANY_t	 single_ASN1_type;
+			OCTET_STRING_t	 octet_aligned;
+			BIT_STRING_t	 arbitrary;
+		} choice;
+		
+		/* Context for parsing across buffer boundaries */
+		asn_struct_ctx_t _asn_ctx;
+	} encoding;
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} EXTERNAL_t;
+
+/*** <<< FUNC-DECLS [EXTERNAL] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_EXTERNAL;
+
+/*** <<< CODE [EXTERNAL] >>> ***/
+
+#ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
+#if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
+extern asn_TYPE_descriptor_t asn_DEF_encoding __attribute__((weak, alias("asn_DEF_encoding_5")));
+#else
+static asn_TYPE_descriptor_t asn_DEF_encoding_5;
+asn_TYPE_descriptor_t asn_DEF_encoding;
+__attribute__((constructor)) static void asn_DEF_encoding_5_alias_init(void) {
+	asn_DEF_encoding = asn_DEF_encoding_5;
+}
+#endif
+#endif /* ASN1C_NO_UNSUFFIXED_PDU_ALIAS */
+
+/*** <<< STAT-DEFS [EXTERNAL] >>> ***/
+
+static asn_TYPE_member_t asn_MBR_encoding_5[] = {
+	{ ATF_NOFLAGS, 0, offsetof(struct EXTERNAL__encoding, choice.single_ASN1_type),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = +1,	/* EXPLICIT tag at current level */
+		.type = &asn_DEF_ANY,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "single-ASN1-type"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct EXTERNAL__encoding, choice.octet_aligned),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_OCTET_STRING,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "octet-aligned"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct EXTERNAL__encoding, choice.arbitrary),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (2 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_BIT_STRING,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "arbitrary"
+		},
+};
+static const asn_TYPE_tag2member_t asn_MAP_encoding_tag2el_5[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* single-ASN1-type */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 }, /* octet-aligned */
+    { (ASN_TAG_CLASS_CONTEXT | (2 << 2)), 2, 0, 0 } /* arbitrary */
+};
+static asn_CHOICE_specifics_t asn_SPC_encoding_specs_5 = {
+	sizeof(struct EXTERNAL__encoding),
+	offsetof(struct EXTERNAL__encoding, _asn_ctx),
+	offsetof(struct EXTERNAL__encoding, present),
+	sizeof(((struct EXTERNAL__encoding *)0)->present),
+	.tag2el = asn_MAP_encoding_tag2el_5,
+	.tag2el_count = 3,	/* Count of tags in the map */
+	0, 0,
+	.first_extension = -1	/* Extensions start */
+};
+static /* Use -fall-defs-global to expose */
+asn_TYPE_descriptor_t asn_DEF_encoding_5 = {
+	"encoding",
+	"encoding",
+	&asn_OP_CHOICE,
+	0,	/* No effective tags (pointer) */
+	0,	/* No effective tags (count) */
+	0,	/* No tags (pointer) */
+	0,	/* No tags (count) */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		CHOICE_constraint
+	},
+	asn_MBR_encoding_5,
+	3,	/* Elements count */
+	&asn_SPC_encoding_specs_5	/* Additional specs */
+};
+
+static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
+	{ ATF_POINTER, 3, offsetof(struct EXTERNAL, direct_reference),
+		.tag = (ASN_TAG_CLASS_UNIVERSAL | (6 << 2)),
+		.tag_mode = 0,
+		.type = &asn_DEF_OBJECT_IDENTIFIER,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "direct-reference"
+		},
+	{ ATF_POINTER, 2, offsetof(struct EXTERNAL, indirect_reference),
+		.tag = (ASN_TAG_CLASS_UNIVERSAL | (2 << 2)),
+		.tag_mode = 0,
+		.type = &asn_DEF_NativeInteger,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "indirect-reference"
+		},
+	{ ATF_POINTER, 1, offsetof(struct EXTERNAL, data_value_descriptor),
+		.tag = (ASN_TAG_CLASS_UNIVERSAL | (7 << 2)),
+		.tag_mode = 0,
+		.type = &asn_DEF_ObjectDescriptor,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "data-value-descriptor"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct EXTERNAL, encoding),
+		.tag = -1 /* Ambiguous tag (CHOICE?) */,
+		.tag_mode = 0,
+		.type = &asn_DEF_encoding,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "encoding"
+		},
+};
+static const ber_tlv_tag_t asn_DEF_EXTERNAL_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (8 << 2)),
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+static const asn_TYPE_tag2member_t asn_MAP_EXTERNAL_tag2el_1[] = {
+    { (ASN_TAG_CLASS_UNIVERSAL | (2 << 2)), 1, 0, 0 }, /* indirect-reference */
+    { (ASN_TAG_CLASS_UNIVERSAL | (6 << 2)), 0, 0, 0 }, /* direct-reference */
+    { (ASN_TAG_CLASS_UNIVERSAL | (7 << 2)), 2, 0, 0 }, /* data-value-descriptor */
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 3, 0, 0 }, /* single-ASN1-type */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 3, 0, 0 }, /* octet-aligned */
+    { (ASN_TAG_CLASS_CONTEXT | (2 << 2)), 3, 0, 0 } /* arbitrary */
+};
+static asn_SEQUENCE_specifics_t asn_SPC_EXTERNAL_specs_1 = {
+	sizeof(struct EXTERNAL),
+	offsetof(struct EXTERNAL, _asn_ctx),
+	.tag2el = asn_MAP_EXTERNAL_tag2el_1,
+	.tag2el_count = 6,	/* Count of tags in the map */
+	0, 0, 0,	/* Optional elements (not needed) */
+	-1,	/* First extension addition */
+};
+asn_TYPE_descriptor_t asn_DEF_EXTERNAL = {
+	"EXTERNAL",
+	"EXTERNAL",
+	&asn_OP_SEQUENCE,
+	asn_DEF_EXTERNAL_tags_1,
+	sizeof(asn_DEF_EXTERNAL_tags_1)
+		/sizeof(asn_DEF_EXTERNAL_tags_1[0]) - 1, /* 1 */
+	asn_DEF_EXTERNAL_tags_1,	/* Same as above */
+	sizeof(asn_DEF_EXTERNAL_tags_1)
+		/sizeof(asn_DEF_EXTERNAL_tags_1[0]), /* 2 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_constraint
+	},
+	asn_MBR_EXTERNAL_1,
+	4,	/* Elements count */
+	&asn_SPC_EXTERNAL_specs_1	/* Additional specs */
+};
+
+
+/*** <<< asn_constant.h >>> ***/
+
+/*
+ * Generated by asn1c-0.9.29 (http://lionet.info/asn1c)
+ */
+
+#ifndef _ASN_CONSTANT_H
+#define _ASN_CONSTANT_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define min_val_ProtocolIE_ID (0)
+#define max_val_ProtocolIE_ID (65535)
+
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* _ASN_CONSTANT_H */
