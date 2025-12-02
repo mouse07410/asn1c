@@ -1201,6 +1201,30 @@ asn1c_lang_C_OpenType(arg_t *arg, asn1c_ioc_table_and_objset_t *opt_ioc,
             m->_lineno = -1;
         }
 
+        /* Mark IOC OPEN_TYPE members as indirect (pointers) ONLY for constructed types
+         * to allow forward declarations and resolve circular dependency issues.
+         * 
+         * This is critical for complex specifications like F1AP where IOC types
+         * can have circular include chains (e.g., ProtocolIE-Field contains
+         * Associated-SCell-Item which includes types that eventually include
+         * back to ProtocolIE-Field).
+         * 
+         * For constructed types (SEQUENCE, CHOICE, SET), making them pointers allows:
+         * 1. Forward declarations of incomplete types (struct X*)
+         * 2. Breaking circular dependencies - types can be used before fully defined
+         * 3. Includes can remain in normal INCLUDES section (no POST_INCLUDE needed)
+         * 
+         * Simple types (INTEGER, BOOLEAN, etc.) don't need to be pointers as they
+         * don't have circular dependency issues and are defined in their own headers.
+         * 
+         * The runtime behavior for constructed types is unchanged since CHOICE members
+         * are accessed through the union regardless of whether they're pointers or
+         * direct values. */
+        if((m->expr_type & ASN_CONSTR_MASK) || m->meta_type == AMT_TYPEREF) {
+            /* This is a constructed type or type reference - make it a pointer */
+            m->marker.flags |= EM_INDIRECT;
+        }
+
         asn1p_expr_add(open_type_choice, m);
     }
 
@@ -3773,34 +3797,6 @@ static int
 emit_include_dependencies(arg_t *arg) {
 	asn1p_expr_t *expr = arg->expr;
 	asn1p_expr_t *memb;
-	
-	/* 
-	 * For IOC-based OPEN_TYPE expressions, use POST_INCLUDE for member type includes
-	 * to avoid circular dependency issues in complex IOC-based specifications.
-	 * 
-	 * Problem: IOC-based open types (generated from parameterized types like F1AP's
-	 * ProtocolIE-Field) contain many different types from information object class tables.
-	 * These types often have complex include chains that create circular dependencies.
-	 * 
-	 * Solution: Use POST_INCLUDE for OPEN_TYPE member includes. POST_INCLUDE places
-	 * #include statements after the typedef but before the closing #endif of the header
-	 * guard. This ensures the OPEN_TYPE typedef completes before dependent headers are
-	 * processed.
-	 * 
-	 * Cross-section deduplication: If the same include appears in both INCLUDES and
-	 * POST_INCLUDE sections (due to different code paths), the deduplication logic in
-	 * asn1c_out.c will suppress the INCLUDES version, keeping only POST_INCLUDE.
-	 * 
-	 * Example: F1AP ProtocolIE-Field (OPEN_TYPE) contains Associated-SCell-Item which
-	 * includes NRCGI which (via POST_INCLUDE) includes ProtocolExtensionContainer which
-	 * includes ProtocolExtensionField which includes ProtocolIE-SingleContainer which
-	 * includes back to ProtocolIE-Field. POST_INCLUDE breaks this circular dependency.
-	 * 
-	 * Note: We only apply this to ASN_CONSTR_OPEN_TYPE to avoid breaking standard
-	 * CHOICE types that don't have circular dependencies and need their member type
-	 * includes in the normal INCLUDES section.
-	 */
-	int use_post_include_for_all = (expr->expr_type == ASN_CONSTR_OPEN_TYPE);
 
 	/* Avoid recursive definitions. */
 	TQ_FOR(memb, &(expr->members), next) {
@@ -3835,10 +3831,8 @@ emit_include_dependencies(arg_t *arg) {
 		if((!(memb->expr_type & ASN_CONSTR_MASK)
 			&& memb->expr_type > ASN_CONSTR_MASK)
 		|| memb->meta_type == AMT_TYPEREF) {
-			/* For CHOICE/OPEN_TYPE, use POST_INCLUDE to avoid circular dependencies */
-			int target = (use_post_include_for_all || (memb->marker.flags & EM_UNRECURSE)) ?
-					OT_POST_INCLUDE : OT_INCLUDES;
-			GEN_POS_INCLUDE_BASE(target, memb);
+			GEN_POS_INCLUDE_BASE((memb->marker.flags & EM_UNRECURSE) ?
+					OT_POST_INCLUDE : OT_INCLUDES, memb);
 		}
 	}
 

@@ -109,50 +109,6 @@ asn1c_compiled_output(arg_t *arg, const char *source, int lineno, const char *fu
 			free(m);
 			return 0;
 		}
-		
-		/* Cross-section deduplication for INCLUDES and POST_INCLUDE.
-		 * This prevents circular dependency issues where the same include appears
-		 * in both sections due to multiple code paths in complex specifications.
-		 * 
-		 * Strategy: POST_INCLUDE is preferred over INCLUDES because it breaks
-		 * circular dependencies by placing includes after typedefs.
-		 * 
-		 * - When adding to INCLUDES: skip if already in POST_INCLUDE
-		 * - When adding to POST_INCLUDE: remove from INCLUDES if present
-		 * 
-		 * This ensures includes end up in POST_INCLUDE when needed for circular
-		 * dependency resolution, regardless of generation order. */
-		if(arg->target->target == OT_INCLUDES) {
-			struct compiler_stream_destination_s *post_include_dst = 
-				&arg->target->destination[OT_POST_INCLUDE];
-			TQ_FOR(v, &post_include_dst->chunks, next) {
-				if(m->len == v->len
-				&& !memcmp(m->buf, v->buf, m->len)) {
-					/* Same include exists in POST_INCLUDE, skip INCLUDES version */
-					free(m->buf);
-					free(m);
-					return 0;
-				}
-			}
-		} else if(arg->target->target == OT_POST_INCLUDE) {
-			struct compiler_stream_destination_s *includes_dst = 
-				&arg->target->destination[OT_INCLUDES];
-			out_chunk_t **prev = &includes_dst->chunks.tq_head;
-			TQ_FOR(v, &includes_dst->chunks, next) {
-				if(m->len == v->len
-				&& !memcmp(m->buf, v->buf, m->len)) {
-					/* Same include exists in INCLUDES, remove it and keep POST_INCLUDE version */
-					*prev = v->next.tq_next;
-					if(v->next.tq_next == NULL) {
-						includes_dst->chunks.tq_tail = prev;
-					}
-					free(v->buf);
-					free(v);
-					break;
-				}
-				prev = &v->next.tq_next;
-			}
-		}
 	}
 
 	TQ_ADD(&dst->chunks, m, next);
