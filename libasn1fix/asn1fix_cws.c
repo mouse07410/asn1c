@@ -394,6 +394,7 @@ _asn1f_parse_class_object_data_defined_syntx(arg_t *arg, asn1p_expr_t *eclass,
 
 			next_literal = asn1f_next_literal_chunk(syntax, chunk, buf);
 			if(!next_literal) {
+				/* No more chunks - this field consumes remaining input */
 				p = bend;
 			} else if(next_literal->type == WC_LITERAL) {
 				/* Next chunk is a literal keyword, search for it */
@@ -408,7 +409,8 @@ _asn1f_parse_class_object_data_defined_syntx(arg_t *arg, asn1p_expr_t *eclass,
 			} else {
 				/* Next chunk is a field (WC_FIELD), not a literal.
 				 * Two consecutive fields with no literal separator.
-				 * Use whitespace as delimiter. */
+				 * Per ASN.1 X.681, when fields are consecutive in WITH SYNTAX,
+				 * whitespace is used as the delimiter between values. */
 				p = buf;
 				while(p < bend && !isspace(*p)) {
 					p++;
@@ -416,7 +418,7 @@ _asn1f_parse_class_object_data_defined_syntx(arg_t *arg, asn1p_expr_t *eclass,
 				/* If we didn't advance, the field value is empty */
 				if(p == buf) {
 					if (!optional_mode)
-						FATAL("Expected value for field %s before next field %s",
+						FATAL("Expected value for field %s (next field: %s)",
 							chunk->content.token,
 							next_literal->content.token);
 					if(newpos) *newpos = buf_old;
