@@ -394,7 +394,7 @@ _asn1f_parse_class_object_data_defined_syntx(arg_t *arg, asn1p_expr_t *eclass,
 
 			next_literal = asn1f_next_literal_chunk(syntax, chunk, buf);
 			if(!next_literal) {
-				p += (bend - p);
+				p = bend;
 			} else if(next_literal->type == WC_LITERAL) {
 				/* Next chunk is a literal keyword, search for it */
 				p = (uint8_t *)strstr((const char *)buf, (const char *)next_literal->content.token);
@@ -413,10 +413,8 @@ _asn1f_parse_class_object_data_defined_syntx(arg_t *arg, asn1p_expr_t *eclass,
 				while(p < bend && !isspace(*p)) {
 					p++;
 				}
-				/* If we didn't advance, buffer is empty or at end */
+				/* If we didn't advance, the field value is empty */
 				if(p == buf && buf < bend) {
-					/* Buffer has content but starts with whitespace after SKIPSPACES,
-					 * which shouldn't happen, or there's no value */
 					if (!optional_mode)
 						FATAL("Expected value for field %s before next field %s",
 							chunk->content.token,
