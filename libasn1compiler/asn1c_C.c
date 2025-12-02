@@ -3775,23 +3775,29 @@ emit_include_dependencies(arg_t *arg) {
 	asn1p_expr_t *memb;
 	
 	/* 
-	 * For CHOICE types (including IOC-based open types), use POST_INCLUDE for all
-	 * member type includes to avoid circular dependency issues.
+	 * For IOC-based OPEN_TYPE expressions and anonymous CHOICE types embedded in
+	 * SEQUENCE types, use POST_INCLUDE for all member type includes to avoid circular
+	 * dependency issues.
 	 * 
-	 * CHOICE types can contain many different types, and those types may have 
-	 * complex include chains that lead back to the CHOICE type itself, creating 
+	 * IOC-based open types (generated from parameterized types) can contain many 
+	 * different types from the information object class table, and those types may 
+	 * have complex include chains that lead back to the OPEN_TYPE itself, creating 
 	 * circular dependencies.
 	 * 
-	 * By using POST_INCLUDE (which places #include after the typedef but before
-	 * the closing #endif), we ensure the CHOICE type is defined before its members'
-	 * headers are processed, breaking the cycle.
+	 * Anonymous CHOICE types embedded in SEQUENCEs (typically generated for open types
+	 * or IOC value fields) may also have circular dependencies.
 	 * 
-	 * Example: In F1AP, ProtocolIE-Field contains Associated-SCell-Item which
-	 * includes NRCGI which (via POST_INCLUDE) includes ProtocolExtensionContainer
-	 * which eventually includes back to ProtocolIE-Field.
+	 * By using POST_INCLUDE (which places #include after the typedef but before
+	 * the closing #endif), we ensure the typedef is completed before its 
+	 * members' headers are processed, breaking the cycle.
+	 * 
+	 * Example: In F1AP, ProtocolIE-Field (OPEN_TYPE) contains Associated-SCell-Item 
+	 * which includes NRCGI which (via POST_INCLUDE) includes ProtocolExtensionContainer
+	 * which eventually includes back to ProtocolIE-Field, creating a circular dependency.
 	 */
-	int use_post_include_for_all = (expr->expr_type == ASN_CONSTR_CHOICE || 
-	                                 expr->expr_type == ASN_CONSTR_OPEN_TYPE);
+	int use_post_include_for_all = (expr->expr_type == ASN_CONSTR_OPEN_TYPE) ||
+	                                 (expr->expr_type == ASN_CONSTR_CHOICE && 
+	                                  expr->_anonymous_type && expr->parent_expr);
 
 	/* Avoid recursive definitions. */
 	TQ_FOR(memb, &(expr->members), next) {
@@ -3826,7 +3832,7 @@ emit_include_dependencies(arg_t *arg) {
 		if((!(memb->expr_type & ASN_CONSTR_MASK)
 			&& memb->expr_type > ASN_CONSTR_MASK)
 		|| memb->meta_type == AMT_TYPEREF) {
-			/* For CHOICE/OPEN_TYPE, always use POST_INCLUDE to avoid circular dependencies */
+			/* For OPEN_TYPE, always use POST_INCLUDE to avoid circular dependencies */
 			int target = (use_post_include_for_all || (memb->marker.flags & EM_UNRECURSE)) ?
 					OT_POST_INCLUDE : OT_INCLUDES;
 			GEN_POS_INCLUDE_BASE(target, memb);
