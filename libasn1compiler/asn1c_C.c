@@ -3775,29 +3775,32 @@ emit_include_dependencies(arg_t *arg) {
 	asn1p_expr_t *memb;
 	
 	/* 
-	 * For IOC-based OPEN_TYPE expressions and anonymous CHOICE types embedded in
-	 * SEQUENCE types, use POST_INCLUDE for all member type includes to avoid circular
-	 * dependency issues.
+	 * For IOC-based OPEN_TYPE expressions, use POST_INCLUDE for member type includes
+	 * to avoid circular dependency issues in complex IOC-based specifications.
 	 * 
-	 * IOC-based open types (generated from parameterized types) can contain many 
-	 * different types from the information object class table, and those types may 
-	 * have complex include chains that lead back to the OPEN_TYPE itself, creating 
-	 * circular dependencies.
+	 * Problem: IOC-based open types (generated from parameterized types like F1AP's
+	 * ProtocolIE-Field) contain many different types from information object class tables.
+	 * These types often have complex include chains that create circular dependencies.
 	 * 
-	 * Anonymous CHOICE types embedded in SEQUENCEs (typically generated for open types
-	 * or IOC value fields) may also have circular dependencies.
+	 * Solution: Use POST_INCLUDE for OPEN_TYPE member includes. POST_INCLUDE places
+	 * #include statements after the typedef but before the closing #endif of the header
+	 * guard. This ensures the OPEN_TYPE typedef completes before dependent headers are
+	 * processed.
 	 * 
-	 * By using POST_INCLUDE (which places #include after the typedef but before
-	 * the closing #endif), we ensure the typedef is completed before its 
-	 * members' headers are processed, breaking the cycle.
+	 * Cross-section deduplication: If the same include appears in both INCLUDES and
+	 * POST_INCLUDE sections (due to different code paths), the deduplication logic in
+	 * asn1c_out.c will suppress the INCLUDES version, keeping only POST_INCLUDE.
 	 * 
-	 * Example: In F1AP, ProtocolIE-Field (OPEN_TYPE) contains Associated-SCell-Item 
-	 * which includes NRCGI which (via POST_INCLUDE) includes ProtocolExtensionContainer
-	 * which eventually includes back to ProtocolIE-Field, creating a circular dependency.
+	 * Example: F1AP ProtocolIE-Field (OPEN_TYPE) contains Associated-SCell-Item which
+	 * includes NRCGI which (via POST_INCLUDE) includes ProtocolExtensionContainer which
+	 * includes ProtocolExtensionField which includes ProtocolIE-SingleContainer which
+	 * includes back to ProtocolIE-Field. POST_INCLUDE breaks this circular dependency.
+	 * 
+	 * Note: We only apply this to ASN_CONSTR_OPEN_TYPE to avoid breaking standard
+	 * CHOICE types that don't have circular dependencies and need their member type
+	 * includes in the normal INCLUDES section.
 	 */
-	int use_post_include_for_all = (expr->expr_type == ASN_CONSTR_OPEN_TYPE) ||
-	                                 (expr->expr_type == ASN_CONSTR_CHOICE && 
-	                                  expr->_anonymous_type && expr->parent_expr);
+	int use_post_include_for_all = (expr->expr_type == ASN_CONSTR_OPEN_TYPE);
 
 	/* Avoid recursive definitions. */
 	TQ_FOR(memb, &(expr->members), next) {
@@ -3832,7 +3835,7 @@ emit_include_dependencies(arg_t *arg) {
 		if((!(memb->expr_type & ASN_CONSTR_MASK)
 			&& memb->expr_type > ASN_CONSTR_MASK)
 		|| memb->meta_type == AMT_TYPEREF) {
-			/* For OPEN_TYPE, always use POST_INCLUDE to avoid circular dependencies */
+			/* For CHOICE/OPEN_TYPE, use POST_INCLUDE to avoid circular dependencies */
 			int target = (use_post_include_for_all || (memb->marker.flags & EM_UNRECURSE)) ?
 					OT_POST_INCLUDE : OT_INCLUDES;
 			GEN_POS_INCLUDE_BASE(target, memb);
