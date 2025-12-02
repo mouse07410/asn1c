@@ -1,21 +1,51 @@
-ModuleTestANY { iso org(3) dod(6) internet(1) private(4) enterprise(1)
-	spelio(9363) software(1) asn1c(5) test(1) 60 }
-DEFINITIONS IMPLICIT TAGS ::=
-BEGIN
+../../asn1c/asn1c: invalid option -- '-'
+ASN.1 Compiler, v7079b25-2025-12-02
+Copyright (c) 2003-2017 Lev Walkin <vlm@lionet.info> and contributors.
+Copyright (c) 2022-2025 Mouse <mouse07410@noreply.github.com> and contributors.
+Usage: asn1c [options] file ...
+Options:
+  -E                    Run only the ASN.1 parser and print out the tree
+  -F                    During -E operation, also perform tree fixing
 
-T1 ::= SEQUENCE {
-    i	 INTEGER,
-    any	 ANY
-}
+  -P                    Concatenate and print the compiled text
+  -R                    Restrict output (tables only, no support code)
+  -S <dir>              Directory with support (skeleton?) files
+                        (Default is "/usr/local/share/asn1c")
+  -D <dir>              Destination directory for generated files (default current dir)
+  -X                    Generate and print the XML DTD
 
-T2 ::= SEQUENCE {
-    i	 INTEGER,
-    any	 [0] EXPLICIT ANY OPTIONAL
-}
+  -Werror               Treat warnings as errors; abort if any warning
+  -Wdebug-lexer         Enable verbose debugging output from lexer
+  -Wdebug-parser        Enable verbose debugging output from parser
+  -Wdebug-fixer         --//-- semantics processor
+  -Wdebug-compiler      --//-- compiler
 
-T3 ::= SEQUENCE {
-    any1	 ANY,
-    any2	 ANY
-}
+  -fbless-SIZE          Allow SIZE() constraint for INTEGER etc (non-std.)
+  -fcompound-names      Disambiguate C's struct NAME's inside top-level types
+  -findirect-choice     Compile members of CHOICE as indirect pointers
+  -fincludes-quoted     Generate #includes in "double" instead of <angle> quotes
+  -fknown-extern-type=<name>    Pretend the specified type is known
+  -fline-refs           Include ASN.1 module's line numbers in comments
+  -fno-constraints      Do not generate the constraint checking code
+  -fno-include-deps     Do not generate the courtesy #includes for dependencies
+  -funnamed-unions      Enable unnamed unions in structures
+  -fwide-types          Use INTEGER_t instead of "long" by default, etc.
+  -fgen-only-pdu-deps   Generate code only for types that are dependencies of -pdu types
+  -flist-deps           List PDU dependencies (requires -pdu option, no code generated)
+  -fprefix=<prefix>     Add the specified prefix to generated types
 
-END
+  -no-gen-BER           Do not generate the Basic Encoding Rules (BER, X.690) support code
+  -no-gen-XER           Do not generate the XML Encoding Rules (XER, X.693) support code
+  -no-gen-JER           Do not generate the JSON Encoding Rules (JER, X.697) support code
+  -no-gen-OER           Do not generate the Octet Encoding Rules (OER, X.696) support code
+  -no-gen-UPER          Do not generate the Unaligned Packed Encoding Rules (PER, X.691) support code
+  -no-gen-APER          Do not generate the Aligned Packed Encoding Rules (PER, X.691) support code
+  -no-gen-print         Do not generate the print code
+  -no-gen-random-fill   Do not generate the random fill code
+  -no-gen-example       Do not generate the ASN.1 format converter example
+  -gen-autotools        Generate example top-level configure.ac and Makefile.am
+  -pdu={all|auto|Type}  Generate PDU table (discover PDUs automatically)
+
+  -print-class-matrix   Print out the collected object class matrix (debug)
+  -print-constraints    Explain subtype constraints (debug)
+  -print-lines          Generate "-- #line" comments in -E output

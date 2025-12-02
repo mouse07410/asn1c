@@ -141,6 +141,33 @@ memb_value_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
 }
 
 
+/*** <<< CTDEFS [Frame] >>> ***/
+
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+static asn_oer_constraints_t asn_OER_memb_ident_constr_2 CC_NOTUSED = {
+	{ 0, 0 },
+	-1};
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+static asn_per_constraints_t asn_PER_memb_ident_constr_2 CC_NOTUSED = {
+	{ APC_UNCONSTRAINED,	-1, -1,  0,  0 },
+	{ APC_UNCONSTRAINED,	-1, -1,  0,  0 },
+	0, 0	/* No PER value map */
+};
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+static asn_oer_constraints_t asn_OER_memb_value_constr_3 CC_NOTUSED = {
+	{ 0, 0 },
+	-1};
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+static asn_per_constraints_t asn_PER_memb_value_constr_3 CC_NOTUSED = {
+	{ APC_UNCONSTRAINED,	-1, -1,  0,  0 },
+	{ APC_UNCONSTRAINED,	-1, -1,  0,  0 },
+	0, 0	/* No PER value map */
+};
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+
 /*** <<< STAT-DEFS [Frame] >>> ***/
 
 static asn_TYPE_member_t asn_MBR_value_3[] = {
@@ -233,10 +260,10 @@ static asn_TYPE_member_t asn_MBR_Frame_1[] = {
 		.type_selector = 0,
 		{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
-			.oer_constraints = 0,
+			.oer_constraints = &asn_OER_memb_ident_constr_2,
 #endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-			.per_constraints = 0,
+			.per_constraints = &asn_PER_memb_ident_constr_2,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
 			.jer_constraints = 0,
@@ -253,10 +280,10 @@ static asn_TYPE_member_t asn_MBR_Frame_1[] = {
 		.type_selector = select_Frame_value_type,
 		{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
-			.oer_constraints = 0,
+			.oer_constraints = &asn_OER_memb_value_constr_3,
 #endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-			.per_constraints = 0,
+			.per_constraints = &asn_PER_memb_value_constr_3,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
 			.jer_constraints = 0,
@@ -483,6 +510,21 @@ __attribute__((constructor)) static void asn_DEF_encoding_5_alias_init(void) {
 #endif
 #endif /* ASN1C_NO_UNSUFFIXED_PDU_ALIAS */
 
+/*** <<< CTDEFS [EXTERNAL] >>> ***/
+
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+static asn_oer_constraints_t asn_OER_type_encoding_constr_5 CC_NOTUSED = {
+	{ 0, 0 },
+	-1};
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+static asn_per_constraints_t asn_PER_type_encoding_constr_5 CC_NOTUSED = {
+	{ APC_CONSTRAINED,	 2,  2,  0,  2 }	/* (0..2) */,
+	{ APC_UNCONSTRAINED,	-1, -1,  0,  0 },
+	0, 0	/* No PER value map */
+};
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+
 /*** <<< STAT-DEFS [EXTERNAL] >>> ***/
 
 static asn_TYPE_member_t asn_MBR_encoding_5[] = {
@@ -573,10 +615,10 @@ asn_TYPE_descriptor_t asn_DEF_encoding_5 = {
 	0,	/* No tags (count) */
 	{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
-		0,
+		&asn_OER_type_encoding_constr_5,
 #endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-		0,
+		&asn_PER_type_encoding_constr_5,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
 		0,
@@ -670,6 +712,7 @@ static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
 		.name = "encoding"
 		},
 };
+static const int asn_MAP_EXTERNAL_oms_1[] = { 0, 1, 2 };
 static const ber_tlv_tag_t asn_DEF_EXTERNAL_tags_1[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (8 << 2)),
 	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
@@ -687,7 +730,8 @@ static asn_SEQUENCE_specifics_t asn_SPC_EXTERNAL_specs_1 = {
 	offsetof(struct EXTERNAL, _asn_ctx),
 	.tag2el = asn_MAP_EXTERNAL_tag2el_1,
 	.tag2el_count = 6,	/* Count of tags in the map */
-	0, 0, 0,	/* Optional elements (not needed) */
+	asn_MAP_EXTERNAL_oms_1,	/* Optional members */
+	3, 0,	/* Root/Additions */
 	-1,	/* First extension addition */
 };
 asn_TYPE_descriptor_t asn_DEF_EXTERNAL = {
@@ -704,7 +748,8 @@ asn_TYPE_descriptor_t asn_DEF_EXTERNAL = {
 #if !defined(ASN_DISABLE_OER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
-#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+#if !defined(ASN_DISABLE_UPER_SUPPORT) Generated asn_constant.h
+|| !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
@@ -721,7 +766,7 @@ asn_TYPE_descriptor_t asn_DEF_EXTERNAL = {
 /*** <<< asn_constant.h >>> ***/
 
 /*
- * Generated by asn1c-0.9.29 (http://lionet.info/asn1c)
+ * Generated by asn1c-7079b25-2025-12-02 (https://github.com/mouse07410/asn1c)
  */
 
 #ifndef _ASN_CONSTANT_H
