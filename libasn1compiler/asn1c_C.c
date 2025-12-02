@@ -1201,27 +1201,47 @@ asn1c_lang_C_OpenType(arg_t *arg, asn1c_ioc_table_and_objset_t *opt_ioc,
             m->_lineno = -1;
         }
 
-        /* Mark IOC OPEN_TYPE members as indirect (pointers) ONLY for constructed types
-         * to allow forward declarations and resolve circular dependency issues.
+        /* Mark IOC OPEN_TYPE members as indirect (pointers) when -findirect-choice
+         * flag is used AND the member is a constructed type.
          * 
          * This is critical for complex specifications like F1AP where IOC types
          * can have circular include chains (e.g., ProtocolIE-Field contains
          * Associated-SCell-Item which includes types that eventually include
          * back to ProtocolIE-Field).
          * 
+         * The -findirect-choice flag enables this behavior, making IOC OPEN_TYPE
+         * consistent with how regular CHOICE types handle constructed members.
+         * 
          * For constructed types (SEQUENCE, CHOICE, SET), making them pointers allows:
          * 1. Forward declarations of incomplete types (struct X*)
          * 2. Breaking circular dependencies - types can be used before fully defined
          * 3. Includes can remain in normal INCLUDES section (no POST_INCLUDE needed)
          * 
-         * Simple types (INTEGER, BOOLEAN, etc.) don't need to be pointers as they
-         * don't have circular dependency issues and are defined in their own headers.
+         * Simple types (INTEGER, BOOLEAN, etc.) and basic TYPEREFS remain as direct
+         * values since they don't have circular dependency issues.
+         * 
+         * Without -findirect-choice, all types remain direct for backward compatibility
+         * with existing tests and specifications that don't have circular dependencies.
          * 
          * The runtime behavior for constructed types is unchanged since CHOICE members
          * are accessed through the union regardless of whether they're pointers or
          * direct values. */
-        if((m->expr_type & ASN_CONSTR_MASK) || m->meta_type == AMT_TYPEREF) {
-            /* This is a constructed type or type reference - make it a pointer */
+        int make_pointer = 0;
+        
+        if(arg->flags & A1C_INDIRECT_CHOICE) {
+            if(m->expr_type & ASN_CONSTR_MASK) {
+                /* This is a constructed type (SEQUENCE, CHOICE, SET, etc.) */
+                make_pointer = 1;
+            } else if(m->meta_type == AMT_TYPEREF) {
+                /* This is a type reference - make it a pointer unless it's a basic type */
+                if(!(m->expr_type & ASN_BASIC_MASK)) {
+                    /* Not a basic type, so it might be a constructed type reference */
+                    make_pointer = 1;
+                }
+            }
+        }
+        
+        if(make_pointer) {
             m->marker.flags |= EM_INDIRECT;
         }
 
