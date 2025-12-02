@@ -1,51 +1,2467 @@
-../../asn1c/asn1c: invalid option -- '-'
-ASN.1 Compiler, v7079b25-2025-12-02
-Copyright (c) 2003-2017 Lev Walkin <vlm@lionet.info> and contributors.
-Copyright (c) 2022-2025 Mouse <mouse07410@noreply.github.com> and contributors.
-Usage: asn1c [options] file ...
-Options:
-  -E                    Run only the ASN.1 parser and print out the tree
-  -F                    During -E operation, also perform tree fixing
 
-  -P                    Concatenate and print the compiled text
-  -R                    Restrict output (tables only, no support code)
-  -S <dir>              Directory with support (skeleton?) files
-                        (Default is "/usr/local/share/asn1c")
-  -D <dir>              Destination directory for generated files (default current dir)
-  -X                    Generate and print the XML DTD
+/*** <<< INCLUDES [Everything] >>> ***/
 
-  -Werror               Treat warnings as errors; abort if any warning
-  -Wdebug-lexer         Enable verbose debugging output from lexer
-  -Wdebug-parser        Enable verbose debugging output from parser
-  -Wdebug-fixer         --//-- semantics processor
-  -Wdebug-compiler      --//-- compiler
+#include "Set.h"
+#include "Alpha.h"
+#include "Beta.h"
+#include "Gamma.h"
+#include "OneTwo.h"
+#include "TwoThree.h"
+#include "ThreeOne.h"
+#include <constr_SEQUENCE.h>
 
-  -fbless-SIZE          Allow SIZE() constraint for INTEGER etc (non-std.)
-  -fcompound-names      Disambiguate C's struct NAME's inside top-level types
-  -findirect-choice     Compile members of CHOICE as indirect pointers
-  -fincludes-quoted     Generate #includes in "double" instead of <angle> quotes
-  -fknown-extern-type=<name>    Pretend the specified type is known
-  -fline-refs           Include ASN.1 module's line numbers in comments
-  -fno-constraints      Do not generate the constraint checking code
-  -fno-include-deps     Do not generate the courtesy #includes for dependencies
-  -funnamed-unions      Enable unnamed unions in structures
-  -fwide-types          Use INTEGER_t instead of "long" by default, etc.
-  -fgen-only-pdu-deps   Generate code only for types that are dependencies of -pdu types
-  -flist-deps           List PDU dependencies (requires -pdu option, no code generated)
-  -fprefix=<prefix>     Add the specified prefix to generated types
+/*** <<< FWD-DECLS [Everything] >>> ***/
 
-  -no-gen-BER           Do not generate the Basic Encoding Rules (BER, X.690) support code
-  -no-gen-XER           Do not generate the XML Encoding Rules (XER, X.693) support code
-  -no-gen-JER           Do not generate the JSON Encoding Rules (JER, X.697) support code
-  -no-gen-OER           Do not generate the Octet Encoding Rules (OER, X.696) support code
-  -no-gen-UPER          Do not generate the Unaligned Packed Encoding Rules (PER, X.691) support code
-  -no-gen-APER          Do not generate the Aligned Packed Encoding Rules (PER, X.691) support code
-  -no-gen-print         Do not generate the print code
-  -no-gen-random-fill   Do not generate the random fill code
-  -no-gen-example       Do not generate the ASN.1 format converter example
-  -gen-autotools        Generate example top-level configure.ac and Makefile.am
-  -pdu={all|auto|Type}  Generate PDU table (discover PDUs automatically)
+struct Choice1;
+struct Choice2;
+struct Choice3;
 
-  -print-class-matrix   Print out the collected object class matrix (debug)
-  -print-constraints    Explain subtype constraints (debug)
-  -print-lines          Generate "-- #line" comments in -E output
+/*** <<< TYPE-DECLS [Everything] >>> ***/
+
+typedef struct Everything {
+	struct Choice1	*ch1;
+	struct Choice2	*ch2;
+	struct Choice3	*ch3;
+	Set_t	 set;
+	Alpha_t	 a;
+	Beta_t	 b;
+	Gamma_t	 g;
+	OneTwo_t	 ot;
+	TwoThree_t	 tt;
+	ThreeOne_t	 to;
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} Everything_t;
+
+/*** <<< FUNC-DECLS [Everything] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_Everything;
+extern asn_SEQUENCE_specifics_t asn_SPC_Everything_specs_1;
+extern asn_TYPE_member_t asn_MBR_Everything_1[10];
+
+/*** <<< POST-INCLUDE [Everything] >>> ***/
+
+#include "Choice1.h"
+#include "Choice2.h"
+#include "Choice3.h"
+
+/*** <<< STAT-DEFS [Everything] >>> ***/
+
+asn_TYPE_member_t asn_MBR_Everything_1[] = {
+	{ ATF_POINTER, 0, offsetof(struct Everything, ch1),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = +1,	/* EXPLICIT tag at current level */
+		.type = &asn_DEF_Choice1,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "ch1"
+		},
+	{ ATF_POINTER, 0, offsetof(struct Everything, ch2),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
+		.tag_mode = +1,	/* EXPLICIT tag at current level */
+		.type = &asn_DEF_Choice2,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "ch2"
+		},
+	{ ATF_POINTER, 0, offsetof(struct Everything, ch3),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (2 << 2)),
+		.tag_mode = +1,	/* EXPLICIT tag at current level */
+		.type = &asn_DEF_Choice3,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "ch3"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct Everything, set),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (3 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_Set,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "set"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct Everything, a),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (4 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_Alpha,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "a"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct Everything, b),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (5 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_Beta,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "b"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct Everything, g),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (6 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_Gamma,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "g"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct Everything, ot),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (7 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_OneTwo,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "ot"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct Everything, tt),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (8 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_TwoThree,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "tt"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct Everything, to),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (9 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_ThreeOne,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "to"
+		},
+};
+static const ber_tlv_tag_t asn_DEF_Everything_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+static const asn_TYPE_tag2member_t asn_MAP_Everything_tag2el_1[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* ch1 */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 }, /* ch2 */
+    { (ASN_TAG_CLASS_CONTEXT | (2 << 2)), 2, 0, 0 }, /* ch3 */
+    { (ASN_TAG_CLASS_CONTEXT | (3 << 2)), 3, 0, 0 }, /* set */
+    { (ASN_TAG_CLASS_CONTEXT | (4 << 2)), 4, 0, 0 }, /* a */
+    { (ASN_TAG_CLASS_CONTEXT | (5 << 2)), 5, 0, 0 }, /* b */
+    { (ASN_TAG_CLASS_CONTEXT | (6 << 2)), 6, 0, 0 }, /* g */
+    { (ASN_TAG_CLASS_CONTEXT | (7 << 2)), 7, 0, 0 }, /* ot */
+    { (ASN_TAG_CLASS_CONTEXT | (8 << 2)), 8, 0, 0 }, /* tt */
+    { (ASN_TAG_CLASS_CONTEXT | (9 << 2)), 9, 0, 0 } /* to */
+};
+asn_SEQUENCE_specifics_t asn_SPC_Everything_specs_1 = {
+	sizeof(struct Everything),
+	offsetof(struct Everything, _asn_ctx),
+	.tag2el = asn_MAP_Everything_tag2el_1,
+	.tag2el_count = 10,	/* Count of tags in the map */
+	0, 0, 0,	/* Optional elements (not needed) */
+	-1,	/* First extension addition */
+};
+asn_TYPE_descriptor_t asn_DEF_Everything = {
+	"Everything",
+	"Everything",
+	&asn_OP_SEQUENCE,
+	asn_DEF_Everything_tags_1,
+	sizeof(asn_DEF_Everything_tags_1)
+		/sizeof(asn_DEF_Everything_tags_1[0]), /* 1 */
+	asn_DEF_Everything_tags_1,	/* Same as above */
+	sizeof(asn_DEF_Everything_tags_1)
+		/sizeof(asn_DEF_Everything_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_constraint
+	},
+	asn_MBR_Everything_1,
+	10,	/* Elements count */
+	&asn_SPC_Everything_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [Choice1] >>> ***/
+
+#include <constr_CHOICE.h>
+
+/*** <<< DEPS [Choice1] >>> ***/
+
+typedef enum Choice1_PR {
+	Choice1_PR_NOTHING,	/* No components present */
+	Choice1_PR_something,
+	/* Extensions may appear below */
+	Choice1_PR_some2
+} Choice1_PR;
+
+/*** <<< FWD-DECLS [Choice1] >>> ***/
+
+struct Everything;
+
+/*** <<< TYPE-DECLS [Choice1] >>> ***/
+
+typedef struct Choice1 {
+	Choice1_PR present;
+	union Choice1_u {
+		struct Everything	*something;
+		/*
+		 * This type is extensible,
+		 * possible extensions are below.
+		 */
+		struct Everything	*some2;
+	} choice;
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} Choice1_t;
+
+/*** <<< FUNC-DECLS [Choice1] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_Choice1;
+extern asn_CHOICE_specifics_t asn_SPC_Choice1_specs_1;
+extern asn_TYPE_member_t asn_MBR_Choice1_1[2];
+
+/*** <<< POST-INCLUDE [Choice1] >>> ***/
+
+#include "Everything.h"
+
+/*** <<< STAT-DEFS [Choice1] >>> ***/
+
+asn_TYPE_member_t asn_MBR_Choice1_1[] = {
+	{ ATF_POINTER, 0, offsetof(struct Choice1, choice.something),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_Everything,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "something"
+		},
+	{ ATF_POINTER, 0, offsetof(struct Choice1, choice.some2),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_Everything,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "some2"
+		},
+};
+static const asn_TYPE_tag2member_t asn_MAP_Choice1_tag2el_1[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* something */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 } /* some2 */
+};
+asn_CHOICE_specifics_t asn_SPC_Choice1_specs_1 = {
+	sizeof(struct Choice1),
+	offsetof(struct Choice1, _asn_ctx),
+	offsetof(struct Choice1, present),
+	sizeof(((struct Choice1 *)0)->present),
+	.tag2el = asn_MAP_Choice1_tag2el_1,
+	.tag2el_count = 2,	/* Count of tags in the map */
+	0, 0,
+	.first_extension = 1	/* Extensions start */
+};
+asn_TYPE_descriptor_t asn_DEF_Choice1 = {
+	"Choice1",
+	"Choice1",
+	&asn_OP_CHOICE,
+	0,	/* No effective tags (pointer) */
+	0,	/* No effective tags (count) */
+	0,	/* No tags (pointer) */
+	0,	/* No tags (count) */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		CHOICE_constraint
+	},
+	asn_MBR_Choice1_1,
+	2,	/* Elements count */
+	&asn_SPC_Choice1_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [Choice2] >>> ***/
+
+#include "TypeRef.h"
+#include <constr_CHOICE.h>
+
+/*** <<< DEPS [Choice2] >>> ***/
+
+typedef enum Choice2_PR {
+	Choice2_PR_NOTHING,	/* No components present */
+	Choice2_PR_typeref,
+	/* Extensions may appear below */
+	Choice2_PR_some3
+} Choice2_PR;
+
+/*** <<< FWD-DECLS [Choice2] >>> ***/
+
+struct Everything;
+
+/*** <<< TYPE-DECLS [Choice2] >>> ***/
+
+typedef struct Choice2 {
+	Choice2_PR present;
+	union Choice2_u {
+		TypeRef_t	 typeref;
+		/*
+		 * This type is extensible,
+		 * possible extensions are below.
+		 */
+		struct Everything	*some3;
+	} choice;
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} Choice2_t;
+
+/*** <<< FUNC-DECLS [Choice2] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_Choice2;
+extern asn_CHOICE_specifics_t asn_SPC_Choice2_specs_1;
+extern asn_TYPE_member_t asn_MBR_Choice2_1[2];
+
+/*** <<< POST-INCLUDE [Choice2] >>> ***/
+
+#include "Everything.h"
+
+/*** <<< STAT-DEFS [Choice2] >>> ***/
+
+asn_TYPE_member_t asn_MBR_Choice2_1[] = {
+	{ ATF_NOFLAGS, 0, offsetof(struct Choice2, choice.typeref),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_TypeRef,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "typeref"
+		},
+	{ ATF_POINTER, 0, offsetof(struct Choice2, choice.some3),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_Everything,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "some3"
+		},
+};
+static const asn_TYPE_tag2member_t asn_MAP_Choice2_tag2el_1[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* typeref */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 } /* some3 */
+};
+asn_CHOICE_specifics_t asn_SPC_Choice2_specs_1 = {
+	sizeof(struct Choice2),
+	offsetof(struct Choice2, _asn_ctx),
+	offsetof(struct Choice2, present),
+	sizeof(((struct Choice2 *)0)->present),
+	.tag2el = asn_MAP_Choice2_tag2el_1,
+	.tag2el_count = 2,	/* Count of tags in the map */
+	0, 0,
+	.first_extension = 1	/* Extensions start */
+};
+asn_TYPE_descriptor_t asn_DEF_Choice2 = {
+	"Choice2",
+	"Choice2",
+	&asn_OP_CHOICE,
+	0,	/* No effective tags (pointer) */
+	0,	/* No effective tags (count) */
+	0,	/* No tags (pointer) */
+	0,	/* No tags (count) */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		CHOICE_constraint
+	},
+	asn_MBR_Choice2_1,
+	2,	/* Elements count */
+	&asn_SPC_Choice2_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [Choice3] >>> ***/
+
+#include <constr_SEQUENCE.h>
+#include <asn_SEQUENCE_OF.h>
+#include <constr_SEQUENCE_OF.h>
+#include <constr_CHOICE.h>
+
+/*** <<< DEPS [Choice3] >>> ***/
+
+typedef enum Choice3_PR {
+	Choice3_PR_NOTHING,	/* No components present */
+	Choice3_PR_a,
+	Choice3_PR_b,
+	Choice3_PR_c
+} Choice3_PR;
+
+/*** <<< FWD-DECLS [Choice3] >>> ***/
+
+struct Everything;
+struct Choice3;
+
+/*** <<< TYPE-DECLS [Choice3] >>> ***/
+
+typedef struct Choice3 {
+	Choice3_PR present;
+	union Choice3_u {
+		struct a {
+			struct Everything	*aa;
+			
+			/* Context for parsing across buffer boundaries */
+			asn_struct_ctx_t _asn_ctx;
+		} a;
+		struct Everything	*b;
+		struct c {
+			A_SEQUENCE_OF(struct Choice3) list;
+			
+			/* Context for parsing across buffer boundaries */
+			asn_struct_ctx_t _asn_ctx;
+		} c;
+	} choice;
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} Choice3_t;
+
+/*** <<< FUNC-DECLS [Choice3] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_Choice3;
+extern asn_CHOICE_specifics_t asn_SPC_Choice3_specs_1;
+extern asn_TYPE_member_t asn_MBR_Choice3_1[3];
+
+/*** <<< POST-INCLUDE [Choice3] >>> ***/
+
+#include "Everything.h"
+#include "Choice3.h"
+
+/*** <<< CODE [Choice3] >>> ***/
+
+#ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
+#if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
+extern asn_TYPE_descriptor_t asn_DEF_a __attribute__((weak, alias("asn_DEF_a_2")));
+#else
+static asn_TYPE_descriptor_t asn_DEF_a_2;
+asn_TYPE_descriptor_t asn_DEF_a;
+__attribute__((constructor)) static void asn_DEF_a_2_alias_init(void) {
+	asn_DEF_a = asn_DEF_a_2;
+}
+#endif
+#endif /* ASN1C_NO_UNSUFFIXED_PDU_ALIAS */
+#ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
+#if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
+extern asn_TYPE_descriptor_t asn_DEF_c __attribute__((weak, alias("asn_DEF_c_5")));
+#else
+static asn_TYPE_descriptor_t asn_DEF_c_5;
+asn_TYPE_descriptor_t asn_DEF_c;
+__attribute__((constructor)) static void asn_DEF_c_5_alias_init(void) {
+	asn_DEF_c = asn_DEF_c_5;
+}
+#endif
+#endif /* ASN1C_NO_UNSUFFIXED_PDU_ALIAS */
+
+/*** <<< STAT-DEFS [Choice3] >>> ***/
+
+static asn_TYPE_member_t asn_MBR_a_2[] = {
+	{ ATF_POINTER, 0, offsetof(struct a, aa),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_Everything,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "aa"
+		},
+};
+static const ber_tlv_tag_t asn_DEF_a_tags_2[] = {
+	(ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+static const asn_TYPE_tag2member_t asn_MAP_a_tag2el_2[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 } /* aa */
+};
+static asn_SEQUENCE_specifics_t asn_SPC_a_specs_2 = {
+	sizeof(struct a),
+	offsetof(struct a, _asn_ctx),
+	.tag2el = asn_MAP_a_tag2el_2,
+	.tag2el_count = 1,	/* Count of tags in the map */
+	0, 0, 0,	/* Optional elements (not needed) */
+	-1,	/* First extension addition */
+};
+static /* Use -fall-defs-global to expose */
+asn_TYPE_descriptor_t asn_DEF_a_2 = {
+	"a",
+	"a",
+	&asn_OP_SEQUENCE,
+	asn_DEF_a_tags_2,
+	sizeof(asn_DEF_a_tags_2)
+		/sizeof(asn_DEF_a_tags_2[0]) - 1, /* 1 */
+	asn_DEF_a_tags_2,	/* Same as above */
+	sizeof(asn_DEF_a_tags_2)
+		/sizeof(asn_DEF_a_tags_2[0]), /* 2 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_constraint
+	},
+	asn_MBR_a_2,
+	1,	/* Elements count */
+	&asn_SPC_a_specs_2	/* Additional specs */
+};
+
+static asn_TYPE_member_t asn_MBR_c_5[] = {
+	{ ATF_POINTER, 0, 0,
+		.tag = -1 /* Ambiguous tag (CHOICE?) */,
+		.tag_mode = 0,
+		.type = &asn_DEF_Choice3,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = ""
+		},
+};
+static const ber_tlv_tag_t asn_DEF_c_tags_5[] = {
+	(ASN_TAG_CLASS_CONTEXT | (2 << 2)),
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+static asn_SET_OF_specifics_t asn_SPC_c_specs_5 = {
+	sizeof(struct c),
+	offsetof(struct c, _asn_ctx),
+	2,	/* XER encoding is XMLValueList */
+};
+static /* Use -fall-defs-global to expose */
+asn_TYPE_descriptor_t asn_DEF_c_5 = {
+	"c",
+	"c",
+	&asn_OP_SEQUENCE_OF,
+	asn_DEF_c_tags_5,
+	sizeof(asn_DEF_c_tags_5)
+		/sizeof(asn_DEF_c_tags_5[0]) - 1, /* 1 */
+	asn_DEF_c_tags_5,	/* Same as above */
+	sizeof(asn_DEF_c_tags_5)
+		/sizeof(asn_DEF_c_tags_5[0]), /* 2 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_OF_constraint
+	},
+	asn_MBR_c_5,
+	1,	/* Single element */
+	&asn_SPC_c_specs_5	/* Additional specs */
+};
+
+asn_TYPE_member_t asn_MBR_Choice3_1[] = {
+	{ ATF_NOFLAGS, 0, offsetof(struct Choice3, choice.a),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = 0,
+		.type = &asn_DEF_a,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "a"
+		},
+	{ ATF_POINTER, 0, offsetof(struct Choice3, choice.b),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_Everything,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "b"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct Choice3, choice.c),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (2 << 2)),
+		.tag_mode = 0,
+		.type = &asn_DEF_c,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "c"
+		},
+};
+static const asn_TYPE_tag2member_t asn_MAP_Choice3_tag2el_1[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* a */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 }, /* b */
+    { (ASN_TAG_CLASS_CONTEXT | (2 << 2)), 2, 0, 0 } /* c */
+};
+asn_CHOICE_specifics_t asn_SPC_Choice3_specs_1 = {
+	sizeof(struct Choice3),
+	offsetof(struct Choice3, _asn_ctx),
+	offsetof(struct Choice3, present),
+	sizeof(((struct Choice3 *)0)->present),
+	.tag2el = asn_MAP_Choice3_tag2el_1,
+	.tag2el_count = 3,	/* Count of tags in the map */
+	0, 0,
+	.first_extension = -1	/* Extensions start */
+};
+asn_TYPE_descriptor_t asn_DEF_Choice3 = {
+	"Choice3",
+	"Choice3",
+	&asn_OP_CHOICE,
+	0,	/* No effective tags (pointer) */
+	0,	/* No effective tags (count) */
+	0,	/* No tags (pointer) */
+	0,	/* No tags (count) */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		CHOICE_constraint
+	},
+	asn_MBR_Choice3_1,
+	3,	/* Elements count */
+	&asn_SPC_Choice3_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [Set] >>> ***/
+
+#include <asn_SET_OF.h>
+#include <INTEGER.h>
+#include <constr_SEQUENCE.h>
+#include <constr_SET_OF.h>
+
+/*** <<< FWD-DECLS [Set] >>> ***/
+
+struct Set;
+struct Sequence;
+
+/*** <<< FWD-DEFS [Set] >>> ***/
+
+typedef struct Member {
+	INTEGER_t	 Int;
+	struct Set	*set;
+	struct Sequence	*seq;
+	struct Set	*set2;	/* OPTIONAL */
+	/*
+	 * This type is extensible,
+	 * possible extensions are below.
+	 */
+	struct Set	*set3;
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} Member;
+
+/*** <<< TYPE-DECLS [Set] >>> ***/
+
+typedef struct Set {
+	A_SET_OF(Member) list;
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} Set_t;
+
+/*** <<< FUNC-DECLS [Set] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_Set;
+extern asn_SET_OF_specifics_t asn_SPC_Set_specs_1;
+extern asn_TYPE_member_t asn_MBR_Set_1[1];
+
+/*** <<< POST-INCLUDE [Set] >>> ***/
+
+#include "Set.h"
+#include "Sequence.h"
+
+/*** <<< STAT-DEFS [Set] >>> ***/
+
+static asn_TYPE_member_t asn_MBR_Member_2[] = {
+	{ ATF_NOFLAGS, 0, offsetof(struct Member, Int),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_INTEGER,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "int"
+		},
+	{ ATF_POINTER, 0, offsetof(struct Member, set),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_Set,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "set"
+		},
+	{ ATF_POINTER, 0, offsetof(struct Member, seq),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (2 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_Sequence,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "seq"
+		},
+	{ ATF_POINTER, 2, offsetof(struct Member, set2),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (3 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_Set,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "set2"
+		},
+	{ ATF_POINTER, 1, offsetof(struct Member, set3),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (4 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_Set,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "set3"
+		},
+};
+static const ber_tlv_tag_t asn_DEF_Member_tags_2[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+static const asn_TYPE_tag2member_t asn_MAP_Member_tag2el_2[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* int */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 }, /* set */
+    { (ASN_TAG_CLASS_CONTEXT | (2 << 2)), 2, 0, 0 }, /* seq */
+    { (ASN_TAG_CLASS_CONTEXT | (3 << 2)), 3, 0, 0 }, /* set2 */
+    { (ASN_TAG_CLASS_CONTEXT | (4 << 2)), 4, 0, 0 } /* set3 */
+};
+static asn_SEQUENCE_specifics_t asn_SPC_Member_specs_2 = {
+	sizeof(struct Member),
+	offsetof(struct Member, _asn_ctx),
+	.tag2el = asn_MAP_Member_tag2el_2,
+	.tag2el_count = 5,	/* Count of tags in the map */
+	0, 0, 0,	/* Optional elements (not needed) */
+	4,	/* First extension addition */
+};
+static /* Use -fall-defs-global to expose */
+asn_TYPE_descriptor_t asn_DEF_Member_2 = {
+	"SEQUENCE",
+	"SEQUENCE",
+	&asn_OP_SEQUENCE,
+	asn_DEF_Member_tags_2,
+	sizeof(asn_DEF_Member_tags_2)
+		/sizeof(asn_DEF_Member_tags_2[0]), /* 1 */
+	asn_DEF_Member_tags_2,	/* Same as above */
+	sizeof(asn_DEF_Member_tags_2)
+		/sizeof(asn_DEF_Member_tags_2[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_constraint
+	},
+	asn_MBR_Member_2,
+	5,	/* Elements count */
+	&asn_SPC_Member_specs_2	/* Additional specs */
+};
+
+asn_TYPE_member_t asn_MBR_Set_1[] = {
+	{ ATF_POINTER, 0, 0,
+		.tag = (ASN_TAG_CLASS_UNIVERSAL | (16 << 2)),
+		.tag_mode = 0,
+		.type = &asn_DEF_Member_2,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = ""
+		},
+};
+static const ber_tlv_tag_t asn_DEF_Set_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (17 << 2))
+};
+asn_SET_OF_specifics_t asn_SPC_Set_specs_1 = {
+	sizeof(struct Set),
+	offsetof(struct Set, _asn_ctx),
+	0,	/* XER encoding is XMLDelimitedItemList */
+};
+asn_TYPE_descriptor_t asn_DEF_Set = {
+	"Set",
+	"Set",
+	&asn_OP_SET_OF,
+	asn_DEF_Set_tags_1,
+	sizeof(asn_DEF_Set_tags_1)
+		/sizeof(asn_DEF_Set_tags_1[0]), /* 1 */
+	asn_DEF_Set_tags_1,	/* Same as above */
+	sizeof(asn_DEF_Set_tags_1)
+		/sizeof(asn_DEF_Set_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SET_OF_constraint
+	},
+	asn_MBR_Set_1,
+	1,	/* Single element */
+	&asn_SPC_Set_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [Sequence] >>> ***/
+
+#include <INTEGER.h>
+#include <constr_SEQUENCE.h>
+
+/*** <<< FWD-DECLS [Sequence] >>> ***/
+
+struct Sequence;
+struct Set;
+
+/*** <<< TYPE-DECLS [Sequence] >>> ***/
+
+typedef struct Sequence {
+	INTEGER_t	 a;
+	struct Sequence	*seq;	/* OPTIONAL */
+	/*
+	 * This type is extensible,
+	 * possible extensions are below.
+	 */
+	INTEGER_t	*b;
+	struct Set	*set;	/* OPTIONAL */
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} Sequence_t;
+
+/*** <<< FUNC-DECLS [Sequence] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_Sequence;
+extern asn_SEQUENCE_specifics_t asn_SPC_Sequence_specs_1;
+extern asn_TYPE_member_t asn_MBR_Sequence_1[4];
+
+/*** <<< POST-INCLUDE [Sequence] >>> ***/
+
+#include "Sequence.h"
+#include "Set.h"
+
+/*** <<< STAT-DEFS [Sequence] >>> ***/
+
+asn_TYPE_member_t asn_MBR_Sequence_1[] = {
+	{ ATF_NOFLAGS, 0, offsetof(struct Sequence, a),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_INTEGER,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "a"
+		},
+	{ ATF_POINTER, 3, offsetof(struct Sequence, seq),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_Sequence,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "seq"
+		},
+	{ ATF_POINTER, 2, offsetof(struct Sequence, b),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (2 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_INTEGER,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "b"
+		},
+	{ ATF_POINTER, 1, offsetof(struct Sequence, set),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (3 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_Set,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "set"
+		},
+};
+static const ber_tlv_tag_t asn_DEF_Sequence_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+static const asn_TYPE_tag2member_t asn_MAP_Sequence_tag2el_1[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* a */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 }, /* seq */
+    { (ASN_TAG_CLASS_CONTEXT | (2 << 2)), 2, 0, 0 }, /* b */
+    { (ASN_TAG_CLASS_CONTEXT | (3 << 2)), 3, 0, 0 } /* set */
+};
+asn_SEQUENCE_specifics_t asn_SPC_Sequence_specs_1 = {
+	sizeof(struct Sequence),
+	offsetof(struct Sequence, _asn_ctx),
+	.tag2el = asn_MAP_Sequence_tag2el_1,
+	.tag2el_count = 4,	/* Count of tags in the map */
+	0, 0, 0,	/* Optional elements (not needed) */
+	2,	/* First extension addition */
+};
+asn_TYPE_descriptor_t asn_DEF_Sequence = {
+	"Sequence",
+	"Sequence",
+	&asn_OP_SEQUENCE,
+	asn_DEF_Sequence_tags_1,
+	sizeof(asn_DEF_Sequence_tags_1)
+		/sizeof(asn_DEF_Sequence_tags_1[0]), /* 1 */
+	asn_DEF_Sequence_tags_1,	/* Same as above */
+	sizeof(asn_DEF_Sequence_tags_1)
+		/sizeof(asn_DEF_Sequence_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_constraint
+	},
+	asn_MBR_Sequence_1,
+	4,	/* Elements count */
+	&asn_SPC_Sequence_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [TypeRef] >>> ***/
+
+#include "Sequence.h"
+
+/*** <<< TYPE-DECLS [TypeRef] >>> ***/
+
+typedef Sequence_t	 TypeRef_t;
+
+/*** <<< FUNC-DECLS [TypeRef] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_TypeRef;
+asn_struct_free_f TypeRef_free;
+asn_struct_print_f TypeRef_print;
+asn_constr_check_f TypeRef_constraint;
+ber_type_decoder_f TypeRef_decode_ber;
+der_type_encoder_f TypeRef_encode_der;
+xer_type_decoder_f TypeRef_decode_xer;
+xer_type_encoder_f TypeRef_encode_xer;
+
+/*** <<< CODE [TypeRef] >>> ***/
+
+/*
+ * This type is implemented using Sequence,
+ * so here we adjust the DEF accordingly.
+ */
+
+/*** <<< STAT-DEFS [TypeRef] >>> ***/
+
+static const ber_tlv_tag_t asn_DEF_TypeRef_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+asn_TYPE_descriptor_t asn_DEF_TypeRef = {
+	"TypeRef",
+	"TypeRef",
+	&asn_OP_SEQUENCE,
+	asn_DEF_TypeRef_tags_1,
+	sizeof(asn_DEF_TypeRef_tags_1)
+		/sizeof(asn_DEF_TypeRef_tags_1[0]), /* 1 */
+	asn_DEF_TypeRef_tags_1,	/* Same as above */
+	sizeof(asn_DEF_TypeRef_tags_1)
+		/sizeof(asn_DEF_TypeRef_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_constraint
+	},
+	asn_MBR_Sequence_1,
+	4,	/* Elements count */
+	&asn_SPC_Sequence_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [Alpha] >>> ***/
+
+#include <constr_SEQUENCE.h>
+
+/*** <<< FWD-DECLS [Alpha] >>> ***/
+
+struct Beta;
+
+/*** <<< TYPE-DECLS [Alpha] >>> ***/
+
+typedef struct Alpha {
+	struct Beta	*a;
+	struct b {
+		struct Beta	*b;	/* OPTIONAL */
+		
+		/* Context for parsing across buffer boundaries */
+		asn_struct_ctx_t _asn_ctx;
+	} b;
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} Alpha_t;
+
+/*** <<< FUNC-DECLS [Alpha] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_Alpha;
+extern asn_SEQUENCE_specifics_t asn_SPC_Alpha_specs_1;
+extern asn_TYPE_member_t asn_MBR_Alpha_1[2];
+
+/*** <<< POST-INCLUDE [Alpha] >>> ***/
+
+#include "Beta.h"
+
+/*** <<< CODE [Alpha] >>> ***/
+
+#ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
+#if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
+extern asn_TYPE_descriptor_t asn_DEF_b __attribute__((weak, alias("asn_DEF_b_3")));
+#else
+static asn_TYPE_descriptor_t asn_DEF_b_3;
+asn_TYPE_descriptor_t asn_DEF_b;
+__attribute__((constructor)) static void asn_DEF_b_3_alias_init(void) {
+	asn_DEF_b = asn_DEF_b_3;
+}
+#endif
+#endif /* ASN1C_NO_UNSUFFIXED_PDU_ALIAS */
+
+/*** <<< STAT-DEFS [Alpha] >>> ***/
+
+static asn_TYPE_member_t asn_MBR_b_3[] = {
+	{ ATF_POINTER, 1, offsetof(struct b, b),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_Beta,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "b"
+		},
+};
+static const ber_tlv_tag_t asn_DEF_b_tags_3[] = {
+	(ASN_TAG_CLASS_CONTEXT | (1 << 2)),
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+static const asn_TYPE_tag2member_t asn_MAP_b_tag2el_3[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 } /* b */
+};
+static asn_SEQUENCE_specifics_t asn_SPC_b_specs_3 = {
+	sizeof(struct b),
+	offsetof(struct b, _asn_ctx),
+	.tag2el = asn_MAP_b_tag2el_3,
+	.tag2el_count = 1,	/* Count of tags in the map */
+	0, 0, 0,	/* Optional elements (not needed) */
+	-1,	/* First extension addition */
+};
+static /* Use -fall-defs-global to expose */
+asn_TYPE_descriptor_t asn_DEF_b_3 = {
+	"b",
+	"b",
+	&asn_OP_SEQUENCE,
+	asn_DEF_b_tags_3,
+	sizeof(asn_DEF_b_tags_3)
+		/sizeof(asn_DEF_b_tags_3[0]) - 1, /* 1 */
+	asn_DEF_b_tags_3,	/* Same as above */
+	sizeof(asn_DEF_b_tags_3)
+		/sizeof(asn_DEF_b_tags_3[0]), /* 2 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_constraint
+	},
+	asn_MBR_b_3,
+	1,	/* Elements count */
+	&asn_SPC_b_specs_3	/* Additional specs */
+};
+
+asn_TYPE_member_t asn_MBR_Alpha_1[] = {
+	{ ATF_POINTER, 0, offsetof(struct Alpha, a),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_Beta,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "a"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct Alpha, b),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
+		.tag_mode = 0,
+		.type = &asn_DEF_b,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "b"
+		},
+};
+static const ber_tlv_tag_t asn_DEF_Alpha_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+static const asn_TYPE_tag2member_t asn_MAP_Alpha_tag2el_1[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* a */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 } /* b */
+};
+asn_SEQUENCE_specifics_t asn_SPC_Alpha_specs_1 = {
+	sizeof(struct Alpha),
+	offsetof(struct Alpha, _asn_ctx),
+	.tag2el = asn_MAP_Alpha_tag2el_1,
+	.tag2el_count = 2,	/* Count of tags in the map */
+	0, 0, 0,	/* Optional elements (not needed) */
+	-1,	/* First extension addition */
+};
+asn_TYPE_descriptor_t asn_DEF_Alpha = {
+	"Alpha",
+	"Alpha",
+	&asn_OP_SEQUENCE,
+	asn_DEF_Alpha_tags_1,
+	sizeof(asn_DEF_Alpha_tags_1)
+		/sizeof(asn_DEF_Alpha_tags_1[0]), /* 1 */
+	asn_DEF_Alpha_tags_1,	/* Same as above */
+	sizeof(asn_DEF_Alpha_tags_1)
+		/sizeof(asn_DEF_Alpha_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_constraint
+	},
+	asn_MBR_Alpha_1,
+	2,	/* Elements count */
+	&asn_SPC_Alpha_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [Beta] >>> ***/
+
+#include <constr_SEQUENCE.h>
+
+/*** <<< FWD-DECLS [Beta] >>> ***/
+
+struct Alpha;
+struct Gamma;
+
+/*** <<< TYPE-DECLS [Beta] >>> ***/
+
+typedef struct Beta {
+	struct Alpha	*b;	/* OPTIONAL */
+	struct Gamma	*g;	/* OPTIONAL */
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} Beta_t;
+
+/*** <<< FUNC-DECLS [Beta] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_Beta;
+extern asn_SEQUENCE_specifics_t asn_SPC_Beta_specs_1;
+extern asn_TYPE_member_t asn_MBR_Beta_1[2];
+
+/*** <<< POST-INCLUDE [Beta] >>> ***/
+
+#include "Alpha.h"
+#include "Gamma.h"
+
+/*** <<< STAT-DEFS [Beta] >>> ***/
+
+asn_TYPE_member_t asn_MBR_Beta_1[] = {
+	{ ATF_POINTER, 2, offsetof(struct Beta, b),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_Alpha,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "b"
+		},
+	{ ATF_POINTER, 1, offsetof(struct Beta, g),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_Gamma,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "g"
+		},
+};
+static const ber_tlv_tag_t asn_DEF_Beta_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+static const asn_TYPE_tag2member_t asn_MAP_Beta_tag2el_1[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* b */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 } /* g */
+};
+asn_SEQUENCE_specifics_t asn_SPC_Beta_specs_1 = {
+	sizeof(struct Beta),
+	offsetof(struct Beta, _asn_ctx),
+	.tag2el = asn_MAP_Beta_tag2el_1,
+	.tag2el_count = 2,	/* Count of tags in the map */
+	0, 0, 0,	/* Optional elements (not needed) */
+	-1,	/* First extension addition */
+};
+asn_TYPE_descriptor_t asn_DEF_Beta = {
+	"Beta",
+	"Beta",
+	&asn_OP_SEQUENCE,
+	asn_DEF_Beta_tags_1,
+	sizeof(asn_DEF_Beta_tags_1)
+		/sizeof(asn_DEF_Beta_tags_1[0]), /* 1 */
+	asn_DEF_Beta_tags_1,	/* Same as above */
+	sizeof(asn_DEF_Beta_tags_1)
+		/sizeof(asn_DEF_Beta_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_constraint
+	},
+	asn_MBR_Beta_1,
+	2,	/* Elements count */
+	&asn_SPC_Beta_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [Gamma] >>> ***/
+
+#include <constr_SEQUENCE.h>
+
+/*** <<< FWD-DECLS [Gamma] >>> ***/
+
+struct TwoThree;
+struct Alpha;
+struct Beta;
+
+/*** <<< TYPE-DECLS [Gamma] >>> ***/
+
+typedef struct Gamma {
+	struct TwoThree	*o;
+	struct Alpha	*a;
+	struct Beta	*b;
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} Gamma_t;
+
+/*** <<< FUNC-DECLS [Gamma] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_Gamma;
+extern asn_SEQUENCE_specifics_t asn_SPC_Gamma_specs_1;
+extern asn_TYPE_member_t asn_MBR_Gamma_1[3];
+
+/*** <<< POST-INCLUDE [Gamma] >>> ***/
+
+#include "TwoThree.h"
+#include "Alpha.h"
+#include "Beta.h"
+
+/*** <<< STAT-DEFS [Gamma] >>> ***/
+
+asn_TYPE_member_t asn_MBR_Gamma_1[] = {
+	{ ATF_POINTER, 0, offsetof(struct Gamma, o),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_TwoThree,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "o"
+		},
+	{ ATF_POINTER, 0, offsetof(struct Gamma, a),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_Alpha,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "a"
+		},
+	{ ATF_POINTER, 0, offsetof(struct Gamma, b),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (2 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_Beta,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "b"
+		},
+};
+static const ber_tlv_tag_t asn_DEF_Gamma_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+static const asn_TYPE_tag2member_t asn_MAP_Gamma_tag2el_1[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* o */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 }, /* a */
+    { (ASN_TAG_CLASS_CONTEXT | (2 << 2)), 2, 0, 0 } /* b */
+};
+asn_SEQUENCE_specifics_t asn_SPC_Gamma_specs_1 = {
+	sizeof(struct Gamma),
+	offsetof(struct Gamma, _asn_ctx),
+	.tag2el = asn_MAP_Gamma_tag2el_1,
+	.tag2el_count = 3,	/* Count of tags in the map */
+	0, 0, 0,	/* Optional elements (not needed) */
+	-1,	/* First extension addition */
+};
+asn_TYPE_descriptor_t asn_DEF_Gamma = {
+	"Gamma",
+	"Gamma",
+	&asn_OP_SEQUENCE,
+	asn_DEF_Gamma_tags_1,
+	sizeof(asn_DEF_Gamma_tags_1)
+		/sizeof(asn_DEF_Gamma_tags_1[0]), /* 1 */
+	asn_DEF_Gamma_tags_1,	/* Same as above */
+	sizeof(asn_DEF_Gamma_tags_1)
+		/sizeof(asn_DEF_Gamma_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_constraint
+	},
+	asn_MBR_Gamma_1,
+	3,	/* Elements count */
+	&asn_SPC_Gamma_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [OneTwo] >>> ***/
+
+#include <constr_SET.h>
+
+/*** <<< DEPS [OneTwo] >>> ***/
+
+
+/*
+ * Method of determining the components presence
+ */
+typedef enum OneTwo_PR {
+	OneTwo_PR_m12,	/* Member m12 is present */
+} OneTwo_PR;
+
+/*** <<< FWD-DECLS [OneTwo] >>> ***/
+
+struct TwoThree;
+
+/*** <<< TYPE-DECLS [OneTwo] >>> ***/
+
+typedef struct OneTwo {
+	struct TwoThree	*m12;
+	
+	/* Presence bitmask: ASN_SET_ISPRESENT(pOneTwo, OneTwo_PR_x) */
+	unsigned int _presence_map
+		[((1+(8*sizeof(unsigned int))-1)/(8*sizeof(unsigned int)))];
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} OneTwo_t;
+
+/*** <<< FUNC-DECLS [OneTwo] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_OneTwo;
+extern asn_SET_specifics_t asn_SPC_OneTwo_specs_1;
+extern asn_TYPE_member_t asn_MBR_OneTwo_1[1];
+
+/*** <<< POST-INCLUDE [OneTwo] >>> ***/
+
+#include "TwoThree.h"
+
+/*** <<< STAT-DEFS [OneTwo] >>> ***/
+
+asn_TYPE_member_t asn_MBR_OneTwo_1[] = {
+	{ ATF_POINTER, 0, offsetof(struct OneTwo, m12),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_TwoThree,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "m12"
+		},
+};
+static const ber_tlv_tag_t asn_DEF_OneTwo_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (17 << 2))
+};
+static const asn_TYPE_tag2member_t asn_MAP_OneTwo_tag2el_1[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 } /* m12 */
+};
+static const uint8_t asn_MAP_OneTwo_mmap_1[(1 + (8 * sizeof(unsigned int)) - 1) / 8] = {
+	(1 << 7)
+};
+asn_SET_specifics_t asn_SPC_OneTwo_specs_1 = {
+	sizeof(struct OneTwo),
+	offsetof(struct OneTwo, _asn_ctx),
+	offsetof(struct OneTwo, _presence_map),
+	.tag2el = asn_MAP_OneTwo_tag2el_1,
+	.tag2el_count = 1,	/* Count of tags in the map */
+	asn_MAP_OneTwo_tag2el_1,	/* Same as above */
+	1,	/* Count of tags in the CXER map */
+	0,	/* Whether extensible */
+	(const unsigned int *)asn_MAP_OneTwo_mmap_1	/* Mandatory elements map */
+};
+asn_TYPE_descriptor_t asn_DEF_OneTwo = {
+	"OneTwo",
+	"OneTwo",
+	&asn_OP_SET,
+	asn_DEF_OneTwo_tags_1,
+	sizeof(asn_DEF_OneTwo_tags_1)
+		/sizeof(asn_DEF_OneTwo_tags_1[0]), /* 1 */
+	asn_DEF_OneTwo_tags_1,	/* Same as above */
+	sizeof(asn_DEF_OneTwo_tags_1)
+		/sizeof(asn_DEF_OneTwo_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SET_constraint
+	},
+	asn_MBR_OneTwo_1,
+	1,	/* Elements count */
+	&asn_SPC_OneTwo_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [TwoThree] >>> ***/
+
+#include <constr_SET.h>
+
+/*** <<< DEPS [TwoThree] >>> ***/
+
+
+/*
+ * Method of determining the components presence
+ */
+typedef enum TwoThree_PR {
+	TwoThree_PR_m23,	/* Member m23 is present */
+} TwoThree_PR;
+
+/*** <<< FWD-DECLS [TwoThree] >>> ***/
+
+struct ThreeOne;
+
+/*** <<< TYPE-DECLS [TwoThree] >>> ***/
+
+typedef struct TwoThree {
+	struct ThreeOne	*m23;
+	
+	/* Presence bitmask: ASN_SET_ISPRESENT(pTwoThree, TwoThree_PR_x) */
+	unsigned int _presence_map
+		[((1+(8*sizeof(unsigned int))-1)/(8*sizeof(unsigned int)))];
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} TwoThree_t;
+
+/*** <<< FUNC-DECLS [TwoThree] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_TwoThree;
+extern asn_SET_specifics_t asn_SPC_TwoThree_specs_1;
+extern asn_TYPE_member_t asn_MBR_TwoThree_1[1];
+
+/*** <<< POST-INCLUDE [TwoThree] >>> ***/
+
+#include "ThreeOne.h"
+
+/*** <<< STAT-DEFS [TwoThree] >>> ***/
+
+asn_TYPE_member_t asn_MBR_TwoThree_1[] = {
+	{ ATF_POINTER, 0, offsetof(struct TwoThree, m23),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_ThreeOne,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "m23"
+		},
+};
+static const ber_tlv_tag_t asn_DEF_TwoThree_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (17 << 2))
+};
+static const asn_TYPE_tag2member_t asn_MAP_TwoThree_tag2el_1[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 } /* m23 */
+};
+static const uint8_t asn_MAP_TwoThree_mmap_1[(1 + (8 * sizeof(unsigned int)) - 1) / 8] = {
+	(1 << 7)
+};
+asn_SET_specifics_t asn_SPC_TwoThree_specs_1 = {
+	sizeof(struct TwoThree),
+	offsetof(struct TwoThree, _asn_ctx),
+	offsetof(struct TwoThree, _presence_map),
+	.tag2el = asn_MAP_TwoThree_tag2el_1,
+	.tag2el_count = 1,	/* Count of tags in the map */
+	asn_MAP_TwoThree_tag2el_1,	/* Same as above */
+	1,	/* Count of tags in the CXER map */
+	0,	/* Whether extensible */
+	(const unsigned int *)asn_MAP_TwoThree_mmap_1	/* Mandatory elements map */
+};
+asn_TYPE_descriptor_t asn_DEF_TwoThree = {
+	"TwoThree",
+	"TwoThree",
+	&asn_OP_SET,
+	asn_DEF_TwoThree_tags_1,
+	sizeof(asn_DEF_TwoThree_tags_1)
+		/sizeof(asn_DEF_TwoThree_tags_1[0]), /* 1 */
+	asn_DEF_TwoThree_tags_1,	/* Same as above */
+	sizeof(asn_DEF_TwoThree_tags_1)
+		/sizeof(asn_DEF_TwoThree_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SET_constraint
+	},
+	asn_MBR_TwoThree_1,
+	1,	/* Elements count */
+	&asn_SPC_TwoThree_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [ThreeOne] >>> ***/
+
+#include <constr_SET.h>
+
+/*** <<< DEPS [ThreeOne] >>> ***/
+
+
+/*
+ * Method of determining the components presence
+ */
+typedef enum ThreeOne_PR {
+	ThreeOne_PR_m31,	/* Member m31 is present */
+	ThreeOne_PR_g,	/* Member g is present */
+} ThreeOne_PR;
+
+/*** <<< FWD-DECLS [ThreeOne] >>> ***/
+
+struct OneTwo;
+struct Gamma;
+
+/*** <<< TYPE-DECLS [ThreeOne] >>> ***/
+
+typedef struct ThreeOne {
+	struct OneTwo	*m31;
+	struct Gamma	*g;
+	
+	/* Presence bitmask: ASN_SET_ISPRESENT(pThreeOne, ThreeOne_PR_x) */
+	unsigned int _presence_map
+		[((2+(8*sizeof(unsigned int))-1)/(8*sizeof(unsigned int)))];
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} ThreeOne_t;
+
+/*** <<< FUNC-DECLS [ThreeOne] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_ThreeOne;
+extern asn_SET_specifics_t asn_SPC_ThreeOne_specs_1;
+extern asn_TYPE_member_t asn_MBR_ThreeOne_1[2];
+
+/*** <<< POST-INCLUDE [ThreeOne] >>> ***/
+
+#include "OneTwo.h"
+#include "Gamma.h"
+
+/*** <<< STAT-DEFS [ThreeOne] >>> ***/
+
+asn_TYPE_member_t asn_MBR_ThreeOne_1[] = {
+	{ ATF_POINTER, 0, offsetof(struct ThreeOne, m31),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_OneTwo,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "m31"
+		},
+	{ ATF_POINTER, 0, offsetof(struct ThreeOne, g),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_Gamma,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "g"
+		},
+};
+static const ber_tlv_tag_t asn_DEF_ThreeOne_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (17 << 2))
+};
+static const asn_TYPE_tag2member_t asn_MAP_ThreeOne_tag2el_1[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* m31 */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 } /* g */
+};
+static const uint8_t asn_MAP_ThreeOne_mmap_1[(2 + (8 * sizeof(unsigned int)) - 1) / 8] = {
+	(1 << 7) | (1 << 6)
+};
+asn_SET_specifics_t asn_SPC_ThreeOne_specs_1 = {
+	sizeof(struct ThreeOne),
+	offsetof(struct ThreeOne, _asn_ctx),
+	offsetof(struct ThreeOne, _presence_map),
+	.tag2el = asn_MAP_ThreeOne_tag2el_1,
+	.tag2el_count = 2,	/* Count of tags in the map */
+	asn_MAP_ThreeOne_tag2el_1,	/* Same as above */
+	2,	/* Count of tags in the CXER map */
+	0,	/* Whether extensible */
+	(const unsigned int *)asn_MAP_ThreeOne_mmap_1	/* Mandatory elements map */
+};
+asn_TYPE_descriptor_t asn_DEF_ThreeOne = {
+	"ThreeOne",
+	"ThreeOne",
+	&asn_OP_SET,
+	asn_DEF_ThreeOne_tags_1,
+	sizeof(asn_DEF_ThreeOne_tags_1)
+		/sizeof(asn_DEF_ThreeOne_tags_1[0]), /* 1 */
+	asn_DEF_ThreeOne_tags_1,	/* Same as above */
+	sizeof(asn_DEF_ThreeOne_tags_1)
+		/sizeof(asn_DEF_ThreeOne_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SET_constraint
+	},
+	asn_MBR_ThreeOne_1,
+	2,	/* Elements count */
+	&asn_SPC_ThreeOne_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [EXTERNAL] >>> ***/
+
+#include <OBJECT_IDENTIFIER.h>
+#include <INTEGER.h>
+#include <ObjectDescriptor.h>
+#include <ANY.h>
+#include <OCTET_STRING.h>
+#include <BIT_STRING.h>
+#include <constr_CHOICE.h>
+#include <constr_SEQUENCE.h>
+
+/*** <<< DEPS [EXTERNAL] >>> ***/
+
+typedef enum encoding_PR {
+	encoding_PR_NOTHING,	/* No components present */
+	encoding_PR_single_ASN1_type,
+	encoding_PR_octet_aligned,
+	encoding_PR_arbitrary
+} encoding_PR;
+
+/*** <<< TYPE-DECLS [EXTERNAL] >>> ***/
+
+typedef struct EXTERNAL {
+	OBJECT_IDENTIFIER_t	*direct_reference;	/* OPTIONAL */
+	INTEGER_t	*indirect_reference;	/* OPTIONAL */
+	ObjectDescriptor_t	*data_value_descriptor;	/* OPTIONAL */
+	struct encoding {
+		encoding_PR present;
+		union EXTERNAL__encoding_u {
+			ANY_t	 single_ASN1_type;
+			OCTET_STRING_t	 octet_aligned;
+			BIT_STRING_t	 arbitrary;
+		} choice;
+		
+		/* Context for parsing across buffer boundaries */
+		asn_struct_ctx_t _asn_ctx;
+	} encoding;
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} EXTERNAL_t;
+
+/*** <<< FUNC-DECLS [EXTERNAL] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_EXTERNAL;
+
+/*** <<< CODE [EXTERNAL] >>> ***/
+
+#ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
+#if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
+extern asn_TYPE_descriptor_t asn_DEF_encoding __attribute__((weak, alias("asn_DEF_encoding_5")));
+#else
+static asn_TYPE_descriptor_t asn_DEF_encoding_5;
+asn_TYPE_descriptor_t asn_DEF_encoding;
+__attribute__((constructor)) static void asn_DEF_encoding_5_alias_init(void) {
+	asn_DEF_encoding = asn_DEF_encoding_5;
+}
+#endif
+#endif /* ASN1C_NO_UNSUFFIXED_PDU_ALIAS */
+
+/*** <<< STAT-DEFS [EXTERNAL] >>> ***/
+
+static asn_TYPE_member_t asn_MBR_encoding_5[] = {
+	{ ATF_NOFLAGS, 0, offsetof(struct encoding, choice.single_ASN1_type),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = +1,	/* EXPLICIT tag at current level */
+		.type = &asn_DEF_ANY,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "single-ASN1-type"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct encoding, choice.octet_aligned),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_OCTET_STRING,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "octet-aligned"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct encoding, choice.arbitrary),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (2 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_BIT_STRING,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "arbitrary"
+		},
+};
+static const asn_TYPE_tag2member_t asn_MAP_encoding_tag2el_5[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* single-ASN1-type */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 }, /* octet-aligned */
+    { (ASN_TAG_CLASS_CONTEXT | (2 << 2)), 2, 0, 0 } /* arbitrary */
+};
+static asn_CHOICE_specifics_t asn_SPC_encoding_specs_5 = {
+	sizeof(struct encoding),
+	offsetof(struct encoding, _asn_ctx),
+	offsetof(struct encoding, present),
+	sizeof(((struct encoding *)0)->present),
+	.tag2el = asn_MAP_encoding_tag2el_5,
+	.tag2el_count = 3,	/* Count of tags in the map */
+	0, 0,
+	.first_extension = -1	/* Extensions start */
+};
+static /* Use -fall-defs-global to expose */
+asn_TYPE_descriptor_t asn_DEF_encoding_5 = {
+	"encoding",
+	"encoding",
+	&asn_OP_CHOICE,
+	0,	/* No effective tags (pointer) */
+	0,	/* No effective tags (count) */
+	0,	/* No tags (pointer) */
+	0,	/* No tags (count) */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		CHOICE_constraint
+	},
+	asn_MBR_encoding_5,
+	3,	/* Elements count */
+	&asn_SPC_encoding_specs_5	/* Additional specs */
+};
+
+static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
+	{ ATF_POINTER, 3, offsetof(struct EXTERNAL, direct_reference),
+		.tag = (ASN_TAG_CLASS_UNIVERSAL | (6 << 2)),
+		.tag_mode = 0,
+		.type = &asn_DEF_OBJECT_IDENTIFIER,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "direct-reference"
+		},
+	{ ATF_POINTER, 2, offsetof(struct EXTERNAL, indirect_reference),
+		.tag = (ASN_TAG_CLASS_UNIVERSAL | (2 << 2)),
+		.tag_mode = 0,
+		.type = &asn_DEF_INTEGER,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "indirect-reference"
+		},
+	{ ATF_POINTER, 1, offsetof(struct EXTERNAL, data_value_descriptor),
+		.tag = (ASN_TAG_CLASS_UNIVERSAL | (7 << 2)),
+		.tag_mode = 0,
+		.type = &asn_DEF_ObjectDescriptor,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "data-value-descriptor"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct EXTERNAL, encoding),
+		.tag = -1 /* Ambiguous tag (CHOICE?) */,
+		.tag_mode = 0,
+		.type = &asn_DEF_encoding,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "encoding"
+		},
+};
+static const ber_tlv_tag_t asn_DEF_EXTERNAL_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (8 << 2)),
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+static const asn_TYPE_tag2member_t asn_MAP_EXTERNAL_tag2el_1[] = {
+    { (ASN_TAG_CLASS_UNIVERSAL | (2 << 2)), 1, 0, 0 }, /* indirect-reference */
+    { (ASN_TAG_CLASS_UNIVERSAL | (6 << 2)), 0, 0, 0 }, /* direct-reference */
+    { (ASN_TAG_CLASS_UNIVERSAL | (7 << 2)), 2, 0, 0 }, /* data-value-descriptor */
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 3, 0, 0 }, /* single-ASN1-type */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 3, 0, 0 }, /* octet-aligned */
+    { (ASN_TAG_CLASS_CONTEXT | (2 << 2)), 3, 0, 0 } /* arbitrary */
+};
+static asn_SEQUENCE_specifics_t asn_SPC_EXTERNAL_specs_1 = {
+	sizeof(struct EXTERNAL),
+	offsetof(struct EXTERNAL, _asn_ctx),
+	.tag2el = asn_MAP_EXTERNAL_tag2el_1,
+	.tag2el_count = 6,	/* Count of tags in the map */
+	0, 0, 0,	/* Optional elements (not needed) */
+	-1,	/* First extension addition */
+};
+asn_TYPE_descriptor_t asn_DEF_EXTERNAL = {
+	"EXTERNAL",
+	"EXTERNAL",
+	&asn_OP_SEQUENCE,
+	asn_DEF_EXTERNAL_tags_1,
+	sizeof(asn_DEF_EXTERNAL_tags_1)
+		/sizeof(asn_DEF_EXTERNAL_tags_1[0]) - 1, /* 1 */
+	asn_DEF_EXTERNAL_tags_1,	/* Same as above */
+	sizeof(asn_DEF_EXTERNAL_tags_1)
+		/sizeof(asn_DEF_EXTERNAL_tags_1[0]), /* 2 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_constraint
+	},
+	asn_MBR_EXTERNAL_1,
+	4,	/* Elements count */
+	&asn_SPC_EXTERNAL_specs_1	/* Additional specs */
+};
+

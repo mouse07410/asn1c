@@ -44,21 +44,6 @@ typedef struct Choice {
 
 extern asn_TYPE_descriptor_t asn_DEF_Choice;
 
-/*** <<< CTDEFS [Choice] >>> ***/
-
-#if !defined(ASN_DISABLE_OER_SUPPORT)
-static asn_oer_constraints_t asn_OER_type_Choice_constr_1 CC_NOTUSED = {
-	{ 0, 0 },
-	-1};
-#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
-#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-static asn_per_constraints_t asn_PER_type_Choice_constr_1 CC_NOTUSED = {
-	{ APC_CONSTRAINED | APC_EXTENSIBLE,  0,  0,  0,  0 }	/* (0..0,...) */,
-	{ APC_UNCONSTRAINED,	-1, -1,  0,  0 },
-	0, 0	/* No PER value map */
-};
-#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-
 /*** <<< STAT-DEFS [Choice] >>> ***/
 
 static asn_TYPE_member_t asn_MBR_Choice_1[] = {
@@ -232,10 +217,10 @@ asn_TYPE_descriptor_t asn_DEF_Choice = {
 	0,	/* No tags (count) */
 	{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
-		&asn_OER_type_Choice_constr_1,
+		0,
 #endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-		&asn_PER_type_Choice_constr_1,
+		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
 		0,
@@ -307,21 +292,6 @@ __attribute__((constructor)) static void asn_DEF_encoding_5_alias_init(void) {
 }
 #endif
 #endif /* ASN1C_NO_UNSUFFIXED_PDU_ALIAS */
-
-/*** <<< CTDEFS [EXTERNAL] >>> ***/
-
-#if !defined(ASN_DISABLE_OER_SUPPORT)
-static asn_oer_constraints_t asn_OER_type_encoding_constr_5 CC_NOTUSED = {
-	{ 0, 0 },
-	-1};
-#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
-#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-static asn_per_constraints_t asn_PER_type_encoding_constr_5 CC_NOTUSED = {
-	{ APC_CONSTRAINED,	 2,  2,  0,  2 }	/* (0..2) */,
-	{ APC_UNCONSTRAINED,	-1, -1,  0,  0 },
-	0, 0	/* No PER value map */
-};
-#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 
 /*** <<< STAT-DEFS [EXTERNAL] >>> ***/
 
@@ -413,10 +383,10 @@ asn_TYPE_descriptor_t asn_DEF_encoding_5 = {
 	0,	/* No tags (count) */
 	{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
-		&asn_OER_type_encoding_constr_5,
+		0,
 #endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-		&asn_PER_type_encoding_constr_5,
+		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
 		0,
@@ -510,7 +480,6 @@ static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
 		.name = "encoding"
 		},
 };
-static const int asn_MAP_EXTERNAL_oms_1[] = { 0, 1, 2 };
 static const ber_tlv_tag_t asn_DEF_EXTERNAL_tags_1[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (8 << 2)),
 	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
@@ -528,8 +497,7 @@ static asn_SEQUENCE_specifics_t asn_SPC_EXTERNAL_specs_1 = {
 	offsetof(struct EXTERNAL, _asn_ctx),
 	.tag2el = asn_MAP_EXTERNAL_tag2el_1,
 	.tag2el_count = 6,	/* Count of tags in the map */
-	asn_MAP_EXTERNAL_oms_1,	/* Optional members */
-	3, 0,	/* Root/Additions */
+	0, 0, 0,	/* Optional elements (not needed) */
 	-1,	/* First extension addition */
 };
 asn_TYPE_descriptor_t asn_DEF_EXTERNAL = {

@@ -1,51 +1,133 @@
-../../asn1c/asn1c: invalid option -- '-'
-ASN.1 Compiler, v7079b25-2025-12-02
-Copyright (c) 2003-2017 Lev Walkin <vlm@lionet.info> and contributors.
-Copyright (c) 2022-2025 Mouse <mouse07410@noreply.github.com> and contributors.
-Usage: asn1c [options] file ...
-Options:
-  -E                    Run only the ASN.1 parser and print out the tree
-  -F                    During -E operation, also perform tree fixing
+ModuleConditionalIntegerType { iso org(3) dod(6) internet(1) private(4)
+	enterprise(1) spelio(9363) software(1) asn1c(5) test(1) 90 }
+DEFINITIONS ::=
+BEGIN
 
-  -P                    Concatenate and print the compiled text
-  -R                    Restrict output (tables only, no support code)
-  -S <dir>              Directory with support (skeleton?) files
-                        (Default is "/usr/local/share/asn1c")
-  -D <dir>              Destination directory for generated files (default current dir)
-  -X                    Generate and print the XML DTD
+CN-IntegerUnlimited ::= INTEGER
+-- Practical constraints (CN-IntegerUnlimited): (MIN..MAX)  
+-- OER-visible constraints (CN-IntegerUnlimited): (MIN..MAX)  
+-- PER-visible constraints (CN-IntegerUnlimited): (MIN..MAX)  
 
-  -Werror               Treat warnings as errors; abort if any warning
-  -Wdebug-lexer         Enable verbose debugging output from lexer
-  -Wdebug-parser        Enable verbose debugging output from parser
-  -Wdebug-fixer         --//-- semantics processor
-  -Wdebug-compiler      --//-- compiler
+CN-IntegerMinMax ::= INTEGER (MIN..MAX)
+-- Combined constraints: (MIN..MAX)
+-- Practical constraints (CN-IntegerMinMax): (MIN..MAX)  
+-- OER-visible constraints (CN-IntegerMinMax): (MIN..MAX)  
+-- PER-visible constraints (CN-IntegerMinMax): (MIN..MAX)  
 
-  -fbless-SIZE          Allow SIZE() constraint for INTEGER etc (non-std.)
-  -fcompound-names      Disambiguate C's struct NAME's inside top-level types
-  -findirect-choice     Compile members of CHOICE as indirect pointers
-  -fincludes-quoted     Generate #includes in "double" instead of <angle> quotes
-  -fknown-extern-type=<name>    Pretend the specified type is known
-  -fline-refs           Include ASN.1 module's line numbers in comments
-  -fno-constraints      Do not generate the constraint checking code
-  -fno-include-deps     Do not generate the courtesy #includes for dependencies
-  -funnamed-unions      Enable unnamed unions in structures
-  -fwide-types          Use INTEGER_t instead of "long" by default, etc.
-  -fgen-only-pdu-deps   Generate code only for types that are dependencies of -pdu types
-  -flist-deps           List PDU dependencies (requires -pdu option, no code generated)
-  -fprefix=<prefix>     Add the specified prefix to generated types
+CN-IntegerMinLow ::= INTEGER (MIN..1)
+-- Combined constraints: (MIN..1)
+-- Practical constraints (CN-IntegerMinLow): (MIN..1)  
+-- OER-visible constraints (CN-IntegerMinLow): (MIN..1)  
+-- PER-visible constraints (CN-IntegerMinLow): (MIN..1)  
 
-  -no-gen-BER           Do not generate the Basic Encoding Rules (BER, X.690) support code
-  -no-gen-XER           Do not generate the XML Encoding Rules (XER, X.693) support code
-  -no-gen-JER           Do not generate the JSON Encoding Rules (JER, X.697) support code
-  -no-gen-OER           Do not generate the Octet Encoding Rules (OER, X.696) support code
-  -no-gen-UPER          Do not generate the Unaligned Packed Encoding Rules (PER, X.691) support code
-  -no-gen-APER          Do not generate the Aligned Packed Encoding Rules (PER, X.691) support code
-  -no-gen-print         Do not generate the print code
-  -no-gen-random-fill   Do not generate the random fill code
-  -no-gen-example       Do not generate the ASN.1 format converter example
-  -gen-autotools        Generate example top-level configure.ac and Makefile.am
-  -pdu={all|auto|Type}  Generate PDU table (discover PDUs automatically)
+NO-IntegerMinHigh ::= INTEGER (MIN..3000000000)
+-- Combined constraints: (MIN..3000000000)
+-- Practical constraints (NO-IntegerMinHigh): (MIN..3000000000)  
+-- OER-visible constraints (NO-IntegerMinHigh): (MIN..3000000000)  
+-- PER-visible constraints (NO-IntegerMinHigh): (MIN..3000000000)  
 
-  -print-class-matrix   Print out the collected object class matrix (debug)
-  -print-constraints    Explain subtype constraints (debug)
-  -print-lines          Generate "-- #line" comments in -E output
+NO-IntegerLowHigh ::= INTEGER (1..3000000000)
+-- Combined constraints: (1..3000000000)
+-- Practical constraints (NO-IntegerLowHigh): (1..3000000000)  
+-- OER-visible constraints (NO-IntegerLowHigh): (1..3000000000)  
+-- PER-visible constraints (NO-IntegerLowHigh): (1..3000000000)  
+
+CN-IntegerLowMax ::= INTEGER (1..MAX)
+-- Combined constraints: (1..MAX)
+-- Practical constraints (CN-IntegerLowMax): (1..MAX)  
+-- OER-visible constraints (CN-IntegerLowMax): (1..MAX)  
+-- PER-visible constraints (CN-IntegerLowMax): (1..MAX)  
+
+NO-IntegerHighMax ::= INTEGER (3000000000..MAX)
+-- Combined constraints: (3000000000..MAX)
+-- Practical constraints (NO-IntegerHighMax): (3000000000..MAX)  
+-- OER-visible constraints (NO-IntegerHighMax): (3000000000..MAX)  
+-- PER-visible constraints (NO-IntegerHighMax): (3000000000..MAX)  
+
+NO-IntegerLowestMax ::= INTEGER (-3000000000..MAX)
+-- Combined constraints: (-3000000000..MAX)
+-- Practical constraints (NO-IntegerLowestMax): (-3000000000..MAX)  
+-- OER-visible constraints (NO-IntegerLowestMax): (-3000000000..MAX)  
+-- PER-visible constraints (NO-IntegerLowestMax): (-3000000000..MAX)  
+
+NO-IntegerOutRange ::= INTEGER (3000000000..3000000001)
+-- Combined constraints: (3000000000..3000000001)
+-- Practical constraints (NO-IntegerOutRange): (3000000000..3000000001)  
+-- OER-visible constraints (NO-IntegerOutRange): (3000000000..3000000001)  
+-- PER-visible constraints (NO-IntegerOutRange): (3000000000..3000000001)  
+
+NO-IntegerOutValue ::= INTEGER (3000000000)
+-- Combined constraints: (3000000000)
+-- Practical constraints (NO-IntegerOutValue): (3000000000)  
+-- OER-visible constraints (NO-IntegerOutValue): (3000000000)  
+-- PER-visible constraints (NO-IntegerOutValue): (3000000000)  
+
+OK-IntegerInRange1 ::= INTEGER (-100..100)
+-- Combined constraints: (-100..100)
+-- Practical constraints (OK-IntegerInRange1): (-100..100)  
+-- OER-visible constraints (OK-IntegerInRange1): (-100..100)  
+-- PER-visible constraints (OK-IntegerInRange1): (-100..100)  
+
+OK-IntegerInRange2 ::= INTEGER (-100 | 100)
+-- Combined constraints: (-100 | 100)
+-- Practical constraints (OK-IntegerInRange2): (-100 | 100)  
+-- OER-visible constraints (OK-IntegerInRange2): (-100 | 100)  
+-- PER-visible constraints (OK-IntegerInRange2): (-100 | 100)  
+
+OK-IntegerInRange3 ::= INTEGER (-2147483648..2147483647)
+-- Combined constraints: (-2147483648..2147483647)
+-- Practical constraints (OK-IntegerInRange3): (-2147483648..2147483647)  
+-- OER-visible constraints (OK-IntegerInRange3): (-2147483648..2147483647)  
+-- PER-visible constraints (OK-IntegerInRange3): (-2147483648..2147483647)  
+
+OK-IntegerInRange4 ::= INTEGER (-2147483648 | 2147483647)
+-- Combined constraints: (-2147483648 | 2147483647)
+-- Practical constraints (OK-IntegerInRange4): (-2147483648 | 2147483647)  
+-- OER-visible constraints (OK-IntegerInRange4): (-2147483648 | 2147483647)  
+-- PER-visible constraints (OK-IntegerInRange4): (-2147483648 | 2147483647)  
+
+OK-IntegerInRange5 ::= INTEGER (-2147483648 | 2147483647,...)
+-- Combined constraints: (-2147483648 | 2147483647,...)
+-- Practical constraints (OK-IntegerInRange5): (-2147483648 | 2147483647,...)  
+-- OER-visible constraints (OK-IntegerInRange5): (MIN..MAX)  
+-- PER-visible constraints (OK-IntegerInRange5): (-2147483648 | 2147483647,...)  
+
+NO-IntegerInRange6 ::= INTEGER (0..4294967295)
+-- Combined constraints: (0..4294967295)
+-- Practical constraints (NO-IntegerInRange6): (0..4294967295)  
+-- OER-visible constraints (NO-IntegerInRange6): (0..4294967295)  
+-- PER-visible constraints (NO-IntegerInRange6): (0..4294967295)  
+
+CN-IntegerEnumerated1 ::= INTEGER {
+    a(1)
+-- Practical constraints (a):   
+-- OER-visible constraints (a):   
+-- PER-visible constraints (a):   
+,
+    b(2)
+-- Practical constraints (b):   
+-- OER-visible constraints (b):   
+-- PER-visible constraints (b):   
+
+}
+-- Practical constraints (CN-IntegerEnumerated1): (MIN..MAX)  
+-- OER-visible constraints (CN-IntegerEnumerated1): (MIN..MAX)  
+-- PER-visible constraints (CN-IntegerEnumerated1): (MIN..MAX)  
+
+NO-IntegerEnumerated2 ::= INTEGER {
+    a(1)
+-- Practical constraints (a):   
+-- OER-visible constraints (a):   
+-- PER-visible constraints (a):   
+,
+    b(3000000000)
+-- Practical constraints (b):   
+-- OER-visible constraints (b):   
+-- PER-visible constraints (b):   
+
+}
+-- Practical constraints (NO-IntegerEnumerated2): (MIN..MAX)  
+-- OER-visible constraints (NO-IntegerEnumerated2): (MIN..MAX)  
+-- PER-visible constraints (NO-IntegerEnumerated2): (MIN..MAX)  
+
+END
