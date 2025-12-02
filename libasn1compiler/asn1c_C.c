@@ -1526,20 +1526,25 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 		int use_rsafe_typedef = 0;
 		asn1p_expr_t *terminal = NULL;
 		
-		/* First, check if the source type is a specialization from another file */
+		/* First, try to find the terminal type to check for special handling needs */
 		if(expr->expr_type == A1TC_REFERENCE) {
 			terminal = WITH_MODULE_NAMESPACE(
 				expr->module, expr_ns,
 				(expr->meta_type == AMT_TYPEREF) ?
 					asn1f_lookup_symbol_ex(arg->asn, expr_ns, expr, expr->reference) :
 					asn1f_find_terminal_type_ex(arg->asn, expr_ns, expr));
-			
+		} else {
+			/* For non-reference types, try to find terminal type anyway */
+			terminal = asn1f_find_terminal_type_ex(arg->asn, arg->ns, expr);
+		}
+		
+		if(terminal) {
 			/*
 			 * If the terminal type is a specialization (spec_index >= 0) and
 			 * it's from a different parameterized type than what we're compiling,
 			 * use struct form to avoid circular include issues.
 			 */
-			if(terminal && terminal->spec_index >= 0) {
+			if(terminal->spec_index >= 0) {
 				/* Check if this specialization is from a different parent than our own */
 				asn1p_expr_t *our_parent = asn1c_find_parent_parameterized_type(arg->asn, arg->expr);
 				asn1p_expr_t *source_parent = asn1c_find_parent_parameterized_type(arg->asn, terminal);
@@ -1555,7 +1560,7 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 			 * that references this type, we need to use struct form and add a
 			 * forward declaration to avoid "unknown type name" errors.
 			 */
-			if(terminal && (terminal->marker.flags & EM_UNRECURSE)) {
+			if(terminal->marker.flags & EM_UNRECURSE) {
 				use_rsafe_typedef = 1;
 			}
 			
@@ -1566,7 +1571,7 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 			 * ASN.1 specifications like F1AP where container types can create
 			 * circular dependencies.
 			 */
-			if(terminal && (terminal->expr_type & ASN_CONSTR_MASK)) {
+			if(terminal->expr_type & ASN_CONSTR_MASK) {
 				use_rsafe_typedef = 1;
 			}
 		}
