@@ -16,7 +16,7 @@ INTEGER_decode_aper(const asn_codec_ctx_t *opt_codec_ctx,
     const asn_per_constraint_t *ct;
     asn_per_constraint_t ct_ext_copy;  /* Local copy for extension case */
     int repeat;
-    int inext = 0;  /* Track if we're in extension */
+    int inext = 0;  /* Track if value is in extension part (outside constraint range) */
 
     (void)opt_codec_ctx;
 
