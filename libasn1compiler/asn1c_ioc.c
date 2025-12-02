@@ -205,6 +205,14 @@ emit_ioc_value(arg_t *arg, struct asn1p_ioc_cell_s *cell, asn1p_expr_t *objset) 
         case ASN_BASIC_RELATIVE_OID:
             prim_type = "RELATIVE_OID_t";
             break;
+        case ASN_BASIC_OCTET_STRING:
+            GEN_INCLUDE_STD("OCTET_STRING");
+            prim_type = "OCTET_STRING_t";
+            break;
+        case ASN_BASIC_BIT_STRING:
+            GEN_INCLUDE_STD("BIT_STRING");
+            prim_type = "BIT_STRING_t";
+            break;
         default: {
             char *p = strdup(MKID(cell->value));
             FATAL("Unsupported type %s for value %s",
@@ -253,6 +261,34 @@ emit_ioc_value(arg_t *arg, struct asn1p_ioc_cell_s *cell, asn1p_expr_t *objset) 
                       MKID(cell->value));
                 return -1;
             }
+
+        case ATV_BITVECTOR:
+            /* Handle BIT STRING and OCTET STRING hexadecimal/binary values */
+            if(prim_type && (strcmp(prim_type, "OCTET_STRING_t") == 0 || strcmp(prim_type, "BIT_STRING_t") == 0)) {
+                int is_bit_string = (strcmp(prim_type, "BIT_STRING_t") == 0);
+                uint8_t *bits = expr_value->value->value.binary_vector.bits;
+                int size_in_bits = expr_value->value->value.binary_vector.size_in_bits;
+                
+                /* Calculate size in bytes (rounded up) */
+                int size_in_bytes = (size_in_bits + 7) / 8;
+                
+                /* Output the buffer contents */
+                OUT("(uint8_t[]){");
+                for(int i = 0; i < size_in_bytes; i++) {
+                    OUT("%s0x%02x", (i ? ", " : " "), bits[i]);
+                }
+                OUT("}, %d", size_in_bytes);
+                
+                if(is_bit_string) {
+                    /* For BIT STRING, also output bits_unused field */
+                    int bits_unused = (size_in_bytes * 8) - size_in_bits;
+                    OUT(", %d", bits_unused);
+                }
+                break;
+            }
+            FATAL("Inappropriate bitvector value %s for type %s",
+                  asn1f_printable_value(expr_value->value), MKID(cell->value));
+            return -1;
 
         case ATV_UNPARSED:
             if(prim_type && (strcmp(prim_type, "OBJECT_IDENTIFIER_t") == 0 || strcmp(prim_type, "RELATIVE_OID_t") == 0)
