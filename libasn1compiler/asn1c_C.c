@@ -1508,7 +1508,8 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 		}
 
 	} else {
-		GEN_POS_INCLUDE_BASE(OT_INCLUDES, expr);
+		/* Note: Include generation moved after use_rsafe_typedef determination
+		 * to avoid adding includes for types that should use POST_INCLUDE */
 
 		/*
 		 * When the expression is a parameterized type reference (has rhs_pspecs),
@@ -1565,15 +1566,14 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 			}
 			
 			/*
-			 * If we're creating a simple typedef to a constructed type,
-			 * use struct form and POST_INCLUDE to avoid circular include issues.
-			 * This is a conservative approach that prevents problems with complex
-			 * ASN.1 specifications like F1AP where container types can create
-			 * circular dependencies.
+			 * Don't use rsafe typedef for constructed types as it creates
+			 * incomplete type issues when used as direct struct members.
+			 * Instead, we'll just move the include to POST_INCLUDE while
+			 * keeping the normal typedef format.
 			 */
-			if(terminal->expr_type & ASN_CONSTR_MASK) {
+			/* if(terminal->expr_type & ASN_CONSTR_MASK) {
 				use_rsafe_typedef = 1;
-			}
+			} */
 		}
 		
 		/*
@@ -1608,10 +1608,10 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 					OUT_NOINDENT("#include %s\n", resolved_include);
 				}
 				free(base_include);
-			} else {
-				/* For simple typedefs, add the include in POST_INCLUDE */
-				GEN_POS_INCLUDE_BASE(OT_POST_INCLUDE, expr);
 			}
+			/* For simple rsafe typedefs, add the include in POST_INCLUDE
+			 * so the full type definitions are available after the typedefs */
+			GEN_POS_INCLUDE_BASE(OT_POST_INCLUDE, expr);
 			REDIR(tmp_target);
 		} else if(expr->rhs_pspecs) {
 			char *base_include;
@@ -1636,8 +1636,11 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 			}
 			free(base_include);
 		} else {
-			/* Standard include at the top */
-			GEN_POS_INCLUDE_BASE(OT_INCLUDES, expr);
+			/* Standard include at the top - but skip for REFERENCE types
+			 * where we've detected they should use rsafe handling above */
+			if(!use_rsafe_typedef) {
+				GEN_POS_INCLUDE_BASE(OT_INCLUDES, expr);
+			}
 		}
 
 		REDIR(OT_TYPE_DECLS);
