@@ -1548,9 +1548,67 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 					use_rsafe_typedef = 1;
 				}
 			}
+			
+			/*
+			 * If the terminal type has EM_UNRECURSE flag set, it means its include
+			 * will be placed in OT_POST_INCLUDE section. When we create a typedef
+			 * that references this type, we need to use struct form and add a
+			 * forward declaration to avoid "unknown type name" errors.
+			 */
+			if(terminal && (terminal->marker.flags & EM_UNRECURSE)) {
+				use_rsafe_typedef = 1;
+			}
+			
+			/*
+			 * If we're creating a simple typedef to a constructed type,
+			 * use struct form and POST_INCLUDE to avoid circular include issues.
+			 * This is a conservative approach that prevents problems with complex
+			 * ASN.1 specifications like F1AP where container types can create
+			 * circular dependencies.
+			 */
+			if(terminal && (terminal->expr_type & ASN_CONSTR_MASK)) {
+				use_rsafe_typedef = 1;
+			}
 		}
 		
-		if(expr->rhs_pspecs) {
+		/*
+		 * Add forward declaration and handle includes for types that need
+		 * recursion-safe handling
+		 */
+		if(use_rsafe_typedef) {
+			int tmp_target = arg->target->target;
+			
+			/* Add forward declaration of the struct */
+			REDIR(OT_FWD_DECLS);
+			OUT("%s;\n", asn1c_type_name(arg, arg->expr, TNF_RSAFE));
+			
+			/* Add include in POST_INCLUDE section if needed */
+			if(expr->rhs_pspecs) {
+				char *base_include;
+				const char *resolved_include;
+				asn1p_expr_t *saved_rhs;
+				
+				/* Get include name without rhs_pspecs */
+				saved_rhs = expr->rhs_pspecs;
+				expr->rhs_pspecs = NULL;
+				base_include = strdup(asn1c_type_name(arg, expr, TNF_INCLUDE));
+				expr->rhs_pspecs = saved_rhs;
+				
+				/* Get include name with rhs_pspecs */
+				resolved_include = asn1c_type_name(arg, expr, TNF_INCLUDE);
+				
+				/* If they differ, add the resolved include */
+				if(base_include && resolved_include && strcmp(base_include, resolved_include) != 0) {
+					REDIR(OT_POST_INCLUDE);
+					OUT_NOINDENT("#include %s\n", resolved_include);
+				}
+				free(base_include);
+			} else {
+				/* For simple typedefs, add the include in POST_INCLUDE */
+				GEN_POS_INCLUDE_BASE(OT_POST_INCLUDE, expr);
+			}
+			REDIR(tmp_target);
+		} else if(expr->rhs_pspecs) {
 			char *base_include;
 			const char *resolved_include;
 			asn1p_expr_t *saved_rhs;
@@ -1567,19 +1625,14 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 			/* If they differ, add the resolved include */
 			if(base_include && resolved_include && strcmp(base_include, resolved_include) != 0) {
 				int tmp_target = arg->target->target;
-				
-				if(use_rsafe_typedef) {
-					/* For cross-file specializations, use POST_INCLUDE */
-					REDIR(OT_FWD_DECLS);
-					OUT("%s;\n", asn1c_type_name(arg, arg->expr, TNF_RSAFE));
-					REDIR(OT_POST_INCLUDE);
-				} else {
-					REDIR(OT_INCLUDES);
-				}
+				REDIR(OT_INCLUDES);
 				OUT_NOINDENT("#include %s\n", resolved_include);
 				REDIR(tmp_target);
 			}
 			free(base_include);
+		} else {
+			/* Standard include at the top */
+			GEN_POS_INCLUDE_BASE(OT_INCLUDES, expr);
 		}
 
 		REDIR(OT_TYPE_DECLS);
