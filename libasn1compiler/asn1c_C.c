@@ -3945,6 +3945,24 @@ expr_break_recursion(arg_t *arg, asn1p_expr_t *expr) {
 		return 1;
 	}
 
+	/*
+	 * Always make choice-extension members indirect (use pointers) to avoid
+	 * incomplete type errors with complex ASN.1 specifications like F1AP.
+	 * choice-extension members often reference container types that have
+	 * circular dependencies, and using pointers breaks these dependencies.
+	 * Check if identifier starts with "choice" (handles various naming conventions).
+	 */
+	if(arg->expr->expr_type == ASN_CONSTR_CHOICE
+	 && expr->Identifier
+	 && strncmp(expr->Identifier, "choice", 6) == 0
+	 && (expr->Identifier[6] == '-' || expr->Identifier[6] == '_')
+	 && (expr_get_type(arg, expr) & ASN_CONSTR_MASK)
+	) {
+		/* Make choice-extension always use indirection */
+		expr->marker.flags |= EM_INDIRECT | EM_UNRECURSE;
+		return 1;
+	}
+
 	if((expr->marker.flags & EM_INDIRECT)
 	|| arg->expr->expr_type == ASN_CONSTR_SET_OF
 	|| arg->expr->expr_type == ASN_CONSTR_SEQUENCE_OF) {
