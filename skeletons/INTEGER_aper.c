@@ -16,6 +16,7 @@ INTEGER_decode_aper(const asn_codec_ctx_t *opt_codec_ctx,
     const asn_per_constraint_t *ct;
     asn_per_constraint_t ct_ext_copy;  /* Local copy for extension case */
     int repeat;
+    int inext = 0;  /* Track if we're in extension */
 
     (void)opt_codec_ctx;
 
@@ -28,16 +29,11 @@ INTEGER_decode_aper(const asn_codec_ctx_t *opt_codec_ctx,
     ct = constraints ? &constraints->value : 0;
 
     if(ct && ct->flags & APC_EXTENSIBLE) {
-        int inext = per_get_few_bits(pd, 1);
+        inext = per_get_few_bits(pd, 1);
         if(inext < 0) ASN__DECODE_STARVED;
         if(inext) {
-            /* In extension: treat as semi-constrained with only lower bound */
-            ct_ext_copy = *ct;
-            ct_ext_copy.flags = APC_SEMI_CONSTRAINED;
-            ct_ext_copy.range_bits = -1;
-            ct_ext_copy.effective_bits = -1;
-            /* Keep lower_bound, discard upper_bound */
-            ct = &ct_ext_copy;
+            /* In extension: decode as unconstrained (no bounds) */
+            ct = 0;
         }
     }
 

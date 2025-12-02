@@ -121,3 +121,4 @@ doc/docsrc/*.xdv
 *.gcda
 asn1c-*/
 *.tar.gz
+asn1c/tmp/
