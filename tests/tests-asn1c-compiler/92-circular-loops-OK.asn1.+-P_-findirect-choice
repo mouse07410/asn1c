@@ -340,27 +340,10 @@ typedef struct Choice1 {
 extern asn_TYPE_descriptor_t asn_DEF_Choice1;
 extern asn_CHOICE_specifics_t asn_SPC_Choice1_specs_1;
 extern asn_TYPE_member_t asn_MBR_Choice1_1[2];
-extern asn_oer_constraints_t asn_OER_type_Choice1_constr_1;
-extern asn_per_constraints_t asn_PER_type_Choice1_constr_1;
 
 /*** <<< POST-INCLUDE [Choice1] >>> ***/
 
 #include "Everything.h"
-
-/*** <<< CTDEFS [Choice1] >>> ***/
-
-#if !defined(ASN_DISABLE_OER_SUPPORT)
-asn_oer_constraints_t asn_OER_type_Choice1_constr_1 CC_NOTUSED = {
-	{ 0, 0 },
-	-1};
-#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
-#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-asn_per_constraints_t asn_PER_type_Choice1_constr_1 CC_NOTUSED = {
-	{ APC_CONSTRAINED | APC_EXTENSIBLE,  0,  0,  0,  0 }	/* (0..0,...) */,
-	{ APC_UNCONSTRAINED,	-1, -1,  0,  0 },
-	0, 0	/* No PER value map */
-};
-#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 
 /*** <<< STAT-DEFS [Choice1] >>> ***/
 
@@ -430,10 +413,10 @@ asn_TYPE_descriptor_t asn_DEF_Choice1 = {
 	0,	/* No tags (count) */
 	{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
-		&asn_OER_type_Choice1_constr_1,
+		0,
 #endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-		&asn_PER_type_Choice1_constr_1,
+		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
 		0,
@@ -486,28 +469,11 @@ typedef struct Choice2 {
 extern asn_TYPE_descriptor_t asn_DEF_Choice2;
 extern asn_CHOICE_specifics_t asn_SPC_Choice2_specs_1;
 extern asn_TYPE_member_t asn_MBR_Choice2_1[2];
-extern asn_oer_constraints_t asn_OER_type_Choice2_constr_1;
-extern asn_per_constraints_t asn_PER_type_Choice2_constr_1;
 
 /*** <<< POST-INCLUDE [Choice2] >>> ***/
 
 #include "TypeRef.h"
 #include "Everything.h"
-
-/*** <<< CTDEFS [Choice2] >>> ***/
-
-#if !defined(ASN_DISABLE_OER_SUPPORT)
-asn_oer_constraints_t asn_OER_type_Choice2_constr_1 CC_NOTUSED = {
-	{ 0, 0 },
-	-1};
-#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
-#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-asn_per_constraints_t asn_PER_type_Choice2_constr_1 CC_NOTUSED = {
-	{ APC_CONSTRAINED | APC_EXTENSIBLE,  0,  0,  0,  0 }	/* (0..0,...) */,
-	{ APC_UNCONSTRAINED,	-1, -1,  0,  0 },
-	0, 0	/* No PER value map */
-};
-#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 
 /*** <<< STAT-DEFS [Choice2] >>> ***/
 
@@ -577,10 +543,10 @@ asn_TYPE_descriptor_t asn_DEF_Choice2 = {
 	0,	/* No tags (count) */
 	{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
-		&asn_OER_type_Choice2_constr_1,
+		0,
 #endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-		&asn_PER_type_Choice2_constr_1,
+		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
 		0,
@@ -643,8 +609,6 @@ typedef struct Choice3 {
 extern asn_TYPE_descriptor_t asn_DEF_Choice3;
 extern asn_CHOICE_specifics_t asn_SPC_Choice3_specs_1;
 extern asn_TYPE_member_t asn_MBR_Choice3_1[3];
-extern asn_oer_constraints_t asn_OER_type_Choice3_constr_1;
-extern asn_per_constraints_t asn_PER_type_Choice3_constr_1;
 
 /*** <<< POST-INCLUDE [Choice3] >>> ***/
 
@@ -675,21 +639,6 @@ __attribute__((constructor)) static void asn_DEF_c_5_alias_init(void) {
 }
 #endif
 #endif /* ASN1C_NO_UNSUFFIXED_PDU_ALIAS */
-
-/*** <<< CTDEFS [Choice3] >>> ***/
-
-#if !defined(ASN_DISABLE_OER_SUPPORT)
-asn_oer_constraints_t asn_OER_type_Choice3_constr_1 CC_NOTUSED = {
-	{ 0, 0 },
-	-1};
-#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
-#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-asn_per_constraints_t asn_PER_type_Choice3_constr_1 CC_NOTUSED = {
-	{ APC_CONSTRAINED,	 2,  2,  0,  2 }	/* (0..2) */,
-	{ APC_UNCONSTRAINED,	-1, -1,  0,  0 },
-	0, 0	/* No PER value map */
-};
-#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 
 /*** <<< STAT-DEFS [Choice3] >>> ***/
 
@@ -904,10 +853,10 @@ asn_TYPE_descriptor_t asn_DEF_Choice3 = {
 	0,	/* No tags (count) */
 	{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
-		&asn_OER_type_Choice3_constr_1,
+		0,
 #endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-		&asn_PER_type_Choice3_constr_1,
+		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
 		0,
@@ -1073,7 +1022,6 @@ static asn_TYPE_member_t asn_MBR_Member_2[] = {
 		.name = "set3"
 		},
 };
-static const int asn_MAP_Member_oms_2[] = { 3, 4 };
 static const ber_tlv_tag_t asn_DEF_Member_tags_2[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
 };
@@ -1089,8 +1037,7 @@ static asn_SEQUENCE_specifics_t asn_SPC_Member_specs_2 = {
 	offsetof(struct Member, _asn_ctx),
 	.tag2el = asn_MAP_Member_tag2el_2,
 	.tag2el_count = 5,	/* Count of tags in the map */
-	asn_MAP_Member_oms_2,	/* Optional members */
-	1, 1,	/* Root/Additions */
+	0, 0, 0,	/* Optional elements (not needed) */
 	4,	/* First extension addition */
 };
 static /* Use -fall-defs-global to expose */
@@ -1300,7 +1247,6 @@ asn_TYPE_member_t asn_MBR_Sequence_1[] = {
 		.name = "set"
 		},
 };
-static const int asn_MAP_Sequence_oms_1[] = { 1, 2, 3 };
 static const ber_tlv_tag_t asn_DEF_Sequence_tags_1[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
 };
@@ -1315,8 +1261,7 @@ asn_SEQUENCE_specifics_t asn_SPC_Sequence_specs_1 = {
 	offsetof(struct Sequence, _asn_ctx),
 	.tag2el = asn_MAP_Sequence_tag2el_1,
 	.tag2el_count = 4,	/* Count of tags in the map */
-	asn_MAP_Sequence_oms_1,	/* Optional members */
-	1, 2,	/* Root/Additions */
+	0, 0, 0,	/* Optional elements (not needed) */
 	2,	/* First extension addition */
 };
 asn_TYPE_descriptor_t asn_DEF_Sequence = {
@@ -1347,13 +1292,13 @@ asn_TYPE_descriptor_t asn_DEF_Sequence = {
 };
 
 
-/*** <<< FWD-DECLS [TypeRef] >>> ***/
+/*** <<< INCLUDES [TypeRef] >>> ***/
 
-struct Sequence;
+#include "Sequence.h"
 
 /*** <<< TYPE-DECLS [TypeRef] >>> ***/
 
-typedef struct Sequence	 TypeRef_t;
+typedef Sequence_t	 TypeRef_t;
 
 /*** <<< FUNC-DECLS [TypeRef] >>> ***/
 
@@ -1365,17 +1310,6 @@ ber_type_decoder_f TypeRef_decode_ber;
 der_type_encoder_f TypeRef_encode_der;
 xer_type_decoder_f TypeRef_decode_xer;
 xer_type_encoder_f TypeRef_encode_xer;
-jer_type_encoder_f TypeRef_encode_jer;
-oer_type_decoder_f TypeRef_decode_oer;
-oer_type_encoder_f TypeRef_encode_oer;
-per_type_decoder_f TypeRef_decode_uper;
-per_type_encoder_f TypeRef_encode_uper;
-per_type_decoder_f TypeRef_decode_aper;
-per_type_encoder_f TypeRef_encode_aper;
-
-/*** <<< POST-INCLUDE [TypeRef] >>> ***/
-
-#include "Sequence.h"
 
 /*** <<< CODE [TypeRef] >>> ***/
 
@@ -1488,7 +1422,6 @@ static asn_TYPE_member_t asn_MBR_b_3[] = {
 		.name = "b"
 		},
 };
-static const int asn_MAP_b_oms_3[] = { 0 };
 static const ber_tlv_tag_t asn_DEF_b_tags_3[] = {
 	(ASN_TAG_CLASS_CONTEXT | (1 << 2)),
 	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
@@ -1501,8 +1434,7 @@ static asn_SEQUENCE_specifics_t asn_SPC_b_specs_3 = {
 	offsetof(struct b, _asn_ctx),
 	.tag2el = asn_MAP_b_tag2el_3,
 	.tag2el_count = 1,	/* Count of tags in the map */
-	asn_MAP_b_oms_3,	/* Optional members */
-	1, 0,	/* Root/Additions */
+	0, 0, 0,	/* Optional elements (not needed) */
 	-1,	/* First extension addition */
 };
 static /* Use -fall-defs-global to expose */
@@ -1692,7 +1624,6 @@ asn_TYPE_member_t asn_MBR_Beta_1[] = {
 		.name = "g"
 		},
 };
-static const int asn_MAP_Beta_oms_1[] = { 0, 1 };
 static const ber_tlv_tag_t asn_DEF_Beta_tags_1[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
 };
@@ -1705,8 +1636,7 @@ asn_SEQUENCE_specifics_t asn_SPC_Beta_specs_1 = {
 	offsetof(struct Beta, _asn_ctx),
 	.tag2el = asn_MAP_Beta_tag2el_1,
 	.tag2el_count = 2,	/* Count of tags in the map */
-	asn_MAP_Beta_oms_1,	/* Optional members */
-	2, 0,	/* Root/Additions */
+	0, 0, 0,	/* Optional elements (not needed) */
 	-1,	/* First extension addition */
 };
 asn_TYPE_descriptor_t asn_DEF_Beta = {
@@ -2302,21 +2232,6 @@ __attribute__((constructor)) static void asn_DEF_encoding_5_alias_init(void) {
 #endif
 #endif /* ASN1C_NO_UNSUFFIXED_PDU_ALIAS */
 
-/*** <<< CTDEFS [EXTERNAL] >>> ***/
-
-#if !defined(ASN_DISABLE_OER_SUPPORT)
-static asn_oer_constraints_t asn_OER_type_encoding_constr_5 CC_NOTUSED = {
-	{ 0, 0 },
-	-1};
-#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
-#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-static asn_per_constraints_t asn_PER_type_encoding_constr_5 CC_NOTUSED = {
-	{ APC_CONSTRAINED,	 2,  2,  0,  2 }	/* (0..2) */,
-	{ APC_UNCONSTRAINED,	-1, -1,  0,  0 },
-	0, 0	/* No PER value map */
-};
-#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-
 /*** <<< STAT-DEFS [EXTERNAL] >>> ***/
 
 static asn_TYPE_member_t asn_MBR_encoding_5[] = {
@@ -2407,10 +2322,10 @@ asn_TYPE_descriptor_t asn_DEF_encoding_5 = {
 	0,	/* No tags (count) */
 	{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
-		&asn_OER_type_encoding_constr_5,
+		0,
 #endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-		&asn_PER_type_encoding_constr_5,
+		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
 		0,
@@ -2504,7 +2419,6 @@ static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
 		.name = "encoding"
 		},
 };
-static const int asn_MAP_EXTERNAL_oms_1[] = { 0, 1, 2 };
 static const ber_tlv_tag_t asn_DEF_EXTERNAL_tags_1[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (8 << 2)),
 	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
@@ -2522,8 +2436,7 @@ static asn_SEQUENCE_specifics_t asn_SPC_EXTERNAL_specs_1 = {
 	offsetof(struct EXTERNAL, _asn_ctx),
 	.tag2el = asn_MAP_EXTERNAL_tag2el_1,
 	.tag2el_count = 6,	/* Count of tags in the map */
-	asn_MAP_EXTERNAL_oms_1,	/* Optional members */
-	3, 0,	/* Root/Additions */
+	0, 0, 0,	/* Optional elements (not needed) */
 	-1,	/* First extension addition */
 };
 asn_TYPE_descriptor_t asn_DEF_EXTERNAL = {
