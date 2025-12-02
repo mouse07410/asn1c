@@ -1,0 +1,64 @@
+-- Test comprehensive &Type (typefieldreference) parsing
+-- This test ensures that X.681 Information Object Class
+-- type field references are properly recognized by the lexer
+
+TestIOCTypeField DEFINITIONS ::= BEGIN
+
+-- Test 1: Simple CLASS with single &Type field
+SimpleClass ::= CLASS {
+    &Type
+}
+
+-- Test 2: CLASS with multiple fields including &Type
+MultiFieldClass ::= CLASS {
+    &id INTEGER UNIQUE,
+    &Type,
+    &value &Type OPTIONAL
+}
+
+-- Test 3: CLASS with WITH SYNTAX containing &Type
+WithSyntaxClass ::= CLASS {
+    &id INTEGER UNIQUE,
+    &Type
+} WITH SYNTAX {
+    &Type IDENTIFIED BY &id
+}
+
+-- Test 4: Various valid &Type field name patterns
+VariousNamesClass ::= CLASS {
+    &T,
+    &Type,
+    &MyType,
+    &Type1,
+    &Type-2,
+    &My-Long-Type-Name-123,
+    &TypeABC,
+    &T1-T2-T3
+}
+
+-- Test 5: Using TYPE-IDENTIFIER standard class
+TestTypeIdentifier ::= SEQUENCE {
+    id TYPE-IDENTIFIER.&id,
+    type TYPE-IDENTIFIER.&Type
+}
+
+-- Test 6: Nested field references
+NestedClass ::= CLASS {
+    &OuterType,
+    &innerValue &OuterType
+}
+
+-- Test 7: CLASS field references via alias
+MY-ID ::= TYPE-IDENTIFIER
+
+TestAlias ::= SEQUENCE {
+    field1 MY-ID.&id,
+    field2 MY-ID.&Type
+}
+
+-- Test 8: Information object using &Type
+testObject WithSyntaxClass ::= {
+    INTEGER IDENTIFIED BY 42
+}
+
+END
