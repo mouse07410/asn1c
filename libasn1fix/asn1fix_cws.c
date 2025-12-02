@@ -414,7 +414,7 @@ _asn1f_parse_class_object_data_defined_syntx(arg_t *arg, asn1p_expr_t *eclass,
 					p++;
 				}
 				/* If we didn't advance, the field value is empty */
-				if(p == buf && buf < bend) {
+				if(p == buf) {
 					if (!optional_mode)
 						FATAL("Expected value for field %s before next field %s",
 							chunk->content.token,
