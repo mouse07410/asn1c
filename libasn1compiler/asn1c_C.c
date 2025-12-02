@@ -1566,14 +1566,15 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 			}
 			
 			/*
-			 * Don't use rsafe typedef for constructed types as it creates
-			 * incomplete type issues when used as direct struct members.
-			 * Instead, we'll just move the include to POST_INCLUDE while
-			 * keeping the normal typedef format.
+			 * If we're creating a simple typedef to a constructed type,
+			 * use struct form and POST_INCLUDE to avoid circular include issues.
+			 * This is a conservative approach that prevents problems with complex
+			 * ASN.1 specifications like F1AP where container types can create
+			 * circular dependencies.
 			 */
-			/* if(terminal->expr_type & ASN_CONSTR_MASK) {
+			if(terminal->expr_type & ASN_CONSTR_MASK) {
 				use_rsafe_typedef = 1;
-			} */
+			}
 		}
 		
 		/*
