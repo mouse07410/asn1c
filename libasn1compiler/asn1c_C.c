@@ -3930,11 +3930,13 @@ expr_break_recursion(arg_t *arg, asn1p_expr_t *expr) {
 		 * that might benefit from indirection to avoid deep nesting issues.
 		 * If the terminal type is a constructed type (SEQUENCE/SET/CHOICE) with
 		 * multiple members that themselves reference other constructed types,
-		 * use indirection to keep the type graph manageable.
+		 * use indirection to keep the type graph manageable and prevent
+		 * potential circular dependencies in complex schemas like F1AP.
 		 */
 		terminal = terminal_structable(arg, expr);
 		if(terminal && terminal != arg->expr) {
 			int complex_members = 0;
+			int total_constr_members = 0;
 			asn1p_expr_t *memb;
 			
 			/* Count how many members are themselves complex types */
@@ -3942,16 +3944,20 @@ expr_break_recursion(arg_t *arg, asn1p_expr_t *expr) {
 				asn1p_expr_t *memb_terminal = terminal_structable(arg, memb);
 				if(memb_terminal && (memb_terminal->expr_type & ASN_CONSTR_MASK)) {
 					complex_members++;
+					/* Count non-optional complex members separately */
+					if(!(memb->marker.flags & EM_OPTIONAL)) {
+						total_constr_members++;
+					}
 				}
 			}
 			
-			/* If the terminal has 4 or more complex members, use indirection
-			 * to avoid excessive nesting and potential circular dependencies
-			 * that might not be caught by simple recursion detection.
-			 * This threshold is chosen to avoid breaking existing test expectations
-			 * while still handling deeply nested structures like F1AP's SRSConfig.
+			/* Use indirection if:
+			 * 1. The terminal has 4 or more complex members (original heuristic), OR
+			 * 2. The terminal has 1+ non-optional constructed members (catches F1AP case where
+			 *    CompositeAvailableCapacity has capacityValue which eventually leads to
+			 *    circular dependency)
 			 */
-			if(complex_members >= 4) {
+			if(complex_members >= 4 || total_constr_members >= 1) {
 				expr->marker.flags |= EM_INDIRECT;
 				expr->marker.flags |= EM_UNRECURSE;
 				return 1;
