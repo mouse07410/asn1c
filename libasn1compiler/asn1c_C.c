@@ -3851,7 +3851,23 @@ emit_include_dependencies(arg_t *arg) {
 		if((!(memb->expr_type & ASN_CONSTR_MASK)
 			&& memb->expr_type > ASN_CONSTR_MASK)
 		|| memb->meta_type == AMT_TYPEREF) {
-			GEN_POS_INCLUDE_BASE((memb->marker.flags & EM_UNRECURSE) ?
+			/* IOC (Information Object Class) field members (like 'id', 'criticality' 
+			 * from CLASS definitions) must have their type includes in the header file,
+			 * never in POST_INCLUDE, because they're used directly in struct definitions.
+			 * 
+			 * IOC field members have a reference with comp_count == 2, like:
+			 * - PRIVATE-IE-ID.&id (lowercase ampersand field, not OPEN TYPE)
+			 * - PROTOCOL-IES.&criticality
+			 * 
+			 * Without this check, when -fno-include-deps is used, these includes would
+			 * go to POST_INCLUDE which ends up in the .c file, causing compilation errors
+			 * like "unknown type name 'PrivateIE_ID_t'" in the header file.
+			 *
+			 * This fix is critical for specifications like F1AP that use parameterized
+			 * types with IOC fields.
+			 */
+			int is_ioc_field = (memb->reference && memb->reference->comp_count == 2);
+			GEN_POS_INCLUDE_BASE((memb->marker.flags & EM_UNRECURSE) && !is_ioc_field ?
 					OT_POST_INCLUDE : OT_INCLUDES, memb);
 		}
 	}
