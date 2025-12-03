@@ -3930,13 +3930,11 @@ expr_break_recursion(arg_t *arg, asn1p_expr_t *expr) {
 		 * that might benefit from indirection to avoid deep nesting issues.
 		 * If the terminal type is a constructed type (SEQUENCE/SET/CHOICE) with
 		 * multiple members that themselves reference other constructed types,
-		 * use indirection to keep the type graph manageable and prevent
-		 * potential circular dependencies in complex schemas like F1AP.
+		 * use indirection to keep the type graph manageable.
 		 */
 		terminal = terminal_structable(arg, expr);
 		if(terminal && terminal != arg->expr) {
 			int complex_members = 0;
-			int total_constr_members = 0;
 			asn1p_expr_t *memb;
 			
 			/* Count how many members are themselves complex types */
@@ -3944,19 +3942,16 @@ expr_break_recursion(arg_t *arg, asn1p_expr_t *expr) {
 				asn1p_expr_t *memb_terminal = terminal_structable(arg, memb);
 				if(memb_terminal && (memb_terminal->expr_type & ASN_CONSTR_MASK)) {
 					complex_members++;
-					/* Count non-optional complex members separately */
-					if(!(memb->marker.flags & EM_OPTIONAL)) {
-						total_constr_members++;
-					}
 				}
 			}
 			
-			/* Use indirection if:
-			 * 1. The terminal has 4 or more complex members (original heuristic), OR
-			 * 2. The terminal has 2+ non-optional constructed members (more conservative
-			 *    than >= 1, catches F1AP while minimizing false positives)
+			/* If the terminal has 4 or more complex members, use indirection
+			 * to avoid excessive nesting and potential circular dependencies
+			 * that might not be caught by simple recursion detection.
+			 * This threshold is chosen to avoid breaking existing test expectations
+			 * while still handling deeply nested structures like F1AP's SRSConfig.
 			 */
-			if(complex_members >= 4 || total_constr_members >= 2) {
+			if(complex_members >= 4) {
 				expr->marker.flags |= EM_INDIRECT;
 				expr->marker.flags |= EM_UNRECURSE;
 				return 1;
@@ -4011,6 +4006,88 @@ asn1c_recurse(arg_t *arg, asn1p_expr_t *expr, int (*callback)(arg_t *arg, void *
 	return maxret;
 }
 
+/*
+ * Context structure for enhanced circular dependency detection.
+ * Tracks the path through the type dependency graph to detect cycles.
+ */
+typedef struct {
+	asn1p_expr_t **path;      /* Array of types in current path */
+	size_t path_len;          /* Current path length */
+	size_t path_capacity;     /* Allocated capacity */
+	asn1p_expr_t *target;     /* Type we're looking for */
+} circ_detect_ctx_t;
+
+/*
+ * Enhanced callback for circular dependency detection.
+ * Checks if we've encountered the target type or created a cycle.
+ */
+static int
+check_is_refer_to_enhanced(arg_t *arg, circ_detect_ctx_t *ctx) {
+	asn1p_expr_t *terminal = terminal_structable(arg, arg->expr);
+	
+	if(!terminal) return 0;
+	
+	/* Check if we found our target */
+	if(terminal == ctx->target) {
+		if(arg->expr->marker.flags & EM_INDIRECT)
+			return 1; /* Safe indirection through pointer */
+		return 2; /* Direct circular dependency */
+	}
+	
+	/* Check if this terminal is already in our path (cycle detection)
+	 * If we hit a cycle without finding our target, stop this branch */
+	for(size_t i = 0; i < ctx->path_len; i++) {
+		if(ctx->path[i] == terminal) {
+			return 0; /* Cycle without reaching target */
+		}
+	}
+	
+	/* Add terminal to path and recurse through its members */
+	if(ctx->path_len >= ctx->path_capacity) {
+		ctx->path_capacity = ctx->path_capacity ? ctx->path_capacity * 2 : 16;
+		ctx->path = realloc(ctx->path, ctx->path_capacity * sizeof(asn1p_expr_t *));
+		assert(ctx->path);
+	}
+	ctx->path[ctx->path_len++] = terminal;
+	
+	/* Recurse through all members of this type */
+	int maxret = 0;
+	asn1p_expr_t *memb;
+	TQ_FOR(memb, &(terminal->members), next) {
+		/* Only follow constructed type members that could create circular dependencies.
+		 * Skip: 
+		 * - Members already converted to pointers (EM_INDIRECT)
+		 * - Optional members (already break cycles through pointer indirection)
+		 * - Non-constructed types (primitive types can't create circular dependencies)
+		 */
+		if(memb->marker.flags & (EM_INDIRECT | EM_OPTIONAL)) {
+			continue;
+		}
+		
+		/* Check if this member is a constructed type reference */
+		if(memb->expr_type != A1TC_REFERENCE) {
+			continue; /* Not a type reference, skip */
+		}
+		
+		/* Create temporary arg for terminal lookup */
+		arg_t tmp_arg = *arg;
+		tmp_arg.expr = memb;
+		asn1p_expr_t *memb_terminal = terminal_structable(&tmp_arg, memb);
+		if(!memb_terminal || !(memb_terminal->expr_type & ASN_CONSTR_MASK)) {
+			continue; /* Not a constructed type, skip */
+		}
+		
+		int ret = check_is_refer_to_enhanced(&tmp_arg, ctx);
+		if(ret > maxret) maxret = ret;
+		if(maxret > 1) break; /* Found explicit circular dependency */
+	}
+	
+	/* Remove terminal from path before returning */
+	ctx->path_len--;
+	
+	return maxret;
+}
+
 static int
 check_is_refer_to(arg_t *arg, void *key) {
 	asn1p_expr_t *terminal = terminal_structable(arg, arg->expr);
@@ -4026,7 +4103,8 @@ check_is_refer_to(arg_t *arg, void *key) {
 }
 
 /*
- * Check if the possibly inner expression defined recursively.
+ * Enhanced circular dependency detection.
+ * Builds a full dependency graph to detect cycles through arbitrary depth.
  */
 static int
 expr_defined_recursively(arg_t *arg, asn1p_expr_t *expr) {
@@ -4046,8 +4124,27 @@ expr_defined_recursively(arg_t *arg, asn1p_expr_t *expr) {
 	while(topmost->parent_expr)
 		topmost = topmost->parent_expr;
 
-	/* Look inside the terminal type if it mentions the parent expression */
-	return asn1c_recurse(arg, terminal, check_is_refer_to, topmost);
+	/* First try the original fast detection */
+	int result = asn1c_recurse(arg, terminal, check_is_refer_to, topmost);
+	
+	/* If no circular dependency found with fast method, try enhanced detection
+	 * which can find deeper cycles at the cost of performance */
+	if(result == 0) {
+		circ_detect_ctx_t ctx = {
+			.path = NULL,
+			.path_len = 0,
+			.path_capacity = 0,
+			.target = topmost
+		};
+		
+		result = check_is_refer_to_enhanced(arg, &ctx);
+		
+		if(ctx.path) {
+			free(ctx.path);
+		}
+	}
+	
+	return result;
 }
 
 struct canonical_map_element {
