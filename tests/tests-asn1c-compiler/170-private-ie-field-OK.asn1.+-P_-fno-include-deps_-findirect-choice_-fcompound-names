@@ -1,15 +1,3 @@
-WARNING: Parameterized type PRIVATE-IE-ID expected for PRIVATE-IE-ID at line 40 in 170-private-ie-field-OK.asn1
-WARNING: Parameterized type PRIVATE-IE-ID expected for PRIVATE-IE-ID at line 41 in 170-private-ie-field-OK.asn1
-WARNING: Parameterized type PRIVATE-IE-ID expected for PRIVATE-IE-ID at line 42 in 170-private-ie-field-OK.asn1
-WARNING: Parameterized type PRIVATE-IE-ID expected for PRIVATE-IE-ID at line 40 in 170-private-ie-field-OK.asn1
-WARNING: Parameterized type PRIVATE-IE-ID expected for PRIVATE-IE-ID at line 40 in 170-private-ie-field-OK.asn1
-WARNING: Parameterized type PRIVATE-IE-ID expected for PRIVATE-IE-ID at line 40 in 170-private-ie-field-OK.asn1
-WARNING: Parameterized type PRIVATE-IE-ID expected for PRIVATE-IE-ID at line 41 in 170-private-ie-field-OK.asn1
-WARNING: Parameterized type PRIVATE-IE-ID expected for PRIVATE-IE-ID at line 41 in 170-private-ie-field-OK.asn1
-WARNING: Parameterized type PRIVATE-IE-ID expected for PRIVATE-IE-ID at line 41 in 170-private-ie-field-OK.asn1
-WARNING: Parameterized type PRIVATE-IE-ID expected for PRIVATE-IE-ID at line 42 in 170-private-ie-field-OK.asn1
-WARNING: Parameterized type PRIVATE-IE-ID expected for PRIVATE-IE-ID at line 42 in 170-private-ie-field-OK.asn1
-WARNING: Parameterized type PRIVATE-IE-ID expected for PRIVATE-IE-ID at line 42 in 170-private-ie-field-OK.asn1
 
 /*** <<< INCLUDES [PrivateIE-ID] >>> ***/
 
@@ -21,8 +9,6 @@ typedef long	 PrivateIE_ID_t;
 
 /*** <<< FUNC-DECLS [PrivateIE-ID] >>> ***/
 
-extern asn_oer_constraints_t asn_OER_type_PrivateIE_ID_constr_1;
-extern asn_per_constraints_t asn_PER_type_PrivateIE_ID_constr_1;
 extern asn_TYPE_descriptor_t asn_DEF_PrivateIE_ID;
 asn_struct_free_f PrivateIE_ID_free;
 asn_struct_print_f PrivateIE_ID_print;
@@ -31,13 +17,6 @@ ber_type_decoder_f PrivateIE_ID_decode_ber;
 der_type_encoder_f PrivateIE_ID_encode_der;
 xer_type_decoder_f PrivateIE_ID_decode_xer;
 xer_type_encoder_f PrivateIE_ID_encode_xer;
-jer_type_encoder_f PrivateIE_ID_encode_jer;
-oer_type_decoder_f PrivateIE_ID_decode_oer;
-oer_type_encoder_f PrivateIE_ID_encode_oer;
-per_type_decoder_f PrivateIE_ID_decode_uper;
-per_type_encoder_f PrivateIE_ID_encode_uper;
-per_type_decoder_f PrivateIE_ID_decode_aper;
-per_type_encoder_f PrivateIE_ID_encode_aper;
 
 /*** <<< CODE [PrivateIE-ID] >>> ***/
 
@@ -71,21 +50,6 @@ PrivateIE_ID_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
  * so here we adjust the DEF accordingly.
  */
 
-/*** <<< CTDEFS [PrivateIE-ID] >>> ***/
-
-#if !defined(ASN_DISABLE_OER_SUPPORT)
-asn_oer_constraints_t asn_OER_type_PrivateIE_ID_constr_1 CC_NOTUSED = {
-	{ 2, 1 }	/* (0..65535) */,
-	-1};
-#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
-#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-asn_per_constraints_t asn_PER_type_PrivateIE_ID_constr_1 CC_NOTUSED = {
-	{ APC_CONSTRAINED,	 16,  16,  0,  65535 }	/* (0..65535) */,
-	{ APC_UNCONSTRAINED,	-1, -1,  0,  0 },
-	0, 0	/* No PER value map */
-};
-#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-
 /*** <<< STAT-DEFS [PrivateIE-ID] >>> ***/
 
 static const ber_tlv_tag_t asn_DEF_PrivateIE_ID_tags_1[] = {
@@ -103,10 +67,10 @@ asn_TYPE_descriptor_t asn_DEF_PrivateIE_ID = {
 		/sizeof(asn_DEF_PrivateIE_ID_tags_1[0]), /* 1 */
 	{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
-		&asn_OER_type_PrivateIE_ID_constr_1,
+		0,
 #endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-		&asn_PER_type_PrivateIE_ID_constr_1,
+		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
 		0,
@@ -136,8 +100,6 @@ typedef long	 Criticality_t;
 
 /*** <<< FUNC-DECLS [Criticality] >>> ***/
 
-extern asn_oer_constraints_t asn_OER_type_Criticality_constr_1;
-extern asn_per_constraints_t asn_PER_type_Criticality_constr_1;
 extern asn_TYPE_descriptor_t asn_DEF_Criticality;
 extern const asn_INTEGER_specifics_t asn_SPC_Criticality_specs_1;
 asn_struct_free_f Criticality_free;
@@ -147,13 +109,6 @@ ber_type_decoder_f Criticality_decode_ber;
 der_type_encoder_f Criticality_encode_der;
 xer_type_decoder_f Criticality_decode_xer;
 xer_type_encoder_f Criticality_encode_xer;
-jer_type_encoder_f Criticality_encode_jer;
-oer_type_decoder_f Criticality_decode_oer;
-oer_type_encoder_f Criticality_encode_oer;
-per_type_decoder_f Criticality_decode_uper;
-per_type_encoder_f Criticality_encode_uper;
-per_type_decoder_f Criticality_decode_aper;
-per_type_encoder_f Criticality_encode_aper;
 
 /*** <<< CODE [Criticality] >>> ***/
 
@@ -161,21 +116,6 @@ per_type_encoder_f Criticality_encode_aper;
  * This type is implemented using NativeEnumerated,
  * so here we adjust the DEF accordingly.
  */
-
-/*** <<< CTDEFS [Criticality] >>> ***/
-
-#if !defined(ASN_DISABLE_OER_SUPPORT)
-asn_oer_constraints_t asn_OER_type_Criticality_constr_1 CC_NOTUSED = {
-	{ 0, 0 },
-	-1};
-#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
-#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-asn_per_constraints_t asn_PER_type_Criticality_constr_1 CC_NOTUSED = {
-	{ APC_CONSTRAINED,	 2,  2,  0,  2 }	/* (0..2) */,
-	{ APC_UNCONSTRAINED,	-1, -1,  0,  0 },
-	0, 0	/* No PER value map */
-};
-#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 
 /*** <<< STAT-DEFS [Criticality] >>> ***/
 
@@ -227,10 +167,10 @@ asn_TYPE_descriptor_t asn_DEF_Criticality = {
 		/sizeof(asn_DEF_Criticality_tags_1[0]), /* 1 */
 	{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
-		&asn_OER_type_Criticality_constr_1,
+		0,
 #endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-		&asn_PER_type_Criticality_constr_1,
+		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
 		0,
@@ -260,8 +200,6 @@ typedef long	 Presence_t;
 
 /*** <<< FUNC-DECLS [Presence] >>> ***/
 
-extern asn_oer_constraints_t asn_OER_type_Presence_constr_1;
-extern asn_per_constraints_t asn_PER_type_Presence_constr_1;
 extern asn_TYPE_descriptor_t asn_DEF_Presence;
 extern const asn_INTEGER_specifics_t asn_SPC_Presence_specs_1;
 asn_struct_free_f Presence_free;
@@ -271,13 +209,6 @@ ber_type_decoder_f Presence_decode_ber;
 der_type_encoder_f Presence_encode_der;
 xer_type_decoder_f Presence_decode_xer;
 xer_type_encoder_f Presence_encode_xer;
-jer_type_encoder_f Presence_encode_jer;
-oer_type_decoder_f Presence_decode_oer;
-oer_type_encoder_f Presence_encode_oer;
-per_type_decoder_f Presence_decode_uper;
-per_type_encoder_f Presence_encode_uper;
-per_type_decoder_f Presence_decode_aper;
-per_type_encoder_f Presence_encode_aper;
 
 /*** <<< CODE [Presence] >>> ***/
 
@@ -285,21 +216,6 @@ per_type_encoder_f Presence_encode_aper;
  * This type is implemented using NativeEnumerated,
  * so here we adjust the DEF accordingly.
  */
-
-/*** <<< CTDEFS [Presence] >>> ***/
-
-#if !defined(ASN_DISABLE_OER_SUPPORT)
-asn_oer_constraints_t asn_OER_type_Presence_constr_1 CC_NOTUSED = {
-	{ 0, 0 },
-	-1};
-#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
-#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-asn_per_constraints_t asn_PER_type_Presence_constr_1 CC_NOTUSED = {
-	{ APC_CONSTRAINED,	 2,  2,  0,  2 }	/* (0..2) */,
-	{ APC_UNCONSTRAINED,	-1, -1,  0,  0 },
-	0, 0	/* No PER value map */
-};
-#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 
 /*** <<< STAT-DEFS [Presence] >>> ***/
 
@@ -351,10 +267,10 @@ asn_TYPE_descriptor_t asn_DEF_Presence = {
 		/sizeof(asn_DEF_Presence_tags_1[0]), /* 1 */
 	{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
-		&asn_OER_type_Presence_constr_1,
+		0,
 #endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-		&asn_PER_type_Presence_constr_1,
+		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
 		0,
@@ -558,45 +474,6 @@ memb_value_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
 }
 
 
-/*** <<< CTDEFS [PrivateIE-Field] >>> ***/
-
-#if !defined(ASN_DISABLE_OER_SUPPORT)
-static asn_oer_constraints_t asn_OER_memb_id_constr_2 CC_NOTUSED = {
-	{ 2, 1 }	/* (0..65535) */,
-	-1};
-#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
-#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-static asn_per_constraints_t asn_PER_memb_id_constr_2 CC_NOTUSED = {
-	{ APC_CONSTRAINED,	 16,  16,  0,  65535 }	/* (0..65535) */,
-	{ APC_UNCONSTRAINED,	-1, -1,  0,  0 },
-	0, 0	/* No PER value map */
-};
-#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-#if !defined(ASN_DISABLE_OER_SUPPORT)
-static asn_oer_constraints_t asn_OER_memb_criticality_constr_3 CC_NOTUSED = {
-	{ 0, 0 },
-	-1};
-#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
-#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-static asn_per_constraints_t asn_PER_memb_criticality_constr_3 CC_NOTUSED = {
-	{ APC_CONSTRAINED,	 2,  2,  0,  2 }	/* (0..2) */,
-	{ APC_UNCONSTRAINED,	-1, -1,  0,  0 },
-	0, 0	/* No PER value map */
-};
-#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-#if !defined(ASN_DISABLE_OER_SUPPORT)
-static asn_oer_constraints_t asn_OER_memb_value_constr_4 CC_NOTUSED = {
-	{ 0, 0 },
-	-1};
-#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
-#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-static asn_per_constraints_t asn_PER_memb_value_constr_4 CC_NOTUSED = {
-	{ APC_UNCONSTRAINED,	-1, -1,  0,  0 },
-	{ APC_UNCONSTRAINED,	-1, -1,  0,  0 },
-	0, 0	/* No PER value map */
-};
-#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-
 /*** <<< STAT-DEFS [PrivateIE-Field] >>> ***/
 
 static asn_TYPE_member_t asn_MBR_value_4[] = {
@@ -668,10 +545,10 @@ asn_TYPE_member_t asn_MBR_PrivateMessage_IEs_1[] = {
 		.type_selector = 0,
 		{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
-			.oer_constraints = &asn_OER_memb_id_constr_2,
+			.oer_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-			.per_constraints = &asn_PER_memb_id_constr_2,
+			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
 			.jer_constraints = 0,
@@ -688,10 +565,10 @@ asn_TYPE_member_t asn_MBR_PrivateMessage_IEs_1[] = {
 		.type_selector = select_PrivateMessage_IEs_criticality_type,
 		{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
-			.oer_constraints = &asn_OER_memb_criticality_constr_3,
+			.oer_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-			.per_constraints = &asn_PER_memb_criticality_constr_3,
+			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
 			.jer_constraints = 0,
@@ -708,10 +585,10 @@ asn_TYPE_member_t asn_MBR_PrivateMessage_IEs_1[] = {
 		.type_selector = select_PrivateMessage_IEs_value_type,
 		{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
-			.oer_constraints = &asn_OER_memb_value_constr_4,
+			.oer_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-			.per_constraints = &asn_PER_memb_value_constr_4,
+			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
 			.jer_constraints = 0,
@@ -788,27 +665,10 @@ typedef struct PrivateIE_Container_48P0 {
 extern asn_TYPE_descriptor_t asn_DEF_PrivateIE_Container_48P0;
 extern asn_SET_OF_specifics_t asn_SPC_PrivateIE_Container_48P0_specs_1;
 extern asn_TYPE_member_t asn_MBR_PrivateIE_Container_48P0_1[1];
-extern asn_oer_constraints_t asn_OER_type_PrivateIE_Container_48P0_constr_1;
-extern asn_per_constraints_t asn_PER_type_PrivateIE_Container_48P0_constr_1;
 
 /*** <<< POST-INCLUDE [PrivateIE-Container] >>> ***/
 
 #include "PrivateIE-Field.h"
-
-/*** <<< CTDEFS [PrivateIE-Container] >>> ***/
-
-#if !defined(ASN_DISABLE_OER_SUPPORT)
-asn_oer_constraints_t asn_OER_type_PrivateIE_Container_48P0_constr_1 CC_NOTUSED = {
-	{ 0, 0 },
-	-1	/* (SIZE(1..65535)) */};
-#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
-#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-asn_per_constraints_t asn_PER_type_PrivateIE_Container_48P0_constr_1 CC_NOTUSED = {
-	{ APC_UNCONSTRAINED,	-1, -1,  0,  0 },
-	{ APC_CONSTRAINED,	 16,  16,  1,  65535 }	/* (SIZE(1..65535)) */,
-	0, 0	/* No PER value map */
-};
-#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 
 /*** <<< STAT-DEFS [PrivateIE-Container] >>> ***/
 
@@ -854,10 +714,10 @@ asn_TYPE_descriptor_t asn_DEF_PrivateIE_Container_48P0 = {
 		/sizeof(asn_DEF_PrivateIE_Container_48P0_tags_1[0]), /* 1 */
 	{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
-		&asn_OER_type_PrivateIE_Container_48P0_constr_1,
+		0,
 #endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-		&asn_PER_type_PrivateIE_Container_48P0_constr_1,
+		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
 		0,
@@ -920,7 +780,6 @@ static asn_TYPE_member_t asn_MBR_PrivateMessage_1[] = {
 		.name = "privateIEs"
 		},
 };
-static const int asn_MAP_PrivateMessage_oms_1[] = { 0 };
 static const ber_tlv_tag_t asn_DEF_PrivateMessage_tags_1[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
 };
@@ -932,8 +791,7 @@ static asn_SEQUENCE_specifics_t asn_SPC_PrivateMessage_specs_1 = {
 	offsetof(struct PrivateMessage, _asn_ctx),
 	.tag2el = asn_MAP_PrivateMessage_tag2el_1,
 	.tag2el_count = 1,	/* Count of tags in the map */
-	asn_MAP_PrivateMessage_oms_1,	/* Optional members */
-	1, 0,	/* Root/Additions */
+	0, 0, 0,	/* Optional elements (not needed) */
 	-1,	/* First extension addition */
 };
 asn_TYPE_descriptor_t asn_DEF_PrivateMessage = {
@@ -1023,21 +881,6 @@ __attribute__((constructor)) static void asn_DEF_encoding_5_alias_init(void) {
 }
 #endif
 #endif /* ASN1C_NO_UNSUFFIXED_PDU_ALIAS */
-
-/*** <<< CTDEFS [EXTERNAL] >>> ***/
-
-#if !defined(ASN_DISABLE_OER_SUPPORT)
-static asn_oer_constraints_t asn_OER_type_encoding_constr_5 CC_NOTUSED = {
-	{ 0, 0 },
-	-1};
-#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
-#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-static asn_per_constraints_t asn_PER_type_encoding_constr_5 CC_NOTUSED = {
-	{ APC_CONSTRAINED,	 2,  2,  0,  2 }	/* (0..2) */,
-	{ APC_UNCONSTRAINED,	-1, -1,  0,  0 },
-	0, 0	/* No PER value map */
-};
-#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 
 /*** <<< STAT-DEFS [EXTERNAL] >>> ***/
 
@@ -1129,10 +972,10 @@ asn_TYPE_descriptor_t asn_DEF_encoding_5 = {
 	0,	/* No tags (count) */
 	{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
-		&asn_OER_type_encoding_constr_5,
+		0,
 #endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-		&asn_PER_type_encoding_constr_5,
+		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
 		0,
@@ -1226,13 +1069,11 @@ static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
 		.name = "encoding"
 		},
 };
-static const int asn_MAP_EXTERNAL_oms_1[] = { 0, 1, 2 };
 static const ber_tlv_tag_t asn_DEF_EXTERNAL_tags_1[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (8 << 2)),
 	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
 };
-static const asn_TYPE_tag2member_t asGenerated asn_constant.h
-n_MAP_EXTERNAL_tag2el_1[] = {
+static const asn_TYPE_tag2member_t asn_MAP_EXTERNAL_tag2el_1[] = {
     { (ASN_TAG_CLASS_UNIVERSAL | (2 << 2)), 1, 0, 0 }, /* indirect-reference */
     { (ASN_TAG_CLASS_UNIVERSAL | (6 << 2)), 0, 0, 0 }, /* direct-reference */
     { (ASN_TAG_CLASS_UNIVERSAL | (7 << 2)), 2, 0, 0 }, /* data-value-descriptor */
@@ -1245,8 +1086,7 @@ static asn_SEQUENCE_specifics_t asn_SPC_EXTERNAL_specs_1 = {
 	offsetof(struct EXTERNAL, _asn_ctx),
 	.tag2el = asn_MAP_EXTERNAL_tag2el_1,
 	.tag2el_count = 6,	/* Count of tags in the map */
-	asn_MAP_EXTERNAL_oms_1,	/* Optional members */
-	3, 0,	/* Root/Additions */
+	0, 0, 0,	/* Optional elements (not needed) */
 	-1,	/* First extension addition */
 };
 asn_TYPE_descriptor_t asn_DEF_EXTERNAL = {
@@ -1280,7 +1120,7 @@ asn_TYPE_descriptor_t asn_DEF_EXTERNAL = {
 /*** <<< asn_constant.h >>> ***/
 
 /*
- * Generated by asn1c-511ed38-2025-12-03 (https://github.com/mouse07410/asn1c)
+ * Generated by asn1c-0.9.29 (http://lionet.info/asn1c)
  */
 
 #ifndef _ASN_CONSTANT_H
