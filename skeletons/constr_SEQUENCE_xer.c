@@ -209,6 +209,19 @@ SEQUENCE_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
 
             ASN_DEBUG("XER/SEQUENCE: tcv=%d, ph=%d, edx=%" ASN_PRI_SIZE "",
                       tcv, ctx->phase, edx);
+            
+            /* In phase 0, check if this is the generic <SEQUENCE> tag */
+            if(ctx->phase == 0) {
+                xer_check_tag_e seq_tcv = xer_check_tag(ptr, ch_size, "SEQUENCE");
+                if(seq_tcv == XCT_OPENING || seq_tcv == XCT_BOTH) {
+                    ASN_DEBUG("XER/SEQUENCE: Accepting generic <SEQUENCE> tag in phase 0");
+                    XER_ADVANCE(ch_size);
+                    ctx->phase = 1;  /* Processing body phase */
+                    continue;
+                }
+                break;  /* Really unexpected */
+            }
+            
             if(ctx->phase != 1) {
                 break;  /* Really unexpected */
             }
@@ -273,6 +286,65 @@ SEQUENCE_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
                 }
                 XER_ADVANCE(ch_size);
                 continue;
+            }
+
+            /* Check if this is a type wrapper tag (e.g., <Reset> when opt_mname="value") */
+            if(ctx->phase == 1 && td->xml_tag && opt_mname && 
+               strcmp(td->xml_tag, opt_mname) != 0) {
+                tcv = xer_check_tag(ptr, ch_size, td->xml_tag);
+                if(tcv == XCT_OPENING || tcv == XCT_BOTH) {
+                    ASN_DEBUG("XER/SEQUENCE: Skipping type wrapper tag <%s>", td->xml_tag);
+                    XER_ADVANCE(ch_size);
+                    /* Stay in phase 1 to process the actual content */
+                    continue;
+                }
+                if(tcv == XCT_CLOSING) {
+                    ASN_DEBUG("XER/SEQUENCE: Closing type wrapper tag </%s>", td->xml_tag);
+                    XER_ADVANCE(ch_size);
+                    /* Stay in phase 1, expecting the element closing tag */
+                    continue;
+                }
+            }
+            
+            /* Fall through */
+        case XCT_UNKNOWN_CL:
+            /* Check if this is a type wrapper closing tag (e.g., </Reset> when opt_mname="value") */
+            if(ctx->phase == 1 && td->xml_tag && opt_mname && 
+               strcmp(td->xml_tag, opt_mname) != 0) {
+                tcv = xer_check_tag(ptr, ch_size, td->xml_tag);
+                if(tcv == XCT_CLOSING) {
+                    ASN_DEBUG("XER/SEQUENCE: Closing type wrapper tag </%s>", td->xml_tag);
+                    XER_ADVANCE(ch_size);
+                    /* Stay in phase 1, expecting the element closing tag */
+                    continue;
+                }
+            }
+            
+            /* Check if this is the closing generic </SEQUENCE> tag */
+            if(ctx->phase == 1) {
+                xer_check_tag_e seq_tcv = xer_check_tag(ptr, ch_size, "SEQUENCE");
+                if(seq_tcv == XCT_CLOSING) {
+                    ASN_DEBUG("XER/SEQUENCE: Accepting generic </SEQUENCE> tag in phase 1");
+                    /* Check if we're done with all mandatory elements */
+                    if(edx >= td->elements_count ||
+                       (edx + elements[edx].optional == td->elements_count) ||
+                       IN_EXTENSION_GROUP(specs, edx)) {
+                        XER_ADVANCE(ch_size);
+                        ctx->phase = 0;  /* Reset for next use */
+                        /* Now expect the outer closing tag (if opt_mname != xml_tag) or return */
+                        if(opt_mname && td->xml_tag && strcmp(opt_mname, td->xml_tag) != 0) {
+                            /* Need to consume the outer closing tag too */
+                            continue;
+                        } else {
+                            /* This was the only wrapper, we're done */
+                            ctx->phase = 4;
+                            RETURN(RC_OK);
+                        }
+                    } else {
+                        ASN_DEBUG("Missing mandatory elements after </SEQUENCE>");
+                        break;  /* Missing mandatory elements */
+                    }
+                }
             }
 
             /* Fall through */
