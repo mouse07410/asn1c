@@ -3855,9 +3855,10 @@ emit_include_dependencies(arg_t *arg) {
 			 * from CLASS definitions) must have their type includes in the header file,
 			 * never in POST_INCLUDE, because they're used directly in struct definitions.
 			 * 
-			 * IOC field members have a reference with comp_count == 2, like:
+			 * IOC field members are identified by having a reference with comp_count == 2,
+			 * which indicates a CLASS.&field notation (two components: CLASS name + field name):
 			 * - PRIVATE-IE-ID.&id (lowercase ampersand field, not OPEN TYPE)
-			 * - PROTOCOL-IES.&criticality
+			 * - PROTOCOL-IE.&criticality
 			 * 
 			 * Without this check, when -fno-include-deps is used, these includes would
 			 * go to POST_INCLUDE which ends up in the .c file, causing compilation errors
