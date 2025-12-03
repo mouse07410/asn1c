@@ -1,13 +1,6 @@
 
 /*** <<< INCLUDES [Everything] >>> ***/
 
-#include "Set.h"
-#include "Alpha.h"
-#include "Beta.h"
-#include "Gamma.h"
-#include "OneTwo.h"
-#include "TwoThree.h"
-#include "ThreeOne.h"
 #include <constr_SEQUENCE.h>
 
 /*** <<< FWD-DECLS [Everything] >>> ***/
@@ -15,6 +8,13 @@
 struct Choice1;
 struct Choice2;
 struct Choice3;
+struct Set;
+struct Alpha;
+struct Beta;
+struct Gamma;
+struct OneTwo;
+struct TwoThree;
+struct ThreeOne;
 
 /*** <<< TYPE-DECLS [Everything] >>> ***/
 
@@ -22,13 +22,13 @@ typedef struct Everything {
 	struct Choice1	*ch1;
 	struct Choice2	*ch2;
 	struct Choice3	*ch3;
-	Set_t	 set;
-	Alpha_t	 a;
-	Beta_t	 b;
-	Gamma_t	 g;
-	OneTwo_t	 ot;
-	TwoThree_t	 tt;
-	ThreeOne_t	 to;
+	struct Set	*set;
+	struct Alpha	*a;
+	struct Beta	*b;
+	struct Gamma	*g;
+	struct OneTwo	*ot;
+	struct TwoThree	*tt;
+	struct ThreeOne	*to;
 	
 	/* Context for parsing across buffer boundaries */
 	asn_struct_ctx_t _asn_ctx;
@@ -45,6 +45,13 @@ extern asn_TYPE_member_t asn_MBR_Everything_1[10];
 #include "Choice1.h"
 #include "Choice2.h"
 #include "Choice3.h"
+#include "Set.h"
+#include "Alpha.h"
+#include "Beta.h"
+#include "Gamma.h"
+#include "OneTwo.h"
+#include "TwoThree.h"
+#include "ThreeOne.h"
 
 /*** <<< STAT-DEFS [Everything] >>> ***/
 
@@ -109,7 +116,7 @@ asn_TYPE_member_t asn_MBR_Everything_1[] = {
 		0, 0, /* No default value */
 		.name = "ch3"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct Everything, set),
+	{ ATF_POINTER, 0, offsetof(struct Everything, set),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (3 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_Set,
@@ -129,7 +136,7 @@ asn_TYPE_member_t asn_MBR_Everything_1[] = {
 		0, 0, /* No default value */
 		.name = "set"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct Everything, a),
+	{ ATF_POINTER, 0, offsetof(struct Everything, a),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (4 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_Alpha,
@@ -149,7 +156,7 @@ asn_TYPE_member_t asn_MBR_Everything_1[] = {
 		0, 0, /* No default value */
 		.name = "a"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct Everything, b),
+	{ ATF_POINTER, 0, offsetof(struct Everything, b),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (5 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_Beta,
@@ -169,7 +176,7 @@ asn_TYPE_member_t asn_MBR_Everything_1[] = {
 		0, 0, /* No default value */
 		.name = "b"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct Everything, g),
+	{ ATF_POINTER, 0, offsetof(struct Everything, g),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (6 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_Gamma,
@@ -189,7 +196,7 @@ asn_TYPE_member_t asn_MBR_Everything_1[] = {
 		0, 0, /* No default value */
 		.name = "g"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct Everything, ot),
+	{ ATF_POINTER, 0, offsetof(struct Everything, ot),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (7 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_OneTwo,
@@ -209,7 +216,7 @@ asn_TYPE_member_t asn_MBR_Everything_1[] = {
 		0, 0, /* No default value */
 		.name = "ot"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct Everything, tt),
+	{ ATF_POINTER, 0, offsetof(struct Everything, tt),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (8 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_TwoThree,
@@ -229,7 +236,7 @@ asn_TYPE_member_t asn_MBR_Everything_1[] = {
 		0, 0, /* No default value */
 		.name = "tt"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct Everything, to),
+	{ ATF_POINTER, 0, offsetof(struct Everything, to),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (9 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_ThreeOne,
@@ -431,7 +438,6 @@ asn_TYPE_descriptor_t asn_DEF_Choice1 = {
 
 /*** <<< INCLUDES [Choice2] >>> ***/
 
-#include "TypeRef.h"
 #include <constr_CHOICE.h>
 
 /*** <<< DEPS [Choice2] >>> ***/
@@ -445,6 +451,7 @@ typedef enum Choice2_PR {
 
 /*** <<< FWD-DECLS [Choice2] >>> ***/
 
+struct TypeRef;
 struct Everything;
 
 /*** <<< TYPE-DECLS [Choice2] >>> ***/
@@ -452,7 +459,7 @@ struct Everything;
 typedef struct Choice2 {
 	Choice2_PR present;
 	union Choice2_u {
-		TypeRef_t	 typeref;
+		struct TypeRef	*typeref;
 		/*
 		 * This type is extensible,
 		 * possible extensions are below.
@@ -472,12 +479,13 @@ extern asn_TYPE_member_t asn_MBR_Choice2_1[2];
 
 /*** <<< POST-INCLUDE [Choice2] >>> ***/
 
+#include "TypeRef.h"
 #include "Everything.h"
 
 /*** <<< STAT-DEFS [Choice2] >>> ***/
 
 asn_TYPE_member_t asn_MBR_Choice2_1[] = {
-	{ ATF_NOFLAGS, 0, offsetof(struct Choice2, choice.typeref),
+	{ ATF_POINTER, 0, offsetof(struct Choice2, choice.typeref),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_TypeRef,

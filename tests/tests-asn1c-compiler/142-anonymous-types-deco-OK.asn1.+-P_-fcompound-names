@@ -1,8 +1,6 @@
 
 /*** <<< INCLUDES [CommonType] >>> ***/
 
-#include "Type1.h"
-#include "Type2.h"
 #include <constr_CHOICE.h>
 
 /*** <<< DEPS [CommonType] >>> ***/
@@ -13,13 +11,18 @@ typedef enum CommonType_PR {
 	CommonType_PR_t2
 } CommonType_PR;
 
+/*** <<< FWD-DECLS [CommonType] >>> ***/
+
+struct Type1;
+struct Type2;
+
 /*** <<< TYPE-DECLS [CommonType] >>> ***/
 
 typedef struct CommonType {
 	CommonType_PR present;
 	union CommonType_u {
-		Type1_t	 t1;
-		Type2_t	 t2;
+		struct Type1	*t1;
+		struct Type2	*t2;
 	} choice;
 	
 	/* Context for parsing across buffer boundaries */
@@ -30,10 +33,15 @@ typedef struct CommonType {
 
 extern asn_TYPE_descriptor_t asn_DEF_CommonType;
 
+/*** <<< POST-INCLUDE [CommonType] >>> ***/
+
+#include "Type1.h"
+#include "Type2.h"
+
 /*** <<< STAT-DEFS [CommonType] >>> ***/
 
 static asn_TYPE_member_t asn_MBR_CommonType_1[] = {
-	{ ATF_NOFLAGS, 0, offsetof(struct CommonType, choice.t1),
+	{ ATF_POINTER, 0, offsetof(struct CommonType, choice.t1),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
 		.tag_mode = +1,	/* EXPLICIT tag at current level */
 		.type = &asn_DEF_Type1,
@@ -53,7 +61,7 @@ static asn_TYPE_member_t asn_MBR_CommonType_1[] = {
 		0, 0, /* No default value */
 		.name = "t1"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct CommonType, choice.t2),
+	{ ATF_POINTER, 0, offsetof(struct CommonType, choice.t2),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
 		.tag_mode = +1,	/* EXPLICIT tag at current level */
 		.type = &asn_DEF_Type2,

@@ -115,19 +115,22 @@ asn_TYPE_descriptor_t asn_DEF_Container = {
 
 /*** <<< INCLUDES [ComplexType] >>> ***/
 
-#include "StructureA.h"
-#include "StructureB.h"
-#include "StructureC.h"
-#include "StructureD.h"
 #include <constr_SEQUENCE.h>
+
+/*** <<< FWD-DECLS [ComplexType] >>> ***/
+
+struct StructureA;
+struct StructureB;
+struct StructureC;
+struct StructureD;
 
 /*** <<< TYPE-DECLS [ComplexType] >>> ***/
 
 typedef struct ComplexType {
-	StructureA_t	 member1;
-	StructureB_t	 member2;
-	StructureC_t	 member3;
-	StructureD_t	 member4;
+	struct StructureA	*member1;
+	struct StructureB	*member2;
+	struct StructureC	*member3;
+	struct StructureD	*member4;
 	
 	/* Context for parsing across buffer boundaries */
 	asn_struct_ctx_t _asn_ctx;
@@ -139,10 +142,17 @@ extern asn_TYPE_descriptor_t asn_DEF_ComplexType;
 extern asn_SEQUENCE_specifics_t asn_SPC_ComplexType_specs_1;
 extern asn_TYPE_member_t asn_MBR_ComplexType_1[4];
 
+/*** <<< POST-INCLUDE [ComplexType] >>> ***/
+
+#include "StructureA.h"
+#include "StructureB.h"
+#include "StructureC.h"
+#include "StructureD.h"
+
 /*** <<< STAT-DEFS [ComplexType] >>> ***/
 
 asn_TYPE_member_t asn_MBR_ComplexType_1[] = {
-	{ ATF_NOFLAGS, 0, offsetof(struct ComplexType, member1),
+	{ ATF_POINTER, 0, offsetof(struct ComplexType, member1),
 		.tag = (ASN_TAG_CLASS_UNIVERSAL | (16 << 2)),
 		.tag_mode = 0,
 		.type = &asn_DEF_StructureA,
@@ -162,7 +172,7 @@ asn_TYPE_member_t asn_MBR_ComplexType_1[] = {
 		0, 0, /* No default value */
 		.name = "member1"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct ComplexType, member2),
+	{ ATF_POINTER, 0, offsetof(struct ComplexType, member2),
 		.tag = (ASN_TAG_CLASS_UNIVERSAL | (16 << 2)),
 		.tag_mode = 0,
 		.type = &asn_DEF_StructureB,
@@ -182,7 +192,7 @@ asn_TYPE_member_t asn_MBR_ComplexType_1[] = {
 		0, 0, /* No default value */
 		.name = "member2"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct ComplexType, member3),
+	{ ATF_POINTER, 0, offsetof(struct ComplexType, member3),
 		.tag = (ASN_TAG_CLASS_UNIVERSAL | (16 << 2)),
 		.tag_mode = 0,
 		.type = &asn_DEF_StructureC,
@@ -202,7 +212,7 @@ asn_TYPE_member_t asn_MBR_ComplexType_1[] = {
 		0, 0, /* No default value */
 		.name = "member3"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct ComplexType, member4),
+	{ ATF_POINTER, 0, offsetof(struct ComplexType, member4),
 		.tag = (ASN_TAG_CLASS_UNIVERSAL | (16 << 2)),
 		.tag_mode = 0,
 		.type = &asn_DEF_StructureD,

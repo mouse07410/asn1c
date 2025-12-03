@@ -1,13 +1,16 @@
 
 /*** <<< INCLUDES [Message1] >>> ***/
 
-#include "SpecializedContent.h"
 #include <constr_SEQUENCE.h>
+
+/*** <<< FWD-DECLS [Message1] >>> ***/
+
+struct TotalRegionExtension;
 
 /*** <<< TYPE-DECLS [Message1] >>> ***/
 
 typedef struct Message1 {
-	TotalRegionExtension_t	 content;
+	struct TotalRegionExtension	*content;
 	
 	/* Context for parsing across buffer boundaries */
 	asn_struct_ctx_t _asn_ctx;
@@ -17,10 +20,14 @@ typedef struct Message1 {
 
 extern asn_TYPE_descriptor_t asn_DEF_Message1;
 
+/*** <<< POST-INCLUDE [Message1] >>> ***/
+
+#include "SpecializedContent.h"
+
 /*** <<< STAT-DEFS [Message1] >>> ***/
 
 static asn_TYPE_member_t asn_MBR_Message1_1[] = {
-	{ ATF_NOFLAGS, 0, offsetof(struct Message1, content),
+	{ ATF_POINTER, 0, offsetof(struct Message1, content),
 		.tag = (ASN_TAG_CLASS_UNIVERSAL | (16 << 2)),
 		.tag_mode = 0,
 		.type = &asn_DEF_TotalRegionExtension,
@@ -85,13 +92,16 @@ asn_TYPE_descriptor_t asn_DEF_Message1 = {
 
 /*** <<< INCLUDES [Message2] >>> ***/
 
-#include "SpecializedContent.h"
 #include <constr_SEQUENCE.h>
+
+/*** <<< FWD-DECLS [Message2] >>> ***/
+
+struct RegionalExtension3;
 
 /*** <<< TYPE-DECLS [Message2] >>> ***/
 
 typedef struct Message2 {
-	RegionalExtension3_t	 content;
+	struct RegionalExtension3	*content;
 	
 	/* Context for parsing across buffer boundaries */
 	asn_struct_ctx_t _asn_ctx;
@@ -101,10 +111,14 @@ typedef struct Message2 {
 
 extern asn_TYPE_descriptor_t asn_DEF_Message2;
 
+/*** <<< POST-INCLUDE [Message2] >>> ***/
+
+#include "SpecializedContent.h"
+
 /*** <<< STAT-DEFS [Message2] >>> ***/
 
 static asn_TYPE_member_t asn_MBR_Message2_1[] = {
-	{ ATF_NOFLAGS, 0, offsetof(struct Message2, content),
+	{ ATF_POINTER, 0, offsetof(struct Message2, content),
 		.tag = (ASN_TAG_CLASS_UNIVERSAL | (16 << 2)),
 		.tag_mode = 0,
 		.type = &asn_DEF_RegionalExtension3,
@@ -169,13 +183,16 @@ asn_TYPE_descriptor_t asn_DEF_Message2 = {
 
 /*** <<< INCLUDES [Message3] >>> ***/
 
-#include "SpecializedContent.h"
 #include <constr_SEQUENCE.h>
+
+/*** <<< FWD-DECLS [Message3] >>> ***/
+
+struct RegionalExtension4;
 
 /*** <<< TYPE-DECLS [Message3] >>> ***/
 
 typedef struct Message3 {
-	RegionalExtension4_t	 content;
+	struct RegionalExtension4	*content;
 	
 	/* Context for parsing across buffer boundaries */
 	asn_struct_ctx_t _asn_ctx;
@@ -185,10 +202,14 @@ typedef struct Message3 {
 
 extern asn_TYPE_descriptor_t asn_DEF_Message3;
 
+/*** <<< POST-INCLUDE [Message3] >>> ***/
+
+#include "SpecializedContent.h"
+
 /*** <<< STAT-DEFS [Message3] >>> ***/
 
 static asn_TYPE_member_t asn_MBR_Message3_1[] = {
-	{ ATF_NOFLAGS, 0, offsetof(struct Message3, content),
+	{ ATF_POINTER, 0, offsetof(struct Message3, content),
 		.tag = (ASN_TAG_CLASS_UNIVERSAL | (16 << 2)),
 		.tag_mode = 0,
 		.type = &asn_DEF_RegionalExtension4,

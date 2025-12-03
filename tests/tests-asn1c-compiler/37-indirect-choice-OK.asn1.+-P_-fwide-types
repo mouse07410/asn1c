@@ -3,8 +3,6 @@
 
 #include <INTEGER.h>
 #include <OCTET_STRING.h>
-#include "Choice1.h"
-#include "Choice2.h"
 #include <constr_CHOICE.h>
 
 /*** <<< DEPS [T] >>> ***/
@@ -17,6 +15,11 @@ typedef enum T_PR {
 	T_PR_t_d
 } T_PR;
 
+/*** <<< FWD-DECLS [T] >>> ***/
+
+struct Choice1;
+struct Choice2;
+
 /*** <<< TYPE-DECLS [T] >>> ***/
 
 typedef struct T {
@@ -24,8 +27,8 @@ typedef struct T {
 	union T_u {
 		INTEGER_t	 t_a;
 		OCTET_STRING_t	 t_b;
-		Choice1_t	 t_c;
-		Choice2_t	 t_d;
+		struct Choice1	*t_c;
+		struct Choice2	*t_d;
 	} choice;
 	
 	/* Context for parsing across buffer boundaries */
@@ -35,6 +38,11 @@ typedef struct T {
 /*** <<< FUNC-DECLS [T] >>> ***/
 
 extern asn_TYPE_descriptor_t asn_DEF_T;
+
+/*** <<< POST-INCLUDE [T] >>> ***/
+
+#include "Choice1.h"
+#include "Choice2.h"
 
 /*** <<< STAT-DEFS [T] >>> ***/
 
@@ -79,7 +87,7 @@ static asn_TYPE_member_t asn_MBR_T_1[] = {
 		0, 0, /* No default value */
 		.name = "t-b"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct T, choice.t_c),
+	{ ATF_POINTER, 0, offsetof(struct T, choice.t_c),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
 		.tag_mode = +1,	/* EXPLICIT tag at current level */
 		.type = &asn_DEF_Choice1,
@@ -99,7 +107,7 @@ static asn_TYPE_member_t asn_MBR_T_1[] = {
 		0, 0, /* No default value */
 		.name = "t-c"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct T, choice.t_d),
+	{ ATF_POINTER, 0, offsetof(struct T, choice.t_d),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (3 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_Choice2,
@@ -283,7 +291,6 @@ asn_TYPE_descriptor_t asn_DEF_Choice1 = {
 
 #include <OCTET_STRING.h>
 #include <INTEGER.h>
-#include "Choice1.h"
 #include <constr_CHOICE.h>
 
 /*** <<< DEPS [Choice2] >>> ***/
@@ -296,6 +303,10 @@ typedef enum Choice2_PR {
 	Choice2_PR_c_e
 } Choice2_PR;
 
+/*** <<< FWD-DECLS [Choice2] >>> ***/
+
+struct Choice1;
+
 /*** <<< TYPE-DECLS [Choice2] >>> ***/
 
 typedef struct Choice2 {
@@ -303,8 +314,8 @@ typedef struct Choice2 {
 	union Choice2_u {
 		OCTET_STRING_t	 c_a;
 		INTEGER_t	 c_b;
-		Choice1_t	 c_d;
-		Choice1_t	 c_e;
+		struct Choice1	*c_d;
+		struct Choice1	*c_e;
 	} choice;
 	
 	/* Context for parsing across buffer boundaries */
@@ -316,6 +327,10 @@ typedef struct Choice2 {
 extern asn_TYPE_descriptor_t asn_DEF_Choice2;
 extern asn_CHOICE_specifics_t asn_SPC_Choice2_specs_1;
 extern asn_TYPE_member_t asn_MBR_Choice2_1[4];
+
+/*** <<< POST-INCLUDE [Choice2] >>> ***/
+
+#include "Choice1.h"
 
 /*** <<< STAT-DEFS [Choice2] >>> ***/
 
@@ -360,7 +375,7 @@ asn_TYPE_member_t asn_MBR_Choice2_1[] = {
 		0, 0, /* No default value */
 		.name = "c-b"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct Choice2, choice.c_d),
+	{ ATF_POINTER, 0, offsetof(struct Choice2, choice.c_d),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (3 << 2)),
 		.tag_mode = +1,	/* EXPLICIT tag at current level */
 		.type = &asn_DEF_Choice1,
@@ -380,7 +395,7 @@ asn_TYPE_member_t asn_MBR_Choice2_1[] = {
 		0, 0, /* No default value */
 		.name = "c-d"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct Choice2, choice.c_e),
+	{ ATF_POINTER, 0, offsetof(struct Choice2, choice.c_e),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (4 << 2)),
 		.tag_mode = +1,	/* EXPLICIT tag at current level */
 		.type = &asn_DEF_Choice1,

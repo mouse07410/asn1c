@@ -1,21 +1,6 @@
 
 /*** <<< INCLUDES [PDU] >>> ***/
 
-#include "Sequence.h"
-#include "Set.h"
-#include "SequenceOf.h"
-#include "ExtensibleSet.h"
-#include "ExtensibleSequence.h"
-#include "ExtensibleSequence2.h"
-#include "SetOfNULL.h"
-#include "SetOfREAL.h"
-#include "SetOfEnums.h"
-#include "NamedSetOfNULL.h"
-#include "NamedSetOfREAL.h"
-#include "NamedSetOfEnums.h"
-#include "SeqOfZuka.h"
-#include "SetOfChoice.h"
-#include "NamedSetOfChoice.h"
 #include <constr_CHOICE.h>
 
 /*** <<< DEPS [PDU] >>> ***/
@@ -41,26 +26,44 @@ typedef enum PDU_PR {
 	
 } PDU_PR;
 
+/*** <<< FWD-DECLS [PDU] >>> ***/
+
+struct Sequence;
+struct Set;
+struct SequenceOf;
+struct ExtensibleSet;
+struct ExtensibleSequence;
+struct ExtensibleSequence2;
+struct SetOfNULL;
+struct SetOfREAL;
+struct SetOfEnums;
+struct NamedSetOfNULL;
+struct NamedSetOfREAL;
+struct NamedSetOfEnums;
+struct SeqOfZuka;
+struct SetOfChoice;
+struct NamedSetOfChoice;
+
 /*** <<< TYPE-DECLS [PDU] >>> ***/
 
 typedef struct PDU {
 	PDU_PR present;
 	union PDU_u {
-		Sequence_t	 sequence;
-		Set_t	 set;
-		SequenceOf_t	 sequenceOf;
-		ExtensibleSet_t	 extensibleSet;
-		ExtensibleSequence_t	 extensibleSequence;
-		ExtensibleSequence2_t	 extensibleSequence2;
-		SetOfNULL_t	 setOfNULL;
-		SetOfREAL_t	 setOfREAL;
-		SetOfEnums_t	 setOfEnums;
-		NamedSetOfNULL_t	 namedSetOfNULL;
-		NamedSetOfREAL_t	 namedSetOfREAL;
-		NamedSetOfEnums_t	 namedSetOfEnums;
-		SeqOfZuka_t	 seqOfZuka;
-		SetOfChoice_t	 setOfChoice;
-		NamedSetOfChoice_t	 namedSetOfChoice;
+		struct Sequence	*sequence;
+		struct Set	*set;
+		struct SequenceOf	*sequenceOf;
+		struct ExtensibleSet	*extensibleSet;
+		struct ExtensibleSequence	*extensibleSequence;
+		struct ExtensibleSequence2	*extensibleSequence2;
+		struct SetOfNULL	*setOfNULL;
+		struct SetOfREAL	*setOfREAL;
+		struct SetOfEnums	*setOfEnums;
+		struct NamedSetOfNULL	*namedSetOfNULL;
+		struct NamedSetOfREAL	*namedSetOfREAL;
+		struct NamedSetOfEnums	*namedSetOfEnums;
+		struct SeqOfZuka	*seqOfZuka;
+		struct SetOfChoice	*setOfChoice;
+		struct NamedSetOfChoice	*namedSetOfChoice;
 		/*
 		 * This type is extensible,
 		 * possible extensions are below.
@@ -75,10 +78,28 @@ typedef struct PDU {
 
 extern asn_TYPE_descriptor_t asn_DEF_PDU;
 
+/*** <<< POST-INCLUDE [PDU] >>> ***/
+
+#include "Sequence.h"
+#include "Set.h"
+#include "SequenceOf.h"
+#include "ExtensibleSet.h"
+#include "ExtensibleSequence.h"
+#include "ExtensibleSequence2.h"
+#include "SetOfNULL.h"
+#include "SetOfREAL.h"
+#include "SetOfEnums.h"
+#include "NamedSetOfNULL.h"
+#include "NamedSetOfREAL.h"
+#include "NamedSetOfEnums.h"
+#include "SeqOfZuka.h"
+#include "SetOfChoice.h"
+#include "NamedSetOfChoice.h"
+
 /*** <<< STAT-DEFS [PDU] >>> ***/
 
 static asn_TYPE_member_t asn_MBR_PDU_1[] = {
-	{ ATF_NOFLAGS, 0, offsetof(struct PDU, choice.sequence),
+	{ ATF_POINTER, 0, offsetof(struct PDU, choice.sequence),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_Sequence,
@@ -98,7 +119,7 @@ static asn_TYPE_member_t asn_MBR_PDU_1[] = {
 		0, 0, /* No default value */
 		.name = "sequence"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct PDU, choice.set),
+	{ ATF_POINTER, 0, offsetof(struct PDU, choice.set),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_Set,
@@ -118,7 +139,7 @@ static asn_TYPE_member_t asn_MBR_PDU_1[] = {
 		0, 0, /* No default value */
 		.name = "set"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct PDU, choice.sequenceOf),
+	{ ATF_POINTER, 0, offsetof(struct PDU, choice.sequenceOf),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (2 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_SequenceOf,
@@ -138,7 +159,7 @@ static asn_TYPE_member_t asn_MBR_PDU_1[] = {
 		0, 0, /* No default value */
 		.name = "sequenceOf"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct PDU, choice.extensibleSet),
+	{ ATF_POINTER, 0, offsetof(struct PDU, choice.extensibleSet),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (3 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_ExtensibleSet,
@@ -158,7 +179,7 @@ static asn_TYPE_member_t asn_MBR_PDU_1[] = {
 		0, 0, /* No default value */
 		.name = "extensibleSet"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct PDU, choice.extensibleSequence),
+	{ ATF_POINTER, 0, offsetof(struct PDU, choice.extensibleSequence),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (4 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_ExtensibleSequence,
@@ -178,7 +199,7 @@ static asn_TYPE_member_t asn_MBR_PDU_1[] = {
 		0, 0, /* No default value */
 		.name = "extensibleSequence"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct PDU, choice.extensibleSequence2),
+	{ ATF_POINTER, 0, offsetof(struct PDU, choice.extensibleSequence2),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (5 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_ExtensibleSequence2,
@@ -198,7 +219,7 @@ static asn_TYPE_member_t asn_MBR_PDU_1[] = {
 		0, 0, /* No default value */
 		.name = "extensibleSequence2"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct PDU, choice.setOfNULL),
+	{ ATF_POINTER, 0, offsetof(struct PDU, choice.setOfNULL),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (6 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_SetOfNULL,
@@ -218,7 +239,7 @@ static asn_TYPE_member_t asn_MBR_PDU_1[] = {
 		0, 0, /* No default value */
 		.name = "setOfNULL"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct PDU, choice.setOfREAL),
+	{ ATF_POINTER, 0, offsetof(struct PDU, choice.setOfREAL),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (7 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_SetOfREAL,
@@ -238,7 +259,7 @@ static asn_TYPE_member_t asn_MBR_PDU_1[] = {
 		0, 0, /* No default value */
 		.name = "setOfREAL"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct PDU, choice.setOfEnums),
+	{ ATF_POINTER, 0, offsetof(struct PDU, choice.setOfEnums),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (8 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_SetOfEnums,
@@ -258,7 +279,7 @@ static asn_TYPE_member_t asn_MBR_PDU_1[] = {
 		0, 0, /* No default value */
 		.name = "setOfEnums"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct PDU, choice.namedSetOfNULL),
+	{ ATF_POINTER, 0, offsetof(struct PDU, choice.namedSetOfNULL),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (9 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_NamedSetOfNULL,
@@ -278,7 +299,7 @@ static asn_TYPE_member_t asn_MBR_PDU_1[] = {
 		0, 0, /* No default value */
 		.name = "namedSetOfNULL"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct PDU, choice.namedSetOfREAL),
+	{ ATF_POINTER, 0, offsetof(struct PDU, choice.namedSetOfREAL),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (10 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_NamedSetOfREAL,
@@ -298,7 +319,7 @@ static asn_TYPE_member_t asn_MBR_PDU_1[] = {
 		0, 0, /* No default value */
 		.name = "namedSetOfREAL"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct PDU, choice.namedSetOfEnums),
+	{ ATF_POINTER, 0, offsetof(struct PDU, choice.namedSetOfEnums),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (11 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_NamedSetOfEnums,
@@ -318,7 +339,7 @@ static asn_TYPE_member_t asn_MBR_PDU_1[] = {
 		0, 0, /* No default value */
 		.name = "namedSetOfEnums"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct PDU, choice.seqOfZuka),
+	{ ATF_POINTER, 0, offsetof(struct PDU, choice.seqOfZuka),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (12 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_SeqOfZuka,
@@ -338,7 +359,7 @@ static asn_TYPE_member_t asn_MBR_PDU_1[] = {
 		0, 0, /* No default value */
 		.name = "seqOfZuka"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct PDU, choice.setOfChoice),
+	{ ATF_POINTER, 0, offsetof(struct PDU, choice.setOfChoice),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (13 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_SetOfChoice,
@@ -358,7 +379,7 @@ static asn_TYPE_member_t asn_MBR_PDU_1[] = {
 		0, 0, /* No default value */
 		.name = "setOfChoice"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct PDU, choice.namedSetOfChoice),
+	{ ATF_POINTER, 0, offsetof(struct PDU, choice.namedSetOfChoice),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (14 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_NamedSetOfChoice,

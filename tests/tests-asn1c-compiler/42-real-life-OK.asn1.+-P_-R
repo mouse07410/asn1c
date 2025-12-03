@@ -224,13 +224,13 @@ asn_TYPE_descriptor_t asn_DEF_LogLine = {
 
 /*** <<< INCLUDES [VariablePartSet] >>> ***/
 
-#include "ActionItem.h"
 #include <asn_SEQUENCE_OF.h>
 #include <constr_SEQUENCE_OF.h>
 #include <constr_SEQUENCE.h>
 
 /*** <<< FWD-DECLS [VariablePartSet] >>> ***/
 
+struct ActionItem;
 struct VariablePart;
 
 /*** <<< TYPE-DECLS [VariablePartSet] >>> ***/
@@ -242,7 +242,7 @@ typedef struct VariablePartSet {
 		/* Context for parsing across buffer boundaries */
 		asn_struct_ctx_t _asn_ctx;
 	} vparts;
-	ActionItem_t	 resolution;
+	struct ActionItem	*resolution;
 	/*
 	 * This type is extensible,
 	 * possible extensions are below.
@@ -260,6 +260,7 @@ extern asn_TYPE_member_t asn_MBR_VariablePartSet_1[2];
 
 /*** <<< POST-INCLUDE [VariablePartSet] >>> ***/
 
+#include "ActionItem.h"
 #include "VariablePart.h"
 
 /*** <<< CODE [VariablePartSet] >>> ***/
@@ -376,7 +377,7 @@ asn_TYPE_member_t asn_MBR_VariablePartSet_1[] = {
 		0, 0, /* No default value */
 		.name = "vparts"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct VariablePartSet, resolution),
+	{ ATF_POINTER, 0, offsetof(struct VariablePartSet, resolution),
 		.tag = (ASN_TAG_CLASS_UNIVERSAL | (16 << 2)),
 		.tag_mode = 0,
 		.type = &asn_DEF_ActionItem,
