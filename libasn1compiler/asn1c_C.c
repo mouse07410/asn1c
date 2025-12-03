@@ -3855,10 +3855,11 @@ emit_include_dependencies(arg_t *arg) {
 			 * from CLASS definitions) must have their type includes in the header file,
 			 * never in POST_INCLUDE, because they're used directly in struct definitions.
 			 * 
-			 * IOC field members are identified by having a reference with comp_count == 2,
-			 * which indicates a CLASS.&field notation (two components: CLASS name + field name):
+			 * IOC field members are identified by having a reference with comp_count >= 2
+			 * where the last component starts with '&', indicating CLASS.&field notation:
 			 * - PRIVATE-IE-ID.&id (lowercase ampersand field, not OPEN TYPE)
 			 * - PROTOCOL-IE.&criticality
+			 * - Module.CLASS.&field (comp_count could be > 2)
 			 * 
 			 * Without this check, when -fno-include-deps is used, these includes would
 			 * go to POST_INCLUDE which ends up in the .c file, causing compilation errors
@@ -3867,7 +3868,9 @@ emit_include_dependencies(arg_t *arg) {
 			 * This fix is critical for specifications like F1AP that use parameterized
 			 * types with IOC fields.
 			 */
-			int is_ioc_field = (memb->reference && memb->reference->comp_count == 2);
+			int is_ioc_field = (memb->reference 
+			                    && memb->reference->comp_count >= 2
+			                    && memb->reference->components[memb->reference->comp_count - 1].name[0] == '&');
 			GEN_POS_INCLUDE_BASE((memb->marker.flags & EM_UNRECURSE) && !is_ioc_field ?
 					OT_POST_INCLUDE : OT_INCLUDES, memb);
 		}
