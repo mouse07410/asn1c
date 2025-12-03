@@ -110,12 +110,13 @@ check_serialize() {
 
 	memset(&ll, 0, sizeof(ll));
 	vps = calloc(1, sizeof(*vps));
+	vps->resolution = calloc(1, sizeof(*vps->resolution));
 	vp = calloc(1, sizeof(*vp));
 	vpart = OCTET_STRING_new_fromBuf(&asn_DEF_VisibleString, "123", 3);
 
 	vp->present = VariablePart_PR_vset;
 	ASN_SET_ADD(&vp->choice.vset, vpart);
-	vps->resolution.accept_as = accept_as_unknown;
+	vps->resolution->accept_as = accept_as_unknown;
 	ASN_SEQUENCE_ADD(&vps->vparts, vp);
 	ASN_SEQUENCE_ADD(&ll.varsets, vps);
 	OCTET_STRING_fromBuf(&ll.line_digest, "zzz\007", 4);
