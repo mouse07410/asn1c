@@ -3953,11 +3953,10 @@ expr_break_recursion(arg_t *arg, asn1p_expr_t *expr) {
 			
 			/* Use indirection if:
 			 * 1. The terminal has 4 or more complex members (original heuristic), OR
-			 * 2. The terminal has 1+ non-optional constructed members (catches F1AP case where
-			 *    CompositeAvailableCapacity has capacityValue which eventually leads to
-			 *    circular dependency)
+			 * 2. The terminal has 2+ non-optional constructed members (more conservative
+			 *    than >= 1, catches F1AP while minimizing false positives)
 			 */
-			if(complex_members >= 4 || total_constr_members >= 1) {
+			if(complex_members >= 4 || total_constr_members >= 2) {
 				expr->marker.flags |= EM_INDIRECT;
 				expr->marker.flags |= EM_UNRECURSE;
 				return 1;
