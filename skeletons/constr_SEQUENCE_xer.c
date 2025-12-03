@@ -298,12 +298,6 @@ SEQUENCE_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
                     /* Stay in phase 1 to process the actual content */
                     continue;
                 }
-                if(tcv == XCT_CLOSING) {
-                    ASN_DEBUG("XER/SEQUENCE: Closing type wrapper tag </%s>", td->xml_tag);
-                    XER_ADVANCE(ch_size);
-                    /* Stay in phase 1, expecting the element closing tag */
-                    continue;
-                }
             }
             
             /* Fall through */
@@ -311,8 +305,8 @@ SEQUENCE_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
             /* Check if this is a type wrapper closing tag (e.g., </Reset> when opt_mname="value") */
             if(ctx->phase == 1 && td->xml_tag && opt_mname && 
                strcmp(td->xml_tag, opt_mname) != 0) {
-                tcv = xer_check_tag(ptr, ch_size, td->xml_tag);
-                if(tcv == XCT_CLOSING) {
+                xer_check_tag_e wrapper_tcv = xer_check_tag(ptr, ch_size, td->xml_tag);
+                if(wrapper_tcv == XCT_CLOSING) {
                     ASN_DEBUG("XER/SEQUENCE: Closing type wrapper tag </%s>", td->xml_tag);
                     XER_ADVANCE(ch_size);
                     /* Stay in phase 1, expecting the element closing tag */
@@ -331,9 +325,11 @@ SEQUENCE_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
                        IN_EXTENSION_GROUP(specs, edx)) {
                         XER_ADVANCE(ch_size);
                         ctx->phase = 0;  /* Reset for next use */
-                        /* Now expect the outer closing tag (if opt_mname != xml_tag) or return */
+                        /* Check if there's an outer element tag to consume */
                         if(opt_mname && td->xml_tag && strcmp(opt_mname, td->xml_tag) != 0) {
-                            /* Need to consume the outer closing tag too */
+                            /* Element name differs from type name, so expect outer </opt_mname> tag.
+                             * Continue looping to consume it in the next iteration. */
+                            ASN_DEBUG("XER/SEQUENCE: Expecting outer closing tag </%s>", opt_mname);
                             continue;
                         } else {
                             /* This was the only wrapper, we're done */
