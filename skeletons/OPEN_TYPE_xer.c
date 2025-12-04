@@ -45,7 +45,7 @@ OPEN_TYPE_xer_get(const asn_codec_ctx_t *opt_codec_ctx,
     }
 
     ASN_DEBUG("OPEN_TYPE_xer_get: elm->type=%s, elements=%p, elements_count=%u, selected.presence_index=%u, selected.type=%s",
-              elm->type->name, (void*)elm->type->elements, elm->type->elements_count, 
+              elm->type->name, (void*)elm->type->elements, elm->type->elements_count,
               selected.presence_index, selected.type_descriptor->name);
 
     /* Validate the selected variant */
