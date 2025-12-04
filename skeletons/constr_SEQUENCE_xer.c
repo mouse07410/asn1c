@@ -107,8 +107,8 @@ SEQUENCE_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
 
             if(elm->flags & ATF_OPEN_TYPE) {
                 tmprval = OPEN_TYPE_xer_get(opt_codec_ctx, td, st, elm, ptr, size);
-                /* Debug: Check if CHOICE present field was set */
-                if(tmprval.code == RC_OK) {
+                /* Debug: Check if CHOICE present field was set (only in CHOICE wrapper mode) */
+                if(tmprval.code == RC_OK && elm->type->elements_count > 0) {
 	                void *choice_ptr = (elm->flags & ATF_POINTER) 
 		                ? *(void**)((char*)st + elm->memb_offset)
 		                : (void*)((char*)st + elm->memb_offset);
