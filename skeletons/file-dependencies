@@ -212,6 +212,7 @@ NativeInteger.h NativeInteger_print.c
 NativeReal.h NativeReal_print.c
 OBJECT_IDENTIFIER.h OBJECT_IDENTIFIER_print.c
 OCTET_STRING.h OCTET_STRING_print.c
+OPEN_TYPE.h OPEN_TYPE_print.c
 REAL.h REAL_print.c
 RELATIVE-OID.h RELATIVE-OID_print.c
 UTCTime.h UTCTime_print.c
