@@ -41,13 +41,18 @@ OPEN_TYPE_oer_get(const asn_codec_ctx_t *opt_codec_ctx,
     }
 
     /* Validate the selected variant */
-    if(elm->type->elements) {
-        if(selected.presence_index > elm->type->elements_count) {
-            ASN_DEBUG("Open Type %s->%s: presence index %u out of bounds (max %u)",
-                      td->name, elm->name, selected.presence_index,
-                      elm->type->elements_count);
-            ASN__DECODE_FAILED;
-        }
+    if(selected.presence_index > elm->type->elements_count) {
+        ASN_DEBUG("Open Type %s->%s: presence index %u out of bounds (max %u)",
+                  td->name, elm->name, selected.presence_index,
+                  elm->type->elements_count);
+        ASN__DECODE_FAILED;
+    }
+    
+    /* Ensure we can access the elements array if needed */
+    if(!elm->type->elements && elm->type->elements_count > 0) {
+        ASN_DEBUG("Open Type %s->%s: elements array is NULL but elements_count is %u",
+                  td->name, elm->name, elm->type->elements_count);
+        ASN__DECODE_FAILED;
     }
 
     /* Fetch the pointer to this member */

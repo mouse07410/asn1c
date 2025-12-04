@@ -40,14 +40,23 @@ OPEN_TYPE_aper_get(const asn_codec_ctx_t *opt_codec_ctx,
         ASN__DECODE_FAILED;
     }
 
+    ASN_DEBUG("OPEN_TYPE_aper_get: elm->type=%s, elements=%p, elements_count=%u, selected.presence_index=%u, selected.type=%s",
+              elm->type->name, (void*)elm->type->elements, elm->type->elements_count, 
+              selected.presence_index, selected.type_descriptor->name);
+
     /* Validate the selected variant */
-    if(elm->type->elements) {
-        if(selected.presence_index > elm->type->elements_count) {
-            ASN_DEBUG("Open Type %s->%s: presence index %u out of bounds (max %u)",
-                      td->name, elm->name, selected.presence_index,
-                      elm->type->elements_count);
-            ASN__DECODE_FAILED;
-        }
+    if(selected.presence_index > elm->type->elements_count) {
+        ASN_DEBUG("Open Type %s->%s: presence index %u out of bounds (max %u)",
+                  td->name, elm->name, selected.presence_index,
+                  elm->type->elements_count);
+        ASN__DECODE_FAILED;
+    }
+    
+    /* Ensure we can access the elements array if needed */
+    if(!elm->type->elements && elm->type->elements_count > 0) {
+        ASN_DEBUG("Open Type %s->%s: elements array is NULL but elements_count is %u",
+                  td->name, elm->name, elm->type->elements_count);
+        ASN__DECODE_FAILED;
     }
 
     /* Fetch the pointer to this member */
@@ -89,18 +98,24 @@ OPEN_TYPE_aper_get(const asn_codec_ctx_t *opt_codec_ctx,
 
     rv = aper_open_type_get(opt_codec_ctx, selected.type_descriptor,
                             constraints, &inner_value, pd);
+    ASN_DEBUG("aper_open_type_get returned code=%d for %s", rv.code, selected.type_descriptor->name);
     switch(rv.code) {
     case RC_OK:
+        ASN_DEBUG("Calling CHOICE_variant_set_presence(elm->type=%s, presence_index=%u, elements_count=%u)",
+                  elm->type->name, selected.presence_index, elm->type->elements_count);
         if(CHOICE_variant_set_presence(elm->type, *memb_ptr2,
                                        selected.presence_index)
            == 0) {
+            ASN_DEBUG("CHOICE_variant_set_presence succeeded");
             break;
         } else {
+            ASN_DEBUG("CHOICE_variant_set_presence FAILED");
             rv.code = RC_FAIL;
         }
         /* Fall through */
     case RC_WMORE:
     case RC_FAIL:
+        ASN_DEBUG("Cleaning up after failure, code=%d", rv.code);
         if(*memb_ptr2) {
             if(elm->flags & ATF_POINTER) {
                 ASN_STRUCT_FREE(*selected.type_descriptor, inner_value);
