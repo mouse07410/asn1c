@@ -68,6 +68,11 @@ OPEN_TYPE_uper_get(const asn_codec_ctx_t *opt_codec_ctx,
     if(*memb_ptr2 == NULL) {
         const asn_CHOICE_specifics_t *specs = 
             (const asn_CHOICE_specifics_t *)elm->type->specifics;
+        if(!specs) {
+            ASN_DEBUG("Open Type %s->%s: type specifics is NULL",
+                      td->name, elm->name);
+            ASN__DECODE_FAILED;
+        }
         *memb_ptr2 = CALLOC(1, specs->struct_size);
         if(*memb_ptr2 == NULL) {
             ASN__DECODE_FAILED;
