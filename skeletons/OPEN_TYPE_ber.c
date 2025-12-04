@@ -127,8 +127,10 @@ OPEN_TYPE_ber_get(const asn_codec_ctx_t *opt_codec_ctx,
                 /* Oh, now a full-blown failure failure */
             }
         } else {
-            /* Direct type mode: update member pointer with decoded value */
-            *memb_ptr2 = inner_value;
+            /* Direct type mode: update member pointer with decoded value if pointer type */
+            if(elm->flags & ATF_POINTER) {
+                *memb_ptr2 = inner_value;
+            }
             rv.code = RC_OK;
             rv.consumed = consumed_myself;
             return rv;

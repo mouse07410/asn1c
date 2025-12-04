@@ -49,7 +49,7 @@ OPEN_TYPE_xer_get(const asn_codec_ctx_t *opt_codec_ctx,
               selected.presence_index, selected.type_descriptor->name);
 
     /* Fetch the pointer to this member */
-    assert(elm->flags == ATF_OPEN_TYPE);
+    assert(elm->flags & ATF_OPEN_TYPE);
     if(elm->flags & ATF_POINTER) {
         memb_ptr2 = (void **)((char *)sptr + elm->memb_offset);
     } else {
@@ -171,9 +171,13 @@ OPEN_TYPE_xer_get(const asn_codec_ctx_t *opt_codec_ctx,
                 rv.code = RC_FAIL;
             }
         } else {
-            /* Direct type mode: update member pointer with decoded value */
-            ASN_DEBUG("Direct type mode: decode successful, updating member pointer");
-            *memb_ptr2 = inner_value;
+            /* Direct type mode: update member pointer with decoded value if pointer type */
+            if(elm->flags & ATF_POINTER) {
+                ASN_DEBUG("Direct type mode: updating member pointer");
+                *memb_ptr2 = inner_value;
+            } else {
+                ASN_DEBUG("Direct type mode: decode successful (non-pointer)");
+            }
             break;
         }
         /* Fall through */
