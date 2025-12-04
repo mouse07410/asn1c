@@ -63,8 +63,17 @@ OPEN_TYPE_jer_get(const asn_codec_ctx_t *opt_codec_ctx,
         memb_ptr = (char *)sptr + elm->memb_offset;
         memb_ptr2 = &memb_ptr;
     }
-    if(*memb_ptr2 != NULL) {
-        /* Make sure we reset the structure first before encoding */
+    
+    /* Allocate the CHOICE structure if not already present */
+    if(*memb_ptr2 == NULL) {
+        const asn_CHOICE_specifics_t *specs = 
+            (const asn_CHOICE_specifics_t *)elm->type->specifics;
+        *memb_ptr2 = CALLOC(1, specs->struct_size);
+        if(*memb_ptr2 == NULL) {
+            ASN__DECODE_FAILED;
+        }
+    } else {
+        /* Make sure we reset the structure first before decoding */
         if(CHOICE_variant_set_presence(elm->type, *memb_ptr2, 0)
            != 0) {
             ASN__DECODE_FAILED;
