@@ -145,6 +145,23 @@ OPEN_TYPE_encode_oer(const asn_TYPE_descriptor_t *td,
 
     if(!sptr) ASN__ENCODE_FAILED;
 
+    if(td->elements_count == 0) {
+        /* Direct type mode: no CHOICE wrapper, encode directly */
+        ASN_DEBUG("Encoding %s OPEN TYPE in direct type mode", td->name);
+        
+        /* In direct type mode, sptr points directly to the value to encode */
+        /* We encode using the type descriptor itself */
+        if((encoded = oer_open_type_put(td, constraints, sptr, cb, app_key)) < 0) {
+            ASN__ENCODE_FAILED;
+        }
+        
+        er.encoded = encoded;
+        ASN__ENCODED_OK(er);
+        
+        return er;
+    }
+
+    /* CHOICE wrapper mode: use presence indicator */
     present = CHOICE_variant_get_presence(td, sptr);
     if(present == 0 || present > td->elements_count) {
         ASN__ENCODE_FAILED;
