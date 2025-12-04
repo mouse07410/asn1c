@@ -46,7 +46,7 @@ OPEN_TYPE_jer_get(const asn_codec_ctx_t *opt_codec_ctx,
     }
 
     /* Fetch the pointer to this member */
-    assert(elm->flags == ATF_OPEN_TYPE);
+    assert(elm->flags & ATF_OPEN_TYPE);
     if(elm->flags & ATF_POINTER) {
         memb_ptr2 = (void **)((char *)sptr + elm->memb_offset);
     } else {
