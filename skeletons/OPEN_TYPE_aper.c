@@ -44,21 +44,6 @@ OPEN_TYPE_aper_get(const asn_codec_ctx_t *opt_codec_ctx,
               elm->type->name, (void*)elm->type->elements, elm->type->elements_count,
               selected.presence_index, selected.type_descriptor->name);
 
-    /* Validate the selected variant */
-    if(selected.presence_index > elm->type->elements_count) {
-        ASN_DEBUG("Open Type %s->%s: presence index %u out of bounds (max %u)",
-                  td->name, elm->name, selected.presence_index,
-                  elm->type->elements_count);
-        ASN__DECODE_FAILED;
-    }
-    
-    /* Ensure we can access the elements array if needed */
-    if(!elm->type->elements && elm->type->elements_count > 0) {
-        ASN_DEBUG("Open Type %s->%s: elements array is NULL but elements_count is %u",
-                  td->name, elm->name, elm->type->elements_count);
-        ASN__DECODE_FAILED;
-    }
-
     /* Fetch the pointer to this member */
     assert(elm->flags == ATF_OPEN_TYPE);
     if(elm->flags & ATF_POINTER) {
@@ -67,55 +52,91 @@ OPEN_TYPE_aper_get(const asn_codec_ctx_t *opt_codec_ctx,
         memb_ptr = (char *)sptr + elm->memb_offset;
         memb_ptr2 = &memb_ptr;
     }
-    
-    /* Allocate the CHOICE structure if not already present */
-    if(*memb_ptr2 == NULL) {
-        const asn_CHOICE_specifics_t *specs = 
-            (const asn_CHOICE_specifics_t *)elm->type->specifics;
-        if(!specs) {
-            ASN_DEBUG("Open Type %s->%s: type specifics is NULL",
-                      td->name, elm->name);
+
+    /* Check if this OPEN_TYPE uses CHOICE wrapper (elements_count > 0) or direct type */
+    if(elm->type->elements_count > 0) {
+        /* CHOICE wrapper mode: validate and allocate CHOICE structure */
+        
+        /* Validate the selected variant */
+        if(selected.presence_index > elm->type->elements_count) {
+            ASN_DEBUG("Open Type %s->%s: presence index %u out of bounds (max %u)",
+                      td->name, elm->name, selected.presence_index,
+                      elm->type->elements_count);
             ASN__DECODE_FAILED;
         }
-        *memb_ptr2 = CALLOC(1, specs->struct_size);
-        if(*memb_ptr2 == NULL) {
+        
+        /* Ensure we can access the elements array if needed */
+        if(!elm->type->elements) {
+            ASN_DEBUG("Open Type %s->%s: elements array is NULL but elements_count is %u",
+                      td->name, elm->name, elm->type->elements_count);
             ASN__DECODE_FAILED;
+        }
+
+        /* Allocate the CHOICE structure if not already present */
+        if(*memb_ptr2 == NULL) {
+            const asn_CHOICE_specifics_t *specs = 
+                (const asn_CHOICE_specifics_t *)elm->type->specifics;
+            if(!specs) {
+                ASN_DEBUG("Open Type %s->%s: type specifics is NULL",
+                          td->name, elm->name);
+                ASN__DECODE_FAILED;
+            }
+            *memb_ptr2 = CALLOC(1, specs->struct_size);
+            if(*memb_ptr2 == NULL) {
+                ASN__DECODE_FAILED;
+            }
+        } else {
+            /* Make sure we reset the structure first before decoding */
+            if(CHOICE_variant_set_presence(elm->type, *memb_ptr2, 0)
+               != 0) {
+                ASN__DECODE_FAILED;
+            }
         }
     } else {
-        /* Make sure we reset the structure first before decoding */
-        if(CHOICE_variant_set_presence(elm->type, *memb_ptr2, 0)
-           != 0) {
-            ASN__DECODE_FAILED;
-        }
+        /* Direct type mode: no CHOICE wrapper, decode directly into member */
+        ASN_DEBUG("Open Type %s->%s: using direct type mode (no CHOICE wrapper)",
+                  td->name, elm->name);
     }
 
-    /* Compute inner_value and constraints based on whether elements exist */
+    /* Compute inner_value and constraints based on CHOICE wrapper mode or direct type mode */
     unsigned int memb_offset = 0;
     const asn_per_constraints_t *constraints = NULL;
     
-    if(elm->type->elements && selected.presence_index > 0 
-       && selected.presence_index <= elm->type->elements_count) {
-        memb_offset = elm->type->elements[selected.presence_index - 1].memb_offset;
-        constraints = elm->type->elements[selected.presence_index - 1].encoding_constraints.per_constraints;
+    if(elm->type->elements_count > 0) {
+        /* CHOICE wrapper mode: compute offset and constraints from elements array */
+        if(elm->type->elements && selected.presence_index > 0 
+           && selected.presence_index <= elm->type->elements_count) {
+            memb_offset = elm->type->elements[selected.presence_index - 1].memb_offset;
+            constraints = elm->type->elements[selected.presence_index - 1].encoding_constraints.per_constraints;
+        }
+        inner_value = (char *)*memb_ptr2 + memb_offset;
+    } else {
+        /* Direct type mode: decode directly into the member pointer */
+        inner_value = *memb_ptr2;
     }
-    
-    inner_value = (char *)*memb_ptr2 + memb_offset;
 
     rv = aper_open_type_get(opt_codec_ctx, selected.type_descriptor,
                             constraints, &inner_value, pd);
     ASN_DEBUG("aper_open_type_get returned code=%d for %s", rv.code, selected.type_descriptor->name);
     switch(rv.code) {
     case RC_OK:
-        ASN_DEBUG("Calling CHOICE_variant_set_presence(elm->type=%s, presence_index=%u, elements_count=%u)",
-                  elm->type->name, selected.presence_index, elm->type->elements_count);
-        if(CHOICE_variant_set_presence(elm->type, *memb_ptr2,
-                                       selected.presence_index)
-           == 0) {
-            ASN_DEBUG("CHOICE_variant_set_presence succeeded");
-            break;
+        if(elm->type->elements_count > 0) {
+            /* CHOICE wrapper mode: set presence indicator */
+            ASN_DEBUG("Calling CHOICE_variant_set_presence(elm->type=%s, presence_index=%u, elements_count=%u)",
+                      elm->type->name, selected.presence_index, elm->type->elements_count);
+            if(CHOICE_variant_set_presence(elm->type, *memb_ptr2,
+                                           selected.presence_index)
+               == 0) {
+                ASN_DEBUG("CHOICE_variant_set_presence succeeded");
+                break;
+            } else {
+                ASN_DEBUG("CHOICE_variant_set_presence FAILED");
+                rv.code = RC_FAIL;
+            }
         } else {
-            ASN_DEBUG("CHOICE_variant_set_presence FAILED");
-            rv.code = RC_FAIL;
+            /* Direct type mode: no presence to set, just break on success */
+            ASN_DEBUG("Direct type mode: decode successful, no presence to set");
+            break;
         }
         /* Fall through */
     case RC_WMORE:
