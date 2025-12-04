@@ -134,8 +134,9 @@ OPEN_TYPE_aper_get(const asn_codec_ctx_t *opt_codec_ctx,
                 rv.code = RC_FAIL;
             }
         } else {
-            /* Direct type mode: no presence to set, just break on success */
-            ASN_DEBUG("Direct type mode: decode successful, no presence to set");
+            /* Direct type mode: update member pointer with decoded value */
+            ASN_DEBUG("Direct type mode: decode successful, updating member pointer");
+            *memb_ptr2 = inner_value;
             break;
         }
         /* Fall through */

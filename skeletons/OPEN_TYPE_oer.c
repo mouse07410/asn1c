@@ -122,7 +122,8 @@ OPEN_TYPE_oer_get(const asn_codec_ctx_t *opt_codec_ctx,
                 /* Oh, now a full-blown failure failure */
             }
         } else {
-            /* Direct type mode: no presence to set, just return success */
+            /* Direct type mode: update member pointer with decoded value */
+            *memb_ptr2 = inner_value;
             rv.code = RC_OK;
             rv.consumed = ot_ret;
             return rv;

@@ -171,8 +171,9 @@ OPEN_TYPE_xer_get(const asn_codec_ctx_t *opt_codec_ctx,
                 rv.code = RC_FAIL;
             }
         } else {
-            /* Direct type mode: no presence to set, just break on success */
-            ASN_DEBUG("Direct type mode: decode successful, no presence to set");
+            /* Direct type mode: update member pointer with decoded value */
+            ASN_DEBUG("Direct type mode: decode successful, updating member pointer");
+            *memb_ptr2 = inner_value;
             break;
         }
         /* Fall through */
@@ -235,4 +236,85 @@ OPEN_TYPE_xer_get(const asn_codec_ctx_t *opt_codec_ctx,
     rv.consumed += consumed_myself;
 
     return rv;
+}
+
+asn_enc_rval_t
+OPEN_TYPE_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr,
+                     int ilevel, enum xer_encoder_flags_e flags,
+                     asn_app_consume_bytes_f *cb, void *app_key) {
+    asn_enc_rval_t er = {0,0,0};
+
+    if(!sptr)
+        ASN__ENCODE_FAILED;
+
+    /* Check if this OPEN_TYPE uses direct type mode (elements_count == 0) */
+    if(td->elements_count == 0) {
+        /* Direct type mode: no CHOICE wrapper, encode directly */
+        ASN_DEBUG("Encoding %s OPEN TYPE in direct type mode", td->name);
+        
+        /* In direct type mode, sptr points directly to the value to encode */
+        /* We can't encode it because we don't know the actual type descriptor */
+        /* This should not happen - the parent should handle this case */
+        ASN_DEBUG("ERROR: OPEN_TYPE_encode_xer called in direct type mode");
+        ASN__ENCODE_FAILED;
+    }
+
+    /* CHOICE wrapper mode: use CHOICE encoder */
+    return CHOICE_encode_xer(td, sptr, ilevel, flags, cb, app_key);
+}
+
+asn_enc_rval_t
+OPEN_TYPE_xer_put(const asn_TYPE_descriptor_t *td, const void *sptr,
+                  const asn_TYPE_member_t *elm, int ilevel,
+                  enum xer_encoder_flags_e flags,
+                  asn_app_consume_bytes_f *cb, void *app_key) {
+    asn_type_selector_result_t selected;
+    const void *memb_ptr;
+    asn_enc_rval_t er = {0,0,0};
+
+    if(!(elm->flags & ATF_OPEN_TYPE)) {
+        ASN__ENCODE_FAILED;
+    }
+
+    /* Validate elm->type before accessing its members */
+    if(!elm->type) {
+        ASN_DEBUG("Open Type %s->%s: type descriptor is NULL",
+                  td->name, elm->name);
+        ASN__ENCODE_FAILED;
+    }
+
+    if(!elm->type_selector) {
+        ASN_DEBUG("Type selector is not defined for Open Type %s->%s->%s",
+                  td->name, elm->name, elm->type->name);
+        ASN__ENCODE_FAILED;
+    }
+
+    selected = elm->type_selector(td, sptr);
+    if(!selected.presence_index) {
+        ASN__ENCODE_FAILED;
+    }
+
+    ASN_DEBUG("OPEN_TYPE_xer_put: elm->type=%s, elements=%p, elements_count=%u, selected.presence_index=%u, selected.type=%s",
+              elm->type->name, (void*)elm->type->elements, elm->type->elements_count,
+              selected.presence_index, selected.type_descriptor->name);
+
+    /* Fetch the pointer to this member */
+    assert(elm->flags == ATF_OPEN_TYPE);
+    if(elm->flags & ATF_POINTER) {
+        memb_ptr = *(const void *const *)((const char *)sptr + elm->memb_offset);
+        if(!memb_ptr) ASN__ENCODE_FAILED;
+    } else {
+        memb_ptr = (const void *)((const char *)sptr + elm->memb_offset);
+    }
+
+    /* Check if this OPEN_TYPE uses CHOICE wrapper (elements_count > 0) or direct type */
+    if(elm->type->elements_count > 0) {
+        /* CHOICE wrapper mode: use standard CHOICE encoder */
+        return CHOICE_encode_xer(elm->type, memb_ptr, ilevel, flags, cb, app_key);
+    } else {
+        /* Direct type mode: encode using the selected type descriptor */
+        ASN_DEBUG("Direct type mode: encoding using %s", selected.type_descriptor->name);
+        return selected.type_descriptor->op->xer_encoder(
+            selected.type_descriptor, memb_ptr, ilevel, flags, cb, app_key);
+    }
 }

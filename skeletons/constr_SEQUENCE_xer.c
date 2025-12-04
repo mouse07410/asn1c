@@ -410,8 +410,12 @@ SEQUENCE_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr,
         ASN__CALLBACK3("<", 1, mname, mlen, ">", 1);
 
         /* Print the member itself */
-        tmper = elm->type->op->xer_encoder(elm->type, memb_ptr, ilevel + 1,
-                                           flags, cb, app_key);
+        if(elm->flags & ATF_OPEN_TYPE) {
+            tmper = OPEN_TYPE_xer_put(td, sptr, elm, ilevel + 1, flags, cb, app_key);
+        } else {
+            tmper = elm->type->op->xer_encoder(elm->type, memb_ptr, ilevel + 1,
+                                               flags, cb, app_key);
+        }
         if(tmp_def_val) {
             ASN_STRUCT_FREE(*tmp_def_val_td, tmp_def_val);
             tmp_def_val = 0;

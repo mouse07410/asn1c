@@ -56,7 +56,16 @@ asn_dec_rval_t OPEN_TYPE_xer_get(
     const asn_TYPE_member_t *element,
     const void *ptr, size_t size);
 #define OPEN_TYPE_decode_xer NULL
-#define OPEN_TYPE_encode_xer CHOICE_encode_xer
+asn_enc_rval_t OPEN_TYPE_encode_xer(
+    const asn_TYPE_descriptor_t *type_descriptor,
+    const void *struct_ptr, int ilevel, enum xer_encoder_flags_e flags,
+    asn_app_consume_bytes_f *consume_bytes_cb, void *app_key);
+asn_enc_rval_t OPEN_TYPE_xer_put(
+    const asn_TYPE_descriptor_t *parent_type,
+    const void *parent_structure,
+    const asn_TYPE_member_t *element,
+    int ilevel, enum xer_encoder_flags_e flags,
+    asn_app_consume_bytes_f *consume_bytes_cb, void *app_key);
 #endif  /* !defined(ASN_DISABLE_XER_SUPPORT) */
 
 #if !defined(ASN_DISABLE_JER_SUPPORT)
