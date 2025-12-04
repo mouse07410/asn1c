@@ -299,7 +299,7 @@ OPEN_TYPE_xer_put(const asn_TYPE_descriptor_t *td, const void *sptr,
               selected.presence_index, selected.type_descriptor->name);
 
     /* Fetch the pointer to this member */
-    assert(elm->flags == ATF_OPEN_TYPE);
+    assert(elm->flags & ATF_OPEN_TYPE);
     if(elm->flags & ATF_POINTER) {
         memb_ptr = *(const void *const *)((const char *)sptr + elm->memb_offset);
         if(!memb_ptr) ASN__ENCODE_FAILED;
