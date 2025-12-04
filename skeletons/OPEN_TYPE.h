@@ -29,7 +29,8 @@ extern "C" {
 #define OPEN_TYPE_free CHOICE_free
 
 #if !defined(ASN_DISABLE_PRINT_SUPPORT)
-#define OPEN_TYPE_print CHOICE_print
+int OPEN_TYPE_print(const asn_TYPE_descriptor_t *td, const void *sptr,
+                    int ilevel, asn_app_consume_bytes_f *cb, void *app_key);
 #endif  /* !defined(ASN_DISABLE_PRINT_SUPPORT) */
 
 #define OPEN_TYPE_compare CHOICE_compare
