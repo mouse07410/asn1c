@@ -356,10 +356,14 @@ asn_enc_rval_t SEQUENCE_encode_jer(const asn_TYPE_descriptor_t *td,
         }
 
         /* Print the member itself */
-        tmper = elm->type->op->jer_encoder(elm->type,
-                                           elm->encoding_constraints.jer_constraints,
-                                           memb_ptr,
-                                           ilevel + 1, flags, cb, app_key);
+        if(elm->flags & ATF_OPEN_TYPE) {
+            tmper = OPEN_TYPE_jer_put(td, sptr, elm, ilevel + 1, flags, cb, app_key);
+        } else {
+            tmper = elm->type->op->jer_encoder(elm->type,
+                                               elm->encoding_constraints.jer_constraints,
+                                               memb_ptr,
+                                               ilevel + 1, flags, cb, app_key);
+        }
         if(tmp_def_val) {
             ASN_STRUCT_FREE(*tmp_def_val_td, tmp_def_val);
             tmp_def_val = 0;

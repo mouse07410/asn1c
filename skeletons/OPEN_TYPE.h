@@ -81,6 +81,12 @@ asn_dec_rval_t OPEN_TYPE_jer_get(
     const void *ptr, size_t size);
 #define OPEN_TYPE_decode_jer NULL
 #define OPEN_TYPE_encode_jer CHOICE_encode_jer
+asn_enc_rval_t OPEN_TYPE_jer_put(
+    const asn_TYPE_descriptor_t *parent_type,
+    const void *parent_structure,
+    const asn_TYPE_member_t *element,
+    int ilevel, enum jer_encoder_flags_e flags,
+    asn_app_consume_bytes_f *consume_bytes_cb, void *app_key);
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 
 #if !defined(ASN_DISABLE_OER_SUPPORT)
