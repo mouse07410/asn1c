@@ -344,6 +344,7 @@ OPEN_TYPE_xer_put(const asn_TYPE_descriptor_t *td, const void *sptr,
         er.encoded += tmper.encoded;
         
         /* Output closing tag */
+        if(!(flags & XER_F_CANONICAL)) ASN__TEXT_INDENT(1, ilevel - 1);
         ASN__CALLBACK3("</", 2, type_name, type_name_len, ">", 1);
         
         ASN__ENCODED_OK(er);
