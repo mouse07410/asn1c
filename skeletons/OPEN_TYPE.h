@@ -50,6 +50,12 @@ asn_dec_rval_t OPEN_TYPE_ber_get(
     const void *ptr, size_t size);
 #define OPEN_TYPE_decode_ber NULL
 #define OPEN_TYPE_encode_der CHOICE_encode_der
+asn_enc_rval_t OPEN_TYPE_ber_put(
+    const asn_TYPE_descriptor_t *parent_type,
+    const void *parent_structure,
+    const asn_TYPE_member_t *element,
+    int tag_mode, ber_tlv_tag_t tag,
+    asn_app_consume_bytes_f *consume_bytes_cb, void *app_key);
 #endif  /* !defined(ASN_DISABLE_BER_SUPPORT) */
 
 #if !defined(ASN_DISABLE_XER_SUPPORT)

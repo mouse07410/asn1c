@@ -154,3 +154,65 @@ OPEN_TYPE_ber_get(const asn_codec_ctx_t *opt_codec_ctx,
     }
     return rv;
 }
+
+/*
+ * Encode OPEN TYPE value in direct type mode for BER/DER.
+ */
+asn_enc_rval_t
+OPEN_TYPE_ber_put(const asn_TYPE_descriptor_t *parent_type,
+                  const void *parent_structure,
+                  const asn_TYPE_member_t *element,
+                  int tag_mode, ber_tlv_tag_t tag,
+                  asn_app_consume_bytes_f *consume_bytes_cb, void *app_key) {
+    asn_enc_rval_t er = {0,0,0};
+    asn_type_selector_result_t selector_result;
+    const void *memb_ptr;
+    const void *data_ptr;
+
+    if(!(element->flags & ATF_OPEN_TYPE)) {
+        ASN__ENCODE_FAILED;
+    }
+
+    /* Use type selector to determine actual type */
+    selector_result = element->type_selector(parent_type, parent_structure);
+    if(!selector_result.type_descriptor || !selector_result.presence_index) {
+        ASN__ENCODE_FAILED;
+    }
+
+    /* Get pointer to member data */
+    if(element->flags & ATF_POINTER) {
+        memb_ptr = *(const void *const *)((const char *)parent_structure + element->memb_offset);
+        if(!memb_ptr) {
+            if(element->optional) {
+                er.encoded = 0;
+                ASN__ENCODED_OK(er);
+            }
+            ASN__ENCODE_FAILED;
+        }
+    } else {
+        memb_ptr = (const void *)((const char *)parent_structure + element->memb_offset);
+    }
+
+    /* In direct type mode, memb_ptr points directly to the data */
+    /* In CHOICE wrapper mode, we need to extract from the CHOICE structure */
+    if(element->type->elements_count > 0) {
+        /* CHOICE wrapper mode */
+        const asn_TYPE_member_t *elm = &element->type->elements[selector_result.presence_index - 1];
+        if(elm->flags & ATF_POINTER) {
+            data_ptr = *(const void *const *)((const char *)memb_ptr + elm->memb_offset);
+        } else {
+            data_ptr = (const void *)((const char *)memb_ptr + elm->memb_offset);
+        }
+    } else {
+        /* Direct type mode - memb_ptr is the data */
+        data_ptr = memb_ptr;
+    }
+
+    /* Encode using the actual type descriptor */
+    er = selector_result.type_descriptor->op->der_encoder(
+        selector_result.type_descriptor, data_ptr,
+        tag_mode, tag,
+        consume_bytes_cb, app_key);
+
+    return er;
+}

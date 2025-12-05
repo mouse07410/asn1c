@@ -560,83 +560,9 @@ SEQUENCE_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
             continue;
 
         if(elm->flags & ATF_OPEN_TYPE) {
-            const asn_TYPE_descriptor_t *type_descriptor = NULL;
-            const void *open_type_data_ptr = NULL;
-            asn_type_selector_result_t selector_result;
-            
-            selector_result = elm->type_selector(td, sptr);
-
-            if(!selector_result.type_descriptor || !selector_result.presence_index) {
-                ASN_DEBUG("Failed to resolve OPEN TYPE descriptor or presence index for %s", elm->name);
-                ASN__ENCODE_FAILED;
-            }
-
-            type_descriptor = selector_result.type_descriptor;
-            
-            /* For OPEN TYPE, memb_ptr2 points to a CHOICE structure.
-             * CHOICE layout:
-             *   offset 0: present (int, 4 bytes)
-             *   offset 4: padding (4 bytes on 64-bit)
-             *   offset 8: union containing the data structure INLINE
-             * For SEQUENCE OF, the structure at offset 8 has:
-             *   offset 8:  void **array pointer
-             *   offset 16: int count
-             *   offset 20: int size
-             *   offset 24: void (*free)(void*)
-             *
-             * We need to extract the actual data from the selected alternative.
-             */
-             const void *choice_ptr = *memb_ptr2;
-             if(!choice_ptr) {
-	             ASN_DEBUG("OPEN TYPE CHOICE pointer is null for %s", elm->name);
-	             if(elm->optional) {
-		             continue;
-	             }
-	             ASN__ENCODE_FAILED;
-             }
-            
-             /* Get the actual data pointer from the CHOICE using the presence index.
-              * The elm->type descriptor describes the CHOICE structure.
-              * We need to find the member offset based on the presence index.
-              */
-             const asn_CHOICE_specifics_t *choice_specs __attribute__((unused)) = 
-	             (const asn_CHOICE_specifics_t *)elm->type->specifics;
-    
-             /* Find the matching element in the CHOICE */
-             size_t choice_edx;
-             for(choice_edx = 0; choice_edx < elm->type->elements_count; choice_edx++) {
-	             /* The presence index from selector should match an element */
-	             if((choice_edx + 1) == selector_result.presence_index) {
-		             const asn_TYPE_member_t *choice_elm = &elm->type->elements[choice_edx];
-            
-		             /* Get the actual data pointer from the CHOICE union */
-		             if(choice_elm->flags & ATF_POINTER) {
-			             open_type_data_ptr = *(const void *const *)
-				             ((const char *)choice_ptr + choice_elm->memb_offset);
-		             } else {
-			             open_type_data_ptr = 
-				             (const void *)((const char *)choice_ptr + choice_elm->memb_offset);
-		             }
-		             break;
-	             }
-             }
-    
-             if(!open_type_data_ptr) {
-	             ASN_DEBUG("Failed to get OPEN TYPE data pointer for %s", elm->name);
-	             if(elm->optional) {
-		             continue;
-	             }
-	             ASN__ENCODE_FAILED;
-             }
-
-             ASN_DEBUG("Encoding OPEN TYPE %s at %p", type_descriptor->name, open_type_data_ptr);
-            
-             /* During size estimation, use NULL callback.
-              * For OPEN TYPE, use the element's tag_mode and tag to properly wrap
-              * the content with the expected tag (e.g., EXPLICIT context tag). */
-             erval = type_descriptor->op->der_encoder(type_descriptor, open_type_data_ptr,
-                                                      elm->tag_mode, elm->tag,
-                                                      0, 0); /* NULL callback for size estimation */
+            erval = OPEN_TYPE_ber_put(td, sptr, elm,
+                                      elm->tag_mode, elm->tag,
+                                      0, 0); /* NULL callback for size estimation */
         } else {
 	        erval = elm->type->op->der_encoder(elm->type, *memb_ptr2,
 	                                           elm->tag_mode, elm->tag,
@@ -684,71 +610,8 @@ SEQUENCE_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
             continue;
 
         if(elm->flags & ATF_OPEN_TYPE) {
-            const asn_TYPE_descriptor_t *type_descriptor = NULL;
-            const void *open_type_data_ptr = NULL;
-            asn_type_selector_result_t selector_result;
-            
-            selector_result = elm->type_selector(td, sptr);
-
-            if(!selector_result.type_descriptor || !selector_result.presence_index) {
-                ASN_DEBUG("Failed to resolve OPEN TYPE descriptor or presence index for %s (encoding pass)",
-                          elm->name);
-                tmperval.encoded = -1;
-                return tmperval;
-            }
-
-            type_descriptor = selector_result.type_descriptor;
-
-            /* Extract the actual data from the CHOICE structure (same logic as estimation pass) */
-            /* Get the actual data pointer from the CHOICE using the presence index.
-             * The elm->type descriptor describes the CHOICE structure.
-             * We need to find the member offset based on the presence index.
-             */
-            const void *choice_ptr = *memb_ptr2;
-            if(!choice_ptr) {
-	            ASN_DEBUG("OPEN TYPE CHOICE pointer is null for %s", elm->name);
-	            if(elm->optional) {
-		            continue;
-	            }
-	            ASN__ENCODE_FAILED;
-            }
-               
-            const asn_CHOICE_specifics_t *choice_specs __attribute__((unused)) = 
-	            (const asn_CHOICE_specifics_t *)elm->type->specifics;
-    
-            /* Find the matching element in the CHOICE */
-            size_t choice_edx;
-            for(choice_edx = 0; choice_edx < elm->type->elements_count; choice_edx++) {
-	            /* The presence index from selector should match an element */
-	            if((choice_edx + 1) == selector_result.presence_index) {
-		            const asn_TYPE_member_t *choice_elm = &elm->type->elements[choice_edx];
-            
-		            /* Get the actual data pointer from the CHOICE union */
-		            if(choice_elm->flags & ATF_POINTER) {
-			            open_type_data_ptr = *(const void *const *)
-				            ((const char *)choice_ptr + choice_elm->memb_offset);
-		            } else {
-			            open_type_data_ptr = 
-				            (const void *)((const char *)choice_ptr + choice_elm->memb_offset);
-		            }
-		            break;
-	            }
-            }
-    
-            if(!open_type_data_ptr) {
-	            ASN_DEBUG("Failed to get OPEN TYPE data pointer for %s", elm->name);
-	            if(elm->optional) {
-		            continue;
-	            }
-	            ASN__ENCODE_FAILED;
-            }
-            
-            ASN_DEBUG("Encoding OPEN TYPE %s (pass 2) at %p", type_descriptor->name, open_type_data_ptr);
-
-            /* For OPEN TYPE, use the element's tag_mode and tag to properly wrap
-             * the content with the expected tag (e.g., EXPLICIT context tag). */
-            tmperval = type_descriptor->op->der_encoder(type_descriptor, open_type_data_ptr,
-                                                        elm->tag_mode, elm->tag, cb, app_key);
+            tmperval = OPEN_TYPE_ber_put(td, sptr, elm,
+                                         elm->tag_mode, elm->tag, cb, app_key);
         } else {
             tmperval = elm->type->op->der_encoder(elm->type, *memb_ptr2,
                                                   elm->tag_mode, elm->tag, cb, app_key);
