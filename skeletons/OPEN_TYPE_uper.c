@@ -258,7 +258,8 @@ OPEN_TYPE_uper_put(const asn_TYPE_descriptor_t *td, const void *sptr,
     } else {
         /* Direct type mode: encode using the selected type descriptor wrapped in open type */
         ASN_DEBUG("Direct type mode: encoding using %s wrapped in OPEN TYPE", selected.type_descriptor->name);
-        if(uper_open_type_put(selected.type_descriptor, elm->encoding_constraints.per_constraints, memb_ptr, po) < 0) {
+        /* Use NULL constraints for direct type mode to match decoder behavior */
+        if(uper_open_type_put(selected.type_descriptor, NULL, memb_ptr, po) < 0) {
             ASN__ENCODE_FAILED;
         }
         er.encoded = 0;
