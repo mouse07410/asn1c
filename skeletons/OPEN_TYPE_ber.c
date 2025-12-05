@@ -170,13 +170,21 @@ OPEN_TYPE_ber_put(const asn_TYPE_descriptor_t *parent_type,
     const void *data_ptr;
 
     if(!(element->flags & ATF_OPEN_TYPE)) {
-        ASN__ENCODE_FAILED;
+        ASN_DEBUG("OPEN_TYPE_ber_put: element does not have ATF_OPEN_TYPE flag");
+        er.encoded = -1;
+        er.failed_type = parent_type;
+        er.structure_ptr = parent_structure;
+        return er;
     }
 
     /* Use type selector to determine actual type */
     selector_result = element->type_selector(parent_type, parent_structure);
     if(!selector_result.type_descriptor || !selector_result.presence_index) {
-        ASN__ENCODE_FAILED;
+        ASN_DEBUG("OPEN_TYPE_ber_put: type selector failed");
+        er.encoded = -1;
+        er.failed_type = parent_type;
+        er.structure_ptr = parent_structure;
+        return er;
     }
 
     /* Get pointer to member data */
@@ -187,7 +195,11 @@ OPEN_TYPE_ber_put(const asn_TYPE_descriptor_t *parent_type,
                 er.encoded = 0;
                 ASN__ENCODED_OK(er);
             }
-            ASN__ENCODE_FAILED;
+            ASN_DEBUG("OPEN_TYPE_ber_put: pointer member is NULL");
+            er.encoded = -1;
+            er.failed_type = parent_type;
+            er.structure_ptr = parent_structure;
+            return er;
         }
     } else {
         memb_ptr = (const void *)((const char *)parent_structure + element->memb_offset);
