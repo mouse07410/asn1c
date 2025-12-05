@@ -300,6 +300,14 @@ OPEN_TYPE_jer_put(const asn_TYPE_descriptor_t *td, const void *sptr,
         ASN_DEBUG("Direct type mode: encoding using %s", selected.type_descriptor->name);
         
         const char *type_name = selected.type_descriptor->xml_tag;  /* Using xml_tag as JSON key */
+        if(!type_name || !*type_name) {
+            /* Fallback to type name if xml_tag is not set */
+            type_name = selected.type_descriptor->name;
+            if(!type_name) {
+                ASN_DEBUG("ERROR: Type descriptor has no name or xml_tag");
+                ASN__ENCODE_FAILED;
+            }
+        }
         size_t type_name_len = strlen(type_name);
         asn_enc_rval_t tmper;
         int jmin = (flags & JER_F_MINIFIED);
