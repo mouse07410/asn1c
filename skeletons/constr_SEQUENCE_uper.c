@@ -463,9 +463,13 @@ SEQUENCE_encode_uper(const asn_TYPE_descriptor_t *td,
             continue;
 
         ASN_DEBUG("Encoding %s->%s:%s", td->name, elm->name, elm->type->name);
-        er = elm->type->op->uper_encoder(
-            elm->type, elm->encoding_constraints.per_constraints, *memb_ptr2,
-            po);
+        if(elm->flags & ATF_OPEN_TYPE) {
+            er = OPEN_TYPE_uper_put(td, sptr, elm, po);
+        } else {
+            er = elm->type->op->uper_encoder(
+                elm->type, elm->encoding_constraints.per_constraints, *memb_ptr2,
+                po);
+        }
         if(er.encoded == -1) return er;
     }
 

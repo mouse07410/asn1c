@@ -483,9 +483,13 @@ SEQUENCE_encode_oer(const asn_TYPE_descriptor_t *td,
             ASN_DEBUG("OER encoder is not defined for type %s", elm->type->name);
             ASN__ENCODE_FAILED;
         }
-        er = elm->type->op->oer_encoder(
-            elm->type, elm->encoding_constraints.oer_constraints, memb_ptr, cb,
-            app_key);
+        if(elm->flags & ATF_OPEN_TYPE) {
+            er = OPEN_TYPE_oer_put(td, sptr, elm, cb, app_key);
+        } else {
+            er = elm->type->op->oer_encoder(
+                elm->type, elm->encoding_constraints.oer_constraints, memb_ptr, cb,
+                app_key);
+        }
         if(er.encoded == -1) {
             ASN_DEBUG("... while encoding %s member \"%s\"\n", td->name,
                       elm->name);

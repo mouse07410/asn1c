@@ -95,6 +95,11 @@ asn_enc_rval_t OPEN_TYPE_encode_oer(
     const asn_TYPE_descriptor_t *type_descriptor,
     const asn_oer_constraints_t *constraints, const void *struct_ptr,
     asn_app_consume_bytes_f *consume_bytes_cb, void *app_key);
+asn_enc_rval_t OPEN_TYPE_oer_put(
+    const asn_TYPE_descriptor_t *parent_type,
+    const void *parent_structure,
+    const asn_TYPE_member_t *element,
+    asn_app_consume_bytes_f *consume_bytes_cb, void *app_key);
 #endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
 
 #if !defined(ASN_DISABLE_UPER_SUPPORT)
@@ -109,6 +114,11 @@ asn_enc_rval_t OPEN_TYPE_encode_uper(
     const asn_TYPE_descriptor_t *type_descriptor,
     const asn_per_constraints_t *constraints, const void *struct_ptr,
     asn_per_outp_t *per_output);
+asn_enc_rval_t OPEN_TYPE_uper_put(
+    const asn_TYPE_descriptor_t *parent_type,
+    const void *parent_structure,
+    const asn_TYPE_member_t *element,
+    asn_per_outp_t *per_output);
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) */
 #if !defined(ASN_DISABLE_APER_SUPPORT)
 asn_dec_rval_t OPEN_TYPE_aper_get(
@@ -121,6 +131,11 @@ asn_dec_rval_t OPEN_TYPE_aper_get(
 asn_enc_rval_t OPEN_TYPE_encode_aper(
     const asn_TYPE_descriptor_t *type_descriptor,
     const asn_per_constraints_t *constraints, const void *struct_ptr,
+    asn_per_outp_t *per_output);
+asn_enc_rval_t OPEN_TYPE_aper_put(
+    const asn_TYPE_descriptor_t *parent_type,
+    const void *parent_structure,
+    const asn_TYPE_member_t *element,
     asn_per_outp_t *per_output);
 
 int OPEN_TYPE_aper_is_unknown_type(

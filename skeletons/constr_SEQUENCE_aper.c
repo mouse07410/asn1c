@@ -436,9 +436,13 @@ SEQUENCE_encode_aper(const asn_TYPE_descriptor_t *td,
             continue;
 
         ASN_DEBUG("Encoding %s->%s", td->name, elm->name);
-        er = elm->type->op->aper_encoder(elm->type,
-                                         elm->encoding_constraints.per_constraints,
-                                         *memb_ptr2, po);
+        if(elm->flags & ATF_OPEN_TYPE) {
+            er = OPEN_TYPE_aper_put(td, sptr, elm, po);
+        } else {
+            er = elm->type->op->aper_encoder(elm->type,
+                                             elm->encoding_constraints.per_constraints,
+                                             *memb_ptr2, po);
+        }
         if(er.encoded == -1)
             return er;
     }
