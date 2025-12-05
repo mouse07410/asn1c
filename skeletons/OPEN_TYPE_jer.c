@@ -296,10 +296,38 @@ OPEN_TYPE_jer_put(const asn_TYPE_descriptor_t *td, const void *sptr,
         return CHOICE_encode_jer(elm->type, elm->encoding_constraints.jer_constraints,
                                 memb_ptr, ilevel, flags, cb, app_key);
     } else {
-        /* Direct type mode: encode using the selected type descriptor */
+        /* Direct type mode: encode using the selected type descriptor with wrapper */
         ASN_DEBUG("Direct type mode: encoding using %s", selected.type_descriptor->name);
-        return selected.type_descriptor->op->jer_encoder(
+        
+        const char *type_name = selected.type_descriptor->xml_tag;  /* Using xml_tag as JSON key */
+        size_t type_name_len = strlen(type_name);
+        asn_enc_rval_t tmper;
+        int jmin = (flags & JER_F_MINIFIED);
+        
+        er.encoded = 0;
+        
+        /* Output opening brace and key for the selected type */
+        ASN__CALLBACK("{", 1);
+        if(!jmin) {
+            ASN__TEXT_INDENT(1, ilevel + 1);
+            ASN__CALLBACK3("\"", 1, type_name, type_name_len, "\": ", 3);
+        } else {
+            ASN__CALLBACK3("\"", 1, type_name, type_name_len, "\":", 2);
+        }
+        
+        /* Encode the actual content */
+        tmper = selected.type_descriptor->op->jer_encoder(
             selected.type_descriptor, selected.type_descriptor->encoding_constraints.jer_constraints,
-            memb_ptr, ilevel, flags, cb, app_key);
+            memb_ptr, ilevel + 1, flags, cb, app_key);
+        if(tmper.encoded == -1) return tmper;
+        er.encoded += tmper.encoded;
+        
+        /* Output closing brace */
+        if(!jmin) ASN__TEXT_INDENT(1, ilevel);
+        ASN__CALLBACK("}", 1);
+        
+        ASN__ENCODED_OK(er);
     }
+cb_failed:
+    ASN__ENCODE_FAILED;
 }

@@ -316,9 +316,30 @@ OPEN_TYPE_xer_put(const asn_TYPE_descriptor_t *td, const void *sptr,
         /* CHOICE wrapper mode: use standard CHOICE encoder */
         return CHOICE_encode_xer(elm->type, memb_ptr, ilevel, flags, cb, app_key);
     } else {
-        /* Direct type mode: encode using the selected type descriptor */
+        /* Direct type mode: encode using the selected type descriptor with wrapper tag */
         ASN_DEBUG("Direct type mode: encoding using %s", selected.type_descriptor->name);
-        return selected.type_descriptor->op->xer_encoder(
-            selected.type_descriptor, memb_ptr, ilevel, flags, cb, app_key);
+        
+        const char *type_name = selected.type_descriptor->xml_tag;
+        size_t type_name_len = strlen(type_name);
+        asn_enc_rval_t tmper;
+        
+        er.encoded = 0;
+        
+        /* Output opening tag for the selected type */
+        if(!(flags & XER_F_CANONICAL)) ASN__TEXT_INDENT(1, ilevel);
+        ASN__CALLBACK3("<", 1, type_name, type_name_len, ">", 1);
+        
+        /* Encode the actual content */
+        tmper = selected.type_descriptor->op->xer_encoder(
+            selected.type_descriptor, memb_ptr, ilevel + 1, flags, cb, app_key);
+        if(tmper.encoded == -1) return tmper;
+        er.encoded += tmper.encoded;
+        
+        /* Output closing tag */
+        ASN__CALLBACK3("</", 2, type_name, type_name_len, ">", 1);
+        
+        ASN__ENCODED_OK(er);
     }
+cb_failed:
+    ASN__ENCODE_FAILED;
 }
