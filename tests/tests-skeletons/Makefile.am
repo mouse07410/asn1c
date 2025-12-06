@@ -23,6 +23,7 @@ check_PROGRAMS =                \
     check-APER-INTEGER		\
     check-APER-INTEGER-constraint \
     check-APER-INTEGER-semiconstrained \
+    check-APER-INTEGER-extensible-semi \
     check-UPER-support          \
     check-UPER-UniversalString  \
     check-UPER-INTEGER          \

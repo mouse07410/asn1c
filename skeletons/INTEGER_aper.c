@@ -32,8 +32,26 @@ INTEGER_decode_aper(const asn_codec_ctx_t *opt_codec_ctx,
         inext = per_get_few_bits(pd, 1);
         if(inext < 0) ASN__DECODE_STARVED;
         if(inext) {
-            /* In extension: decode as unconstrained (no bounds) */
-            ct = 0;
+            /*
+             * Value encoded in extension root's extension container.
+             *
+             * If the original constraint was semi-constrained (only lower_bound
+             * present), treat the extension value as semi-constrained too:
+             * preserve lower_bound while allowing unconstrained length (range_bits=-1).
+             *
+             * If the original constraint was fully constrained or unconstrained,
+             * extension values MUST be treated as fully unconstrained here.
+             */
+            if(ct->flags & APC_SEMI_CONSTRAINED) {
+                ct_ext_copy = *ct;
+                ct_ext_copy.flags = APC_SEMI_CONSTRAINED;
+                ct_ext_copy.range_bits = -1;
+                ct_ext_copy.effective_bits = -1;
+                ct = &ct_ext_copy;
+            } else {
+                /* keep previous behavior for other cases */
+                ct = 0;
+            }
         }
     }
 
@@ -187,6 +205,7 @@ INTEGER_encode_aper(const asn_TYPE_descriptor_t *td,
     const uint8_t *buf;
     const uint8_t *end;
     const asn_per_constraint_t *ct;
+    asn_per_constraint_t ct_ext_copy;  /* Local copy for extension case */
     intmax_t value = 0;
 
     if(!st || st->size == 0) ASN__ENCODE_FAILED;
@@ -237,7 +256,17 @@ INTEGER_encode_aper(const asn_TYPE_descriptor_t *td,
         if(ct->flags & APC_EXTENSIBLE) {
             if(per_put_few_bits(po, inext, 1))
                 ASN__ENCODE_FAILED;
-            if(inext) ct = 0;
+            if(inext) {
+                if(ct->flags & APC_SEMI_CONSTRAINED) {
+                    ct_ext_copy = *ct;
+                    ct_ext_copy.flags = APC_SEMI_CONSTRAINED;
+                    ct_ext_copy.range_bits = -1;
+                    ct_ext_copy.effective_bits = -1;
+                    ct = &ct_ext_copy;
+                } else {
+                    ct = 0;
+                }
+            }
         } else if(inext) {
             ASN__ENCODE_FAILED;
         }
