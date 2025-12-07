@@ -94,13 +94,23 @@ OPEN_TYPE_ber_get(const asn_codec_ctx_t *opt_codec_ctx,
 
     /* Compute inner_value based on CHOICE wrapper mode or direct type mode */
     unsigned int memb_offset = 0;
+    const asn_TYPE_member_t *variant_elm = NULL;
+    
     if(elm->type->elements_count > 0) {
-        /* CHOICE wrapper mode: compute offset from elements array */
+        /* CHOICE wrapper mode: get variant element info */
         if(elm->type->elements && selected.presence_index > 0 
            && selected.presence_index <= elm->type->elements_count) {
-            memb_offset = elm->type->elements[selected.presence_index - 1].memb_offset;
+            variant_elm = &elm->type->elements[selected.presence_index - 1];
+            memb_offset = variant_elm->memb_offset;
         }
-        inner_value = (char *)*memb_ptr2 + memb_offset;
+        
+        /* For pointer variants, initialize inner_value to the current pointer value (likely NULL) */
+        /* For non-pointer variants, use the address of the value field */
+        if(variant_elm && (variant_elm->flags & ATF_POINTER)) {
+            inner_value = *(void **)((char *)*memb_ptr2 + memb_offset);
+        } else {
+            inner_value = (char *)*memb_ptr2 + memb_offset;
+        }
     } else {
         /* Direct type mode: decode directly into the member pointer */
         inner_value = *memb_ptr2;
@@ -116,7 +126,13 @@ OPEN_TYPE_ber_get(const asn_codec_ctx_t *opt_codec_ctx,
     switch(rv.code) {
     case RC_OK:
         if(elm->type->elements_count > 0) {
-            /* CHOICE wrapper mode: set presence indicator */
+            /* CHOICE wrapper mode: for pointer variants, update the field from inner_value */
+            if(variant_elm && (variant_elm->flags & ATF_POINTER)) {
+                /* Copy the decoded pointer from inner_value to the actual field */
+                void **variant_ptr = (void **)((char *)*memb_ptr2 + variant_elm->memb_offset);
+                *variant_ptr = inner_value;
+            }
+            /* Set presence indicator */
             if(CHOICE_variant_set_presence(elm->type, *memb_ptr2,
                                            selected.presence_index)
                == 0) {
