@@ -104,11 +104,23 @@ OPEN_TYPE_ber_get(const asn_codec_ctx_t *opt_codec_ctx,
             memb_offset = variant_elm->memb_offset;
         }
         
-        /* For pointer variants, initialize inner_value to the current pointer value (likely NULL) */
-        /* For non-pointer variants, use the address of the value field */
+        /*
+         * For ATF_POINTER variants (e.g., "PersonInfo *PersonInfo" in CHOICE):
+         *   - The field is a pointer itself, freshly CALLOC'd to NULL
+         *   - We need to read the pointer value (NULL) from the field
+         *   - Decoder will allocate structure and update inner_value
+         *   - We'll copy inner_value back to the field after decoding
+         * 
+         * For non-pointer variants (e.g., "int value" in CHOICE):
+         *   - The field is embedded in the CHOICE structure
+         *   - We pass the address of the field to the decoder
+         *   - Decoder writes directly into the field
+         */
         if(variant_elm && (variant_elm->flags & ATF_POINTER)) {
+            /* Read the current pointer value from the field */
             inner_value = *(void **)((char *)*memb_ptr2 + memb_offset);
         } else {
+            /* Compute address of the embedded value field */
             inner_value = (char *)*memb_ptr2 + memb_offset;
         }
     } else {
@@ -126,10 +138,13 @@ OPEN_TYPE_ber_get(const asn_codec_ctx_t *opt_codec_ctx,
     switch(rv.code) {
     case RC_OK:
         if(elm->type->elements_count > 0) {
-            /* CHOICE wrapper mode: for pointer variants, update the field from inner_value */
+            /* CHOICE wrapper mode: for pointer variants, copy decoded pointer back to field */
             if(variant_elm && (variant_elm->flags & ATF_POINTER)) {
-                /* Copy the decoded pointer from inner_value to the actual field */
-                void **variant_ptr = (void **)((char *)*memb_ptr2 + variant_elm->memb_offset);
+                /*
+                 * The decoder allocated a structure and stored pointer in inner_value.
+                 * Copy it back to the actual field in the CHOICE structure.
+                 */
+                void **variant_ptr = (void **)((char *)*memb_ptr2 + memb_offset);
                 *variant_ptr = inner_value;
             }
             /* Set presence indicator */
