@@ -1,0 +1,47 @@
+-- OK: Test IOC Open Type with AUTOMATIC TAGS
+-- Issue: OPEN TYPE decoder crash with AUTOMATIC tags when
+-- decoding IOC-based content with pointer variants in CHOICE
+
+-- iso.org.dod.internet.private.enterprise (1.3.6.1.4.1)
+-- .spelio.software.asn1c.test (9363.1.5.1)
+-- .173
+
+OpenTypeExample
+	{ iso org(3) dod(6) internet(1) private(4) enterprise(1)
+		spelio(9363) software(1) asn1c(5) test(1) 173 }
+	DEFINITIONS AUTOMATIC TAGS ::=
+BEGIN
+
+-- Information Object Class for content types
+CONTENT-TYPE ::= CLASS {
+    &id OBJECT IDENTIFIER UNIQUE,
+    &Type
+} WITH SYNTAX {
+    &Type IDENTIFIED BY &id
+}
+
+-- Object identifiers
+id-person OBJECT IDENTIFIER ::= { 1 2 3 4 1 }
+
+-- Content type: PersonInfo
+PersonInfo ::= SEQUENCE {
+    name     UTF8String,
+    age      INTEGER,
+    email    UTF8String OPTIONAL
+}
+
+-- Information object for PersonInfo
+personContent CONTENT-TYPE ::= {
+    PersonInfo IDENTIFIED BY id-person
+}
+
+-- Information object set
+SupportedContentTypes CONTENT-TYPE ::= { personContent }
+
+-- Wrapper structure using IOC Open Type
+ContentWrapper ::= SEQUENCE {
+    contentType   CONTENT-TYPE.&id({SupportedContentTypes}),
+    content       CONTENT-TYPE.&Type({SupportedContentTypes}{@contentType})
+}
+
+END
