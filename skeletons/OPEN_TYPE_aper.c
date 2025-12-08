@@ -102,7 +102,6 @@ OPEN_TYPE_aper_get(const asn_codec_ctx_t *opt_codec_ctx,
     unsigned int memb_offset = 0;
     const asn_per_constraints_t *constraints = NULL;
     const asn_TYPE_member_t *variant_elm = NULL;
-    void **target_ptr;  /* This will point to where the decoder should write */
     
     if(elm->type->elements_count > 0) {
         /* CHOICE wrapper mode: get variant element info */
@@ -116,42 +115,48 @@ OPEN_TYPE_aper_get(const asn_codec_ctx_t *opt_codec_ctx,
         /*
          * For ATF_POINTER variants (e.g., "PersonInfo *PersonInfo" in CHOICE):
          *   - The field is a pointer itself, freshly CALLOC'd to NULL
-         *   - We pass the ADDRESS of that pointer field to the decoder
-         *   - Decoder allocates structure and writes pointer directly to the field
+         *   - We need to read the pointer value (NULL) from the field
+         *   - Decoder will allocate structure and update inner_value
+         *   - We'll copy inner_value back to the field after decoding
          * 
          * For non-pointer variants (e.g., "int value" in CHOICE):
          *   - The field is embedded in the CHOICE structure
-         *   - We use a local variable to hold the address
-         *   - Decoder writes directly into the embedded field
+         *   - We pass the address of the field to the decoder
+         *   - Decoder writes directly into the field
          */
         if(variant_elm && (variant_elm->flags & ATF_POINTER)) {
-            /* Pass address of the pointer field - decoder will update it directly */
-            target_ptr = (void **)((char *)*memb_ptr2 + memb_offset);
+            /* Read the current pointer value from the field */
+            inner_value = *(void **)((char *)*memb_ptr2 + memb_offset);
         } else {
             /* Compute address of the embedded value field */
             inner_value = (char *)*memb_ptr2 + memb_offset;
-            target_ptr = &inner_value;
         }
     } else {
         /* Direct type mode: decode directly into the member pointer */
         inner_value = *memb_ptr2;
-        target_ptr = &inner_value;
     }
 
     rv = aper_open_type_get(opt_codec_ctx, selected.type_descriptor,
-                            constraints, target_ptr, pd);
+                            constraints, &inner_value, pd);
     ASN_DEBUG("aper_open_type_get returned code=%d for %s", rv.code, selected.type_descriptor->name);
     switch(rv.code) {
     case RC_OK:
         if(elm->type->elements_count > 0) {
-            /* CHOICE wrapper mode: set presence indicator */
-            /* Note: For ATF_POINTER variants, decoder wrote directly to field via target_ptr */
-            /* For non-ATF_POINTER variants, decoder wrote to inner_value which is already the field address */
+            /* Set presence indicator FIRST, before copying pointer */
             ASN_DEBUG("Calling CHOICE_variant_set_presence(elm->type=%s, presence_index=%u, elements_count=%u)",
                       elm->type->name, selected.presence_index, elm->type->elements_count);
             if(CHOICE_variant_set_presence(elm->type, *memb_ptr2,
                                            selected.presence_index)
                == 0) {
+                /* CHOICE wrapper mode: for pointer variants, copy decoded pointer back to field */
+                if(variant_elm && (variant_elm->flags & ATF_POINTER)) {
+                    /*
+                     * The decoder allocated a structure and stored pointer in inner_value.
+                     * Copy it back to the actual field in the CHOICE structure.
+                     */
+                    void **variant_ptr = (void **)((char *)*memb_ptr2 + memb_offset);
+                    *variant_ptr = inner_value;
+                }
                 ASN_DEBUG("CHOICE_variant_set_presence succeeded");
                 break;
             } else {
