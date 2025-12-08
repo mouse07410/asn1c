@@ -1,22 +1,22 @@
 /*
- * Copyright (c) 2017 Lev Walkin <vlm@lionet.info>.
- * All rights reserved.
+ * Copyright (c) 2017 Lev Walkin <vlm@lionet.info>. All rights reserved.
  * Redistribution and modifications are permitted subject to BSD license.
  */
 #include <asn_internal.h>
 #include <OPEN_TYPE.h>
 #include <constr_CHOICE.h>
-#include <uper_opentype.h>
 
 asn_dec_rval_t
-OPEN_TYPE_uper_get(const asn_codec_ctx_t *opt_codec_ctx,
-                   const asn_TYPE_descriptor_t *td, void *sptr,
-                   const asn_TYPE_member_t *elm, asn_per_data_t *pd) {
+OPEN_TYPE_oer_get(const asn_codec_ctx_t *opt_codec_ctx,
+                  const asn_TYPE_descriptor_t *td, void *sptr,
+                  asn_TYPE_member_t *elm, const void *ptr, size_t size) {
     asn_type_selector_result_t selected;
     void *memb_ptr;   /* Pointer to the member */
     void **memb_ptr2; /* Pointer to that pointer */
     void *inner_value;
     asn_dec_rval_t rv;
+    size_t ot_ret;
+
 
     if(!(elm->flags & ATF_OPEN_TYPE)) {
         ASN__DECODE_FAILED;
@@ -41,7 +41,6 @@ OPEN_TYPE_uper_get(const asn_codec_ctx_t *opt_codec_ctx,
     }
 
     /* Fetch the pointer to this member */
-    assert(elm->flags & ATF_OPEN_TYPE);
     if(elm->flags & ATF_POINTER) {
         memb_ptr2 = (void **)((char *)sptr + elm->memb_offset);
     } else {
@@ -83,8 +82,7 @@ OPEN_TYPE_uper_get(const asn_codec_ctx_t *opt_codec_ctx,
             }
         } else {
             /* Make sure we reset the structure first before decoding */
-            if(CHOICE_variant_set_presence(elm->type, *memb_ptr2, 0)
-               != 0) {
+            if(CHOICE_variant_set_presence(elm->type, *memb_ptr2, 0) != 0) {
                 ASN__DECODE_FAILED;
             }
         }
@@ -94,11 +92,9 @@ OPEN_TYPE_uper_get(const asn_codec_ctx_t *opt_codec_ctx,
                   td->name, elm->name);
     }
 
-    /* Compute target pointer and constraints based on CHOICE wrapper mode or direct type mode */
+    /* Compute inner_value based on CHOICE wrapper mode or direct type mode */
     unsigned int memb_offset = 0;
-    const asn_per_constraints_t *constraints = NULL;
     const asn_TYPE_member_t *variant_elm = NULL;
-    void **target_ptr;  /* This will point to where the decoder should write */
     
     if(elm->type->elements_count > 0) {
         /* CHOICE wrapper mode: get variant element info */
@@ -106,88 +102,104 @@ OPEN_TYPE_uper_get(const asn_codec_ctx_t *opt_codec_ctx,
            && selected.presence_index <= elm->type->elements_count) {
             variant_elm = &elm->type->elements[selected.presence_index - 1];
             memb_offset = variant_elm->memb_offset;
-            constraints = variant_elm->encoding_constraints.per_constraints;
         }
         
         /*
          * For ATF_POINTER variants (e.g., "PersonInfo *PersonInfo" in CHOICE):
          *   - The field is a pointer itself, freshly CALLOC'd to NULL
-         *   - We pass the ADDRESS of that pointer field to the decoder
-         *   - Decoder allocates structure and writes pointer directly to the field
+         *   - We need to read the pointer value (NULL) from the field
+         *   - Decoder will allocate structure and update inner_value
+         *   - We'll copy inner_value back to the field after decoding
          * 
          * For non-pointer variants (e.g., "int value" in CHOICE):
          *   - The field is embedded in the CHOICE structure
-         *   - We use a local variable to hold the address
-         *   - Decoder writes directly into the embedded field
+         *   - We pass the address of the field to the decoder
+         *   - Decoder writes directly into the field
          */
         if(variant_elm && (variant_elm->flags & ATF_POINTER)) {
-            /* Pass address of the pointer field - decoder will update it directly */
-            target_ptr = (void **)((char *)*memb_ptr2 + memb_offset);
+            /* Read the current pointer value from the field */
+            inner_value = *(void **)((char *)*memb_ptr2 + memb_offset);
         } else {
             /* Compute address of the embedded value field */
             inner_value = (char *)*memb_ptr2 + memb_offset;
-            target_ptr = &inner_value;
         }
     } else {
         /* Direct type mode: decode directly into the member pointer */
         inner_value = *memb_ptr2;
-        target_ptr = &inner_value;
     }
 
-    rv = uper_open_type_get(opt_codec_ctx, selected.type_descriptor,
-                            constraints, target_ptr, pd);
-    switch(rv.code) {
-    case RC_OK:
+    ot_ret = oer_open_type_get(opt_codec_ctx, selected.type_descriptor, NULL,
+                               &inner_value, ptr, size);
+    switch(ot_ret) {
+    default:
         if(elm->type->elements_count > 0) {
-            /* CHOICE wrapper mode: set presence indicator */
-            /* Note: For ATF_POINTER variants, decoder wrote directly to field via target_ptr */
-            /* For non-ATF_POINTER variants, decoder wrote to inner_value which is already the field address */
+            /* Set presence indicator FIRST, before copying pointer */
             if(CHOICE_variant_set_presence(elm->type, *memb_ptr2,
                                            selected.presence_index)
                == 0) {
-                break;
+                /* CHOICE wrapper mode: for pointer variants, copy decoded pointer back to field */
+                if(variant_elm && (variant_elm->flags & ATF_POINTER)) {
+                    /*
+                     * The decoder allocated a structure and stored pointer in inner_value.
+                     * Copy it back to the actual field in the CHOICE structure.
+                     */
+                    void **variant_ptr = (void **)((char *)*memb_ptr2 + memb_offset);
+                    *variant_ptr = inner_value;
+                }
+                rv.code = RC_OK;
+                rv.consumed = ot_ret;
+                return rv;
             } else {
-                rv.code = RC_FAIL;
+                /* Oh, now a full-blown failure failure */
             }
         } else {
             /* Direct type mode: update member pointer with decoded value if pointer type */
             if(elm->flags & ATF_POINTER) {
-                ASN_DEBUG("Direct type mode: updating member pointer");
                 *memb_ptr2 = inner_value;
-            } else {
-                ASN_DEBUG("Direct type mode: decode successful (non-pointer)");
             }
-            break;
+            rv.code = RC_OK;
+            rv.consumed = ot_ret;
+            return rv;
         }
         /* Fall through */
-    case RC_WMORE:
-    case RC_FAIL:
-        if(*memb_ptr2) {
-            if(elm->flags & ATF_POINTER) {
-                ASN_STRUCT_FREE(*selected.type_descriptor, inner_value);
-                *memb_ptr2 = NULL;
-            } else {
-                ASN_STRUCT_RESET(*selected.type_descriptor,
-                                              inner_value);
-            }
+    case -1:
+        rv.code = RC_FAIL;
+        rv.consumed = ot_ret;
+        break;
+    case 0:
+        rv.code = RC_WMORE;
+        rv.consumed = 0;
+        break;
+    }
+
+    if(*memb_ptr2) {
+        const asn_CHOICE_specifics_t *specs =
+            selected.type_descriptor->specifics;
+        if(elm->flags & ATF_POINTER) {
+            ASN_STRUCT_FREE(*selected.type_descriptor, inner_value);
+            *memb_ptr2 = NULL;
+        } else {
+            ASN_STRUCT_FREE_CONTENTS_ONLY(*selected.type_descriptor,
+                                          inner_value);
+            memset(*memb_ptr2, 0, specs->struct_size);
         }
     }
     return rv;
 }
 
 asn_enc_rval_t
-OPEN_TYPE_encode_uper(const asn_TYPE_descriptor_t *td,
-                      const asn_per_constraints_t *constraints,
-                      const void *sptr, asn_per_outp_t *po) {
-    const void *memb_ptr;   /* Pointer to the member */
-    asn_TYPE_member_t *elm; /* CHOICE's element */
-    asn_enc_rval_t er = {0,0,0};
+OPEN_TYPE_encode_oer(const asn_TYPE_descriptor_t *td,
+                  const asn_oer_constraints_t *constraints, const void *sptr,
+                  asn_app_consume_bytes_f *cb, void *app_key) {
+    asn_TYPE_member_t *elm;
     unsigned present;
+    const void *memb_ptr;
+    ssize_t encoded;
+    asn_enc_rval_t er = {0, 0, 0};
 
     (void)constraints;
 
-    if(!sptr)
-        ASN__ENCODE_FAILED;
+    if(!sptr) ASN__ENCODE_FAILED;
 
     if(td->elements_count == 0) {
         /* Direct type mode: no CHOICE wrapper, encode directly */
@@ -196,7 +208,7 @@ OPEN_TYPE_encode_uper(const asn_TYPE_descriptor_t *td,
         /* In direct type mode, sptr points directly to the value to encode */
         /* We can't encode it because we don't know the actual type descriptor */
         /* This should not happen - the parent should handle this case */
-        ASN_DEBUG("ERROR: OPEN_TYPE_encode_uper called in direct type mode");
+        ASN_DEBUG("ERROR: OPEN_TYPE_encode_oer called in direct type mode");
         ASN__ENCODE_FAILED;
     }
 
@@ -212,29 +224,35 @@ OPEN_TYPE_encode_uper(const asn_TYPE_descriptor_t *td,
 
     elm = &td->elements[present];
     if(elm->flags & ATF_POINTER) {
-        /* Member is a pointer to another structure */
         memb_ptr =
             *(const void *const *)((const char *)sptr + elm->memb_offset);
-        if(!memb_ptr) ASN__ENCODE_FAILED;
+        if(memb_ptr == 0) {
+            /* Mandatory element absent */
+            ASN__ENCODE_FAILED;
+        }
     } else {
-        memb_ptr = (const char *)sptr + elm->memb_offset;
+        memb_ptr = (const void *)((const char *)sptr + elm->memb_offset);
     }
 
-    if(uper_open_type_put(elm->type,
-                          elm->encoding_constraints.per_constraints,
-                          memb_ptr, po) < 0) {
+    if((encoded = oer_open_type_put(elm->type,
+                          elm->encoding_constraints.oer_constraints,
+                          memb_ptr, cb, app_key)) < 0) {
         ASN__ENCODE_FAILED;
     }
 
-    er.encoded = 0;
+    er.encoded = encoded;
     ASN__ENCODED_OK(er);
+
+    return er;
 }
 
 asn_enc_rval_t
-OPEN_TYPE_uper_put(const asn_TYPE_descriptor_t *td, const void *sptr,
-                   const asn_TYPE_member_t *elm, asn_per_outp_t *po) {
+OPEN_TYPE_oer_put(const asn_TYPE_descriptor_t *td, const void *sptr,
+                  const asn_TYPE_member_t *elm,
+                  asn_app_consume_bytes_f *cb, void *app_key) {
     asn_type_selector_result_t selected;
     const void *memb_ptr;
+    ssize_t encoded;
     asn_enc_rval_t er = {0,0,0};
 
     if(!(elm->flags & ATF_OPEN_TYPE)) {
@@ -259,7 +277,7 @@ OPEN_TYPE_uper_put(const asn_TYPE_descriptor_t *td, const void *sptr,
         ASN__ENCODE_FAILED;
     }
 
-    ASN_DEBUG("OPEN_TYPE_uper_put: elm->type=%s, elements=%p, elements_count=%u, selected.presence_index=%u, selected.type=%s",
+    ASN_DEBUG("OPEN_TYPE_oer_put: elm->type=%s, elements=%p, elements_count=%u, selected.presence_index=%u, selected.type=%s",
               elm->type->name, (void*)elm->type->elements, elm->type->elements_count,
               selected.presence_index, selected.type_descriptor->name);
 
@@ -274,20 +292,21 @@ OPEN_TYPE_uper_put(const asn_TYPE_descriptor_t *td, const void *sptr,
 
     /* Check if this OPEN_TYPE uses CHOICE wrapper (elements_count > 0) or direct type */
     if(elm->type->elements_count > 0) {
-        /* CHOICE wrapper mode: use standard CHOICE encoder via uper_open_type_put */
-        if(uper_open_type_put(elm->type, elm->encoding_constraints.per_constraints, memb_ptr, po) < 0) {
+        /* CHOICE wrapper mode: use standard CHOICE encoder via oer_open_type_put */
+        if((encoded = oer_open_type_put(elm->type, elm->encoding_constraints.oer_constraints, memb_ptr, cb, app_key)) < 0) {
             ASN__ENCODE_FAILED;
         }
-        er.encoded = 0;
+        er.encoded = encoded;
         ASN__ENCODED_OK(er);
+        return er;
     } else {
         /* Direct type mode: encode using the selected type descriptor wrapped in open type */
         ASN_DEBUG("Direct type mode: encoding using %s wrapped in OPEN TYPE", selected.type_descriptor->name);
-        /* Use NULL constraints for direct type mode to match decoder behavior */
-        if(uper_open_type_put(selected.type_descriptor, NULL, memb_ptr, po) < 0) {
+        if((encoded = oer_open_type_put(selected.type_descriptor, elm->encoding_constraints.oer_constraints, memb_ptr, cb, app_key)) < 0) {
             ASN__ENCODE_FAILED;
         }
-        er.encoded = 0;
+        er.encoded = encoded;
         ASN__ENCODED_OK(er);
+        return er;
     }
 }
