@@ -101,15 +101,36 @@ OPEN_TYPE_aper_get(const asn_codec_ctx_t *opt_codec_ctx,
     /* Compute inner_value and constraints based on CHOICE wrapper mode or direct type mode */
     unsigned int memb_offset = 0;
     const asn_per_constraints_t *constraints = NULL;
+    const asn_TYPE_member_t *variant_elm = NULL;
     
     if(elm->type->elements_count > 0) {
-        /* CHOICE wrapper mode: compute offset and constraints from elements array */
+        /* CHOICE wrapper mode: get variant element info */
         if(elm->type->elements && selected.presence_index > 0 
            && selected.presence_index <= elm->type->elements_count) {
-            memb_offset = elm->type->elements[selected.presence_index - 1].memb_offset;
-            constraints = elm->type->elements[selected.presence_index - 1].encoding_constraints.per_constraints;
+            variant_elm = &elm->type->elements[selected.presence_index - 1];
+            memb_offset = variant_elm->memb_offset;
+            constraints = variant_elm->encoding_constraints.per_constraints;
         }
-        inner_value = (char *)*memb_ptr2 + memb_offset;
+        
+        /*
+         * For ATF_POINTER variants (e.g., "PersonInfo *PersonInfo" in CHOICE):
+         *   - The field is a pointer itself, freshly CALLOC'd to NULL
+         *   - We need to read the pointer value (NULL) from the field
+         *   - Decoder will allocate structure and update inner_value
+         *   - We'll copy inner_value back to the field after decoding
+         * 
+         * For non-pointer variants (e.g., "int value" in CHOICE):
+         *   - The field is embedded in the CHOICE structure
+         *   - We pass the address of the field to the decoder
+         *   - Decoder writes directly into the field
+         */
+        if(variant_elm && (variant_elm->flags & ATF_POINTER)) {
+            /* Read the current pointer value from the field */
+            inner_value = *(void **)((char *)*memb_ptr2 + memb_offset);
+        } else {
+            /* Compute address of the embedded value field */
+            inner_value = (char *)*memb_ptr2 + memb_offset;
+        }
     } else {
         /* Direct type mode: decode directly into the member pointer */
         inner_value = *memb_ptr2;
@@ -121,7 +142,16 @@ OPEN_TYPE_aper_get(const asn_codec_ctx_t *opt_codec_ctx,
     switch(rv.code) {
     case RC_OK:
         if(elm->type->elements_count > 0) {
-            /* CHOICE wrapper mode: set presence indicator */
+            /* CHOICE wrapper mode: for pointer variants, copy decoded pointer back to field */
+            if(variant_elm && (variant_elm->flags & ATF_POINTER)) {
+                /*
+                 * The decoder allocated a structure and stored pointer in inner_value.
+                 * Copy it back to the actual field in the CHOICE structure.
+                 */
+                void **variant_ptr = (void **)((char *)*memb_ptr2 + memb_offset);
+                *variant_ptr = inner_value;
+            }
+            /* Set presence indicator */
             ASN_DEBUG("Calling CHOICE_variant_set_presence(elm->type=%s, presence_index=%u, elements_count=%u)",
                       elm->type->name, selected.presence_index, elm->type->elements_count);
             if(CHOICE_variant_set_presence(elm->type, *memb_ptr2,
