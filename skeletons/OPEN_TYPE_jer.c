@@ -188,19 +188,19 @@ OPEN_TYPE_jer_get(const asn_codec_ctx_t *opt_codec_ctx,
     switch(rv.code) {
     case RC_OK:
         if(elm->type->elements_count > 0) {
-            /* CHOICE wrapper mode: for pointer variants, copy decoded pointer back to field */
-            if(variant_elm && (variant_elm->flags & ATF_POINTER)) {
-                /*
-                 * The decoder allocated a structure and stored pointer in inner_value.
-                 * Copy it back to the actual field in the CHOICE structure.
-                 */
-                void **variant_ptr = (void **)((char *)*memb_ptr2 + memb_offset);
-                *variant_ptr = inner_value;
-            }
-            /* Set presence indicator */
+            /* Set presence indicator FIRST, before copying pointer */
             if(CHOICE_variant_set_presence(elm->type, *memb_ptr2,
                                            selected.presence_index)
                == 0) {
+                /* CHOICE wrapper mode: for pointer variants, copy decoded pointer back to field */
+                if(variant_elm && (variant_elm->flags & ATF_POINTER)) {
+                    /*
+                     * The decoder allocated a structure and stored pointer in inner_value.
+                     * Copy it back to the actual field in the CHOICE structure.
+                     */
+                    void **variant_ptr = (void **)((char *)*memb_ptr2 + memb_offset);
+                    *variant_ptr = inner_value;
+                }
                 break;
             } else {
                 rv.code = RC_FAIL;
