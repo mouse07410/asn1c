@@ -266,6 +266,12 @@ OPEN_TYPE_oer_put(const asn_TYPE_descriptor_t *td, const void *sptr,
         ASN__ENCODE_FAILED;
     }
 
+    if(!elm->type->op || !elm->type->op->oer_encoder) {
+        ASN_DEBUG("Open Type %s->%s: OER encoder is not defined",
+                  td->name, elm->name);
+        ASN__ENCODE_FAILED;
+    }
+
     if(!elm->type_selector) {
         ASN_DEBUG("Type selector is not defined for Open Type %s->%s->%s",
                   td->name, elm->name, elm->type->name);
@@ -292,15 +298,28 @@ OPEN_TYPE_oer_put(const asn_TYPE_descriptor_t *td, const void *sptr,
 
     /* Check if this OPEN_TYPE uses CHOICE wrapper (elements_count > 0) or direct type */
     if(elm->type->elements_count > 0) {
-        /* CHOICE wrapper mode: use standard CHOICE encoder via oer_open_type_put */
-        if((encoded = oer_open_type_put(elm->type, elm->encoding_constraints.oer_constraints, memb_ptr, cb, app_key)) < 0) {
+        /* 
+         * CHOICE wrapper mode: encode the CHOICE directly.
+         * When elements_count > 0, the CHOICE structure is already selected and
+         * populated by the type selector, so we encode it directly using its native
+         * OER encoder. The encoder will handle the choice index and variant encoding
+         * according to its own constraints (constrained vs. extension variants).
+         * Wrapping it again with open type framing would be redundant and incorrect.
+         */
+        er = elm->type->op->oer_encoder(elm->type, 
+                                        elm->encoding_constraints.oer_constraints,
+                                        memb_ptr, cb, app_key);
+        if(er.encoded < 0) {
             ASN__ENCODE_FAILED;
         }
-        er.encoded = encoded;
         ASN__ENCODED_OK(er);
         return er;
     } else {
-        /* Direct type mode: encode using the selected type descriptor wrapped in open type */
+        /* 
+         * Direct type mode: encode using the selected type descriptor.
+         * Since this is direct type without CHOICE wrapper, we need the 
+         * open type length determinant wrapper.
+         */
         ASN_DEBUG("Direct type mode: encoding using %s wrapped in OPEN TYPE", selected.type_descriptor->name);
         if((encoded = oer_open_type_put(selected.type_descriptor, elm->encoding_constraints.oer_constraints, memb_ptr, cb, app_key)) < 0) {
             ASN__ENCODE_FAILED;
