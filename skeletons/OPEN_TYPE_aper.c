@@ -287,14 +287,25 @@ OPEN_TYPE_aper_put(const asn_TYPE_descriptor_t *td, const void *sptr,
 
     /* Check if this OPEN_TYPE uses CHOICE wrapper (elements_count > 0) or direct type */
     if(elm->type->elements_count > 0) {
-        /* CHOICE wrapper mode: use standard CHOICE encoder via aper_open_type_put */
-        if(aper_open_type_put(elm->type, elm->encoding_constraints.per_constraints, memb_ptr, po) < 0) {
+        /* 
+         * CHOICE wrapper mode: encode the CHOICE directly without open type wrapper.
+         * The CHOICE is already selected and structured, we just need to encode it.
+         * For constrained encoding within a SEQUENCE (not in extensions), we encode
+         * directly without the open type length determinant.
+         */
+        er = elm->type->op->aper_encoder(elm->type, 
+                                         elm->encoding_constraints.per_constraints,
+                                         memb_ptr, po);
+        if(er.encoded == -1) {
             ASN__ENCODE_FAILED;
         }
-        er.encoded = 0;
         ASN__ENCODED_OK(er);
     } else {
-        /* Direct type mode: encode using the selected type descriptor wrapped in open type */
+        /* 
+         * Direct type mode: encode using the selected type descriptor.
+         * Since this is direct type without CHOICE wrapper, we need the 
+         * open type length determinant wrapper.
+         */
         ASN_DEBUG("Direct type mode: encoding using %s wrapped in OPEN TYPE", selected.type_descriptor->name);
         /* Use NULL constraints for direct type mode to match decoder behavior */
         if(aper_open_type_put(selected.type_descriptor, NULL, memb_ptr, po) < 0) {
