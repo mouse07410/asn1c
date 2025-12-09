@@ -482,6 +482,8 @@ SET_OF_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr, int ilevel,
             /* Error during encoding - cleanup and return */
             if(encs) {
                 size_t n;
+                /* Note: encs_count was already incremented, so clean up encs_count-1 complete entries
+                 * The last entry (encs_count-1) may be partially initialized */
                 for(n = 0; n < encs_count; n++) {
                     FREEMEM(encs[n].buffer);
                 }

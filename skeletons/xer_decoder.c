@@ -171,7 +171,7 @@ xer_check_tag(const void *buf_ptr, int size, const char *need_tag) {
 			
 			/* If keyword fully matched and we're at tag boundary, this is an ASN.1 keyword tag */
 			if(match && *k == 0) {
-				if(b >= buf + size || *b == ' ' || *b == '\t' || *b == '\r' || *b == '\n') {
+				if(b == buf + size || *b == ' ' || *b == '\t' || *b == '\r' || *b == '\n') {
 					/* Return the tag type (opening/closing/both) for ASN.1 keywords */
 					return ct;
 				}

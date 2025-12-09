@@ -68,7 +68,8 @@ SEQUENCE_OF_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
             }
             
             /* Check if this matches "SEQUENCE OF" or "SEQUENCE-OF" */
-            if((tag_end - tag_start >= 11) && 
+            /* Both "SEQUENCE OF" and "SEQUENCE-OF" are 11 characters */
+            if((tag_end - tag_start >= 11) && (size >= 13) &&
                (strncmp(tag_start, "SEQUENCE OF", 11) == 0 || 
                 strncmp(tag_start, "SEQUENCE-OF", 11) == 0)) {
                 /* Find the end of the opening tag */
