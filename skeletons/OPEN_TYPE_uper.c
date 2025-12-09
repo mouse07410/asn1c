@@ -287,11 +287,11 @@ OPEN_TYPE_uper_put(const asn_TYPE_descriptor_t *td, const void *sptr,
     if(elm->type->elements_count > 0) {
         /* 
          * CHOICE wrapper mode: encode the CHOICE directly.
-         * The CHOICE is already selected and structured, and its encoder
-         * will handle the choice index and variant encoding according to
-         * its own constraints (constrained vs. extension variants).
-         * We call the CHOICE encoder directly, which internally decides
-         * whether to use open type wrapper for extension variants.
+         * When elements_count > 0, the CHOICE structure is already selected and
+         * populated by the type selector, so we encode it directly using its native
+         * UPER encoder. The encoder will handle the choice index and variant encoding
+         * according to its own constraints (constrained vs. extension variants).
+         * Wrapping it again with open type framing would be redundant and incorrect.
          */
         er = elm->type->op->uper_encoder(elm->type, 
                                          elm->encoding_constraints.per_constraints,
