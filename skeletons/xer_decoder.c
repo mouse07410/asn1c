@@ -137,8 +137,49 @@ xer_check_tag(const void *buf_ptr, int size, const char *need_tag) {
 	}
 
 	/* Sometimes we don't care about the tag */
-	if(!need_tag || !*need_tag)
+	if(!need_tag || !*need_tag) {
+		/* When need_tag is NULL, check if this is an ASN.1 keyword tag to skip */
+		static const char *asn1_keywords[] = {
+			"SEQUENCE OF", "SET OF", "SEQUENCE", "SET", "CHOICE", NULL
+		};
+		const char **kw;
+		
+		for(kw = asn1_keywords; *kw; kw++) {
+			const char *keyword = *kw;
+			const char *b = buf;
+			const char *k = keyword;
+			int match = 1;
+			
+			/* Check if tag matches keyword (with space->hyphen normalization) */
+			while(*k && b < buf + size) {
+				char bc = *b;
+				char kc = *k;
+				
+				/* Normalize: space in keyword should match hyphen or space in tag */
+				if(kc == ' ') {
+					if(bc != '-' && bc != ' ') {
+						match = 0;
+						break;
+					}
+				} else if(bc != kc) {
+					match = 0;
+					break;
+				}
+				b++;
+				k++;
+			}
+			
+			/* If keyword fully matched and we're at tag boundary, this is an ASN.1 keyword tag */
+			if(match && *k == 0) {
+				if(b >= buf + size || *b == ' ' || *b == '\t' || *b == '\r' || *b == '\n') {
+					/* Return the tag type (opening/closing/both) for ASN.1 keywords */
+					return ct;
+				}
+			}
+		}
+		
 		return (xer_check_tag_e)(XCT__UNK__MASK | ct);
+	}
 
 	/*
 	 * Determine the tag name.

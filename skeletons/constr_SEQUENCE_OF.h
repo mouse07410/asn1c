@@ -33,7 +33,7 @@ der_type_encoder_f SEQUENCE_OF_encode_der;
 #endif  /* !defined(ASN_DISABLE_BER_SUPPORT) */
 
 #if !defined(ASN_DISABLE_XER_SUPPORT)
-#define SEQUENCE_OF_decode_xer SET_OF_decode_xer
+xer_type_decoder_f SEQUENCE_OF_decode_xer;
 xer_type_encoder_f SEQUENCE_OF_encode_xer;
 #endif  /* !defined(ASN_DISABLE_XER_SUPPORT) */
 

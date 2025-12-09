@@ -237,6 +237,42 @@ SET_OF_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
 		    }
 		}
 		
+        /* Check for ASN.1 type keyword tags like <SEQUENCE OF> or <SET OF>
+         * These are meta-syntax tags that may appear in debug-annotated XER files
+         * but are not part of the standard XER encoding. Skip them if present. */
+        {
+            xer_check_tag_e keyword_tcv = xer_check_tag(buf_ptr, ch_size, NULL);
+            if(keyword_tcv == XCT_OPENING || keyword_tcv == XCT_BOTH) {
+                /* Check if this is an ASN.1 keyword opening tag */
+                const char *p = (const char *)buf_ptr;
+                if(ch_size > 2 && p[0] == '<') {
+                    static const char *keywords[] = {"SEQUENCE OF", "SET OF", NULL};
+                    int i;
+                    for(i = 0; keywords[i]; i++) {
+                        if(xer_token_name_equals_normalized(buf_ptr, ch_size, keywords[i])) {
+                            ASN_DEBUG("XER/SET OF: Skipping ASN.1 keyword opening tag <%s>", keywords[i]);
+                            XER_ADVANCE(ch_size);
+                            continue; /* Skip this tag and continue parsing */
+                        }
+                    }
+                }
+            } else if(keyword_tcv == XCT_CLOSING && ctx->phase < 3) {
+                /* Check if this is an ASN.1 keyword closing tag */
+                const char *p = (const char *)buf_ptr;
+                if(ch_size > 2 && p[0] == '<' && p[1] == '/') {
+                    static const char *keywords[] = {"SEQUENCE OF", "SET OF", NULL};
+                    int i;
+                    for(i = 0; keywords[i]; i++) {
+                        if(xer_token_name_equals_normalized(buf_ptr, ch_size, keywords[i])) {
+                            ASN_DEBUG("XER/SET OF: Skipping ASN.1 keyword closing tag </%s>", keywords[i]);
+                            XER_ADVANCE(ch_size);
+                            continue; /* Skip this tag and continue parsing */
+                        }
+                    }
+                }
+            }
+        }
+		
         tcv = xer_check_tag(buf_ptr, ch_size, xml_tag);
         ASN_DEBUG("XER/SET OF: tcv = %d, ph=%d t=%s",
                   tcv, ctx->phase, xml_tag);
@@ -364,6 +400,29 @@ asn_enc_rval_t
 SET_OF_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr, int ilevel,
                   enum xer_encoder_flags_e flags, asn_app_consume_bytes_f *cb,
                   void *app_key) {
+    /*
+     * XER Encoding of SET OF:
+     * 
+     * IMPORTANT: This encoder outputs ONLY the member elements, NOT wrapper tags
+     * like <SEQUENCE OF> or <SET OF>. Such wrapper tags are ASN.1 meta-syntax
+     * and are NOT part of the XER encoding standard (ITU-T X.693).
+     * 
+     * CORRECT XER encoding for SET OF Integer { 1, 2, 3 } with member name "item":
+     *   <item>1</item>
+     *   <item>2</item>
+     *   <item>3</item>
+     * 
+     * INCORRECT (would include meta-syntax wrapper tags):
+     *   <SET OF>
+     *     <item>1</item>
+     *     <item>2</item>
+     *     <item>3</item>
+     *   </SET OF>
+     * 
+     * The decoder (SET_OF_decode_xer) has been made tolerant to gracefully
+     * skip such wrapper tags if they appear in debug-annotated or malformed
+     * XER input files, but this encoder never outputs them.
+     */
     asn_enc_rval_t er = {0,0,0};
     const asn_SET_OF_specifics_t *specs = (const asn_SET_OF_specifics_t *)td->specifics;
     const asn_TYPE_member_t *elm = td->elements;
@@ -419,7 +478,17 @@ SET_OF_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr, int ilevel,
         tmper = elm->type->op->xer_encoder(elm->type, memb_ptr,
                                            ilevel + (specs->as_XMLValueList != 2),
                                            flags, cb, app_key);
-        if(tmper.encoded == -1) return tmper;
+        if(tmper.encoded == -1) {
+            /* Error during encoding - cleanup and return */
+            if(encs) {
+                size_t n;
+                for(n = 0; n < encs_count; n++) {
+                    FREEMEM(encs[n].buffer);
+                }
+                FREEMEM(encs);
+            }
+            return tmper;
+        }
         er.encoded += tmper.encoded;
         if(tmper.encoded == 0 && specs->as_XMLValueList) {
             const char *name = elm->type->xml_tag;
