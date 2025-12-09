@@ -253,6 +253,12 @@ OPEN_TYPE_uper_put(const asn_TYPE_descriptor_t *td, const void *sptr,
         ASN__ENCODE_FAILED;
     }
 
+    if(!elm->type->op || !elm->type->op->uper_encoder) {
+        ASN_DEBUG("Open Type %s->%s: UPER encoder is not defined",
+                  td->name, elm->name);
+        ASN__ENCODE_FAILED;
+    }
+
     if(!elm->type_selector) {
         ASN_DEBUG("Type selector is not defined for Open Type %s->%s->%s",
                   td->name, elm->name, elm->type->name);
@@ -279,14 +285,27 @@ OPEN_TYPE_uper_put(const asn_TYPE_descriptor_t *td, const void *sptr,
 
     /* Check if this OPEN_TYPE uses CHOICE wrapper (elements_count > 0) or direct type */
     if(elm->type->elements_count > 0) {
-        /* CHOICE wrapper mode: use standard CHOICE encoder via uper_open_type_put */
-        if(uper_open_type_put(elm->type, elm->encoding_constraints.per_constraints, memb_ptr, po) < 0) {
+        /* 
+         * CHOICE wrapper mode: encode the CHOICE directly.
+         * The CHOICE is already selected and structured, and its encoder
+         * will handle the choice index and variant encoding according to
+         * its own constraints (constrained vs. extension variants).
+         * We call the CHOICE encoder directly, which internally decides
+         * whether to use open type wrapper for extension variants.
+         */
+        er = elm->type->op->uper_encoder(elm->type, 
+                                         elm->encoding_constraints.per_constraints,
+                                         memb_ptr, po);
+        if(er.encoded == -1) {
             ASN__ENCODE_FAILED;
         }
-        er.encoded = 0;
         ASN__ENCODED_OK(er);
     } else {
-        /* Direct type mode: encode using the selected type descriptor wrapped in open type */
+        /* 
+         * Direct type mode: encode using the selected type descriptor.
+         * Since this is direct type without CHOICE wrapper, we need the 
+         * open type length determinant wrapper.
+         */
         ASN_DEBUG("Direct type mode: encoding using %s wrapped in OPEN TYPE", selected.type_descriptor->name);
         /* Use NULL constraints for direct type mode to match decoder behavior */
         if(uper_open_type_put(selected.type_descriptor, NULL, memb_ptr, po) < 0) {
