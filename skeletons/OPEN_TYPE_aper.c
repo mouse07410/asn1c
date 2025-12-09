@@ -261,6 +261,12 @@ OPEN_TYPE_aper_put(const asn_TYPE_descriptor_t *td, const void *sptr,
         ASN__ENCODE_FAILED;
     }
 
+    if(!elm->type->op || !elm->type->op->aper_encoder) {
+        ASN_DEBUG("Open Type %s->%s: APER encoder is not defined",
+                  td->name, elm->name);
+        ASN__ENCODE_FAILED;
+    }
+
     if(!elm->type_selector) {
         ASN_DEBUG("Type selector is not defined for Open Type %s->%s->%s",
                   td->name, elm->name, elm->type->name);
