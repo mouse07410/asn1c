@@ -294,10 +294,12 @@ OPEN_TYPE_aper_put(const asn_TYPE_descriptor_t *td, const void *sptr,
     /* Check if this OPEN_TYPE uses CHOICE wrapper (elements_count > 0) or direct type */
     if(elm->type->elements_count > 0) {
         /* 
-         * CHOICE wrapper mode: encode the CHOICE directly without open type wrapper.
-         * The CHOICE is already selected and structured, we just need to encode it.
-         * For constrained encoding within a SEQUENCE (not in extensions), we encode
-         * directly without the open type length determinant.
+         * CHOICE wrapper mode: encode the CHOICE directly.
+         * The CHOICE is already selected and structured, and its encoder
+         * will handle the choice index and variant encoding according to
+         * its own constraints (constrained vs. extension variants).
+         * We call the CHOICE encoder directly, which internally decides
+         * whether to use open type wrapper for extension variants.
          */
         er = elm->type->op->aper_encoder(elm->type, 
                                          elm->encoding_constraints.per_constraints,
