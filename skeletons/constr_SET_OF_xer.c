@@ -241,12 +241,12 @@ SET_OF_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
          * These are meta-syntax tags that may appear in debug-annotated XER files
          * but are not part of the standard XER encoding. Skip them if present. */
         {
+            static const char *keywords[] = {"SEQUENCE OF", "SET OF", NULL};
             xer_check_tag_e keyword_tcv = xer_check_tag(buf_ptr, ch_size, NULL);
             if(keyword_tcv == XCT_OPENING || keyword_tcv == XCT_BOTH) {
                 /* Check if this is an ASN.1 keyword opening tag */
                 const char *p = (const char *)buf_ptr;
                 if(ch_size > 2 && p[0] == '<') {
-                    static const char *keywords[] = {"SEQUENCE OF", "SET OF", NULL};
                     int i;
                     for(i = 0; keywords[i]; i++) {
                         if(xer_token_name_equals_normalized(buf_ptr, ch_size, keywords[i])) {
@@ -260,7 +260,6 @@ SET_OF_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
                 /* Check if this is an ASN.1 keyword closing tag */
                 const char *p = (const char *)buf_ptr;
                 if(ch_size > 2 && p[0] == '<' && p[1] == '/') {
-                    static const char *keywords[] = {"SEQUENCE OF", "SET OF", NULL};
                     int i;
                     for(i = 0; keywords[i]; i++) {
                         if(xer_token_name_equals_normalized(buf_ptr, ch_size, keywords[i])) {
@@ -482,12 +481,13 @@ SET_OF_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr, int ilevel,
             /* Error during encoding - cleanup and return */
             if(encs) {
                 size_t n;
-                /* Note: encs_count was already incremented, so clean up encs_count-1 complete entries
-                 * The last entry (encs_count-1) may be partially initialized */
+                /* Note: encs_count was already incremented, so clean up encs_count entries
+                 * (indices 0 through encs_count-1, including the partially initialized one) */
                 for(n = 0; n < encs_count; n++) {
                     FREEMEM(encs[n].buffer);
                 }
                 FREEMEM(encs);
+                encs = NULL;
             }
             return tmper;
         }
