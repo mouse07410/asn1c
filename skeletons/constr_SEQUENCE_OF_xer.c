@@ -148,10 +148,16 @@ SEQUENCE_OF_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr,
         
         /* Check if mname contains ASN.1 meta-syntax keywords that should not be output */
         if(mname) {
-            if(strncmp(mname, "SEQUENCE OF", 11) == 0 || 
-               strncmp(mname, "SET OF", 6) == 0 ||
-               strncmp(mname, "SEQUENCE-OF", 11) == 0 ||
-               strncmp(mname, "SET-OF", 6) == 0) {
+            size_t len = strlen(mname);
+            /* Check for "SEQUENCE OF" or "SEQUENCE-OF" followed by space, hyphen, uppercase, or end */
+            if((len >= 11 && strncmp(mname, "SEQUENCE OF", 11) == 0 &&
+                (len == 11 || mname[11] == ' ' || mname[11] == '-' || (mname[11] >= 'A' && mname[11] <= 'Z'))) ||
+               (len >= 11 && strncmp(mname, "SEQUENCE-OF", 11) == 0 &&
+                (len == 11 || mname[11] == ' ' || mname[11] == '-' || (mname[11] >= 'A' && mname[11] <= 'Z'))) ||
+               (len >= 6 && strncmp(mname, "SET OF", 6) == 0 &&
+                (len == 6 || mname[6] == ' ' || mname[6] == '-' || (mname[6] >= 'A' && mname[6] <= 'Z'))) ||
+               (len >= 6 && strncmp(mname, "SET-OF", 6) == 0 &&
+                (len == 6 || mname[6] == ' ' || mname[6] == '-' || (mname[6] >= 'A' && mname[6] <= 'Z')))) {
                 /* This is an ASN.1 keyword wrapper tag - use element type instead */
                 mname = elm->type->xml_tag;  /* Use the element type's tag instead */
             }
