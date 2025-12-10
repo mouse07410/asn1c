@@ -360,24 +360,49 @@ OPEN_TYPE_xer_put(const asn_TYPE_descriptor_t *td, const void *sptr,
                 ASN__ENCODE_FAILED;
             }
         }
-        size_t type_name_len = strlen(type_name);
+        
+        /* Check if type_name contains ASN.1 meta-syntax keywords that should not be output as wrapper tags */
+        int skip_wrapper = 0;
+        if(type_name) {
+            size_t len = strlen(type_name);
+            /* Check for "SEQUENCE OF", "SET OF", or variations - these are meta-syntax, not actual tag names */
+            /* Match if keyword is at start, followed by anything except lowercase letter */
+            if((len >= 11 && strncmp(type_name, "SEQUENCE OF", 11) == 0 &&
+                (len == 11 || !(type_name[11] >= 'a' && type_name[11] <= 'z'))) ||
+               (len >= 11 && strncmp(type_name, "SEQUENCE-OF", 11) == 0 &&
+                (len == 11 || !(type_name[11] >= 'a' && type_name[11] <= 'z'))) ||
+               (len >= 6 && strncmp(type_name, "SET OF", 6) == 0 &&
+                (len == 6 || !(type_name[6] >= 'a' && type_name[6] <= 'z'))) ||
+               (len >= 6 && strncmp(type_name, "SET-OF", 6) == 0 &&
+                (len == 6 || !(type_name[6] >= 'a' && type_name[6] <= 'z')))) {
+                /* This is an ASN.1 keyword - skip wrapper tags, let the actual encoder handle element tags */
+                skip_wrapper = 1;
+                ASN_DEBUG("Skipping wrapper tag for ASN.1 meta-syntax: %s", type_name);
+            }
+        }
+        
+        size_t type_name_len = skip_wrapper ? 0 : strlen(type_name);
         asn_enc_rval_t tmper;
         
         er.encoded = 0;
         
-        /* Output opening tag for the selected type */
-        if(!(flags & XER_F_CANONICAL)) ASN__TEXT_INDENT(1, ilevel);
-        ASN__CALLBACK3("<", 1, type_name, type_name_len, ">", 1);
+        /* Output opening tag for the selected type (unless it's ASN.1 meta-syntax) */
+        if(!skip_wrapper) {
+            if(!(flags & XER_F_CANONICAL)) ASN__TEXT_INDENT(1, ilevel);
+            ASN__CALLBACK3("<", 1, type_name, type_name_len, ">", 1);
+        }
         
         /* Encode the actual content */
         tmper = selected.type_descriptor->op->xer_encoder(
-            selected.type_descriptor, memb_ptr, ilevel + 1, flags, cb, app_key);
+            selected.type_descriptor, memb_ptr, skip_wrapper ? ilevel : ilevel + 1, flags, cb, app_key);
         if(tmper.encoded == -1) return tmper;
         er.encoded += tmper.encoded;
         
-        /* Output closing tag */
-        if(!(flags & XER_F_CANONICAL)) ASN__TEXT_INDENT(1, ilevel - 1);
-        ASN__CALLBACK3("</", 2, type_name, type_name_len, ">", 1);
+        /* Output closing tag (unless it's ASN.1 meta-syntax) */
+        if(!skip_wrapper) {
+            if(!(flags & XER_F_CANONICAL)) ASN__TEXT_INDENT(1, ilevel - 1);
+            ASN__CALLBACK3("</", 2, type_name, type_name_len, ">", 1);
+        }
         
         ASN__ENCODED_OK(er);
     }
