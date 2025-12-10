@@ -145,6 +145,17 @@ SEQUENCE_OF_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr,
             ASN__ENCODE_FAILED;
         }
         mname = (*elm->name) ? elm->name : elm->type->xml_tag;
+        
+        /* Check if mname contains ASN.1 meta-syntax keywords that should not be output */
+        if(mname) {
+            if(strncmp(mname, "SEQUENCE OF ", 12) == 0 || 
+               strncmp(mname, "SET OF ", 7) == 0 ||
+               strncmp(mname, "SEQUENCE-OF-", 12) == 0 ||
+               strncmp(mname, "SET-OF-", 7) == 0) {
+                /* This is an ASN.1 keyword wrapper tag - use element type instead */
+                mname = elm->type->xml_tag;  /* Use the element type's tag instead */
+            }
+        }
     }
     size_t mlen = mname ? strlen(mname) : 0;
     int xcan = (flags & XER_F_CANONICAL);
