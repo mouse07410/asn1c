@@ -68,7 +68,8 @@ SEQUENCE_OF_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
             }
             
             /* Check if this matches "SEQUENCE OF" or "SEQUENCE-OF" */
-            /* Both "SEQUENCE OF" and "SEQUENCE-OF" are 11 characters */
+            /* Note: tag_start points after '<', so we compare 11 characters of tag content */
+            /* Full tags are "<SEQUENCE OF>" (13 chars) or "<SEQUENCE-OF>" (13 chars) */
             if((tag_end - tag_start >= 11) && (tag_start + 11 <= buf + size) &&
                (strncmp(tag_start, "SEQUENCE OF", 11) == 0 || 
                 strncmp(tag_start, "SEQUENCE-OF", 11) == 0)) {
