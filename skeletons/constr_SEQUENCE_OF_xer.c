@@ -148,10 +148,10 @@ SEQUENCE_OF_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr,
         
         /* Check if mname contains ASN.1 meta-syntax keywords that should not be output */
         if(mname) {
-            if(strncmp(mname, "SEQUENCE OF ", 12) == 0 || 
-               strncmp(mname, "SET OF ", 7) == 0 ||
-               strncmp(mname, "SEQUENCE-OF-", 12) == 0 ||
-               strncmp(mname, "SET-OF-", 7) == 0) {
+            if(strncmp(mname, "SEQUENCE OF", 11) == 0 || 
+               strncmp(mname, "SET OF", 6) == 0 ||
+               strncmp(mname, "SEQUENCE-OF", 11) == 0 ||
+               strncmp(mname, "SET-OF", 6) == 0) {
                 /* This is an ASN.1 keyword wrapper tag - use element type instead */
                 mname = elm->type->xml_tag;  /* Use the element type's tag instead */
             }
