@@ -488,7 +488,6 @@ SET_OF_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr, int ilevel,
                 }
                 FREEMEM(encs);
                 encs = NULL;
-                encs = NULL;
             }
             return tmper;
         }
