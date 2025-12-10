@@ -502,7 +502,6 @@ SET_OF_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr, int ilevel,
             }
             return tmper;
         }
-        er.encoded += tmper.encoded;
         if(tmper.encoded == 0 && specs->as_XMLValueList) {
             const char *name = elm->type->xml_tag;
             size_t len = strlen(name);
@@ -511,7 +510,10 @@ SET_OF_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr, int ilevel,
 
         if(mname) {
             ASN__CALLBACK3("</", 2, mname, mlen, ">", 1);
+            er.encoded += 5;
         }
+
+        er.encoded += (2 * mlen) + tmper.encoded;
 
     }
 
