@@ -180,6 +180,34 @@ ASN__STACK_OVERFLOW_CHECK(const asn_codec_ctx_t *ctx) {
 }
 #endif
 
+/**
+ * Check if the given name is an ASN.1 meta-syntax keyword that should
+ * not be output as an XML wrapper tag (e.g., "SEQUENCE OF", "SET OF").
+ * 
+ * Returns 1 if the name is a meta-syntax keyword, 0 otherwise.
+ */
+static inline int
+asn_is_meta_syntax_keyword(const char *name) {
+    if(!name) return 0;
+    
+    size_t len = strlen(name);
+    
+    /* Check for "SEQUENCE OF", "SEQUENCE-OF", "SET OF", "SET-OF" */
+    /* Match if keyword is at start, followed by anything except lowercase letter */
+    if((len >= 11 && strncmp(name, "SEQUENCE OF", 11) == 0 &&
+        (len == 11 || !(name[11] >= 'a' && name[11] <= 'z'))) ||
+       (len >= 11 && strncmp(name, "SEQUENCE-OF", 11) == 0 &&
+        (len == 11 || !(name[11] >= 'a' && name[11] <= 'z'))) ||
+       (len >= 6 && strncmp(name, "SET OF", 6) == 0 &&
+        (len == 6 || !(name[6] >= 'a' && name[6] <= 'z'))) ||
+       (len >= 6 && strncmp(name, "SET-OF", 6) == 0 &&
+        (len == 6 || !(name[6] >= 'a' && name[6] <= 'z')))) {
+        return 1;
+    }
+    
+    return 0;
+}
+
 #ifdef	__cplusplus
 }
 #endif

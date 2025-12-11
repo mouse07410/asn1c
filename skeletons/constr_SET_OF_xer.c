@@ -438,21 +438,9 @@ SET_OF_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr, int ilevel,
         mname = (*elm->name) ? elm->name : elm->type->xml_tag;
         
         /* Check if mname contains ASN.1 meta-syntax keywords that should not be output */
-        if(mname) {
-            size_t len = strlen(mname);
-            /* Check for "SEQUENCE OF" or "SEQUENCE-OF" or variations */
-            /* Match if keyword is at start, followed by anything except lowercase letter */
-            if((len >= 11 && strncmp(mname, "SEQUENCE OF", 11) == 0 &&
-                (len == 11 || !(mname[11] >= 'a' && mname[11] <= 'z'))) ||
-               (len >= 11 && strncmp(mname, "SEQUENCE-OF", 11) == 0 &&
-                (len == 11 || !(mname[11] >= 'a' && mname[11] <= 'z'))) ||
-               (len >= 6 && strncmp(mname, "SET OF", 6) == 0 &&
-                (len == 6 || !(mname[6] >= 'a' && mname[6] <= 'z'))) ||
-               (len >= 6 && strncmp(mname, "SET-OF", 6) == 0 &&
-                (len == 6 || !(mname[6] >= 'a' && mname[6] <= 'z')))) {
-                /* This is an ASN.1 keyword wrapper tag - use element type instead */
-                mname = elm->type->xml_tag;  /* Use the element type's tag instead */
-            }
+        if(asn_is_meta_syntax_keyword(mname)) {
+            /* This is an ASN.1 keyword wrapper tag - use element type instead */
+            mname = elm->type->xml_tag;  /* Use the element type's tag instead */
         }
     }
     size_t mlen = mname ? strlen(mname) : 0;

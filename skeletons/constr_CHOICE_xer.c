@@ -287,23 +287,7 @@ CHOICE_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr, int ilevel,
         const char *mname = elm->name;
         
         /* Check if mname contains ASN.1 meta-syntax keywords that should not be output as wrapper tags */
-        int skip_wrapper = 0;
-        if(mname) {
-            size_t len = strlen(mname);
-            /* Check for "SEQUENCE OF", "SET OF", or variations - these are meta-syntax, not actual tag names */
-            /* Match if keyword is at start, followed by anything except lowercase letter */
-            if((len >= 11 && strncmp(mname, "SEQUENCE OF", 11) == 0 &&
-                (len == 11 || !(mname[11] >= 'a' && mname[11] <= 'z'))) ||
-               (len >= 11 && strncmp(mname, "SEQUENCE-OF", 11) == 0 &&
-                (len == 11 || !(mname[11] >= 'a' && mname[11] <= 'z'))) ||
-               (len >= 6 && strncmp(mname, "SET OF", 6) == 0 &&
-                (len == 6 || !(mname[6] >= 'a' && mname[6] <= 'z'))) ||
-               (len >= 6 && strncmp(mname, "SET-OF", 6) == 0 &&
-                (len == 6 || !(mname[6] >= 'a' && mname[6] <= 'z')))) {
-                /* This is an ASN.1 keyword wrapper - skip wrapper tags entirely */
-                skip_wrapper = 1;
-            }
-        }
+        int skip_wrapper = asn_is_meta_syntax_keyword(mname);
         
         unsigned int mlen = (mname && !skip_wrapper) ? strlen(mname) : 0;
 
