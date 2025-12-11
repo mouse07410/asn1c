@@ -287,7 +287,7 @@ CHOICE_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr, int ilevel,
         const char *mname = elm->name;
         
         /* Check if mname contains ASN.1 meta-syntax keywords that should not be output as wrapper tags */
-        unsigned int mlen = mname ? strlen(mname) : 0;
+        unsigned int mlen = (mname && *mname) ? strlen(mname) : 0;
         int skip_wrapper = asn_is_meta_syntax_keyword(mname);
         if(skip_wrapper) {
             mlen = 0;

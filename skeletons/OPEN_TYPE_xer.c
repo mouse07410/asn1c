@@ -355,7 +355,7 @@ OPEN_TYPE_xer_put(const asn_TYPE_descriptor_t *td, const void *sptr,
         if(!type_name || !*type_name) {
             /* Fallback to type name if xml_tag is not set */
             type_name = selected.type_descriptor->name;
-            if(!type_name) {
+            if(!type_name || !*type_name) {
                 ASN_DEBUG("ERROR: Type descriptor has no name or xml_tag");
                 ASN__ENCODE_FAILED;
             }
