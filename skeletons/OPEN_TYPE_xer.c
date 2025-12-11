@@ -362,12 +362,12 @@ OPEN_TYPE_xer_put(const asn_TYPE_descriptor_t *td, const void *sptr,
         }
         
         /* Check if type_name contains ASN.1 meta-syntax keywords that should not be output as wrapper tags */
+        size_t type_name_len = strlen(type_name);
         int skip_wrapper = asn_is_meta_syntax_keyword(type_name);
         if(skip_wrapper) {
             ASN_DEBUG("Skipping wrapper tag for ASN.1 meta-syntax: %s", type_name);
+            type_name_len = 0;
         }
-        
-        size_t type_name_len = skip_wrapper ? 0 : strlen(type_name);
         asn_enc_rval_t tmper;
         
         er.encoded = 0;
