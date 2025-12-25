@@ -453,9 +453,18 @@ SET_OF_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr, int ilevel,
 
     if(!sptr) ASN__ENCODE_FAILED;
 
+    /* Check recursion depth to prevent stack overflow */
+    XER_ENCODER_RECURSION_DEPTH_INC();
+
+    /* Check recursion depth to prevent stack overflow */
+    XER_ENCODER_RECURSION_DEPTH_INC();
+
     if(xcan) {
         encs = (xer_tmp_enc_t *)MALLOC(list->count * sizeof(encs[0]));
-        if(!encs) ASN__ENCODE_FAILED;
+        if(!encs) {
+            XER_ENCODER_RECURSION_DEPTH_DEC();
+            ASN__ENCODE_FAILED;
+        }
         cb = SET_OF_encode_xer_callback;
     }
 
@@ -495,6 +504,7 @@ SET_OF_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr, int ilevel,
                 FREEMEM(encs);
                 encs = NULL;
             }
+            XER_ENCODER_RECURSION_DEPTH_DEC();
             return tmper;
         }
         er.encoded += tmper.encoded;
@@ -533,6 +543,7 @@ SET_OF_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr, int ilevel,
 
     goto cleanup;
 cb_failed:
+    XER_ENCODER_RECURSION_DEPTH_DEC();
     ASN__ENCODE_FAILED;
 cleanup:
     if(encs) {
@@ -542,5 +553,6 @@ cleanup:
         }
         FREEMEM(encs);
     }
+    XER_ENCODER_RECURSION_DEPTH_DEC();
     ASN__ENCODED_OK(er);
 }
