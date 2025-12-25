@@ -374,6 +374,9 @@ SEQUENCE_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr,
 
     if(!sptr) ASN__ENCODE_FAILED;
 
+    /* Check recursion depth to prevent stack overflow */
+    XER_ENCODER_RECURSION_DEPTH_INC();
+
     er.encoded = 0;
 
     for(edx = 0; edx < td->elements_count; edx++) {
@@ -390,6 +393,7 @@ SEQUENCE_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr,
                 assert(tmp_def_val == 0);
                 if(elm->default_value_set) {
                     if(elm->default_value_set(&tmp_def_val)) {
+                        XER_ENCODER_RECURSION_DEPTH_DEC();
                         ASN__ENCODE_FAILED;
                     } else {
                         memb_ptr = tmp_def_val;
@@ -399,6 +403,7 @@ SEQUENCE_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr,
                     continue;
                 } else {
                     /* Mandatory element is missing */
+                    XER_ENCODER_RECURSION_DEPTH_DEC();
                     ASN__ENCODE_FAILED;
                 }
             }
@@ -420,7 +425,10 @@ SEQUENCE_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr,
             ASN_STRUCT_FREE(*tmp_def_val_td, tmp_def_val);
             tmp_def_val = 0;
         }
-        if(tmper.encoded == -1) return tmper;
+        if(tmper.encoded == -1) {
+            XER_ENCODER_RECURSION_DEPTH_DEC();
+            return tmper;
+        }
         er.encoded += tmper.encoded;
 
         ASN__CALLBACK3("</", 2, mname, mlen, ">", 1);
@@ -428,8 +436,10 @@ SEQUENCE_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr,
 
     if(!xcan) ASN__TEXT_INDENT(1, ilevel - 1);
 
+    XER_ENCODER_RECURSION_DEPTH_DEC();
     ASN__ENCODED_OK(er);
 cb_failed:
     if(tmp_def_val) ASN_STRUCT_FREE(*tmp_def_val_td, tmp_def_val);
+    XER_ENCODER_RECURSION_DEPTH_DEC();
     ASN__ENCODE_FAILED;
 }

@@ -273,12 +273,16 @@ CHOICE_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr, int ilevel,
     if(!sptr)
         ASN__ENCODE_FAILED;
 
+    /* Check recursion depth to prevent stack overflow */
+    XER_ENCODER_RECURSION_DEPTH_INC();
+
     /*
      * Figure out which CHOICE element is encoded.
      */
     present = _fetch_present_idx(sptr, specs->pres_offset,specs->pres_size);
 
     if(present == 0 || present > td->elements_count) {
+        XER_ENCODER_RECURSION_DEPTH_DEC();
         ASN__ENCODE_FAILED;
     } else {
         asn_enc_rval_t tmper = {0,0,0};
@@ -296,7 +300,10 @@ CHOICE_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr, int ilevel,
         if(elm->flags & ATF_POINTER) {
             memb_ptr =
                 *(const void *const *)((const char *)sptr + elm->memb_offset);
-            if(!memb_ptr) ASN__ENCODE_FAILED;
+            if(!memb_ptr) {
+                XER_ENCODER_RECURSION_DEPTH_DEC();
+                ASN__ENCODE_FAILED;
+            }
         } else {
             memb_ptr = (const void *)((const char *)sptr + elm->memb_offset);
         }
@@ -311,7 +318,10 @@ CHOICE_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr, int ilevel,
 
         tmper = elm->type->op->xer_encoder(elm->type, memb_ptr,
                                            skip_wrapper ? ilevel : ilevel + 1, flags, cb, app_key);
-        if(tmper.encoded == -1) return tmper;
+        if(tmper.encoded == -1) {
+            XER_ENCODER_RECURSION_DEPTH_DEC();
+            return tmper;
+        }
         er.encoded += tmper.encoded;
 
         /* Output closing tag (unless it's ASN.1 meta-syntax) */
@@ -325,7 +335,9 @@ CHOICE_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr, int ilevel,
         }
     }
 
+    XER_ENCODER_RECURSION_DEPTH_DEC();
     ASN__ENCODED_OK(er);
 cb_failed:
+    XER_ENCODER_RECURSION_DEPTH_DEC();
     ASN__ENCODE_FAILED;
 }
