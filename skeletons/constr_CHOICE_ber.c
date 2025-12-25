@@ -134,7 +134,7 @@ CHOICE_decode_ber(const asn_codec_ctx_t *opt_codec_ctx,
     ctx = (asn_struct_ctx_t *)((char *)st + specs->ctx_offset);
 
     /* Check recursion depth to prevent stack overflow */
-    ASN__DECODER_RECURSION_DEPTH_CHECK(ctx);
+    ASN__DECODER_RECURSION_DEPTH_CHECK(opt_codec_ctx);
 
     /*
      * Start to parse where left previously

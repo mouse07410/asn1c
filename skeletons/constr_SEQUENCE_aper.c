@@ -482,7 +482,8 @@ SEQUENCE_encode_aper(const asn_TYPE_descriptor_t *td,
 
     ASN_DEBUG("Writing %d extensions", n_extensions);
     /* #18.9. Encode extensions as open type fields. */
-    if(SEQUENCE_handle_extensions_aper(td, sptr, 0, po) != n_extensions)
+    if(SEQUENCE_handle_extensions_aper(td, sptr, 0, po) != n_extensions) {
+        APER_ENCODER_RECURSION_DEPTH_DEC();
         ASN__ENCODE_FAILED;
     }
 

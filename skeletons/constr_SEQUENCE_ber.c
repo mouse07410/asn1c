@@ -156,7 +156,7 @@ SEQUENCE_decode_ber(const asn_codec_ctx_t *opt_codec_ctx,
      * Check recursion depth to prevent stack overflow from circular references,
      * using ctx->step 
 	 */
-    ASN__DECODER_RECURSION_DEPTH_CHECK(ctx);
+    ASN__DECODER_RECURSION_DEPTH_CHECK(opt_codec_ctx);
 
     /*
      * Start to parse where left previously
