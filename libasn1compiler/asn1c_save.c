@@ -722,15 +722,6 @@ identical_files(const char *fname1, const char *fname2) {
 	size_t olen, nlen;
 	int retval = 1;	/* Files are identical */
 
-#ifndef	_WIN32
-	struct stat sb;
-
-	if(lstat(fname1, &sb) || !S_ISREG(sb.st_mode)
-	|| lstat(fname2, &sb) || !S_ISREG(sb.st_mode)) {
-		return 0;	/* Files are not identical */
-	}
-#endif
-
 	fp1 = fopen(fname1, "r");
 	if(!fp1) { return 0; }
 	fp2 = fopen(fname2, "r");
