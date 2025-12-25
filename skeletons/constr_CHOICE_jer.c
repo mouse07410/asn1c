@@ -62,6 +62,10 @@ CHOICE_decode_jer(const asn_codec_ctx_t *opt_codec_ctx,
      */
     ctx = (asn_struct_ctx_t *)((char *)st + specs->ctx_offset);
 
+    /* Check recursion depth to prevent stack overflow */
+    if(ASN__STACK_OVERFLOW_CHECK(opt_codec_ctx))
+        RETURN(RC_FAIL);
+
     /*
      * Phases of JER/JSON processing:
      * Phase 0: Check that the opening key matches our expectations.

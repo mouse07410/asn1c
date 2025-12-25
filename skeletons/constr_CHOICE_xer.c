@@ -61,6 +61,11 @@ CHOICE_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
      * Restore parsing context.
      */
     ctx = (asn_struct_ctx_t *)((char *)st + specs->ctx_offset);
+
+    /* Check recursion depth to prevent stack overflow */
+    if(ASN__STACK_OVERFLOW_CHECK(opt_codec_ctx))
+        RETURN(RC_FAIL);
+
     if(ctx->phase == 0 && !*xml_tag)
         ctx->phase = 1;  /* Skip the outer tag checking phase */
 
