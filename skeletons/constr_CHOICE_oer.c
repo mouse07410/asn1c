@@ -328,11 +328,15 @@ CHOICE_encode_oer(const asn_TYPE_descriptor_t *td,
 
     if(!sptr) ASN__ENCODE_FAILED;
 
+    /* Check recursion depth to prevent stack overflow */
+    OER_ENCODER_RECURSION_DEPTH_INC();
+
     ASN_DEBUG("OER %s encoding as CHOICE", td->name);
 
     present = CHOICE_variant_get_presence(td, sptr);
     if(present == 0 || present > td->elements_count) {
         ASN_DEBUG("CHOICE %s member is not selected", td->name);
+        OER_ENCODER_RECURSION_DEPTH_DEC();
         ASN__ENCODE_FAILED;
     }
 
@@ -342,6 +346,7 @@ CHOICE_encode_oer(const asn_TYPE_descriptor_t *td,
             *(const void *const *)((const char *)sptr + elm->memb_offset);
         if(memb_ptr == 0) {
             /* Mandatory element absent */
+            OER_ENCODER_RECURSION_DEPTH_DEC();
             ASN__ENCODE_FAILED;
         }
     } else {
@@ -350,11 +355,13 @@ CHOICE_encode_oer(const asn_TYPE_descriptor_t *td,
 
     tag = asn_TYPE_outmost_tag(elm->type, memb_ptr, elm->tag_mode, elm->tag);
     if(tag == 0) {
+        OER_ENCODER_RECURSION_DEPTH_DEC();
         ASN__ENCODE_FAILED;
     }
 
     tag_len = oer_put_tag(tag, cb, app_key);
     if(tag_len < 0) {
+        OER_ENCODER_RECURSION_DEPTH_DEC();
         ASN__ENCODE_FAILED;
     }
 
@@ -362,7 +369,10 @@ CHOICE_encode_oer(const asn_TYPE_descriptor_t *td,
         ssize_t encoded = oer_open_type_put(elm->type,
                                elm->encoding_constraints.oer_constraints,
                                memb_ptr, cb, app_key);
-        if(encoded < 0) ASN__ENCODE_FAILED;
+        if(encoded < 0) {
+            OER_ENCODER_RECURSION_DEPTH_DEC();
+            ASN__ENCODE_FAILED;
+        }
         er.encoded = tag_len + encoded;
     } else {
         er = elm->type->op->oer_encoder(
@@ -371,5 +381,6 @@ CHOICE_encode_oer(const asn_TYPE_descriptor_t *td,
         if(er.encoded >= 0) er.encoded += tag_len;
     }
 
+    OER_ENCODER_RECURSION_DEPTH_DEC();
     return er;
 }

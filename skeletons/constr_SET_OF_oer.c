@@ -251,11 +251,15 @@ SET_OF_encode_oer(const asn_TYPE_descriptor_t *td,
 
     if(!sptr) ASN__ENCODE_FAILED;
 
+    /* Check recursion depth to prevent stack overflow */
+    OER_ENCODER_RECURSION_DEPTH_INC();
+
     elm = td->elements;
     list = _A_CSET_FROM_VOID(sptr);
 
     qty_len = oer_put_quantity(list->count, cb, app_key);
     if(qty_len < 0) {
+        OER_ENCODER_RECURSION_DEPTH_DEC();
         ASN__ENCODE_FAILED;
     }
     computed_size += qty_len;
@@ -267,6 +271,7 @@ SET_OF_encode_oer(const asn_TYPE_descriptor_t *td,
             elm->type, elm->encoding_constraints.oer_constraints, memb_ptr, cb,
             app_key);
         if(er.encoded < 0) {
+            OER_ENCODER_RECURSION_DEPTH_DEC();
             return er;
         } else {
             computed_size += er.encoded;
@@ -276,6 +281,7 @@ SET_OF_encode_oer(const asn_TYPE_descriptor_t *td,
     {
         asn_enc_rval_t erval = {0,0,0};
         erval.encoded = computed_size;
+        OER_ENCODER_RECURSION_DEPTH_DEC();
         ASN__ENCODED_OK(erval);
     }
 }
