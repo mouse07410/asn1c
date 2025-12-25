@@ -109,6 +109,9 @@ SET_OF_decode_ber(const asn_codec_ctx_t *opt_codec_ctx,
      */
     ctx = (asn_struct_ctx_t *)((char *)st + specs->ctx_offset);
 
+    /* Check recursion depth to prevent stack overflow */
+    ASN__DECODER_RECURSION_DEPTH_CHECK(ctx);
+
     /*
      * Start to parse where left previously
      */
@@ -288,6 +291,9 @@ SET_OF_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
 
     ASN_DEBUG("Estimating size for SET OF %s", td->name);
 
+    /* Check encoding recursion depth to prevent stack overflow */
+    ASN__ENCODER_RECURSION_DEPTH_INC();
+
     /*
      * Gather the length of the underlying members sequence.
      */
@@ -295,11 +301,17 @@ SET_OF_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
         void *memb_ptr = list->array[edx];
         asn_enc_rval_t erval = {0,0,0};
 
-        if(!memb_ptr) ASN__ENCODE_FAILED;
+        if(!memb_ptr) {
+            ASN__ENCODER_RECURSION_DEPTH_DEC();
+            ASN__ENCODE_FAILED;
+        }
 
         erval =
             elm->type->op->der_encoder(elm->type, memb_ptr, elm->tag_mode, elm->tag, 0, 0);
-        if(erval.encoded == -1) return erval;
+        if(erval.encoded == -1) {
+            ASN__ENCODER_RECURSION_DEPTH_DEC();
+            return erval;
+        }
         computed_size += erval.encoded;
     }
 
@@ -309,12 +321,14 @@ SET_OF_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
     encoding_size =
         der_write_tags(td, computed_size, tag_mode, 1, tag, cb, app_key);
     if(encoding_size < 0) {
+        ASN__ENCODER_RECURSION_DEPTH_DEC();
         ASN__ENCODE_FAILED;
     }
     computed_size += encoding_size;
 
     if(!cb || list->count == 0) {
         asn_enc_rval_t erval = {0,0,0};
+        ASN__ENCODER_RECURSION_DEPTH_DEC();
         erval.encoded = computed_size;
         ASN__ENCODED_OK(erval);
     }
@@ -347,9 +361,11 @@ SET_OF_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
     if(edx == list->count) {
         asn_enc_rval_t erval = {0,0,0};
         assert(computed_size == (size_t)encoding_size);
+        ASN__ENCODER_RECURSION_DEPTH_DEC();
         erval.encoded = computed_size;
         ASN__ENCODED_OK(erval);
     } else {
+        ASN__ENCODER_RECURSION_DEPTH_DEC();
         ASN__ENCODE_FAILED;
     }
 }

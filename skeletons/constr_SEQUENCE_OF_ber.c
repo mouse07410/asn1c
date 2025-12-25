@@ -23,21 +23,27 @@ SEQUENCE_OF_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
 
     ASN_DEBUG("Estimating size of SEQUENCE OF %s", td->name);
 
+    /* Check encoding recursion depth to prevent stack overflow */
+    ASN__ENCODER_RECURSION_DEPTH_INC();
+
     /*
      * Gather the length of the underlying members sequence.
      */
     if(!list) {
 	    ASN_DEBUG("SEQUENCE OF list is null");
+	    ASN__ENCODER_RECURSION_DEPTH_DEC();
 	    ASN__ENCODE_FAILED;
     }
 
     if((!list->array) && (list->count != 0)) {
 	    ASN_DEBUG("SEQUENCE OF list->array is null");
+	    ASN__ENCODER_RECURSION_DEPTH_DEC();
 	    ASN__ENCODE_FAILED;
     }
 
     if(list->count > 1000000) { // Arbitrary sanity check for count
 	    ASN_DEBUG("SEQUENCE OF list->array (list->count) is invalid or count is nonsensical");
+	    ASN__ENCODER_RECURSION_DEPTH_DEC();
 	    ASN__ENCODE_FAILED;
     }
 
@@ -53,8 +59,10 @@ SEQUENCE_OF_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
 	    erval = elm->type->op->der_encoder(elm->type, memb_ptr,
 	                                       elm->tag_mode, elm->tag,
 	                                       0, 0);
-	    if(erval.encoded == -1)
+	    if(erval.encoded == -1) {
+		    ASN__ENCODER_RECURSION_DEPTH_DEC();
 		    return erval;
+	    }
 	    computed_size += erval.encoded;
     }
 
@@ -64,6 +72,7 @@ SEQUENCE_OF_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
     encoding_size = der_write_tags(td, computed_size, tag_mode, 1, tag,
                                    cb, app_key);
     if(encoding_size == -1) {
+        ASN__ENCODER_RECURSION_DEPTH_DEC();
         erval.encoded = -1;
         erval.failed_type = td;
         erval.structure_ptr = sptr;
@@ -72,6 +81,7 @@ SEQUENCE_OF_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
 
     computed_size += encoding_size;
     if(!cb) {
+        ASN__ENCODER_RECURSION_DEPTH_DEC();
         erval.encoded = computed_size;
         ASN__ENCODED_OK(erval);
     }
@@ -87,8 +97,10 @@ SEQUENCE_OF_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
         erval = elm->type->op->der_encoder(elm->type, memb_ptr,
                                            elm->tag_mode, elm->tag,
                                            cb, app_key);
-        if(erval.encoded == -1)
+        if(erval.encoded == -1) {
+            ASN__ENCODER_RECURSION_DEPTH_DEC();
             return erval;
+        }
         encoding_size += erval.encoded;
     }
 
@@ -96,6 +108,7 @@ SEQUENCE_OF_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
         /*
          * Encoded size is not equal to the computed size.
          */
+        ASN__ENCODER_RECURSION_DEPTH_DEC();
         erval.encoded = -1;
         erval.failed_type = td;
         erval.structure_ptr = sptr;
@@ -105,5 +118,6 @@ SEQUENCE_OF_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
         erval.failed_type = 0;
     }
 
+    ASN__ENCODER_RECURSION_DEPTH_DEC();
     return erval;
 }
