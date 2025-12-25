@@ -205,22 +205,45 @@ ASN__STACK_OVERFLOW_CHECK(const asn_codec_ctx_t *ctx) {
 /*
  * Encoder recursion depth tracking using thread-local storage.
  * For encoders, we use a thread-local counter since they don't have ctx.
+ * Separate counters per format allow independent depth tracking and
+ * better debugging (know which format hit the limit).
  */
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_THREADS__)
 /* C11 thread support */
 #include <threads.h>
-extern thread_local int asn1_encoding_depth;
+extern thread_local int asn1_encoding_depth;  /* BER/DER */
+extern thread_local int uper_encoding_depth;  /* UPER */
+extern thread_local int aper_encoding_depth;  /* APER */
+extern thread_local int oer_encoding_depth;   /* OER */
+extern thread_local int xer_encoding_depth;   /* XER */
+extern thread_local int jer_encoding_depth;   /* JER */
 #elif defined(__GNUC__) || defined(__clang__)
 /* GCC/Clang thread-local extension */
-extern __thread int asn1_encoding_depth;
+extern __thread int asn1_encoding_depth;  /* BER/DER */
+extern __thread int uper_encoding_depth;  /* UPER */
+extern __thread int aper_encoding_depth;  /* APER */
+extern __thread int oer_encoding_depth;   /* OER */
+extern __thread int xer_encoding_depth;   /* XER */
+extern __thread int jer_encoding_depth;   /* JER */
 #elif defined(_MSC_VER)
 /* MSVC thread-local */
-extern __declspec(thread) int asn1_encoding_depth;
+extern __declspec(thread) int asn1_encoding_depth;  /* BER/DER */
+extern __declspec(thread) int uper_encoding_depth;  /* UPER */
+extern __declspec(thread) int aper_encoding_depth;  /* APER */
+extern __declspec(thread) int oer_encoding_depth;   /* OER */
+extern __declspec(thread) int xer_encoding_depth;   /* XER */
+extern __declspec(thread) int jer_encoding_depth;   /* JER */
 #else
 /* No thread-local support, use regular variable (not thread-safe) */
-extern int asn1_encoding_depth;
+extern int asn1_encoding_depth;  /* BER/DER */
+extern int uper_encoding_depth;  /* UPER */
+extern int aper_encoding_depth;  /* APER */
+extern int oer_encoding_depth;   /* OER */
+extern int xer_encoding_depth;   /* XER */
+extern int jer_encoding_depth;   /* JER */
 #endif
 
+/* BER/DER encoder depth tracking (already implemented) */
 #define ASN__ENCODER_RECURSION_DEPTH_INC() \
     do { \
         if(asn1_encoding_depth >= ASN_STACK_OVERFLOW_LIMIT) { \
@@ -232,6 +255,71 @@ extern int asn1_encoding_depth;
 
 #define ASN__ENCODER_RECURSION_DEPTH_DEC() \
     do { asn1_encoding_depth--; } while(0)
+
+/* UPER encoder depth tracking */
+#define UPER_ENCODER_RECURSION_DEPTH_INC() \
+    do { \
+        if(uper_encoding_depth >= ASN_STACK_OVERFLOW_LIMIT) { \
+            ASN_DEBUG("UPER encoding recursion depth limit exceeded"); \
+            ASN__ENCODE_FAILED; \
+        } \
+        uper_encoding_depth++; \
+    } while(0)
+
+#define UPER_ENCODER_RECURSION_DEPTH_DEC() \
+    do { uper_encoding_depth--; } while(0)
+
+/* APER encoder depth tracking */
+#define APER_ENCODER_RECURSION_DEPTH_INC() \
+    do { \
+        if(aper_encoding_depth >= ASN_STACK_OVERFLOW_LIMIT) { \
+            ASN_DEBUG("APER encoding recursion depth limit exceeded"); \
+            ASN__ENCODE_FAILED; \
+        } \
+        aper_encoding_depth++; \
+    } while(0)
+
+#define APER_ENCODER_RECURSION_DEPTH_DEC() \
+    do { aper_encoding_depth--; } while(0)
+
+/* OER encoder depth tracking */
+#define OER_ENCODER_RECURSION_DEPTH_INC() \
+    do { \
+        if(oer_encoding_depth >= ASN_STACK_OVERFLOW_LIMIT) { \
+            ASN_DEBUG("OER encoding recursion depth limit exceeded"); \
+            ASN__ENCODE_FAILED; \
+        } \
+        oer_encoding_depth++; \
+    } while(0)
+
+#define OER_ENCODER_RECURSION_DEPTH_DEC() \
+    do { oer_encoding_depth--; } while(0)
+
+/* XER encoder depth tracking */
+#define XER_ENCODER_RECURSION_DEPTH_INC() \
+    do { \
+        if(xer_encoding_depth >= ASN_STACK_OVERFLOW_LIMIT) { \
+            ASN_DEBUG("XER encoding recursion depth limit exceeded"); \
+            ASN__ENCODE_FAILED; \
+        } \
+        xer_encoding_depth++; \
+    } while(0)
+
+#define XER_ENCODER_RECURSION_DEPTH_DEC() \
+    do { xer_encoding_depth--; } while(0)
+
+/* JER encoder depth tracking */
+#define JER_ENCODER_RECURSION_DEPTH_INC() \
+    do { \
+        if(jer_encoding_depth >= ASN_STACK_OVERFLOW_LIMIT) { \
+            ASN_DEBUG("JER encoding recursion depth limit exceeded"); \
+            ASN__ENCODE_FAILED; \
+        } \
+        jer_encoding_depth++; \
+    } while(0)
+
+#define JER_ENCODER_RECURSION_DEPTH_DEC() \
+    do { jer_encoding_depth--; } while(0)
 
 /**
  * Check if the given name is an ASN.1 meta-syntax keyword that should
