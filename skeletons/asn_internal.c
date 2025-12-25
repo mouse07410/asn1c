@@ -4,6 +4,23 @@
 int asn_debug_indent = 0;
 #endif
 
+/*
+ * Thread-local encoding recursion depth counter for preventing stack overflow.
+ */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_THREADS__)
+/* C11 thread support */
+thread_local int asn1_encoding_depth = 0;
+#elif defined(__GNUC__) || defined(__clang__)
+/* GCC/Clang thread-local extension */
+__thread int asn1_encoding_depth = 0;
+#elif defined(_MSC_VER)
+/* MSVC thread-local */
+__declspec(thread) int asn1_encoding_depth = 0;
+#else
+/* No thread-local support, use regular variable (not thread-safe) */
+int asn1_encoding_depth = 0;
+#endif
+
 ssize_t
 asn__format_to_callback(int (*cb)(const void *, size_t, void *key), void *key,
                         const char *fmt, ...) {

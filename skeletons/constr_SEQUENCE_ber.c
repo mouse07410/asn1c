@@ -138,6 +138,10 @@ SEQUENCE_decode_ber(const asn_codec_ctx_t *opt_codec_ctx,
     ASN_DEBUG("Decoding %s as SEQUENCE", td->name);
 
     /*
+     * Check recursion depth to prevent stack overflow from circular references.
+     */
+
+    /*
      * Create the target structure if it is not present already.
      */
     if(st == 0) {
@@ -151,6 +155,9 @@ SEQUENCE_decode_ber(const asn_codec_ctx_t *opt_codec_ctx,
      * Restore parsing context.
      */
     ctx = (asn_struct_ctx_t *)((char *)st + specs->ctx_offset);
+
+    /* Check recursion depth using ctx->step */
+    ASN__DECODER_RECURSION_DEPTH_CHECK(ctx);
 
     /*
      * Start to parse where left previously
@@ -530,6 +537,9 @@ SEQUENCE_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
     ASN_DEBUG("%s %s as SEQUENCE",
               cb?"Encoding":"Estimating", td->name);
 
+    /* Check encoding recursion depth to prevent stack overflow */
+    ASN__ENCODER_RECURSION_DEPTH_INC();
+
     /*
      * Gather the length of the underlying members sequence.
      */
@@ -581,11 +591,16 @@ SEQUENCE_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
      */
     ret = der_write_tags(td, computed_size, tag_mode, 1, tag, cb, app_key);
     ASN_DEBUG("Wrote tags: %ld (+%ld)", (long)ret, (long)computed_size);
-    if(ret == -1)
+    if(ret == -1) {
+        ASN__ENCODER_RECURSION_DEPTH_DEC();
         ASN__ENCODE_FAILED;
+    }
     erval.encoded = computed_size + ret;
 
-    if(!cb) ASN__ENCODED_OK(erval);
+    if(!cb) {
+        ASN__ENCODER_RECURSION_DEPTH_DEC();
+        ASN__ENCODED_OK(erval);
+    }
 
     /*
      * Encode all members.
@@ -618,13 +633,16 @@ SEQUENCE_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
         }
 
        
-        if(tmperval.encoded == -1)
+        if(tmperval.encoded == -1) {
+            ASN__ENCODER_RECURSION_DEPTH_DEC();
             return tmperval;
+        }
 
         if(computed_size < (size_t)tmperval.encoded) {
 	        /* This should never happen if estimation and encoding are consistent */
 	        ASN_DEBUG("Size mismatch: computed_size=%zu < tmperval.encoded=%zd for element %s",
 	                  computed_size, tmperval.encoded, elm->name);
+	        ASN__ENCODER_RECURSION_DEPTH_DEC();
 	        ASN__ENCODE_FAILED;
         }
         
@@ -633,11 +651,14 @@ SEQUENCE_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr,
                   edx, elm->name, td->name, (long)tmperval.encoded);
     }
 
-    if(computed_size != 0)
+    if(computed_size != 0) {
         /*
          * Encoded size is not equal to the computed size.
          */
+        ASN__ENCODER_RECURSION_DEPTH_DEC();
         ASN__ENCODE_FAILED;
+    }
 
+    ASN__ENCODER_RECURSION_DEPTH_DEC();
     ASN__ENCODED_OK(erval);
 }

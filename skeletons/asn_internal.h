@@ -154,6 +154,15 @@ asn__format_to_callback(
 
 #define	ASN__DEFAULT_STACK_MAX	(30000)
 
+/*
+ * Recursion depth limit for encoding/decoding to prevent stack overflow
+ * from circular references in ASN.1 structures. Can be overridden at
+ * compile time with -DASN_STACK_OVERFLOW_LIMIT=<value>
+ */
+#ifndef ASN_STACK_OVERFLOW_LIMIT
+#define ASN_STACK_OVERFLOW_LIMIT 30
+#endif
+
 #if defined(ASN__SANITIZE_ENABLED) || defined(ASN_DISABLE_STACK_OVERFLOW_CHECK)
 static int CC_NOTUSED
 ASN__STACK_OVERFLOW_CHECK(const asn_codec_ctx_t *ctx) {
@@ -179,6 +188,50 @@ ASN__STACK_OVERFLOW_CHECK(const asn_codec_ctx_t *ctx) {
 	return 0;
 }
 #endif
+
+/*
+ * Decoder recursion depth tracking using ctx->step.
+ * Check if recursion depth (stored in ctx->step) exceeds the limit.
+ * This prevents stack overflow from circular references.
+ */
+#define ASN__DECODER_RECURSION_DEPTH_CHECK(ctx) \
+    do { \
+        if((ctx) && (ctx)->step >= ASN_STACK_OVERFLOW_LIMIT) { \
+            ASN_DEBUG("Decoding recursion depth limit exceeded"); \
+            return (asn_dec_rval_t){RC_FAIL, 0}; \
+        } \
+    } while(0)
+
+/*
+ * Encoder recursion depth tracking using thread-local storage.
+ * For encoders, we use a thread-local counter since they don't have ctx.
+ */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_THREADS__)
+/* C11 thread support */
+#include <threads.h>
+extern thread_local int asn1_encoding_depth;
+#elif defined(__GNUC__) || defined(__clang__)
+/* GCC/Clang thread-local extension */
+extern __thread int asn1_encoding_depth;
+#elif defined(_MSC_VER)
+/* MSVC thread-local */
+extern __declspec(thread) int asn1_encoding_depth;
+#else
+/* No thread-local support, use regular variable (not thread-safe) */
+extern int asn1_encoding_depth;
+#endif
+
+#define ASN__ENCODER_RECURSION_DEPTH_INC() \
+    do { \
+        if(asn1_encoding_depth >= ASN_STACK_OVERFLOW_LIMIT) { \
+            ASN_DEBUG("Encoding recursion depth limit exceeded"); \
+            ASN__ENCODE_FAILED; \
+        } \
+        asn1_encoding_depth++; \
+    } while(0)
+
+#define ASN__ENCODER_RECURSION_DEPTH_DEC() \
+    do { asn1_encoding_depth--; } while(0)
 
 /**
  * Check if the given name is an ASN.1 meta-syntax keyword that should
