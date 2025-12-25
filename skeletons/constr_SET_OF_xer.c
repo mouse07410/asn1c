@@ -460,9 +460,6 @@ SET_OF_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr, int ilevel,
     /* Check recursion depth to prevent stack overflow */
     XER_ENCODER_RECURSION_DEPTH_INC();
 
-    /* Check recursion depth to prevent stack overflow */
-    XER_ENCODER_RECURSION_DEPTH_INC();
-
     if(xcan) {
         encs = (xer_tmp_enc_t *)MALLOC(list->count * sizeof(encs[0]));
         if(!encs) {

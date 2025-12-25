@@ -161,9 +161,6 @@ SEQUENCE_OF_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr,
     /* Check recursion depth to prevent stack overflow */
     XER_ENCODER_RECURSION_DEPTH_INC();
 
-    /* Check recursion depth to prevent stack overflow */
-    XER_ENCODER_RECURSION_DEPTH_INC();
-
     er.encoded = 0;
 
     for(i = 0; i < list->count; i++) {
