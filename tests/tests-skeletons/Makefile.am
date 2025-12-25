@@ -28,7 +28,8 @@ check_PROGRAMS =                \
     check-UPER-support          \
     check-UPER-UniversalString  \
     check-UPER-INTEGER          \
-    check-UPER-INTEGER-semiconstrained
+    check-UPER-INTEGER-semiconstrained \
+    check-recursive-overflow
 
 if EXPLICIT_M32
 check_PROGRAMS +=                   \

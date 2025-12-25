@@ -401,6 +401,9 @@ SEQUENCE_encode_oer(const asn_TYPE_descriptor_t *td,
 
     (void)constraints;
 
+    /* Check recursion depth to prevent stack overflow */
+    OER_ENCODER_RECURSION_DEPTH_INC();
+
     if(preamble_bits) {
         asn_bit_outp_t preamble;
 
