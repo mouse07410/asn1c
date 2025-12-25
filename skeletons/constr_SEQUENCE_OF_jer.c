@@ -20,6 +20,9 @@ SEQUENCE_OF_encode_jer(const asn_TYPE_descriptor_t *td, const asn_jer_constraint
 
     if(!sptr) ASN__ENCODE_FAILED;
 
+    /* Check recursion depth to prevent stack overflow */
+    JER_ENCODER_RECURSION_DEPTH_INC();
+
     er.encoded = 0;
     ASN__CALLBACK("[", 1);
 
@@ -33,7 +36,10 @@ SEQUENCE_OF_encode_jer(const asn_TYPE_descriptor_t *td, const asn_jer_constraint
                                            elm->encoding_constraints.jer_constraints,
                                            memb_ptr, ilevel + 1,
                                            flags, cb, app_key);
-        if(tmper.encoded == -1) return tmper;
+        if(tmper.encoded == -1) {
+            JER_ENCODER_RECURSION_DEPTH_DEC();
+            return tmper;
+        }
         er.encoded += tmper.encoded;
         if(tmper.encoded == 0 && specs->as_XMLValueList) {
             const char *name = elm->type->xml_tag;
@@ -50,7 +56,9 @@ SEQUENCE_OF_encode_jer(const asn_TYPE_descriptor_t *td, const asn_jer_constraint
     if(!jmin) ASN__TEXT_INDENT(1, ilevel);
     ASN__CALLBACK("]", 1);
 
+    JER_ENCODER_RECURSION_DEPTH_DEC();
     ASN__ENCODED_OK(er);
 cb_failed:
+    JER_ENCODER_RECURSION_DEPTH_DEC();
     ASN__ENCODE_FAILED;
 }
