@@ -254,7 +254,13 @@ extern int jer_encoding_depth;   /* JER */
     } while(0)
 
 #define ASN__ENCODER_RECURSION_DEPTH_DEC() \
-    do { asn1_encoding_depth--; } while(0)
+    do { \
+        if(asn1_encoding_depth > 0) { \
+            asn1_encoding_depth--; \
+        } else { \
+            ASN_DEBUG("BER/DER encoding depth underflow detected"); \
+        } \
+    } while(0)
 
 /* UPER encoder depth tracking */
 #define UPER_ENCODER_RECURSION_DEPTH_INC() \
@@ -267,7 +273,13 @@ extern int jer_encoding_depth;   /* JER */
     } while(0)
 
 #define UPER_ENCODER_RECURSION_DEPTH_DEC() \
-    do { uper_encoding_depth--; } while(0)
+    do { \
+        if(uper_encoding_depth > 0) { \
+            uper_encoding_depth--; \
+        } else { \
+            ASN_DEBUG("UPER encoding depth underflow detected"); \
+        } \
+    } while(0)
 
 /* APER encoder depth tracking */
 #define APER_ENCODER_RECURSION_DEPTH_INC() \
@@ -280,7 +292,13 @@ extern int jer_encoding_depth;   /* JER */
     } while(0)
 
 #define APER_ENCODER_RECURSION_DEPTH_DEC() \
-    do { aper_encoding_depth--; } while(0)
+    do { \
+        if(aper_encoding_depth > 0) { \
+            aper_encoding_depth--; \
+        } else { \
+            ASN_DEBUG("APER encoding depth underflow detected"); \
+        } \
+    } while(0)
 
 /* OER encoder depth tracking */
 #define OER_ENCODER_RECURSION_DEPTH_INC() \
@@ -293,7 +311,13 @@ extern int jer_encoding_depth;   /* JER */
     } while(0)
 
 #define OER_ENCODER_RECURSION_DEPTH_DEC() \
-    do { oer_encoding_depth--; } while(0)
+    do { \
+        if(oer_encoding_depth > 0) { \
+            oer_encoding_depth--; \
+        } else { \
+            ASN_DEBUG("OER encoding depth underflow detected"); \
+        } \
+    } while(0)
 
 /* XER encoder depth tracking */
 #define XER_ENCODER_RECURSION_DEPTH_INC() \
@@ -306,7 +330,13 @@ extern int jer_encoding_depth;   /* JER */
     } while(0)
 
 #define XER_ENCODER_RECURSION_DEPTH_DEC() \
-    do { xer_encoding_depth--; } while(0)
+    do { \
+        if(xer_encoding_depth > 0) { \
+            xer_encoding_depth--; \
+        } else { \
+            ASN_DEBUG("XER encoding depth underflow detected"); \
+        } \
+    } while(0)
 
 /* JER encoder depth tracking */
 #define JER_ENCODER_RECURSION_DEPTH_INC() \
@@ -319,7 +349,13 @@ extern int jer_encoding_depth;   /* JER */
     } while(0)
 
 #define JER_ENCODER_RECURSION_DEPTH_DEC() \
-    do { jer_encoding_depth--; } while(0)
+    do { \
+        if(jer_encoding_depth > 0) { \
+            jer_encoding_depth--; \
+        } else { \
+            ASN_DEBUG("JER encoding depth underflow detected"); \
+        } \
+    } while(0)
 
 /**
  * Check if the given name is an ASN.1 meta-syntax keyword that should

@@ -288,6 +288,178 @@ static void test_circular_reference_simulation(void) {
     printf("  PASS: Circular reference protection works for all tested formats\n");
 }
 
+/*
+ * Test: Verify underflow protection prevents depth counters from going negative
+ * This protects against malicious PDUs that might try to manipulate depth counters
+ */
+static void test_depth_underflow_protection(void) {
+    printf("Testing depth underflow protection...\n");
+    
+    /* Test BER/DER underflow protection */
+    asn1_encoding_depth = 0;
+    ASN__ENCODER_RECURSION_DEPTH_DEC();  /* Should not go negative */
+    assert(asn1_encoding_depth == 0 && "BER depth should not go negative");
+    printf("  BER/DER underflow protection works\n");
+    
+    /* Test UPER underflow protection */
+    uper_encoding_depth = 0;
+    UPER_ENCODER_RECURSION_DEPTH_DEC();
+    assert(uper_encoding_depth == 0 && "UPER depth should not go negative");
+    printf("  UPER underflow protection works\n");
+    
+    /* Test APER underflow protection */
+    aper_encoding_depth = 0;
+    APER_ENCODER_RECURSION_DEPTH_DEC();
+    assert(aper_encoding_depth == 0 && "APER depth should not go negative");
+    printf("  APER underflow protection works\n");
+    
+    /* Test OER underflow protection */
+    oer_encoding_depth = 0;
+    OER_ENCODER_RECURSION_DEPTH_DEC();
+    assert(oer_encoding_depth == 0 && "OER depth should not go negative");
+    printf("  OER underflow protection works\n");
+    
+    /* Test XER underflow protection */
+    xer_encoding_depth = 0;
+    XER_ENCODER_RECURSION_DEPTH_DEC();
+    assert(xer_encoding_depth == 0 && "XER depth should not go negative");
+    printf("  XER underflow protection works\n");
+    
+    /* Test JER underflow protection */
+    jer_encoding_depth = 0;
+    JER_ENCODER_RECURSION_DEPTH_DEC();
+    assert(jer_encoding_depth == 0 && "JER depth should not go negative");
+    printf("  JER underflow protection works\n");
+    
+    printf("  PASS: All formats protected against underflow\n");
+}
+
+/*
+ * Test: Simulate malicious PDU attack attempting depth manipulation
+ * This tests defense against attempts to underflow depth counters
+ */
+static void test_malicious_pdu_protection(void) {
+    printf("Testing malicious PDU protection...\n");
+    
+    /* Simulate a malicious PDU trying to underflow counters */
+    /* by calling DEC without corresponding INC */
+    
+    /* Test BER/DER */
+    asn1_encoding_depth = 0;
+    for(int i = 0; i < 10; i++) {
+        ASN__ENCODER_RECURSION_DEPTH_DEC();
+    }
+    assert(asn1_encoding_depth == 0 && "BER depth resisted underflow attack");
+    printf("  BER/DER resisted underflow attack (depth=%d)\n", asn1_encoding_depth);
+    
+    /* Test UPER */
+    uper_encoding_depth = 0;
+    for(int i = 0; i < 10; i++) {
+        UPER_ENCODER_RECURSION_DEPTH_DEC();
+    }
+    assert(uper_encoding_depth == 0 && "UPER depth resisted underflow attack");
+    printf("  UPER resisted underflow attack (depth=%d)\n", uper_encoding_depth);
+    
+    /* Test APER */
+    aper_encoding_depth = 0;
+    for(int i = 0; i < 10; i++) {
+        APER_ENCODER_RECURSION_DEPTH_DEC();
+    }
+    assert(aper_encoding_depth == 0 && "APER depth resisted underflow attack");
+    printf("  APER resisted underflow attack (depth=%d)\n", aper_encoding_depth);
+    
+    /* Test OER */
+    oer_encoding_depth = 0;
+    for(int i = 0; i < 10; i++) {
+        OER_ENCODER_RECURSION_DEPTH_DEC();
+    }
+    assert(oer_encoding_depth == 0 && "OER depth resisted underflow attack");
+    printf("  OER resisted underflow attack (depth=%d)\n", oer_encoding_depth);
+    
+    /* Test XER */
+    xer_encoding_depth = 0;
+    for(int i = 0; i < 10; i++) {
+        XER_ENCODER_RECURSION_DEPTH_DEC();
+    }
+    assert(xer_encoding_depth == 0 && "XER depth resisted underflow attack");
+    printf("  XER resisted underflow attack (depth=%d)\n", xer_encoding_depth);
+    
+    /* Test JER */
+    jer_encoding_depth = 0;
+    for(int i = 0; i < 10; i++) {
+        JER_ENCODER_RECURSION_DEPTH_DEC();
+    }
+    assert(jer_encoding_depth == 0 && "JER depth resisted underflow attack");
+    printf("  JER resisted underflow attack (depth=%d)\n", jer_encoding_depth);
+    
+    printf("  PASS: All formats protected against malicious PDU attacks\n");
+}
+
+/*
+ * Test: Verify correct inc/dec pairing maintains accurate depth
+ */
+static void test_depth_balance(void) {
+    printf("Testing depth counter balance...\n");
+    
+    /* Test BER/DER - manually increment/decrement to test balance */
+    asn1_encoding_depth = 0;
+    asn1_encoding_depth++;
+    asn1_encoding_depth++;
+    asn1_encoding_depth++;
+    assert(asn1_encoding_depth == 3);
+    ASN__ENCODER_RECURSION_DEPTH_DEC();
+    ASN__ENCODER_RECURSION_DEPTH_DEC();
+    ASN__ENCODER_RECURSION_DEPTH_DEC();
+    assert(asn1_encoding_depth == 0);
+    printf("  BER/DER depth balancing works\n");
+    
+    /* Test UPER */
+    uper_encoding_depth = 0;
+    uper_encoding_depth++;
+    uper_encoding_depth++;
+    assert(uper_encoding_depth == 2);
+    UPER_ENCODER_RECURSION_DEPTH_DEC();
+    UPER_ENCODER_RECURSION_DEPTH_DEC();
+    assert(uper_encoding_depth == 0);
+    printf("  UPER depth balancing works\n");
+    
+    /* Test APER */
+    aper_encoding_depth = 0;
+    aper_encoding_depth++;
+    aper_encoding_depth++;
+    assert(aper_encoding_depth == 2);
+    APER_ENCODER_RECURSION_DEPTH_DEC();
+    APER_ENCODER_RECURSION_DEPTH_DEC();
+    assert(aper_encoding_depth == 0);
+    printf("  APER depth balancing works\n");
+    
+    /* Test OER */
+    oer_encoding_depth = 0;
+    oer_encoding_depth++;
+    assert(oer_encoding_depth == 1);
+    OER_ENCODER_RECURSION_DEPTH_DEC();
+    assert(oer_encoding_depth == 0);
+    printf("  OER depth balancing works\n");
+    
+    /* Test XER */
+    xer_encoding_depth = 0;
+    xer_encoding_depth++;
+    assert(xer_encoding_depth == 1);
+    XER_ENCODER_RECURSION_DEPTH_DEC();
+    assert(xer_encoding_depth == 0);
+    printf("  XER depth balancing works\n");
+    
+    /* Test JER */
+    jer_encoding_depth = 0;
+    jer_encoding_depth++;
+    assert(jer_encoding_depth == 1);
+    JER_ENCODER_RECURSION_DEPTH_DEC();
+    assert(jer_encoding_depth == 0);
+    printf("  JER depth balancing works\n");
+    
+    printf("  PASS: Depth balancing works for all formats\n");
+}
+
 int main(void) {
     printf("=== ASN.1 Recursion Overflow Protection Tests ===\n\n");
     
@@ -297,6 +469,9 @@ int main(void) {
     test_macros_defined();
     test_deep_recursion_protection();
     test_circular_reference_simulation();
+    test_depth_underflow_protection();
+    test_malicious_pdu_protection();
+    test_depth_balance();
     
     printf("\n=== All tests passed ===\n");
     return 0;
