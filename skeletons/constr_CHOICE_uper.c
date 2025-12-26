@@ -189,9 +189,11 @@ CHOICE_encode_uper(const asn_TYPE_descriptor_t *td,
             ASN__ENCODE_FAILED;
         }
 
-        UPER_ENCODER_RECURSION_DEPTH_DEC();
-        return elm->type->op->uper_encoder(
+        asn_enc_rval_t rval;
+        rval = elm->type->op->uper_encoder(
             elm->type, elm->encoding_constraints.per_constraints, memb_ptr, po);
+        UPER_ENCODER_RECURSION_DEPTH_DEC();
+        return rval;
     } else {
         asn_enc_rval_t rval = {0,0,0};
         if(specs->ext_start == -1) {
