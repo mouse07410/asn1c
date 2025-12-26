@@ -190,7 +190,6 @@ CHOICE_encode_aper(const asn_TYPE_descriptor_t *td,
             ASN__ENCODE_FAILED;
         }
 
-        APER_ENCODER_RECURSION_DEPTH_DEC();
         return elm->type->op->aper_encoder(elm->type, elm->encoding_constraints.per_constraints,
                                            memb_ptr, po);
     } else {
