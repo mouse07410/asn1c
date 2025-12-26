@@ -1,0 +1,13 @@
+
+-- OK: Test ENCODING-CONTROL recognition
+-- Verifies that ENCODING-CONTROL is recognized without a WARNING
+
+TestEncodingControl DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+TestMessage ::= SEQUENCE {
+    data  OCTET STRING
+}
+
+ENCODING-CONTROL XER
+
+END

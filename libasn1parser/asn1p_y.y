@@ -652,15 +652,12 @@ Assignment:
 	| TOK_ENCODING_CONTROL TOK_capitalreference 
 		{ asn1p_lexer_hack_push_encoding_control(); }
 			{
-		$$ = asn1p_module_new();
-		if($$) {
-			/* Store encoding control name for future processing */
-			$$->module_flags |= MSF_unk_INSTRUCTIONS;
-			ASN_DEBUG("Captured ENCODING-CONTROL %s at %s:%d",
-				  $2, ASN_FILENAME, yylineno);
-		}
+		/* ENCODING-CONTROL directives are recognized but detailed parsing not yet implemented */
+		fprintf(stderr,
+			"NOTE: ENCODING-CONTROL %s recognized at %s:%d (detailed support pending)\n",
+			$2, ASN_FILENAME, yylineno);
 		free($2);
-		/* Note: ENCODING-CONTROL directives are now recognized but not yet fully processed */
+		$$ = 0;
 	}
 
 	/*
