@@ -202,6 +202,22 @@ typedef struct asn1p_expr_s {
 		asn1c_integer_t tag_value;
 	} tag;
 
+	/*
+	 * Encoding control directives (X.693 Annex G, X.696)
+	 * Minimal structure to store encoding preferences
+	 */
+	struct asn1p_encoding_control_s {
+		enum asn1p_encoding_control_type_e {
+			EC_NONE = 0,
+			/* XER encoding controls */
+			EC_XER_HEXADECIMAL,          /* Force hex encoding for OCTET STRING */
+			EC_XER_BASE64,               /* Force Base64 encoding (default) */
+			EC_XER_UTF8,                 /* Force UTF-8 text encoding */
+			/* Future: Additional encoding controls can be added here */
+		} encoding_type;
+		char *encoding_reference;  /* Reference name (e.g., "XER") */
+	} encoding_control;
+
 	struct asn1p_expr_marker_s {
 		enum asn1p_expr_marker_e {
 		  EM_NOMARK,

@@ -652,12 +652,15 @@ Assignment:
 	| TOK_ENCODING_CONTROL TOK_capitalreference 
 		{ asn1p_lexer_hack_push_encoding_control(); }
 			{
-		fprintf(stderr,
-			"WARNING: ENCODING-CONTROL %s "
-			"specification at %s:%d ignored\n",
-			$2, ASN_FILENAME, yylineno);
+		$$ = asn1p_module_new();
+		if($$) {
+			/* Store encoding control name for future processing */
+			$$->module_flags |= MSF_unk_INSTRUCTIONS;
+			ASN_DEBUG("Captured ENCODING-CONTROL %s at %s:%d",
+				  $2, ASN_FILENAME, yylineno);
+		}
 		free($2);
-		$$ = 0;
+		/* Note: ENCODING-CONTROL directives are now recognized but not yet fully processed */
 	}
 
 	/*

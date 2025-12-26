@@ -193,6 +193,7 @@ asn1p_expr_clone_impl(asn1p_expr_t *expr, int skip_extensions, asn1p_expr_t *(*r
 	CLCOPY(meta_type);
 	CLCOPY(expr_type);
 	CLCOPY(tag);
+	CLCOPY(encoding_control.encoding_type);
 	CLCOPY(marker.flags);		/* OPTIONAL/DEFAULT */
 	CLCOPY(_mark);
 	CLCOPY(parent_expr);
@@ -205,6 +206,7 @@ asn1p_expr_clone_impl(asn1p_expr_t *expr, int skip_extensions, asn1p_expr_t *(*r
 	 * Clone complex fields.
 	 */
 	CLCLONE(Identifier, strdup);
+	CLCLONE(encoding_control.encoding_reference, strdup);
 	CLCLONE(reference, asn1p_ref_clone);
 	CLVRCLONE(constraints, asn1p_constraint_clone_with_resolver);
 	CLVRCLONE(combined_constraints, asn1p_constraint_clone_with_resolver);
@@ -390,6 +392,7 @@ asn1p_expr_free(asn1p_expr_t *expr) {
 			free(expr->specializations.pspec);
 		}
 		asn1p_ioc_table_free(expr->ioc_table);
+		free(expr->encoding_control.encoding_reference);
 
 		if(expr->data && expr->data_free)
 			expr->data_free(expr->data);
