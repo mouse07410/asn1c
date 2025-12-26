@@ -654,8 +654,8 @@ Assignment:
 			{
 		/* ENCODING-CONTROL directives are recognized but detailed parsing not yet implemented */
 		fprintf(stderr,
-			"NOTE: ENCODING-CONTROL %s recognized at %s:%d (detailed support pending)\n",
-			$2, ASN_FILENAME, yylineno);
+			"NOTE: ENCODING-CONTROL %s recognized (detailed support pending)\n",
+			$2);
 		free($2);
 		$$ = 0;
 	}
