@@ -4391,11 +4391,14 @@ check_is_refer_to_enhanced(arg_t *arg, circ_detect_ctx_t *ctx) {
 		return 2; /* Direct circular dependency */
 	}
 	
-	/* Check if this terminal is already in our path (cycle detection)
-	 * If we hit a cycle without finding our target, stop this branch */
+	/* Check if this terminal is already in our path (cycle detection).
+	 * If we hit a cycle without finding our target, stop exploring this branch.
+	 * The cycle will be broken when processing the types that are actually
+	 * in the cycle - we don't need to add indirection here just because
+	 * we reference a type that's part of some other cycle. */
 	for(size_t i = 0; i < ctx->path_len; i++) {
 		if(ctx->path[i] == terminal) {
-			return 0; /* Cycle without reaching target */
+			return 0; /* Cycle detected but doesn't include our target */
 		}
 	}
 	
@@ -4494,7 +4497,12 @@ expr_defined_recursively(arg_t *arg, asn1p_expr_t *expr) {
 			.target = topmost
 		};
 		
-		result = check_is_refer_to_enhanced(arg, &ctx);
+		/* Create a temporary arg with expr set to the member we're analyzing,
+		 * not the container type that arg->expr currently points to */
+		arg_t tmp_arg = *arg;
+		tmp_arg.expr = expr;
+		
+		result = check_is_refer_to_enhanced(&tmp_arg, &ctx);
 		
 		if(ctx.path) {
 			free(ctx.path);

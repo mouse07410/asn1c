@@ -109,6 +109,7 @@ asn_TYPE_descriptor_t asn_DEF_Sequence = {
 
 /*** <<< INCLUDES [Set] >>> ***/
 
+#include "Sequence.h"
 #include <constr_SET.h>
 
 /*** <<< DEPS [Set] >>> ***/
@@ -129,7 +130,7 @@ struct Sequence;
 /*** <<< TYPE-DECLS [Set] >>> ***/
 
 typedef struct Set {
-	struct Sequence	*ainl;
+	Sequence_t	 ainl;
 	struct Sequence	*aptr;
 	
 	/* Presence bitmask: ASN_SET_ISPRESENT(pSet, Set_PR_x) */
@@ -151,7 +152,7 @@ extern asn_TYPE_descriptor_t asn_DEF_Set;
 /*** <<< STAT-DEFS [Set] >>> ***/
 
 static asn_TYPE_member_t asn_MBR_Set_1[] = {
-	{ ATF_POINTER, 0, offsetof(struct Set, ainl),
+	{ ATF_NOFLAGS, 0, offsetof(struct Set, ainl),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_Sequence,
@@ -244,6 +245,7 @@ asn_TYPE_descriptor_t asn_DEF_Set = {
 
 /*** <<< INCLUDES [Choice] >>> ***/
 
+#include "Sequence.h"
 #include <INTEGER.h>
 #include <asn_SET_OF.h>
 #include <constr_SET_OF.h>
@@ -274,7 +276,7 @@ typedef struct Choice {
 			asn_struct_ctx_t _asn_ctx;
 		} *setof;
 		struct Sequence	*aptr;
-		struct Sequence	*ainl;
+		Sequence_t	 ainl;
 	} choice;
 	
 	/* Context for parsing across buffer boundaries */
@@ -405,7 +407,7 @@ static asn_TYPE_member_t asn_MBR_Choice_1[] = {
 		0, 0, /* No default value */
 		.name = "aptr"
 		},
-	{ ATF_POINTER, 0, offsetof(struct Choice, choice.ainl),
+	{ ATF_NOFLAGS, 0, offsetof(struct Choice, choice.ainl),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (2 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_Sequence,

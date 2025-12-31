@@ -1370,20 +1370,20 @@ asn_TYPE_descriptor_t asn_DEF_SampleList = {
 
 /*** <<< INCLUDES [TestPDU] >>> ***/
 
+#include "SampleContainer.h"
+#include "SampleList.h"
 #include <constr_SEQUENCE.h>
 
 /*** <<< FWD-DECLS [TestPDU] >>> ***/
 
-struct SampleContainer;
 struct AnotherContainer;
-struct SampleList;
 
 /*** <<< TYPE-DECLS [TestPDU] >>> ***/
 
 typedef struct TestPDU {
-	struct SampleContainer	*sampleContainer;
+	SampleContainer_t	 sampleContainer;
 	struct AnotherContainer	*anotherContainer;	/* OPTIONAL */
-	struct SampleList	*sampleList;
+	SampleList_t	 sampleList;
 	
 	/* Context for parsing across buffer boundaries */
 	asn_struct_ctx_t _asn_ctx;
@@ -1395,14 +1395,12 @@ extern asn_TYPE_descriptor_t asn_DEF_TestPDU;
 
 /*** <<< POST-INCLUDE [TestPDU] >>> ***/
 
-#include "SampleContainer.h"
 #include "AnotherContainer.h"
-#include "SampleList.h"
 
 /*** <<< STAT-DEFS [TestPDU] >>> ***/
 
 static asn_TYPE_member_t asn_MBR_TestPDU_1[] = {
-	{ ATF_POINTER, 0, offsetof(struct TestPDU, sampleContainer),
+	{ ATF_NOFLAGS, 0, offsetof(struct TestPDU, sampleContainer),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_SampleContainer,
@@ -1442,7 +1440,7 @@ static asn_TYPE_member_t asn_MBR_TestPDU_1[] = {
 		0, 0, /* No default value */
 		.name = "anotherContainer"
 		},
-	{ ATF_POINTER, 0, offsetof(struct TestPDU, sampleList),
+	{ ATF_NOFLAGS, 0, offsetof(struct TestPDU, sampleList),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (2 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_SampleList,

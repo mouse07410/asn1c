@@ -1,19 +1,14 @@
 
 /*** <<< INCLUDES [Message] >>> ***/
 
+#include "SpecializedContent.h"
 #include <constr_SEQUENCE.h>
-
-/*** <<< FWD-DECLS [Message] >>> ***/
-
-struct SpecializedContent_21P0;
-struct SpecializedContent_21P1;
-struct SpecializedContent;
 
 /*** <<< TYPE-DECLS [Message] >>> ***/
 
 typedef struct Message {
-	struct SpecializedContent	*content13;
-	struct SpecializedContent	*content42;
+	SpecializedContent_21P0_t	 content13;
+	SpecializedContent_21P1_t	 content42;
 	
 	/* Context for parsing across buffer boundaries */
 	asn_struct_ctx_t _asn_ctx;
@@ -23,14 +18,10 @@ typedef struct Message {
 
 extern asn_TYPE_descriptor_t asn_DEF_Message;
 
-/*** <<< POST-INCLUDE [Message] >>> ***/
-
-#include "SpecializedContent.h"
-
 /*** <<< STAT-DEFS [Message] >>> ***/
 
 static asn_TYPE_member_t asn_MBR_Message_1[] = {
-	{ ATF_POINTER, 0, offsetof(struct Message, content13),
+	{ ATF_NOFLAGS, 0, offsetof(struct Message, content13),
 		.tag = (ASN_TAG_CLASS_UNIVERSAL | (16 << 2)),
 		.tag_mode = 0,
 		.type = &asn_DEF_SpecializedContent_21P0,
@@ -50,7 +41,7 @@ static asn_TYPE_member_t asn_MBR_Message_1[] = {
 		0, 0, /* No default value */
 		.name = "content13"
 		},
-	{ ATF_POINTER, 0, offsetof(struct Message, content42),
+	{ ATF_NOFLAGS, 0, offsetof(struct Message, content42),
 		.tag = (ASN_TAG_CLASS_UNIVERSAL | (16 << 2)),
 		.tag_mode = 0,
 		.type = &asn_DEF_SpecializedContent_21P1,

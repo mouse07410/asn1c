@@ -149,19 +149,14 @@ asn_TYPE_descriptor_t asn_DEF_Collection_16P1 = {
 
 /*** <<< INCLUDES [Bunch] >>> ***/
 
+#include "Collection.h"
 #include <constr_SEQUENCE.h>
-
-/*** <<< FWD-DECLS [Bunch] >>> ***/
-
-struct Collection_16P0;
-struct Collection_16P1;
-struct Collection;
 
 /*** <<< TYPE-DECLS [Bunch] >>> ***/
 
 typedef struct Bunch {
-	struct Collection	*field_REAL;
-	struct Collection	*field_IA5String;
+	Collection_16P0_t	 field_REAL;
+	Collection_16P1_t	 field_IA5String;
 	
 	/* Context for parsing across buffer boundaries */
 	asn_struct_ctx_t _asn_ctx;
@@ -171,14 +166,10 @@ typedef struct Bunch {
 
 extern asn_TYPE_descriptor_t asn_DEF_Bunch;
 
-/*** <<< POST-INCLUDE [Bunch] >>> ***/
-
-#include "Collection.h"
-
 /*** <<< STAT-DEFS [Bunch] >>> ***/
 
 static asn_TYPE_member_t asn_MBR_Bunch_1[] = {
-	{ ATF_POINTER, 0, offsetof(struct Bunch, field_REAL),
+	{ ATF_NOFLAGS, 0, offsetof(struct Bunch, field_REAL),
 		.tag = (ASN_TAG_CLASS_UNIVERSAL | (17 << 2)),
 		.tag_mode = 0,
 		.type = &asn_DEF_Collection_16P0,
@@ -198,7 +189,7 @@ static asn_TYPE_member_t asn_MBR_Bunch_1[] = {
 		0, 0, /* No default value */
 		.name = "field-REAL"
 		},
-	{ ATF_POINTER, 0, offsetof(struct Bunch, field_IA5String),
+	{ ATF_NOFLAGS, 0, offsetof(struct Bunch, field_IA5String),
 		.tag = (ASN_TAG_CLASS_UNIVERSAL | (17 << 2)),
 		.tag_mode = 0,
 		.type = &asn_DEF_Collection_16P1,

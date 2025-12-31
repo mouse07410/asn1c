@@ -2,12 +2,13 @@
 /*** <<< INCLUDES [PDU] >>> ***/
 
 #include <IA5String.h>
+#include "Singleton.h"
 #include <constr_SEQUENCE.h>
 
 /*** <<< FWD-DECLS [PDU] >>> ***/
 
-struct Singleton;
 struct PDU_2;
+struct Singleton;
 
 /*** <<< TYPE-DECLS [PDU] >>> ***/
 
@@ -31,7 +32,6 @@ extern asn_TYPE_descriptor_t asn_DEF_PDU;
 
 /*** <<< POST-INCLUDE [PDU] >>> ***/
 
-#include "Singleton.h"
 #include "PDU-2.h"
 
 /*** <<< STAT-DEFS [PDU] >>> ***/
