@@ -11,8 +11,6 @@
 #define __EXTENSIONS__          /* for Sun */
 #endif
 
-#ifndef ASN_TYPE_KINDS_H
-#define ASN_TYPE_KINDS_H
 typedef enum asn_type_kind {
     ASN_KIND_PRIMITIVE,
     ASN_KIND_SEQUENCE,
@@ -21,7 +19,6 @@ typedef enum asn_type_kind {
     ASN_KIND_SEQUENCE_OF,
     ASN_KIND_SET_OF,
 } asn_type_kind_t;
-#endif /* ASN_TYPE_KINDS_H */
 
 #include "asn_application.h"	/* Application-visible API */
 
