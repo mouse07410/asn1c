@@ -817,6 +817,9 @@ static ssize_t
 OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
                              size_t chunk_size, int have_more) {
     OCTET_STRING_t *st = (OCTET_STRING_t *)sptr;
+    
+    fprintf(stderr, "DEBUG convert_base64: chunk_size=%zu, have_more=%d, st->size=%zu\n", 
+            chunk_size, have_more, st ? st->size : 0);
 
     /* If we have data to append, reallocate and append */
     if(chunk_size > 0) {
@@ -833,15 +836,18 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
 
     /* Check if we should decode. We decode when:
      * 1. We detect padding characters at the end (marks end of Base64), OR
-     * 2. We have reached the end of the element (have_more == 0)
+     * 2. We have accumulated data and are not receiving more in THIS call (chunk_size==0)
      * 
-     * Note: Decoding on padding is reliable. Decoding on have_more=0 is
-     * UNRELIABLE because have_more only indicates if there's more data in
-     * the current buffer, not if the element is complete. However, it works
-     * often enough to be useful as a fallback for no-padding Base64. */
+     * Note: chunk_size==0 with st->size>0 means XER decoder finished sending body
+     * data and is about to process the closing tag. This is our signal to decode
+     * any buffered Base64 data (including no-padding Base64). */
     int should_decode = 0;
     
-    if(st->size >= 1) {
+    if(chunk_size == 0 && st->size > 0) {
+        /* No more body data coming. Decode whatever we have buffered. */
+        fprintf(stderr, "DEBUG: chunk_size=0, st->size=%zu, decoding\n", st->size);
+        should_decode = 1;
+    } else if(st->size >= 1) {
         /* Scan backward from end, skipping whitespace, to detect padding.
          * Padding character '=' at the end marks the end of Base64. */
         ssize_t i = st->size - 1;
@@ -859,28 +865,8 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
         /* Check if we found padding character */
         if(i >= 0 && st->buf[i] == '=') {
             /* Found padding at end. Padding marks end of Base64, safe to decode. */
-            fprintf(stderr, "DEBUG: Found padding, decoding\n");
+            fprintf(stderr, "DEBUG: Padding detected, decoding\n");
             should_decode = 1;
-        } else if(!have_more) {
-            /* No padding but have_more=0. This might indicate end of element.
-             * As an additional heuristic, check if we have a complete Base64
-             * group (multiple of 4 non-whitespace chars). This handles the
-             * common case of no-padding Base64 arriving in a single buffer. */
-            size_t non_ws_count = 0;
-            for(size_t j = 0; j <= (size_t)i; j++) {
-                int ch = st->buf[j];
-                if(ch != 0x09 && ch != 0x0a && ch != 0x0c && ch != 0x0d && ch != 0x20) {
-                    non_ws_count++;
-                }
-            }
-            fprintf(stderr, "DEBUG: have_more=0, non_ws_count=%zu, mod4=%zu\n", non_ws_count, non_ws_count % 4);
-            if(non_ws_count % 4 == 0 && non_ws_count > 0) {
-                /* Complete Base64 group with have_more=0. Likely end of element. */
-                fprintf(stderr, "DEBUG: Complete group, decoding\n");
-                should_decode = 1;
-            }
-        } else {
-            fprintf(stderr, "DEBUG: No padding, have_more=%d\n", have_more);
         }
     }
     

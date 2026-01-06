@@ -72,6 +72,11 @@ check_impl(int lineno, enum encoding_rules rules, enum encoding_type type, char 
 		assert(rc.code == RC_OK);
 		assert(st);
 		assert(st->buf);
+		if(st->size != verlen) {
+			fprintf(stderr, "\nLine %d: size mismatch: got %zu, expected %zu\n", lineno, st->size, verlen);
+			fprintf(stderr, "Got: [%.*s]\n", (int)st->size, st->buf);
+			fprintf(stderr, "Expected: [%.*s]\n", (int)verlen, verify);
+		}
 		assert(st->size == verlen);
 		assert(!memcmp(st->buf, verify, verlen));
 	} else {
