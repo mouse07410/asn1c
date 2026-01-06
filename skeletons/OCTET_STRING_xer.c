@@ -861,10 +861,21 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
             /* Found padding at end. Padding marks end of Base64, safe to decode. */
             should_decode = 1;
         } else if(!have_more) {
-            /* No padding but have_more=0. Try to decode anyway.
-             * This is unreliable but works if the last Base64 chunk happens
-             * to be at the end of the input buffer. */
-            should_decode = 1;
+            /* No padding but have_more=0. This might indicate end of element.
+             * As an additional heuristic, check if we have a complete Base64
+             * group (multiple of 4 non-whitespace chars). This handles the
+             * common case of no-padding Base64 arriving in a single buffer. */
+            size_t non_ws_count = 0;
+            for(size_t j = 0; j <= (size_t)i; j++) {
+                int ch = st->buf[j];
+                if(ch != 0x09 && ch != 0x0a && ch != 0x0c && ch != 0x0d && ch != 0x20) {
+                    non_ws_count++;
+                }
+            }
+            if(non_ws_count % 4 == 0 && non_ws_count > 0) {
+                /* Complete Base64 group with have_more=0. Likely end of element. */
+                should_decode = 1;
+            }
         }
     }
     
@@ -925,9 +936,7 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
 
         /* Update size to reflect decoded data */
         st->size = dst - st->buf;
-        if(st->size < new_size) {
-            st->buf[st->size] = 0;  /* Null terminate */
-        }
+        st->buf[st->size] = 0;  /* Null terminate */
     }
 
     /* Return amount of input consumed (all of it) */
