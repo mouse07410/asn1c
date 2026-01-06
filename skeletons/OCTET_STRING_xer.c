@@ -817,10 +817,6 @@ static ssize_t
 OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
                              size_t chunk_size, int have_more) {
     OCTET_STRING_t *st = (OCTET_STRING_t *)sptr;
-    const char *p = (const char *)chunk_buf;
-    const char *pend = p + chunk_size;
-
-    fprintf(stderr, "OCTET_STRING__convert_base64: chunk_size=%zu, have_more=%d, st=%p, st->size=%zu\n", chunk_size, have_more, (void*)st, st->size);
 
     /* Reallocate buffer to hold existing data plus new input 
      * We use the buffer to accumulate Base64 characters as text initially */
@@ -834,34 +830,60 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
     st->size += chunk_size;
     st->buf[st->size] = '\0';  /* Null terminate for safety */
 
-    fprintf(stderr, "OCTET_STRING__convert_base64: buffered st->size=%zu\n", st->size);
-
-    /* Check if we should decode. We decode when we have two '=' padding chars.
-     * This avoids decoding too early when "==" is split across two calls. */
+    /* Check if we should decode. We decode when:
+     * 1. We have reached the end of the element (have_more == 0), OR
+     * 2. We have padding chars (1+ '=' marks end of Base64), OR
+     * 3. We have a complete Base64 group (multiple of 4 chars excluding whitespace)
+     * This handles single padding, double padding, no padding, and incremental cases. */
     int should_decode = 0;
-    if(st->size >= 2) {  /* Need at least 2 chars for any Base64 output */
+    
+    if(!have_more) {
+        /* We've reached the end of the element, so decode whatever we have */
+        should_decode = 1;
+    } else if(st->size >= 1) {
         /* Count consecutive '=' from the end, ignoring whitespace */
         int padding_count = 0;
-        for(ssize_t i = st->size - 1; i >= 0 && padding_count < 3; i--) {
+        int non_ws_chars = 0;  /* Count non-whitespace chars for length check */
+        
+        for(ssize_t i = st->size - 1; i >= 0; i--) {
             int ch = st->buf[i];
             if(ch == '=') {
-                padding_count++;
+                if(padding_count == 0) {
+                    padding_count++;
+                } else if(i < st->size - 1 && st->buf[i+1] == '=') {
+                    /* Consecutive padding */
+                    padding_count++;
+                } else {
+                    /* Non-consecutive '=' - might be in the middle, not padding */
+                    break;
+                }
             } else if(ch == 0x09 || ch == 0x0a || ch == 0x0c || ch == 0x0d || ch == 0x20) {
                 continue;  /* Skip whitespace */
             } else {
-                break;  /* Hit a non-whitespace, non-padding char */
+                /* Hit a non-whitespace, non-padding char */
+                break;
             }
         }
         
-        /* Decode only if we have exactly 2 padding chars ("==") or more
-         * Note: Valid Base64 has at most 2 padding chars */
-        if(padding_count >= 2) {
+        /* Count total non-whitespace characters for complete group check */
+        for(ssize_t i = 0; i < st->size; i++) {
+            int ch = st->buf[i];
+            if(ch != 0x09 && ch != 0x0a && ch != 0x0c && ch != 0x0d && ch != 0x20) {
+                non_ws_chars++;
+            }
+        }
+        
+        /* Decode if we have padding (marks end of Base64) */
+        if(padding_count >= 1) {
             should_decode = 1;
-            fprintf(stderr, "OCTET_STRING__convert_base64: found %d padding chars, will decode\n", padding_count);
+        }
+        /* Or decode if we have a complete Base64 group (multiple of 4 chars) */
+        else if(non_ws_chars > 0 && (non_ws_chars % 4) == 0) {
+            should_decode = 1;
         }
     }
     
-    /* Only decode if we've detected end-of-Base64 */
+    /* Only decode if we've detected end-of-Base64 or have complete group */
     if(should_decode && st->size > 0) {
         /* Now decode the complete Base64 string in-place */
         const char *src = (const char *)st->buf;
@@ -870,8 +892,6 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
         uint32_t value = 0;
         int bits_collected = 0;
         int padding_seen = 0;
-
-        fprintf(stderr, "OCTET_STRING__convert_base64: decoding complete buffer\n");
 
         for(; src < src_end; src++) {
             int ch = *(const unsigned char *)src;
@@ -923,8 +943,6 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
         if(st->size < new_size) {
             st->buf[st->size] = 0;  /* Null terminate */
         }
-
-        fprintf(stderr, "OCTET_STRING__convert_base64: final decoded st->size=%zu\n", st->size);
     }
 
     /* Return amount of input consumed (all of it) */
@@ -1038,15 +1056,6 @@ OCTET_STRING__convert_auto(void *sptr, const void *chunk_buf,
     const unsigned char *p = buf_start;
     const unsigned char *pend = p + chunk_size;
 
-    fprintf(stderr, "OCTET_STRING__convert_auto: chunk_size=%zu, have_more=%d\n", chunk_size, have_more);
-    if(chunk_size > 0 && chunk_size < 100) {
-        fprintf(stderr, "  Input: '");
-        for(size_t i = 0; i < chunk_size; i++) {
-            fprintf(stderr, "%c", ((const char *)chunk_buf)[i]);
-        }
-        fprintf(stderr, "'\n");
-    }
-
     /* Skip leading whitespace */
     while(p < pend && (*p == 0x09 || *p == 0x0a || *p == 0x0c ||
                        *p == 0x0d || *p == 0x20)) {
@@ -1084,12 +1093,9 @@ OCTET_STRING__convert_auto(void *sptr, const void *chunk_buf,
 
     /* No explicit prefix - auto-detect based on content */
     int is_hex = OCTET_STRING__is_hexadecimal(chunk_buf, chunk_size);
-    fprintf(stderr, "OCTET_STRING__convert_auto: is_hex=%d\n", is_hex);
     if(is_hex) {
-        fprintf(stderr, "OCTET_STRING__convert_auto: calling hexadecimal decoder\n");
         return OCTET_STRING__convert_hexadecimal(sptr, chunk_buf, chunk_size, have_more);
     } else {
-        fprintf(stderr, "OCTET_STRING__convert_auto: calling base64 decoder\n");
         return OCTET_STRING__convert_base64(sptr, chunk_buf, chunk_size, have_more);
     }
 }
@@ -1113,8 +1119,6 @@ OCTET_STRING__decode_xer(
     asn_struct_ctx_t *ctx;  /* Per-structure parser context */
     asn_dec_rval_t rval;  /* Return value from the decoder */
     int st_allocated;
-
-    fprintf(stderr, "OCTET_STRING__decode_xer: called for tag '%s', size=%zu\n", xml_tag, size);
 
     /*
      * Create the string if does not exist.
