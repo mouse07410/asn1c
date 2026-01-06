@@ -818,9 +818,9 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
                              size_t chunk_size, int have_more) {
     OCTET_STRING_t *st = (OCTET_STRING_t *)sptr;
 
-    /* Reallocate buffer to hold existing data plus new input 
+    /* Reallocate buffer to hold existing data plus new input.
      * We use the buffer to accumulate Base64 characters as text initially */
-    size_t new_size = st->size + chunk_size + 2;  /* +2 for null term and extra space */
+    size_t new_size = st->size + chunk_size + 1;  /* +1 for null terminator */
     void *nptr = REALLOC(st->buf, new_size);
     if(!nptr) return -1;
     st->buf = (uint8_t *)nptr;
@@ -832,58 +832,40 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
 
     /* Check if we should decode. We decode when:
      * 1. We have reached the end of the element (have_more == 0), OR
-     * 2. We have padding chars (1+ '=' marks end of Base64), OR
-     * 3. We have a complete Base64 group (multiple of 4 chars excluding whitespace)
-     * This handles single padding, double padding, no padding, and incremental cases. */
+     * 2. We detect padding characters at the end (marks end of Base64)
+     * 
+     * Note: For no-padding Base64 (e.g., "QUJD"), we rely on have_more=0.
+     * We do NOT decode based on "complete groups of 4" because that could
+     * trigger premature decoding if the Base64 string happens to be a multiple
+     * of 4 characters long but more data is still coming. */
     int should_decode = 0;
     
     if(!have_more) {
         /* We've reached the end of the element, so decode whatever we have */
         should_decode = 1;
     } else if(st->size >= 1) {
-        /* Count consecutive '=' from the end, ignoring whitespace */
-        int padding_count = 0;
-        int non_ws_chars = 0;  /* Count non-whitespace chars for length check */
+        /* Scan backward from end, skipping whitespace, to detect padding.
+         * Padding character '=' at the end marks the end of Base64. */
+        ssize_t i = st->size - 1;
         
-        for(ssize_t i = st->size - 1; i >= 0; i--) {
+        /* Skip trailing whitespace */
+        while(i >= 0) {
             int ch = st->buf[i];
-            if(ch == '=') {
-                if(padding_count == 0) {
-                    padding_count++;
-                } else if(i < st->size - 1 && st->buf[i+1] == '=') {
-                    /* Consecutive padding */
-                    padding_count++;
-                } else {
-                    /* Non-consecutive '=' - might be in the middle, not padding */
-                    break;
-                }
-            } else if(ch == 0x09 || ch == 0x0a || ch == 0x0c || ch == 0x0d || ch == 0x20) {
-                continue;  /* Skip whitespace */
-            } else {
-                /* Hit a non-whitespace, non-padding char */
-                break;
+            if(ch == 0x09 || ch == 0x0a || ch == 0x0c || ch == 0x0d || ch == 0x20) {
+                i--;
+                continue;
             }
+            break;
         }
         
-        /* Count total non-whitespace characters for complete group check */
-        for(ssize_t i = 0; i < st->size; i++) {
-            int ch = st->buf[i];
-            if(ch != 0x09 && ch != 0x0a && ch != 0x0c && ch != 0x0d && ch != 0x20) {
-                non_ws_chars++;
-            }
-        }
-        
-        /* Decode if we have padding (marks end of Base64) */
-        if(padding_count >= 1) {
-            should_decode = 1;
-        }
-        /* Or decode if we have a complete Base64 group (multiple of 4 chars) */
-        else if(non_ws_chars > 0 && (non_ws_chars % 4) == 0) {
+        /* Check if we found padding character */
+        if(i >= 0 && st->buf[i] == '=') {
+            /* Found padding at end. Padding marks end of Base64, safe to decode. */
             should_decode = 1;
         }
     }
     
-    /* Only decode if we've detected end-of-Base64 or have complete group */
+    /* Only decode if we've detected end-of-Base64 */
     if(should_decode && st->size > 0) {
         /* Now decode the complete Base64 string in-place */
         const char *src = (const char *)st->buf;
