@@ -858,10 +858,7 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
 
     /* Check if we should decode. We decode when:
      * 1. We detect padding characters (= marks end of Base64)
-     * 
-     * Note: For no-padding Base64, we cannot reliably detect the end of input
-     * because the XER decoder doesn't signal end-of-element to body_receiver.
-     * This is a known limitation of the current architecture. */
+     * 2. have_more==0 (no more input coming) */
     int should_decode = 0;
     
     if(st->size >= 1) {
@@ -877,6 +874,9 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
         
         if(has_padding) {
             /* Padding detected - this is the end of Base64 data */
+            should_decode = 1;
+        } else if(!have_more) {
+            /* No more input and no padding - assume no-padding Base64 */
             should_decode = 1;
         }
     }
