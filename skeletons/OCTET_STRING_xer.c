@@ -806,143 +806,90 @@ base64_decode_char(char c) {
 }
 
 /*
- * Convert from Base64 format.
- *  
- * This function is called incrementally by the XER decoder. We buffer the input
- * text until we can safely decode it. We decode when:
- * 1. We detect padding characters (= at end) - marks end of Base64
- * 2. We have a complete multiple-of-4 Base64 group - may be no-padding Base64
+ * Convert from Base64 format
  */
 static ssize_t
 OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
                              size_t chunk_size, int have_more) {
     OCTET_STRING_t *st = (OCTET_STRING_t *)sptr;
+    const char *p = (const char *)chunk_buf;
+    const char *pend = p + chunk_size;
+    uint8_t *buf;
+    uint32_t value = 0;
+    int bits_collected = 0;
+    int padding_seen = 0;
 
-    /* Check if buffer already contains decoded binary data.
-     * We detect this by checking if the buffer has non-Base64, non-whitespace chars.
-     * Base64 alphabet: A-Z, a-z, 0-9, +, /, =, and whitespace.
-     * If we find anything else, it's binary data and we've already decoded. */
-    if(st->size > 0) {
-        int looks_like_binary = 0;
-        for(size_t i = 0; i < st->size && i < 16; i++) {  /* Check first 16 bytes */
-            int ch = st->buf[i];
-            int is_base64 = (ch >= 'A' && ch <= 'Z') ||
-                           (ch >= 'a' && ch <= 'z') ||
-                           (ch >= '0' && ch <= '9') ||
-                           (ch == '+') || (ch == '/') || (ch == '=');
-            int is_whitespace = (ch == 0x09 || ch == 0x0a || ch == 0x0c || 
-                                ch == 0x0d || ch == 0x20);
-            if(!is_base64 && !is_whitespace) {
-                looks_like_binary = 1;
-                break;
-            }
-        }
-        if(looks_like_binary) {
-            /* Already decoded. Don't append more data. */
-            return chunk_size;
-        }
-    }
+    /* Reallocate buffer - Base64 decodes to approximately 3/4 of input size */
+    size_t new_size = st->size + (chunk_size * 3 / 4) + 3;
+    void *nptr = REALLOC(st->buf, new_size + 1);
+    if(!nptr) return -1;
+    st->buf = (uint8_t *)nptr;
+    buf = st->buf + st->size;
 
-    /* If we have data to append, reallocate and append */
-    if(chunk_size > 0) {
-        size_t new_size = st->size + chunk_size + 1;  /* +1 for null terminator */
-        void *nptr = REALLOC(st->buf, new_size);
-        if(!nptr) return -1;
-        st->buf = (uint8_t *)nptr;
-
-        /* Append new characters to the buffer (treating it as text for now) */
-        memcpy(st->buf + st->size, chunk_buf, chunk_size);
-        st->size += chunk_size;
-        st->buf[st->size] = '\0';  /* Null terminate for safety */
-    }
-
-    /* Check if we should decode. We decode when:
-     * 1. We detect padding characters (= marks end of Base64)
-     * 2. have_more==0 (no more input coming) */
-    int should_decode = 0;
-    
-    if(st->size >= 1) {
-        /* Check if we have any padding characters */
-        int has_padding = 0;
+    /*
+     * Decode Base64 data
+     */
+    for(; p < pend; p++) {
+        int ch = *(const unsigned char *)p;
+        int decoded;
         
-        for(size_t i = 0; i < st->size; i++) {
-            if(st->buf[i] == '=') {
-                has_padding = 1;
-                break;
-            }
+        /* Skip whitespace */
+        switch(ch) {
+        case 0x09: case 0x0a: case 0x0c: case 0x0d: case 0x20:
+            continue;
+        default:
+            break;
         }
         
-        if(has_padding) {
-            /* Padding detected - this is the end of Base64 data */
-            should_decode = 1;
-        } else if(!have_more) {
-            /* No more input and no padding - assume no-padding Base64 */
-            should_decode = 1;
+        decoded = base64_decode_char(ch);
+        
+        if(decoded == -1) {
+            /* Invalid character - error */
+            st->size = buf - st->buf;
+            st->buf[st->size] = 0;  /* Ensure null termination */
+            return -1;
+        }
+        
+        if(decoded == -2) {
+            /* Padding character */
+            padding_seen = 1;
+            continue;
+        }
+        
+        if(padding_seen) {
+            /* Data after padding is invalid */
+            st->size = buf - st->buf;
+            st->buf[st->size] = 0;  /* Ensure null termination */
+            return -1;
+        }
+        
+        /* Accumulate 6 bits */
+        value = (value << 6) | decoded;
+        bits_collected += 6;
+        
+        /* When we have 8 or more bits, extract a byte */
+        if(bits_collected >= 8) {
+            bits_collected -= 8;
+            *buf++ = (value >> bits_collected) & 0xFF;
         }
     }
+
+    /* Update size */
+    st->size = buf - st->buf;
     
-    /* Only decode if we've detected end-of-Base64 or have complete group */
-    if(should_decode && st->size > 0) {
-        /* Now decode the complete Base64 string in-place */
-        const char *src = (const char *)st->buf;
-        const char *src_end = src + st->size;
-        uint8_t *dst = st->buf;  /* Decode in-place */
-        uint32_t value = 0;
-        int bits_collected = 0;
-        int padding_seen = 0;
-
-        for(; src < src_end; src++) {
-            int ch = *(const unsigned char *)src;
-            int decoded;
-            
-            /* Skip whitespace */
-            switch(ch) {
-            case 0x09: case 0x0a: case 0x0c: case 0x0d: case 0x20:
-                continue;
-            default:
-                break;
-            }
-            
-            decoded = base64_decode_char(ch);
-            
-            if(decoded == -1) {
-                /* Invalid character - error */
-                st->size = dst - st->buf;
-                st->buf[st->size] = 0;
-                return -1;
-            }
-            
-            if(decoded == -2) {
-                /* Padding character */
-                padding_seen = 1;
-                continue;
-            }
-            
-            if(padding_seen) {
-                /* Data after padding is invalid */
-                st->size = dst - st->buf;
-                st->buf[st->size] = 0;
-                return -1;
-            }
-            
-            /* Accumulate 6 bits */
-            value = (value << 6) | decoded;
-            bits_collected += 6;
-            
-            /* When we have 8 or more bits, extract a byte */
-            if(bits_collected >= 8) {
-                bits_collected -= 8;
-                *dst++ = (value >> bits_collected) & 0xFF;
-            }
-        }
-
-        /* Update size to reflect decoded data */
-        st->size = dst - st->buf;
-        st->buf[st->size] = 0;  /* Null terminate */
+    /* Always write null terminator to prevent buffer overflow in callers */
+    if(st->size <= new_size) {
+        st->buf[st->size] = 0;  /* Courtesy termination */
+    } else {
+        /* Buffer overflow - write null at last valid position */
+        st->buf[new_size] = 0;
+        st->size = new_size;  /* Truncate to valid size */
+        return -1;
     }
 
-    /* Return amount of input consumed (all of it) */
-    return chunk_size;
+    /* Return amount of input consumed (all of it)
+     * Note: pend = chunk_buf + chunk_size, so this is always >= 0 */
+    return pend - (const char *)chunk_buf;
 }
 
 /*
@@ -1088,8 +1035,7 @@ OCTET_STRING__convert_auto(void *sptr, const void *chunk_buf,
     }
 
     /* No explicit prefix - auto-detect based on content */
-    int is_hex = OCTET_STRING__is_hexadecimal(chunk_buf, chunk_size);
-    if(is_hex) {
+    if(OCTET_STRING__is_hexadecimal(chunk_buf, chunk_size)) {
         return OCTET_STRING__convert_hexadecimal(sptr, chunk_buf, chunk_size, have_more);
     } else {
         return OCTET_STRING__convert_base64(sptr, chunk_buf, chunk_size, have_more);
