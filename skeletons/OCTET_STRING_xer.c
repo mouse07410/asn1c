@@ -808,18 +808,15 @@ base64_decode_char(char c) {
 /*
  * Convert from Base64 format.
  *  
- * This function is called incrementally by the XER decoder, potentially one
- * character at a time. We handle this by buffering the input characters
- * in the output buffer, then decoding them once we have complete groups or
- * reach the end of input.
+ * This function is called incrementally by the XER decoder. We buffer the input
+ * text until we can safely decode it. We decode when:
+ * 1. We detect padding characters (= at end) - marks end of Base64
+ * 2. We have a complete multiple-of-4 Base64 group - may be no-padding Base64
  */
 static ssize_t
 OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
                              size_t chunk_size, int have_more) {
     OCTET_STRING_t *st = (OCTET_STRING_t *)sptr;
-    
-    fprintf(stderr, "DEBUG convert_base64: chunk_size=%zu, have_more=%d, st->size=%zu\n", 
-            chunk_size, have_more, st ? st->size : 0);
 
     /* If we have data to append, reallocate and append */
     if(chunk_size > 0) {
@@ -836,41 +833,40 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
 
     /* Check if we should decode. We decode when:
      * 1. We detect padding characters at the end (marks end of Base64), OR
-     * 2. We have accumulated data and are not receiving more in THIS call (chunk_size==0)
-     * 
-     * Note: chunk_size==0 with st->size>0 means XER decoder finished sending body
-     * data and is about to process the closing tag. This is our signal to decode
-     * any buffered Base64 data (including no-padding Base64). */
+     * 2. We have a complete Base64 group (multiple of 4 non-whitespace chars)
+     */
     int should_decode = 0;
     
-    if(chunk_size == 0 && st->size > 0) {
-        /* No more body data coming. Decode whatever we have buffered. */
-        fprintf(stderr, "DEBUG: chunk_size=0, st->size=%zu, decoding\n", st->size);
-        should_decode = 1;
-    } else if(st->size >= 1) {
-        /* Scan backward from end, skipping whitespace, to detect padding.
-         * Padding character '=' at the end marks the end of Base64. */
-        ssize_t i = st->size - 1;
+    if(st->size >= 1) {
+        /* Count non-whitespace characters and check for padding */
+        size_t non_ws_count = 0;
+        int has_padding = 0;
         
-        /* Skip trailing whitespace */
-        while(i >= 0) {
+        for(size_t i = 0; i < st->size; i++) {
             int ch = st->buf[i];
             if(ch == 0x09 || ch == 0x0a || ch == 0x0c || ch == 0x0d || ch == 0x20) {
-                i--;
-                continue;
+                continue;  /* Skip whitespace */
             }
-            break;
+            if(ch == '=') {
+                has_padding = 1;
+            }
+            non_ws_count++;
         }
         
-        /* Check if we found padding character */
-        if(i >= 0 && st->buf[i] == '=') {
-            /* Found padding at end. Padding marks end of Base64, safe to decode. */
-            fprintf(stderr, "DEBUG: Padding detected, decoding\n");
+        if(has_padding) {
+            /* Padding detected - this is the end of Base64 data */
+            should_decode = 1;
+        } else if(non_ws_count >= 4 && non_ws_count % 4 == 0) {
+            /* We have a complete Base64 group (multiple of 4). This could be:
+             * - Complete no-padding Base64 (decode now)
+             * - Partial padded Base64 (wait for more)
+             * We decode now because RFC 4648 no-padding MUST be mult-of-4, and
+             * it's the only way to handle no-padding Base64 reliably. */
             should_decode = 1;
         }
     }
     
-    /* Only decode if we've detected end-of-Base64 */
+    /* Only decode if we've detected end-of-Base64 or have complete group */
     if(should_decode && st->size > 0) {
         /* Now decode the complete Base64 string in-place */
         const char *src = (const char *)st->buf;
