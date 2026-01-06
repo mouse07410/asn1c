@@ -859,6 +859,7 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
         /* Check if we found padding character */
         if(i >= 0 && st->buf[i] == '=') {
             /* Found padding at end. Padding marks end of Base64, safe to decode. */
+            fprintf(stderr, "DEBUG: Found padding, decoding\n");
             should_decode = 1;
         } else if(!have_more) {
             /* No padding but have_more=0. This might indicate end of element.
@@ -872,10 +873,14 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
                     non_ws_count++;
                 }
             }
+            fprintf(stderr, "DEBUG: have_more=0, non_ws_count=%zu, mod4=%zu\n", non_ws_count, non_ws_count % 4);
             if(non_ws_count % 4 == 0 && non_ws_count > 0) {
                 /* Complete Base64 group with have_more=0. Likely end of element. */
+                fprintf(stderr, "DEBUG: Complete group, decoding\n");
                 should_decode = 1;
             }
+        } else {
+            fprintf(stderr, "DEBUG: No padding, have_more=%d\n", have_more);
         }
     }
     
