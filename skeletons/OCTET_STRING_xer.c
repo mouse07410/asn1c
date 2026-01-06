@@ -814,10 +814,12 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
     OCTET_STRING_t *st = (OCTET_STRING_t *)sptr;
     const char *p = (const char *)chunk_buf;
     const char *pend = p + chunk_size;
+    const char *chunk_stop = p;  /* Track last complete group consumed */
     uint8_t *buf;
     uint32_t value = 0;
     int bits_collected = 0;
     int padding_seen = 0;
+    int data_chars_in_group = 0;  /* Count data chars in current 4-char group */
 
     /* Reallocate buffer - Base64 decodes to approximately 3/4 of input size */
     size_t new_size = st->size + (chunk_size * 3 / 4) + 3;
@@ -853,6 +855,12 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
         if(decoded == -2) {
             /* Padding character */
             padding_seen = 1;
+            data_chars_in_group++;
+            if(data_chars_in_group == 4) {
+                /* Complete group with padding - mark as consumed */
+                chunk_stop = p + 1;
+                data_chars_in_group = 0;
+            }
             continue;
         }
         
@@ -866,12 +874,24 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
         /* Accumulate 6 bits */
         value = (value << 6) | decoded;
         bits_collected += 6;
+        data_chars_in_group++;
         
         /* When we have 8 or more bits, extract a byte */
         if(bits_collected >= 8) {
             bits_collected -= 8;
             *buf++ = (value >> bits_collected) & 0xFF;
         }
+        
+        /* Complete Base64 group (4 data chars) - mark as consumed */
+        if(data_chars_in_group == 4) {
+            chunk_stop = p + 1;
+            data_chars_in_group = 0;
+        }
+    }
+
+    /* If no more data coming and we have incomplete group, consume it */
+    if(!have_more && data_chars_in_group > 0) {
+        chunk_stop = p;
     }
 
     /* Update size */
@@ -887,9 +907,9 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
         return -1;
     }
 
-    /* Return amount of input consumed (all of it)
-     * Note: pend = chunk_buf + chunk_size, so this is always >= 0 */
-    return pend - (const char *)chunk_buf;
+    /* Return amount of input consumed (up to last complete group)
+     * Unconsumed bytes will be sent again on next call */
+    return chunk_stop - (const char *)chunk_buf;
 }
 
 /*
