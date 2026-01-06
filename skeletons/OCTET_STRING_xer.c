@@ -818,32 +818,30 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
                              size_t chunk_size, int have_more) {
     OCTET_STRING_t *st = (OCTET_STRING_t *)sptr;
 
-    /* Reallocate buffer to hold existing data plus new input.
-     * We use the buffer to accumulate Base64 characters as text initially */
-    size_t new_size = st->size + chunk_size + 1;  /* +1 for null terminator */
-    void *nptr = REALLOC(st->buf, new_size);
-    if(!nptr) return -1;
-    st->buf = (uint8_t *)nptr;
+    /* If we have data to append, reallocate and append */
+    if(chunk_size > 0) {
+        size_t new_size = st->size + chunk_size + 1;  /* +1 for null terminator */
+        void *nptr = REALLOC(st->buf, new_size);
+        if(!nptr) return -1;
+        st->buf = (uint8_t *)nptr;
 
-    /* Append new characters to the buffer (treating it as text for now) */
-    memcpy(st->buf + st->size, chunk_buf, chunk_size);
-    st->size += chunk_size;
-    st->buf[st->size] = '\0';  /* Null terminate for safety */
+        /* Append new characters to the buffer (treating it as text for now) */
+        memcpy(st->buf + st->size, chunk_buf, chunk_size);
+        st->size += chunk_size;
+        st->buf[st->size] = '\0';  /* Null terminate for safety */
+    }
 
     /* Check if we should decode. We decode when:
-     * 1. We have reached the end of the element (have_more == 0), OR
-     * 2. We detect padding characters at the end (marks end of Base64)
+     * 1. We detect padding characters at the end (marks end of Base64), OR
+     * 2. We have reached the end of the element (have_more == 0)
      * 
-     * Note: For no-padding Base64 (e.g., "QUJD"), we rely on have_more=0.
-     * We do NOT decode based on "complete groups of 4" because that could
-     * trigger premature decoding if the Base64 string happens to be a multiple
-     * of 4 characters long but more data is still coming. */
+     * Note: Decoding on padding is reliable. Decoding on have_more=0 is
+     * UNRELIABLE because have_more only indicates if there's more data in
+     * the current buffer, not if the element is complete. However, it works
+     * often enough to be useful as a fallback for no-padding Base64. */
     int should_decode = 0;
     
-    if(!have_more) {
-        /* We've reached the end of the element, so decode whatever we have */
-        should_decode = 1;
-    } else if(st->size >= 1) {
+    if(st->size >= 1) {
         /* Scan backward from end, skipping whitespace, to detect padding.
          * Padding character '=' at the end marks the end of Base64. */
         ssize_t i = st->size - 1;
@@ -861,6 +859,11 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
         /* Check if we found padding character */
         if(i >= 0 && st->buf[i] == '=') {
             /* Found padding at end. Padding marks end of Base64, safe to decode. */
+            should_decode = 1;
+        } else if(!have_more) {
+            /* No padding but have_more=0. Try to decode anyway.
+             * This is unreliable but works if the last Base64 chunk happens
+             * to be at the end of the input buffer. */
             should_decode = 1;
         }
     }
