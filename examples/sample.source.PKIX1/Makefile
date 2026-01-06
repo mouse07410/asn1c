@@ -1,5 +1,5 @@
 ASN_PROGRAM = x509dump
-CFLAGS += -DHAVE_CONFIG_H -DJUNKTEST -D_DEFAULT_SOURCE
+CFLAGS += -DJUNKTEST -D_DEFAULT_SOURCE
 begin: Certificate.c maybe-wip-pause all
 
 -include converter-example.mk

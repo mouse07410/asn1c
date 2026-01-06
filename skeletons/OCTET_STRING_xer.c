@@ -819,6 +819,15 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
     int bits_collected = 0;
     int padding_seen = 0;
 
+    fprintf(stderr, "OCTET_STRING__convert_base64: chunk_size=%zu, have_more=%d, st->size=%zu\n", chunk_size, have_more, st->size);
+    if(chunk_size > 0 && chunk_size < 100) {
+        fprintf(stderr, "  Input: '");
+        for(size_t i = 0; i < chunk_size; i++) {
+            fprintf(stderr, "%c", ((const char *)chunk_buf)[i]);
+        }
+        fprintf(stderr, "'\n");
+    }
+
     /* Reallocate buffer - Base64 decodes to approximately 3/4 of input size */
     size_t new_size = st->size + (chunk_size * 3 / 4) + 3;
     void *nptr = REALLOC(st->buf, new_size + 1);
@@ -877,6 +886,8 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
     /* Update size */
     st->size = buf - st->buf;
     
+    fprintf(stderr, "OCTET_STRING__convert_base64: decoded st->size=%zu\n", st->size);
+    
     /* Always write null terminator to prevent buffer overflow in callers */
     if(st->size <= new_size) {
         st->buf[st->size] = 0;  /* Courtesy termination */
@@ -889,7 +900,9 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
 
     /* Return amount of input consumed (all of it)
      * Note: pend = chunk_buf + chunk_size, so this is always >= 0 */
-    return pend - (const char *)chunk_buf;
+    ssize_t consumed = pend - (const char *)chunk_buf;
+    fprintf(stderr, "OCTET_STRING__convert_base64: returning consumed=%zd\n", consumed);
+    return consumed;
 }
 
 /*
@@ -999,6 +1012,15 @@ OCTET_STRING__convert_auto(void *sptr, const void *chunk_buf,
     const unsigned char *p = buf_start;
     const unsigned char *pend = p + chunk_size;
 
+    fprintf(stderr, "OCTET_STRING__convert_auto: chunk_size=%zu, have_more=%d\n", chunk_size, have_more);
+    if(chunk_size > 0 && chunk_size < 100) {
+        fprintf(stderr, "  Input: '");
+        for(size_t i = 0; i < chunk_size; i++) {
+            fprintf(stderr, "%c", ((const char *)chunk_buf)[i]);
+        }
+        fprintf(stderr, "'\n");
+    }
+
     /* Skip leading whitespace */
     while(p < pend && (*p == 0x09 || *p == 0x0a || *p == 0x0c ||
                        *p == 0x0d || *p == 0x20)) {
@@ -1035,9 +1057,13 @@ OCTET_STRING__convert_auto(void *sptr, const void *chunk_buf,
     }
 
     /* No explicit prefix - auto-detect based on content */
-    if(OCTET_STRING__is_hexadecimal(chunk_buf, chunk_size)) {
+    int is_hex = OCTET_STRING__is_hexadecimal(chunk_buf, chunk_size);
+    fprintf(stderr, "OCTET_STRING__convert_auto: is_hex=%d\n", is_hex);
+    if(is_hex) {
+        fprintf(stderr, "OCTET_STRING__convert_auto: calling hexadecimal decoder\n");
         return OCTET_STRING__convert_hexadecimal(sptr, chunk_buf, chunk_size, have_more);
     } else {
+        fprintf(stderr, "OCTET_STRING__convert_auto: calling base64 decoder\n");
         return OCTET_STRING__convert_base64(sptr, chunk_buf, chunk_size, have_more);
     }
 }
@@ -1061,6 +1087,8 @@ OCTET_STRING__decode_xer(
     asn_struct_ctx_t *ctx;  /* Per-structure parser context */
     asn_dec_rval_t rval;  /* Return value from the decoder */
     int st_allocated;
+
+    fprintf(stderr, "OCTET_STRING__decode_xer: called for tag '%s', size=%zu\n", xml_tag, size);
 
     /*
      * Create the string if does not exist.
