@@ -818,6 +818,31 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
                              size_t chunk_size, int have_more) {
     OCTET_STRING_t *st = (OCTET_STRING_t *)sptr;
 
+    /* Check if buffer already contains decoded binary data.
+     * We detect this by checking if the buffer has non-Base64, non-whitespace chars.
+     * Base64 alphabet: A-Z, a-z, 0-9, +, /, =, and whitespace.
+     * If we find anything else, it's binary data and we've already decoded. */
+    if(st->size > 0) {
+        int looks_like_binary = 0;
+        for(size_t i = 0; i < st->size && i < 16; i++) {  /* Check first 16 bytes */
+            int ch = st->buf[i];
+            int is_base64 = (ch >= 'A' && ch <= 'Z') ||
+                           (ch >= 'a' && ch <= 'z') ||
+                           (ch >= '0' && ch <= '9') ||
+                           (ch == '+') || (ch == '/') || (ch == '=');
+            int is_whitespace = (ch == 0x09 || ch == 0x0a || ch == 0x0c || 
+                                ch == 0x0d || ch == 0x20);
+            if(!is_base64 && !is_whitespace) {
+                looks_like_binary = 1;
+                break;
+            }
+        }
+        if(looks_like_binary) {
+            /* Already decoded. Don't append more data. */
+            return chunk_size;
+        }
+    }
+
     /* If we have data to append, reallocate and append */
     if(chunk_size > 0) {
         size_t new_size = st->size + chunk_size + 1;  /* +1 for null terminator */
@@ -832,36 +857,26 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
     }
 
     /* Check if we should decode. We decode when:
-     * 1. We detect padding characters at the end (marks end of Base64), OR
-     * 2. We have a complete Base64 group (multiple of 4 non-whitespace chars)
-     */
+     * 1. We detect padding characters (= marks end of Base64)
+     * 
+     * Note: For no-padding Base64, we cannot reliably detect the end of input
+     * because the XER decoder doesn't signal end-of-element to body_receiver.
+     * This is a known limitation of the current architecture. */
     int should_decode = 0;
     
     if(st->size >= 1) {
-        /* Count non-whitespace characters and check for padding */
-        size_t non_ws_count = 0;
+        /* Check if we have any padding characters */
         int has_padding = 0;
         
         for(size_t i = 0; i < st->size; i++) {
-            int ch = st->buf[i];
-            if(ch == 0x09 || ch == 0x0a || ch == 0x0c || ch == 0x0d || ch == 0x20) {
-                continue;  /* Skip whitespace */
-            }
-            if(ch == '=') {
+            if(st->buf[i] == '=') {
                 has_padding = 1;
+                break;
             }
-            non_ws_count++;
         }
         
         if(has_padding) {
             /* Padding detected - this is the end of Base64 data */
-            should_decode = 1;
-        } else if(non_ws_count >= 4 && non_ws_count % 4 == 0) {
-            /* We have a complete Base64 group (multiple of 4). This could be:
-             * - Complete no-padding Base64 (decode now)
-             * - Partial padded Base64 (wait for more)
-             * We decode now because RFC 4648 no-padding MUST be mult-of-4, and
-             * it's the only way to handle no-padding Base64 reliably. */
             should_decode = 1;
         }
     }
