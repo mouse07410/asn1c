@@ -838,6 +838,7 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
         /* Skip whitespace */
         switch(ch) {
         case 0x09: case 0x0a: case 0x0c: case 0x0d: case 0x20:
+            chunk_stop = p + 1;  /* Consume whitespace */
             continue;
         default:
             break;
@@ -856,9 +857,9 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
             /* Padding character */
             padding_seen = 1;
             data_chars_in_group++;
+            chunk_stop = p + 1;  /* Always consume padding */
             if(data_chars_in_group == 4) {
-                /* Complete group with padding - mark as consumed */
-                chunk_stop = p + 1;
+                /* Complete group with padding */
                 data_chars_in_group = 0;
             }
             continue;
@@ -874,6 +875,7 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
         value = (value << 6) | decoded;
         bits_collected += 6;
         data_chars_in_group++;
+        chunk_stop = p + 1;  /* Always consume valid data character */
         
         /* When we have 8 or more bits, extract a byte */
         if(bits_collected >= 8) {
@@ -881,16 +883,10 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
             *buf++ = (value >> bits_collected) & 0xFF;
         }
         
-        /* Complete Base64 group (4 data chars) - mark as consumed */
+        /* Complete Base64 group (4 data chars) - reset counter */
         if(data_chars_in_group == 4) {
-            chunk_stop = p + 1;
             data_chars_in_group = 0;
         }
-    }
-
-    /* If no more data coming and we have incomplete group, consume it */
-    if(!have_more && data_chars_in_group > 0) {
-        chunk_stop = p;
     }
 
     /* Update size */
