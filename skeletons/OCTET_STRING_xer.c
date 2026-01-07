@@ -819,8 +819,30 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
     /* Accumulate Base64 text without decoding.
      * Only decode when we have all the data (have_more==0 or invalid char). */
     
-    /* Check if we need to grow the buffer */
-    size_t old_size = st->size;
+    /* Check if buffer contains decoded binary data (not text) */
+    int already_decoded = 0;
+    if(st->size > 0 && chunk_size > 0) {
+        /* Heuristic: if we see decoded binary, don't append more text */
+        /* Check if first bytes look like Base64 text or binary */
+        for(size_t i = 0; i < st->size && i < 4; i++) {
+            int ch = st->buf[i];
+            int is_base64_or_whitespace = 
+                (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
+                (ch >= '0' && ch <= '9') || ch == '+' || ch == '/' || ch == '=' ||
+                (ch == 0x09 || ch == 0x0a || ch == 0x0c || ch == 0x0d || ch == 0x20);
+            if(!is_base64_or_whitespace) {
+                already_decoded = 1;
+                break;
+            }
+        }
+    }
+    
+    /* Don't accumulate more if already decoded */
+    if(already_decoded) {
+        /* Return 0 to indicate no more data should be sent */
+        return 0;
+    }
+    
     size_t chars_to_copy = 0;
     
     /* Count how many characters to copy */
