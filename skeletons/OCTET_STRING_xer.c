@@ -819,15 +819,20 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
     int bits_collected = 0;
     int padding_seen = 0;
 
-    /* Reallocate buffer - Base64 decodes to approximately 3/4 of input size */
-    size_t new_size = st->size + (chunk_size * 3 / 4) + 3;
+    /* Reallocate buffer if needed - Base64 decodes to approximately 3/4 of input size.
+     * For small chunks, pre-allocate more to avoid excessive reallocation. */
+    size_t estimated_addition = (chunk_size * 3 / 4) + 3;
+    if(chunk_size < 64 && estimated_addition < 64) {
+        estimated_addition = 64;  /* Pre-allocate at least 64 bytes for small chunks */
+    }
+    size_t new_size = st->size + estimated_addition;
     void *nptr = REALLOC(st->buf, new_size + 1);
     if(!nptr) return -1;
     st->buf = (uint8_t *)nptr;
     buf = st->buf + st->size;
 
     /*
-     * Decode Base64 data incrementally
+     * Decode Base64 data
      */
     for(; p < pend; p++) {
         int ch = *(const unsigned char *)p;
@@ -844,8 +849,12 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
         decoded = base64_decode_char(ch);
         
         if(decoded == -1) {
-            /* Invalid character - stop processing here */
-            break;
+            /* Invalid character - stop and signal error after updating state */
+            st->size = buf - st->buf;
+            if(st->size <= new_size) {
+                st->buf[st->size] = 0;
+            }
+            return -1;  /* Error - invalid Base64 */
         }
         
         if(decoded == -2) {
@@ -855,8 +864,12 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
         }
         
         if(padding_seen) {
-            /* Data after padding is invalid - stop processing */
-            break;
+            /* Data after padding is invalid - stop and signal error */
+            st->size = buf - st->buf;
+            if(st->size <= new_size) {
+                st->buf[st->size] = 0;
+            }
+            return -1;  /* Error - data after padding */
         }
         
         /* Accumulate 6 bits */
@@ -873,14 +886,19 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
     /* Update size */
     st->size = buf - st->buf;
     
-    /* Always write null terminator (courtesy) */
-    st->buf[st->size] = 0;
+    /* Always write null terminator to prevent buffer overflow in callers */
+    if(st->size <= new_size) {
+        st->buf[st->size] = 0;  /* Courtesy termination */
+    } else {
+        /* Buffer overflow - write null at last valid position */
+        st->buf[new_size] = 0;
+        st->size = new_size;  /* Truncate to valid size */
+        return -1;
+    }
 
     /* Return amount of input consumed (all of it)
-     * We must return chunk_size (not p - chunk_buf) to prevent XER decoder
-     * from resending data, even if we stopped early due to invalid character.
-     * The invalid character will be handled by the XML parser. */
-    return chunk_size;
+     * Note: pend = chunk_buf + chunk_size, so this is always >= 0 */
+    return pend - (const char *)chunk_buf;
 }
 
 /*
