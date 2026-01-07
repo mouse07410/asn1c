@@ -814,121 +814,79 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
     OCTET_STRING_t *st = (OCTET_STRING_t *)sptr;
     const char *p = (const char *)chunk_buf;
     const char *pend = p + chunk_size;
-    const char *chunk_stop = (const char *)chunk_buf;
+    uint8_t *buf;
+    uint32_t value = 0;
+    int bits_collected = 0;
+    int padding_seen = 0;
 
-    /* Accumulate Base64 text without decoding.
-     * Only decode when we have all the data (have_more==0 or invalid char). */
-    
-    /* Check if buffer contains decoded binary data (not text) */
-    int already_decoded = 0;
-    if(st->size > 0 && chunk_size > 0) {
-        /* Heuristic: if we see decoded binary, don't append more text */
-        /* Check if first bytes look like Base64 text or binary */
-        for(size_t i = 0; i < st->size && i < 4; i++) {
-            int ch = st->buf[i];
-            int is_base64_or_whitespace = 
-                (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
-                (ch >= '0' && ch <= '9') || ch == '+' || ch == '/' || ch == '=' ||
-                (ch == 0x09 || ch == 0x0a || ch == 0x0c || ch == 0x0d || ch == 0x20);
-            if(!is_base64_or_whitespace) {
-                already_decoded = 1;
-                break;
-            }
-        }
-    }
-    
-    /* Don't accumulate more if already decoded */
-    if(already_decoded) {
-        /* Return 0 to indicate no more data should be sent */
-        return 0;
-    }
-    
-    size_t chars_to_copy = 0;
-    
-    /* Count how many characters to copy */
-    for(const char *scan = p; scan < pend; scan++) {
-        int ch = *(const unsigned char *)scan;
-        int decoded = base64_decode_char(ch);
-        int is_whitespace = (ch == 0x09 || ch == 0x0a || ch == 0x0c || ch == 0x0d || ch == 0x20);
+    /* Reallocate buffer - Base64 decodes to approximately 3/4 of input size */
+    size_t new_size = st->size + (chunk_size * 3 / 4) + 3;
+    void *nptr = REALLOC(st->buf, new_size + 1);
+    if(!nptr) return -1;
+    st->buf = (uint8_t *)nptr;
+    buf = st->buf + st->size;
+
+    /*
+     * Decode Base64 data incrementally
+     */
+    for(; p < pend; p++) {
+        int ch = *(const unsigned char *)p;
+        int decoded;
         
-        if(decoded == -1 && !is_whitespace) {
-            /* Invalid character - stop here */
+        /* Skip whitespace */
+        switch(ch) {
+        case 0x09: case 0x0a: case 0x0c: case 0x0d: case 0x20:
+            continue;
+        default:
             break;
         }
-        chars_to_copy++;
+        
+        decoded = base64_decode_char(ch);
+        
+        if(decoded == -1) {
+            /* Invalid character - stop processing here */
+            break;
+        }
+        
+        if(decoded == -2) {
+            /* Padding character */
+            padding_seen = 1;
+            continue;
+        }
+        
+        if(padding_seen) {
+            /* Data after padding is invalid */
+            st->size = buf - st->buf;
+            st->buf[st->size] = 0;  /* Ensure null termination */
+            return -1;
+        }
+        
+        /* Accumulate 6 bits */
+        value = (value << 6) | decoded;
+        bits_collected += 6;
+        
+        /* When we have 8 or more bits, extract a byte */
+        if(bits_collected >= 8) {
+            bits_collected -= 8;
+            *buf++ = (value >> bits_collected) & 0xFF;
+        }
     }
+
+    /* Update size */
+    st->size = buf - st->buf;
     
-    /* Allocate space for the text */
-    if(chars_to_copy > 0) {
-        size_t new_size = st->size + chars_to_copy;
-        void *nptr = REALLOC(st->buf, new_size + 1);
-        if(!nptr) return -1;
-        st->buf = (uint8_t *)nptr;
-        
-        /* Copy Base64 text into buffer */
-        for(; p < pend && chars_to_copy > 0; p++, chars_to_copy--) {
-            st->buf[st->size++] = *p;
-            chunk_stop = p + 1;
-        }
-    }
-
-    /* If we have all the data, decode it now */
-    if(!have_more || chunk_stop < pend) {
-        /* Decode the accumulated Base64 text in-place */
-        uint8_t *buf = st->buf;
-        uint8_t *src = st->buf;
-        uint8_t *src_end = st->buf + st->size;
-        uint32_t value = 0;
-        int bits_collected = 0;
-        int padding_seen = 0;
-        
-        while(src < src_end) {
-            int ch = *src++;
-            int decoded;
-            
-            /* Skip whitespace */
-            switch(ch) {
-            case 0x09: case 0x0a: case 0x0c: case 0x0d: case 0x20:
-                continue;
-            default:
-                break;
-            }
-            
-            decoded = base64_decode_char(ch);
-            
-            if(decoded == -1) {
-                /* Invalid character - end of Base64 */
-                break;
-            }
-            
-            if(decoded == -2) {
-                /* Padding character */
-                padding_seen = 1;
-                continue;
-            }
-            
-            if(padding_seen) {
-                /* Data after padding */
-                return -1;
-            }
-            
-            /* Accumulate 6 bits */
-            value = (value << 6) | decoded;
-            bits_collected += 6;
-            
-            /* When we have 8 or more bits, extract a byte */
-            if(bits_collected >= 8) {
-                bits_collected -= 8;
-                *buf++ = (value >> bits_collected) & 0xFF;
-            }
-        }
-        
-        /* Update size to decoded size */
-        st->size = buf - st->buf;
+    /* Always write null terminator */
+    if(st->size <= new_size) {
         st->buf[st->size] = 0;  /* Courtesy termination */
+    } else {
+        /* Buffer overflow shouldn't happen, but be safe */
+        st->buf[new_size] = 0;
+        st->size = new_size;
+        return -1;
     }
 
-    return chunk_stop - (const char *)chunk_buf;
+    /* Return amount of input consumed (all of it) */
+    return p - (const char *)chunk_buf;
 }
 
 /*
