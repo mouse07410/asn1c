@@ -855,10 +855,8 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
         }
         
         if(padding_seen) {
-            /* Data after padding is invalid */
-            st->size = buf - st->buf;
-            st->buf[st->size] = 0;  /* Ensure null termination */
-            return -1;
+            /* Data after padding is invalid - stop processing */
+            break;
         }
         
         /* Accumulate 6 bits */
@@ -875,18 +873,14 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
     /* Update size */
     st->size = buf - st->buf;
     
-    /* Always write null terminator */
-    if(st->size <= new_size) {
-        st->buf[st->size] = 0;  /* Courtesy termination */
-    } else {
-        /* Buffer overflow shouldn't happen, but be safe */
-        st->buf[new_size] = 0;
-        st->size = new_size;
-        return -1;
-    }
+    /* Always write null terminator (courtesy) */
+    st->buf[st->size] = 0;
 
-    /* Return amount of input consumed (all of it) */
-    return p - (const char *)chunk_buf;
+    /* Return amount of input consumed (all of it)
+     * We must return chunk_size (not p - chunk_buf) to prevent XER decoder
+     * from resending data, even if we stopped early due to invalid character.
+     * The invalid character will be handled by the XML parser. */
+    return chunk_size;
 }
 
 /*
