@@ -873,6 +873,9 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
             if(st->size <= new_size) {
                 st->buf[st->size] = 0;
             }
+            /* Clear state on error */
+            st->_asn_ctx.phase = 0;
+            st->_asn_ctx.step = 0;
             return -1;  /* Error - invalid Base64 */
         }
         
@@ -888,6 +891,9 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
             if(st->size <= new_size) {
                 st->buf[st->size] = 0;
             }
+            /* Clear state on error */
+            st->_asn_ctx.phase = 0;
+            st->_asn_ctx.step = 0;
             return -1;  /* Error - data after padding */
         }
         
