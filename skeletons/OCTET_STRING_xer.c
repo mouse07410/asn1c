@@ -807,13 +807,6 @@ base64_decode_char(char c) {
 
 /*
  * Convert from Base64 format
- * 
- * State preservation: We use st->_asn_ctx.phase and st->_asn_ctx.step to store decoder state:
- * - phase: Lower 16 bits of accumulated value
- * - step bits 0-7: Upper 8 bits of accumulated value
- * - step bits 8-11: bits_collected (0-18)
- * - step bit 12: padding_seen flag
- * - step bit 15: state_valid flag (1 if state is present)
  */
 static ssize_t
 OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
@@ -822,36 +815,19 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
     const char *p = (const char *)chunk_buf;
     const char *pend = p + chunk_size;
     uint8_t *buf;
-    uint32_t value;
-    int bits_collected;
-    int padding_seen;
-    
-    /* Restore state from _asn_ctx.phase and _asn_ctx.step if this is a continuation */
-    if(st->_asn_ctx.step & 0x8000) {  /* Check state_valid flag (bit 15) */
-        /* Reconstruct state from phase and step */
-        value = ((uint32_t)(st->_asn_ctx.step & 0xFF) << 16) | (uint32_t)(st->_asn_ctx.phase & 0xFFFF);
-        bits_collected = (st->_asn_ctx.step >> 8) & 0xF;
-        padding_seen = (st->_asn_ctx.step >> 12) & 0x1;
-    } else {
-        value = 0;
-        bits_collected = 0;
-        padding_seen = 0;
-    }
+    uint32_t value = 0;
+    int bits_collected = 0;
+    int padding_seen = 0;
 
-    /* Reallocate buffer if needed - Base64 decodes to approximately 3/4 of input size.
-     * For small chunks, pre-allocate more to avoid excessive reallocation. */
-    size_t estimated_addition = (chunk_size * 3 / 4) + 3;
-    if(chunk_size < 64 && estimated_addition < 64) {
-        estimated_addition = 64;  /* Pre-allocate at least 64 bytes for small chunks */
-    }
-    size_t new_size = st->size + estimated_addition;
+    /* Reallocate buffer - Base64 decodes to approximately 3/4 of input size */
+    size_t new_size = st->size + (chunk_size * 3 / 4) + 3;
     void *nptr = REALLOC(st->buf, new_size + 1);
     if(!nptr) return -1;
     st->buf = (uint8_t *)nptr;
     buf = st->buf + st->size;
 
     /*
-     * Decode Base64 data
+     * Decode Base64 data incrementally
      */
     for(; p < pend; p++) {
         int ch = *(const unsigned char *)p;
@@ -868,15 +844,8 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
         decoded = base64_decode_char(ch);
         
         if(decoded == -1) {
-            /* Invalid character - stop and signal error after updating state */
-            st->size = buf - st->buf;
-            if(st->size <= new_size) {
-                st->buf[st->size] = 0;
-            }
-            /* Clear state on error */
-            st->_asn_ctx.phase = 0;
-            st->_asn_ctx.step = 0;
-            return -1;  /* Error - invalid Base64 */
+            /* Invalid character - stop processing here */
+            break;
         }
         
         if(decoded == -2) {
@@ -886,15 +855,8 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
         }
         
         if(padding_seen) {
-            /* Data after padding is invalid - stop and signal error */
-            st->size = buf - st->buf;
-            if(st->size <= new_size) {
-                st->buf[st->size] = 0;
-            }
-            /* Clear state on error */
-            st->_asn_ctx.phase = 0;
-            st->_asn_ctx.step = 0;
-            return -1;  /* Error - data after padding */
+            /* Data after padding is invalid - stop processing */
+            break;
         }
         
         /* Accumulate 6 bits */
@@ -911,33 +873,14 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
     /* Update size */
     st->size = buf - st->buf;
     
-    /* Always write null terminator to prevent buffer overflow in callers */
-    if(st->size <= new_size) {
-        st->buf[st->size] = 0;  /* Courtesy termination */
-    } else {
-        /* Buffer overflow - write null at last valid position */
-        st->buf[new_size] = 0;
-        st->size = new_size;  /* Truncate to valid size */
-        return -1;
-    }
-    
-    /* Save or clear state */
-    if(have_more) {
-        /* Pack state into phase and step */
-        st->_asn_ctx.phase = value & 0xFFFF;  /* Lower 16 bits of value */
-        st->_asn_ctx.step = ((value >> 16) & 0xFF)  /* Upper 8 bits of value (bits 0-7) */
-                          | ((bits_collected & 0xF) << 8)  /* bits_collected (bits 8-11) */
-                          | ((padding_seen & 0x1) << 12)   /* padding_seen (bit 12) */
-                          | 0x8000;  /* state_valid flag (bit 15) */
-    } else {
-        /* Clear state when done */
-        st->_asn_ctx.phase = 0;
-        st->_asn_ctx.step = 0;
-    }
+    /* Always write null terminator (courtesy) */
+    st->buf[st->size] = 0;
 
     /* Return amount of input consumed (all of it)
-     * Note: pend = chunk_buf + chunk_size, so this is always >= 0 */
-    return pend - (const char *)chunk_buf;
+     * We must return chunk_size (not p - chunk_buf) to prevent XER decoder
+     * from resending data, even if we stopped early due to invalid character.
+     * The invalid character will be handled by the XML parser. */
+    return chunk_size;
 }
 
 /*
