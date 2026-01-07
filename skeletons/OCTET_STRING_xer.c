@@ -814,104 +814,90 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
     OCTET_STRING_t *st = (OCTET_STRING_t *)sptr;
     const char *p = (const char *)chunk_buf;
     const char *pend = p + chunk_size;
-    const char *chunk_stop = p;  /* Track last complete group consumed */
-    uint8_t *buf;
-    uint32_t value = 0;
-    int bits_collected = 0;
-    int padding_seen = 0;
-    int data_chars_in_group = 0;  /* Count data chars in current 4-char group */
+    const char *chunk_stop = (const char *)chunk_buf;
 
-    /* Only allocate buffer space when we actually need it.
-     * Base64 decodes to approximately 3/4 of input size.
-     * Start with a reasonable buffer size and grow as needed. */
-    size_t bytes_needed = st->size + (chunk_size * 3 / 4) + 4;
-    if(st->buf == NULL || bytes_needed > st->size) {
-        /* First allocation or need more space */
-        size_t alloc_size = (st->buf == NULL) ? 256 : (st->size * 2);
-        if(alloc_size < bytes_needed) alloc_size = bytes_needed + 256;
-        
-        void *nptr = REALLOC(st->buf, alloc_size);
-        if(!nptr) return -1;
-        st->buf = (uint8_t *)nptr;
-    }
-    buf = st->buf + st->size;
+    /* Accumulate Base64 text without decoding.
+     * Only decode when we have all the data (have_more==0 or invalid char). */
+    size_t new_size = st->size + chunk_size;
+    void *nptr = REALLOC(st->buf, new_size + 1);
+    if(!nptr) return -1;
+    st->buf = (uint8_t *)nptr;
 
-    /*
-     * Decode Base64 data
-     */
+    /* Copy Base64 text into buffer */
     for(; p < pend; p++) {
         int ch = *(const unsigned char *)p;
-        int decoded;
         
-        /* Skip whitespace */
-        switch(ch) {
-        case 0x09: case 0x0a: case 0x0c: case 0x0d: case 0x20:
-            chunk_stop = p + 1;  /* Consume whitespace */
-            continue;
-        default:
-            break;
-        }
+        /* Check if this is a valid Base64 character or whitespace */
+        int decoded = base64_decode_char(ch);
+        int is_whitespace = (ch == 0x09 || ch == 0x0a || ch == 0x0c || ch == 0x0d || ch == 0x20);
         
-        decoded = base64_decode_char(ch);
-        
-        if(decoded == -1) {
-            /* Invalid character - could be end of Base64 or error */
-            /* Treat as end of Base64 data - stop processing */
+        if(decoded == -1 && !is_whitespace) {
+            /* Invalid character - end of Base64 data */
             chunk_stop = p;
             break;
         }
         
-        if(decoded == -2) {
-            /* Padding character */
-            padding_seen = 1;
-            data_chars_in_group++;
-            chunk_stop = p + 1;  /* Always consume padding */
-            if(data_chars_in_group == 4) {
-                /* Complete group with padding */
-                data_chars_in_group = 0;
+        /* Copy character to buffer */
+        st->buf[st->size++] = ch;
+        chunk_stop = p + 1;
+    }
+
+    /* If we have all the data, decode it now */
+    if(!have_more || chunk_stop < pend) {
+        /* Decode the accumulated Base64 text in-place */
+        uint8_t *buf = st->buf;
+        uint8_t *src = st->buf;
+        uint8_t *src_end = st->buf + st->size;
+        uint32_t value = 0;
+        int bits_collected = 0;
+        int padding_seen = 0;
+        
+        while(src < src_end) {
+            int ch = *src++;
+            int decoded;
+            
+            /* Skip whitespace */
+            switch(ch) {
+            case 0x09: case 0x0a: case 0x0c: case 0x0d: case 0x20:
+                continue;
+            default:
+                break;
             }
-            continue;
+            
+            decoded = base64_decode_char(ch);
+            
+            if(decoded == -1) {
+                /* Invalid character */
+                return -1;
+            }
+            
+            if(decoded == -2) {
+                /* Padding character */
+                padding_seen = 1;
+                continue;
+            }
+            
+            if(padding_seen) {
+                /* Data after padding */
+                return -1;
+            }
+            
+            /* Accumulate 6 bits */
+            value = (value << 6) | decoded;
+            bits_collected += 6;
+            
+            /* When we have 8 or more bits, extract a byte */
+            if(bits_collected >= 8) {
+                bits_collected -= 8;
+                *buf++ = (value >> bits_collected) & 0xFF;
+            }
         }
         
-        if(padding_seen) {
-            /* Data after padding is invalid - stop processing */
-            chunk_stop = p;
-            break;
-        }
-        
-        /* Accumulate 6 bits */
-        value = (value << 6) | decoded;
-        bits_collected += 6;
-        data_chars_in_group++;
-        chunk_stop = p + 1;  /* Always consume valid data character */
-        
-        /* When we have 8 or more bits, extract a byte */
-        if(bits_collected >= 8) {
-            bits_collected -= 8;
-            *buf++ = (value >> bits_collected) & 0xFF;
-        }
-        
-        /* Complete Base64 group (4 data chars) - reset counter */
-        if(data_chars_in_group == 4) {
-            data_chars_in_group = 0;
-        }
-    }
-
-    /* Update size */
-    st->size = buf - st->buf;
-    
-    /* Always write null terminator to prevent buffer overflow in callers */
-    if(st->size <= new_size) {
+        /* Update size to decoded size */
+        st->size = buf - st->buf;
         st->buf[st->size] = 0;  /* Courtesy termination */
-    } else {
-        /* Buffer overflow - write null at last valid position */
-        st->buf[new_size] = 0;
-        st->size = new_size;  /* Truncate to valid size */
-        return -1;
     }
 
-    /* Return amount of input consumed (up to last complete group)
-     * Unconsumed bytes will be sent again on next call */
     return chunk_stop - (const char *)chunk_buf;
 }
 
