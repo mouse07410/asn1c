@@ -818,28 +818,36 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
 
     /* Accumulate Base64 text without decoding.
      * Only decode when we have all the data (have_more==0 or invalid char). */
-    size_t new_size = st->size + chunk_size;
-    void *nptr = REALLOC(st->buf, new_size + 1);
-    if(!nptr) return -1;
-    st->buf = (uint8_t *)nptr;
-
-    /* Copy Base64 text into buffer */
-    for(; p < pend; p++) {
-        int ch = *(const unsigned char *)p;
-        
-        /* Check if this is a valid Base64 character or whitespace */
+    
+    /* Check if we need to grow the buffer */
+    size_t old_size = st->size;
+    size_t chars_to_copy = 0;
+    
+    /* Count how many characters to copy */
+    for(const char *scan = p; scan < pend; scan++) {
+        int ch = *(const unsigned char *)scan;
         int decoded = base64_decode_char(ch);
         int is_whitespace = (ch == 0x09 || ch == 0x0a || ch == 0x0c || ch == 0x0d || ch == 0x20);
         
         if(decoded == -1 && !is_whitespace) {
-            /* Invalid character - end of Base64 data */
-            chunk_stop = p;
+            /* Invalid character - stop here */
             break;
         }
+        chars_to_copy++;
+    }
+    
+    /* Allocate space for the text */
+    if(chars_to_copy > 0) {
+        size_t new_size = st->size + chars_to_copy;
+        void *nptr = REALLOC(st->buf, new_size + 1);
+        if(!nptr) return -1;
+        st->buf = (uint8_t *)nptr;
         
-        /* Copy character to buffer */
-        st->buf[st->size++] = ch;
-        chunk_stop = p + 1;
+        /* Copy Base64 text into buffer */
+        for(; p < pend && chars_to_copy > 0; p++, chars_to_copy--) {
+            st->buf[st->size++] = *p;
+            chunk_stop = p + 1;
+        }
     }
 
     /* If we have all the data, decode it now */
@@ -867,8 +875,8 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
             decoded = base64_decode_char(ch);
             
             if(decoded == -1) {
-                /* Invalid character */
-                return -1;
+                /* Invalid character - end of Base64 */
+                break;
             }
             
             if(decoded == -2) {
