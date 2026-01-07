@@ -821,18 +821,19 @@ OCTET_STRING__convert_base64(void *sptr, const void *chunk_buf,
     int padding_seen = 0;
     int data_chars_in_group = 0;  /* Count data chars in current 4-char group */
 
-    /* Reallocate buffer - Base64 decodes to approximately 3/4 of input size
-     * For small chunks (< 16 bytes), pre-allocate more to avoid excessive reallocs
-     * when processing character-by-character (chunk_size=1)  */
-    size_t decode_estimate = (chunk_size * 3 / 4) + 3;
-    if(chunk_size < 16) {
-        /* Pre-allocate 64 bytes for small chunks to reduce realloc calls */
-        decode_estimate = 64;
+    /* Only allocate buffer space when we actually need it.
+     * Base64 decodes to approximately 3/4 of input size.
+     * Start with a reasonable buffer size and grow as needed. */
+    size_t bytes_needed = st->size + (chunk_size * 3 / 4) + 4;
+    if(st->buf == NULL || bytes_needed > st->size) {
+        /* First allocation or need more space */
+        size_t alloc_size = (st->buf == NULL) ? 256 : (st->size * 2);
+        if(alloc_size < bytes_needed) alloc_size = bytes_needed + 256;
+        
+        void *nptr = REALLOC(st->buf, alloc_size);
+        if(!nptr) return -1;
+        st->buf = (uint8_t *)nptr;
     }
-    size_t new_size = st->size + decode_estimate;
-    void *nptr = REALLOC(st->buf, new_size + 1);
-    if(!nptr) return -1;
-    st->buf = (uint8_t *)nptr;
     buf = st->buf + st->size;
 
     /*
