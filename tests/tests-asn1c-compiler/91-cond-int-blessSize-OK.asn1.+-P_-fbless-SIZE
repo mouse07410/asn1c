@@ -17,6 +17,7 @@ ber_type_decoder_f OK_Integer1_decode_ber;
 der_type_encoder_f OK_Integer1_encode_der;
 xer_type_decoder_f OK_Integer1_decode_xer;
 xer_type_encoder_f OK_Integer1_encode_xer;
+jer_type_encoder_f OK_Integer1_encode_jer;
 
 /*** <<< CODE [OK-Integer1] >>> ***/
 
@@ -36,12 +37,7 @@ OK_Integer1_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		/* Nothing is here. See below */
 	}
 	
-	/* prevent infinite recursion */
-	if(td->encoding_constraints.general_constraints != OK_Integer1_constraint) {
-		return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
-	} else {
-		return 0;
-	}
+	return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
 }
 
 /*
@@ -71,9 +67,6 @@ asn_TYPE_descriptor_t asn_DEF_OK_Integer1 = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-#if !defined(ASN_DISABLE_JER_SUPPORT)
-              0,
-#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		OK_Integer1_constraint
 	},
 	0, 0,	/* No members */
@@ -99,6 +92,7 @@ ber_type_decoder_f OK_Integer2_decode_ber;
 der_type_encoder_f OK_Integer2_encode_der;
 xer_type_decoder_f OK_Integer2_decode_xer;
 xer_type_encoder_f OK_Integer2_encode_xer;
+jer_type_encoder_f OK_Integer2_encode_jer;
 
 /*** <<< CODE [OK-Integer2] >>> ***/
 
@@ -118,12 +112,7 @@ OK_Integer2_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		/* Nothing is here. See below */
 	}
 	
-	/* prevent infinite recursion */
-	if(td->encoding_constraints.general_constraints != OK_Integer2_constraint) {
-		return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
-	} else {
-		return 0;
-	}
+	return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
 }
 
 /*
@@ -153,9 +142,6 @@ asn_TYPE_descriptor_t asn_DEF_OK_Integer2 = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-#if !defined(ASN_DISABLE_JER_SUPPORT)
-              0,
-#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		OK_Integer2_constraint
 	},
 	0, 0,	/* No members */
@@ -181,6 +167,7 @@ ber_type_decoder_f OK_Integer3_decode_ber;
 der_type_encoder_f OK_Integer3_encode_der;
 xer_type_decoder_f OK_Integer3_decode_xer;
 xer_type_encoder_f OK_Integer3_encode_xer;
+jer_type_encoder_f OK_Integer3_encode_jer;
 
 /*** <<< CODE [OK-Integer3] >>> ***/
 
@@ -200,12 +187,7 @@ OK_Integer3_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		/* Nothing is here. See below */
 	}
 	
-	/* prevent infinite recursion */
-	if(td->encoding_constraints.general_constraints != OK_Integer3_constraint) {
-		return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
-	} else {
-		return 0;
-	}
+	return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
 }
 
 /*
@@ -235,9 +217,6 @@ asn_TYPE_descriptor_t asn_DEF_OK_Integer3 = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-#if !defined(ASN_DISABLE_JER_SUPPORT)
-              0,
-#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		OK_Integer3_constraint
 	},
 	0, 0,	/* No members */
@@ -263,6 +242,7 @@ ber_type_decoder_f OK_Integer4_decode_ber;
 der_type_encoder_f OK_Integer4_encode_der;
 xer_type_decoder_f OK_Integer4_decode_xer;
 xer_type_encoder_f OK_Integer4_encode_xer;
+jer_type_encoder_f OK_Integer4_encode_jer;
 
 /*** <<< CODE [OK-Integer4] >>> ***/
 
@@ -282,12 +262,7 @@ OK_Integer4_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		/* Nothing is here. See below */
 	}
 	
-	/* prevent infinite recursion */
-	if(td->encoding_constraints.general_constraints != OK_Integer4_constraint) {
-		return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
-	} else {
-		return 0;
-	}
+	return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
 }
 
 /*
@@ -317,9 +292,6 @@ asn_TYPE_descriptor_t asn_DEF_OK_Integer4 = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-#if !defined(ASN_DISABLE_JER_SUPPORT)
-              0,
-#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		OK_Integer4_constraint
 	},
 	0, 0,	/* No members */
@@ -345,6 +317,7 @@ ber_type_decoder_f NO_Integer5_decode_ber;
 der_type_encoder_f NO_Integer5_encode_der;
 xer_type_decoder_f NO_Integer5_decode_xer;
 xer_type_encoder_f NO_Integer5_encode_xer;
+jer_type_encoder_f NO_Integer5_encode_jer;
 
 /*** <<< CODE [NO-Integer5] >>> ***/
 
@@ -364,12 +337,7 @@ NO_Integer5_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		/* Nothing is here. See below */
 	}
 	
-	/* prevent infinite recursion */
-	if(td->encoding_constraints.general_constraints != NO_Integer5_constraint) {
-		return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
-	} else {
-		return 0;
-	}
+	return td->encoding_constraints.general_constraints(td, sptr, ctfailcb, app_key);
 }
 
 /*
@@ -399,9 +367,6 @@ asn_TYPE_descriptor_t asn_DEF_NO_Integer5 = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-#if !defined(ASN_DISABLE_JER_SUPPORT)
-              0,
-#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		NO_Integer5_constraint
 	},
 	0, 0,	/* No members */
@@ -470,9 +435,6 @@ static asn_TYPE_member_t asn_MBR_encoding_5[] = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-#if !defined(ASN_DISABLE_JER_SUPPORT)
-                    .jer_constraints = 0,
-#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = 0
 		},
 		0, 0, /* No default value */
@@ -490,9 +452,6 @@ static asn_TYPE_member_t asn_MBR_encoding_5[] = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-#if !defined(ASN_DISABLE_JER_SUPPORT)
-                    .jer_constraints = 0,
-#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = 0
 		},
 		0, 0, /* No default value */
@@ -510,9 +469,6 @@ static asn_TYPE_member_t asn_MBR_encoding_5[] = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-#if !defined(ASN_DISABLE_JER_SUPPORT)
-                    .jer_constraints = 0,
-#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = 0
 		},
 		0, 0, /* No default value */
@@ -550,9 +506,6 @@ asn_TYPE_descriptor_t asn_DEF_encoding_5 = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-#if !defined(ASN_DISABLE_JER_SUPPORT)
-              0,
-#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		CHOICE_constraint
 	},
 	asn_MBR_encoding_5,
@@ -573,9 +526,6 @@ static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-#if !defined(ASN_DISABLE_JER_SUPPORT)
-                    .jer_constraints = 0,
-#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = 0
 		},
 		0, 0, /* No default value */
@@ -593,9 +543,6 @@ static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-#if !defined(ASN_DISABLE_JER_SUPPORT)
-                    .jer_constraints = 0,
-#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = 0
 		},
 		0, 0, /* No default value */
@@ -613,9 +560,6 @@ static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-#if !defined(ASN_DISABLE_JER_SUPPORT)
-                    .jer_constraints = 0,
-#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = 0
 		},
 		0, 0, /* No default value */
@@ -633,9 +577,6 @@ static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 			.per_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-#if !defined(ASN_DISABLE_JER_SUPPORT)
-                    .jer_constraints = 0,
-#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 			.general_constraints = 0
 		},
 		0, 0, /* No default value */
@@ -679,9 +620,6 @@ asn_TYPE_descriptor_t asn_DEF_EXTERNAL = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-#if !defined(ASN_DISABLE_JER_SUPPORT)
-              0,
-#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		SEQUENCE_constraint
 	},
 	asn_MBR_EXTERNAL_1,

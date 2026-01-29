@@ -1,7 +1,7 @@
 AC_INIT([asn1c],[0.9.29],[vlm@lionet.info])
 
 AC_CONFIG_AUX_DIR(config)
-AC_CONFIG_HEADERS([config.h])
+AC_CONFIG_HEADER([config.h])
 AM_INIT_AUTOMAKE([foreign tar-pax])
 AC_CONFIG_MACRO_DIR([m4])
 
@@ -261,15 +261,7 @@ AC_SUBST(SKELETONS_CFLAGS)
 AC_SUBST(ASAN_ENV_FLAGS)
 
 dnl Checks for header files.
-m4_warn([obsolete],
-[The preprocessor macro 'STDC_HEADERS' is obsolete.
-  Except in unusual embedded environments, you can safely include all
-  C89 headers unconditionally.])dnl
-# Autoupdate added the next two lines to ensure that your configure
-# script's behavior did not change.  They are probably safe to remove.
-AC_CHECK_INCLUDES_DEFAULT
-AC_PROG_EGREP
-
+AC_HEADER_STDC
 AC_CHECK_HEADERS(sys/param.h)
 AC_CHECK_HEADERS(netinet/in.h)
 

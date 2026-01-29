@@ -87,9 +87,6 @@ asn_TYPE_descriptor_t asn_DEF_INTEGER = {
 #if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
         0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-#if !defined(ASN_DISABLE_JER_SUPPORT)
-        0,
-#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
         asn_generic_no_constraint
     },
     0, 0,  /* No members */
@@ -100,7 +97,7 @@ asn_TYPE_descriptor_t asn_DEF_INTEGER = {
  * INTEGER specific human-readable output.
  */
 ssize_t
-INTEGER__dump(const asn_TYPE_descriptor_t *td, const INTEGER_t *st, asn_app_consume_bytes_f *cb, void *app_key, int plainOrXEROrJER) {
+INTEGER__dump(const asn_TYPE_descriptor_t *td, const INTEGER_t *st, asn_app_consume_bytes_f *cb, void *app_key, int plainOrXER) {
     const asn_INTEGER_specifics_t *specs =
         (const asn_INTEGER_specifics_t *)td->specifics;
 	char scratch[32];
@@ -122,16 +119,13 @@ INTEGER__dump(const asn_TYPE_descriptor_t *td, const INTEGER_t *st, asn_app_cons
 		el = (value >= 0 || !specs || !specs->field_unsigned)
 			? INTEGER_map_value2enum(specs, value) : 0;
 		if(el) {
-			if(plainOrXEROrJER == 0)
+			if(plainOrXER == 0)
 				return asn__format_to_callback(cb, app_key,
 					"%" ASN_PRIdMAX " (%s)", value, el->enum_name);
-			else if (plainOrXEROrJER == 1)
+			else
 				return asn__format_to_callback(cb, app_key,
 					"<%s/>", el->enum_name);
-			else if (plainOrXEROrJER == 2)
-				return asn__format_to_callback(cb, app_key,
-					"\"%s\"", el->enum_name);
-		} else if(plainOrXEROrJER && specs && specs->strict_enumeration) {
+		} else if(plainOrXER && specs && specs->strict_enumeration) {
 			ASN_DEBUG("ASN.1 forbids dealing with "
 				"unknown value of ENUMERATED type");
 			errno = EPERM;
@@ -143,7 +137,7 @@ INTEGER__dump(const asn_TYPE_descriptor_t *td, const INTEGER_t *st, asn_app_cons
                                                : "%" ASN_PRIdMAX,
                                            value);
         }
-	} else if(plainOrXEROrJER && specs && specs->strict_enumeration) {
+	} else if(plainOrXER && specs && specs->strict_enumeration) {
 		/*
 		 * Here and earlier, we cannot encode the ENUMERATED values
 		 * if there is no corresponding identifier.

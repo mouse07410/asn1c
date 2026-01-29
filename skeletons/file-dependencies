@@ -70,7 +70,6 @@ GeneralizedTime.h GeneralizedTime_ber.c
 INTEGER.h INTEGER_ber.c
 NULL.h NULL_ber.c
 NativeInteger.h NativeInteger_ber.c
-NativeEnumerated.h NativeEnumerated_ber.c
 NativeReal.h NativeReal_ber.c
 OCTET_STRING.h OCTET_STRING_ber.c
 OPEN_TYPE.h OPEN_TYPE_ber.c
@@ -251,7 +250,7 @@ jer_support.h jer_support.c	# JSON parsing
 jer_decoder.h jer_decoder.c	# JER decoding support
 jer_encoder.h jer_encoder.c	# JER encoding support
 ANY.h ANY_jer.c
-BIT_STRING.h BIT_STRING_jer.c INTEGER.h
+BIT_STRING.h BIT_STRING_jer.c
 BMPString.h BMPString_jer.c
 BOOLEAN.h BOOLEAN_jer.c
 ENUMERATED.h ENUMERATED_jer.c
