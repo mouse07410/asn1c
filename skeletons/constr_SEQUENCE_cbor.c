@@ -104,8 +104,7 @@ SEQUENCE_encode_cbor(const asn_TYPE_descriptor_t *td,
             if(elm->type->op->cbor_encoder) {
                 tmper = elm->type->op->cbor_encoder(
                     elm->type,
-                    elm->encoding_constraints.oer_constraints
-                        ? NULL : NULL,  /* No CBOR-specific constraints yet */
+                    NULL,  /* No CBOR-specific constraints yet */
                     memb_ptr_actual, cb, app_key);
             } else {
                 if(tmp_def_val) ASN_STRUCT_FREE(*elm->type, tmp_def_val);
