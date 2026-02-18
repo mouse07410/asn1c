@@ -189,6 +189,8 @@ ber_type_decoder_f EpytRef_decode_ber;
 der_type_encoder_f EpytRef_encode_der;
 xer_type_decoder_f EpytRef_decode_xer;
 xer_type_encoder_f EpytRef_encode_xer;
+cbor_type_decoder_f EpytRef_decode_cbor;
+cbor_type_encoder_f EpytRef_encode_cbor;
 
 /*** <<< CODE [EpytRef] >>> ***/
 
@@ -863,6 +865,8 @@ ber_type_decoder_f EnumType_decode_ber;
 der_type_encoder_f EnumType_encode_der;
 xer_type_decoder_f EnumType_decode_xer;
 xer_type_encoder_f EnumType_encode_xer;
+cbor_type_decoder_f EnumType_decode_cbor;
+cbor_type_encoder_f EnumType_encode_cbor;
 
 /*** <<< CODE [EnumType] >>> ***/
 

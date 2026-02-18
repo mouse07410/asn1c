@@ -17,6 +17,8 @@ ber_type_decoder_f CN_IntegerUnlimited_decode_ber;
 der_type_encoder_f CN_IntegerUnlimited_encode_der;
 xer_type_decoder_f CN_IntegerUnlimited_decode_xer;
 xer_type_encoder_f CN_IntegerUnlimited_encode_xer;
+cbor_type_decoder_f CN_IntegerUnlimited_decode_cbor;
+cbor_type_encoder_f CN_IntegerUnlimited_encode_cbor;
 
 /*** <<< CODE [CN-IntegerUnlimited] >>> ***/
 
@@ -75,6 +77,8 @@ ber_type_decoder_f CN_IntegerMinMax_decode_ber;
 der_type_encoder_f CN_IntegerMinMax_encode_der;
 xer_type_decoder_f CN_IntegerMinMax_decode_xer;
 xer_type_encoder_f CN_IntegerMinMax_encode_xer;
+cbor_type_decoder_f CN_IntegerMinMax_decode_cbor;
+cbor_type_encoder_f CN_IntegerMinMax_encode_cbor;
 
 /*** <<< CODE [CN-IntegerMinMax] >>> ***/
 
@@ -159,6 +163,8 @@ ber_type_decoder_f CN_IntegerMinLow_decode_ber;
 der_type_encoder_f CN_IntegerMinLow_encode_der;
 xer_type_decoder_f CN_IntegerMinLow_decode_xer;
 xer_type_encoder_f CN_IntegerMinLow_encode_xer;
+cbor_type_decoder_f CN_IntegerMinLow_decode_cbor;
+cbor_type_encoder_f CN_IntegerMinLow_encode_cbor;
 
 /*** <<< CODE [CN-IntegerMinLow] >>> ***/
 
@@ -248,6 +254,8 @@ ber_type_decoder_f NO_IntegerMinHigh_decode_ber;
 der_type_encoder_f NO_IntegerMinHigh_encode_der;
 xer_type_decoder_f NO_IntegerMinHigh_decode_xer;
 xer_type_encoder_f NO_IntegerMinHigh_encode_xer;
+cbor_type_decoder_f NO_IntegerMinHigh_decode_cbor;
+cbor_type_encoder_f NO_IntegerMinHigh_encode_cbor;
 
 /*** <<< CODE [NO-IntegerMinHigh] >>> ***/
 
@@ -337,6 +345,8 @@ ber_type_decoder_f NO_IntegerLowHigh_decode_ber;
 der_type_encoder_f NO_IntegerLowHigh_encode_der;
 xer_type_decoder_f NO_IntegerLowHigh_decode_xer;
 xer_type_encoder_f NO_IntegerLowHigh_encode_xer;
+cbor_type_decoder_f NO_IntegerLowHigh_decode_cbor;
+cbor_type_encoder_f NO_IntegerLowHigh_encode_cbor;
 
 /*** <<< CODE [NO-IntegerLowHigh] >>> ***/
 
@@ -425,6 +435,8 @@ ber_type_decoder_f CN_IntegerLowMax_decode_ber;
 der_type_encoder_f CN_IntegerLowMax_encode_der;
 xer_type_decoder_f CN_IntegerLowMax_decode_xer;
 xer_type_encoder_f CN_IntegerLowMax_encode_xer;
+cbor_type_decoder_f CN_IntegerLowMax_decode_cbor;
+cbor_type_encoder_f CN_IntegerLowMax_encode_cbor;
 
 /*** <<< CODE [CN-IntegerLowMax] >>> ***/
 
@@ -514,6 +526,8 @@ ber_type_decoder_f NO_IntegerHighMax_decode_ber;
 der_type_encoder_f NO_IntegerHighMax_encode_der;
 xer_type_decoder_f NO_IntegerHighMax_decode_xer;
 xer_type_encoder_f NO_IntegerHighMax_encode_xer;
+cbor_type_decoder_f NO_IntegerHighMax_decode_cbor;
+cbor_type_encoder_f NO_IntegerHighMax_encode_cbor;
 
 /*** <<< CODE [NO-IntegerHighMax] >>> ***/
 
@@ -603,6 +617,8 @@ ber_type_decoder_f NO_IntegerLowestMax_decode_ber;
 der_type_encoder_f NO_IntegerLowestMax_encode_der;
 xer_type_decoder_f NO_IntegerLowestMax_decode_xer;
 xer_type_encoder_f NO_IntegerLowestMax_encode_xer;
+cbor_type_decoder_f NO_IntegerLowestMax_decode_cbor;
+cbor_type_encoder_f NO_IntegerLowestMax_encode_cbor;
 
 /*** <<< CODE [NO-IntegerLowestMax] >>> ***/
 
@@ -692,6 +708,8 @@ ber_type_decoder_f NO_IntegerOutRange_decode_ber;
 der_type_encoder_f NO_IntegerOutRange_encode_der;
 xer_type_decoder_f NO_IntegerOutRange_decode_xer;
 xer_type_encoder_f NO_IntegerOutRange_encode_xer;
+cbor_type_decoder_f NO_IntegerOutRange_decode_cbor;
+cbor_type_encoder_f NO_IntegerOutRange_encode_cbor;
 
 /*** <<< CODE [NO-IntegerOutRange] >>> ***/
 
@@ -780,6 +798,8 @@ ber_type_decoder_f NO_IntegerOutValue_decode_ber;
 der_type_encoder_f NO_IntegerOutValue_encode_der;
 xer_type_decoder_f NO_IntegerOutValue_decode_xer;
 xer_type_encoder_f NO_IntegerOutValue_encode_xer;
+cbor_type_decoder_f NO_IntegerOutValue_decode_cbor;
+cbor_type_encoder_f NO_IntegerOutValue_encode_cbor;
 
 /*** <<< CODE [NO-IntegerOutValue] >>> ***/
 
@@ -868,6 +888,8 @@ ber_type_decoder_f OK_IntegerInRange1_decode_ber;
 der_type_encoder_f OK_IntegerInRange1_encode_der;
 xer_type_decoder_f OK_IntegerInRange1_decode_xer;
 xer_type_encoder_f OK_IntegerInRange1_encode_xer;
+cbor_type_decoder_f OK_IntegerInRange1_decode_cbor;
+cbor_type_encoder_f OK_IntegerInRange1_encode_cbor;
 
 /*** <<< CODE [OK-IntegerInRange1] >>> ***/
 
@@ -951,6 +973,8 @@ ber_type_decoder_f OK_IntegerInRange2_decode_ber;
 der_type_encoder_f OK_IntegerInRange2_encode_der;
 xer_type_decoder_f OK_IntegerInRange2_decode_xer;
 xer_type_encoder_f OK_IntegerInRange2_encode_xer;
+cbor_type_decoder_f OK_IntegerInRange2_decode_cbor;
+cbor_type_encoder_f OK_IntegerInRange2_encode_cbor;
 
 /*** <<< CODE [OK-IntegerInRange2] >>> ***/
 
@@ -1034,6 +1058,8 @@ ber_type_decoder_f OK_IntegerInRange3_decode_ber;
 der_type_encoder_f OK_IntegerInRange3_encode_der;
 xer_type_decoder_f OK_IntegerInRange3_decode_xer;
 xer_type_encoder_f OK_IntegerInRange3_encode_xer;
+cbor_type_decoder_f OK_IntegerInRange3_decode_cbor;
+cbor_type_encoder_f OK_IntegerInRange3_encode_cbor;
 
 /*** <<< CODE [OK-IntegerInRange3] >>> ***/
 
@@ -1117,6 +1143,8 @@ ber_type_decoder_f OK_IntegerInRange4_decode_ber;
 der_type_encoder_f OK_IntegerInRange4_encode_der;
 xer_type_decoder_f OK_IntegerInRange4_decode_xer;
 xer_type_encoder_f OK_IntegerInRange4_encode_xer;
+cbor_type_decoder_f OK_IntegerInRange4_decode_cbor;
+cbor_type_encoder_f OK_IntegerInRange4_encode_cbor;
 
 /*** <<< CODE [OK-IntegerInRange4] >>> ***/
 
@@ -1200,6 +1228,8 @@ ber_type_decoder_f OK_IntegerInRange5_decode_ber;
 der_type_encoder_f OK_IntegerInRange5_encode_der;
 xer_type_decoder_f OK_IntegerInRange5_decode_xer;
 xer_type_encoder_f OK_IntegerInRange5_encode_xer;
+cbor_type_decoder_f OK_IntegerInRange5_decode_cbor;
+cbor_type_encoder_f OK_IntegerInRange5_encode_cbor;
 
 /*** <<< CODE [OK-IntegerInRange5] >>> ***/
 
@@ -1289,6 +1319,8 @@ ber_type_decoder_f NO_IntegerInRange6_decode_ber;
 der_type_encoder_f NO_IntegerInRange6_encode_der;
 xer_type_decoder_f NO_IntegerInRange6_decode_xer;
 xer_type_encoder_f NO_IntegerInRange6_encode_xer;
+cbor_type_decoder_f NO_IntegerInRange6_decode_cbor;
+cbor_type_encoder_f NO_IntegerInRange6_encode_cbor;
 
 /*** <<< CODE [NO-IntegerInRange6] >>> ***/
 
@@ -1384,6 +1416,8 @@ ber_type_decoder_f CN_IntegerEnumerated1_decode_ber;
 der_type_encoder_f CN_IntegerEnumerated1_encode_der;
 xer_type_decoder_f CN_IntegerEnumerated1_decode_xer;
 xer_type_encoder_f CN_IntegerEnumerated1_encode_xer;
+cbor_type_decoder_f CN_IntegerEnumerated1_decode_cbor;
+cbor_type_encoder_f CN_IntegerEnumerated1_encode_cbor;
 
 /*** <<< CODE [CN-IntegerEnumerated1] >>> ***/
 
@@ -1449,6 +1483,8 @@ ber_type_decoder_f NO_IntegerEnumerated2_decode_ber;
 der_type_encoder_f NO_IntegerEnumerated2_encode_der;
 xer_type_decoder_f NO_IntegerEnumerated2_decode_xer;
 xer_type_encoder_f NO_IntegerEnumerated2_encode_xer;
+cbor_type_decoder_f NO_IntegerEnumerated2_decode_cbor;
+cbor_type_encoder_f NO_IntegerEnumerated2_encode_cbor;
 
 /*** <<< CODE [NO-IntegerEnumerated2] >>> ***/
 

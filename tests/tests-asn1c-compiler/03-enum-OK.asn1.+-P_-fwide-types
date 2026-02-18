@@ -29,6 +29,8 @@ ber_type_decoder_f Enum1_decode_ber;
 der_type_encoder_f Enum1_encode_der;
 xer_type_decoder_f Enum1_decode_xer;
 xer_type_encoder_f Enum1_encode_xer;
+cbor_type_decoder_f Enum1_decode_cbor;
+cbor_type_encoder_f Enum1_encode_cbor;
 
 /*** <<< CODE [Enum1] >>> ***/
 
@@ -125,6 +127,8 @@ ber_type_decoder_f Enum2_decode_ber;
 der_type_encoder_f Enum2_encode_der;
 xer_type_decoder_f Enum2_decode_xer;
 xer_type_encoder_f Enum2_encode_xer;
+cbor_type_decoder_f Enum2_decode_cbor;
+cbor_type_encoder_f Enum2_encode_cbor;
 
 /*** <<< CODE [Enum2] >>> ***/
 
@@ -223,6 +227,8 @@ ber_type_decoder_f Enum3_decode_ber;
 der_type_encoder_f Enum3_encode_der;
 xer_type_decoder_f Enum3_decode_xer;
 xer_type_encoder_f Enum3_encode_xer;
+cbor_type_decoder_f Enum3_decode_cbor;
+cbor_type_encoder_f Enum3_encode_cbor;
 
 /*** <<< CODE [Enum3] >>> ***/
 
@@ -314,6 +320,8 @@ ber_type_decoder_f Enum4_decode_ber;
 der_type_encoder_f Enum4_encode_der;
 xer_type_decoder_f Enum4_decode_xer;
 xer_type_encoder_f Enum4_encode_xer;
+cbor_type_decoder_f Enum4_decode_cbor;
+cbor_type_encoder_f Enum4_encode_cbor;
 
 /*** <<< CODE [Enum4] >>> ***/
 
@@ -406,6 +414,8 @@ ber_type_decoder_f Enum5_decode_ber;
 der_type_encoder_f Enum5_encode_der;
 xer_type_decoder_f Enum5_decode_xer;
 xer_type_encoder_f Enum5_encode_xer;
+cbor_type_decoder_f Enum5_decode_cbor;
+cbor_type_encoder_f Enum5_encode_cbor;
 
 /*** <<< CODE [Enum5] >>> ***/
 

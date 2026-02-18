@@ -17,6 +17,8 @@ ber_type_decoder_f UnconstrainedREAL_decode_ber;
 der_type_encoder_f UnconstrainedREAL_encode_der;
 xer_type_decoder_f UnconstrainedREAL_decode_xer;
 xer_type_encoder_f UnconstrainedREAL_encode_xer;
+cbor_type_decoder_f UnconstrainedREAL_decode_cbor;
+cbor_type_encoder_f UnconstrainedREAL_encode_cbor;
 
 /*** <<< CODE [UnconstrainedREAL] >>> ***/
 
@@ -75,6 +77,8 @@ ber_type_decoder_f WeirdlyConstrainedREAL_decode_ber;
 der_type_encoder_f WeirdlyConstrainedREAL_encode_der;
 xer_type_decoder_f WeirdlyConstrainedREAL_decode_xer;
 xer_type_encoder_f WeirdlyConstrainedREAL_encode_xer;
+cbor_type_decoder_f WeirdlyConstrainedREAL_decode_cbor;
+cbor_type_encoder_f WeirdlyConstrainedREAL_encode_cbor;
 
 /*** <<< CODE [WeirdlyConstrainedREAL] >>> ***/
 
@@ -165,6 +169,8 @@ ber_type_decoder_f Indirect_IEEE_binary32_decode_ber;
 der_type_encoder_f Indirect_IEEE_binary32_encode_der;
 xer_type_decoder_f Indirect_IEEE_binary32_decode_xer;
 xer_type_encoder_f Indirect_IEEE_binary32_encode_xer;
+cbor_type_decoder_f Indirect_IEEE_binary32_decode_cbor;
+cbor_type_encoder_f Indirect_IEEE_binary32_encode_cbor;
 
 /*** <<< CODE [Indirect-IEEE-binary32] >>> ***/
 
@@ -251,6 +257,8 @@ ber_type_decoder_f IEEE_binary32_w_decode_ber;
 der_type_encoder_f IEEE_binary32_w_encode_der;
 xer_type_decoder_f IEEE_binary32_w_decode_xer;
 xer_type_encoder_f IEEE_binary32_w_encode_xer;
+cbor_type_decoder_f IEEE_binary32_w_decode_cbor;
+cbor_type_encoder_f IEEE_binary32_w_encode_cbor;
 
 /*** <<< CODE [IEEE-binary32-w] >>> ***/
 
@@ -337,6 +345,8 @@ ber_type_decoder_f IEEE_binary32_0w_decode_ber;
 der_type_encoder_f IEEE_binary32_0w_encode_der;
 xer_type_decoder_f IEEE_binary32_0w_decode_xer;
 xer_type_encoder_f IEEE_binary32_0w_encode_xer;
+cbor_type_decoder_f IEEE_binary32_0w_decode_cbor;
+cbor_type_encoder_f IEEE_binary32_0w_encode_cbor;
 
 /*** <<< CODE [IEEE-binary32-0w] >>> ***/
 
@@ -423,6 +433,8 @@ ber_type_decoder_f IEEE_binary32_w0_decode_ber;
 der_type_encoder_f IEEE_binary32_w0_encode_der;
 xer_type_decoder_f IEEE_binary32_w0_decode_xer;
 xer_type_encoder_f IEEE_binary32_w0_encode_xer;
+cbor_type_decoder_f IEEE_binary32_w0_decode_cbor;
+cbor_type_encoder_f IEEE_binary32_w0_encode_cbor;
 
 /*** <<< CODE [IEEE-binary32-w0] >>> ***/
 
@@ -508,6 +520,8 @@ ber_type_decoder_f IEEE_binary64_w_decode_ber;
 der_type_encoder_f IEEE_binary64_w_encode_der;
 xer_type_decoder_f IEEE_binary64_w_decode_xer;
 xer_type_encoder_f IEEE_binary64_w_encode_xer;
+cbor_type_decoder_f IEEE_binary64_w_decode_cbor;
+cbor_type_encoder_f IEEE_binary64_w_encode_cbor;
 
 /*** <<< CODE [IEEE-binary64-w] >>> ***/
 
@@ -590,6 +604,8 @@ ber_type_decoder_f IEEE_binary64_0w_decode_ber;
 der_type_encoder_f IEEE_binary64_0w_encode_der;
 xer_type_decoder_f IEEE_binary64_0w_decode_xer;
 xer_type_encoder_f IEEE_binary64_0w_encode_xer;
+cbor_type_decoder_f IEEE_binary64_0w_decode_cbor;
+cbor_type_encoder_f IEEE_binary64_0w_encode_cbor;
 
 /*** <<< CODE [IEEE-binary64-0w] >>> ***/
 
@@ -672,6 +688,8 @@ ber_type_decoder_f IEEE_binary64_w0_decode_ber;
 der_type_encoder_f IEEE_binary64_w0_encode_der;
 xer_type_decoder_f IEEE_binary64_w0_decode_xer;
 xer_type_encoder_f IEEE_binary64_w0_encode_xer;
+cbor_type_decoder_f IEEE_binary64_w0_decode_cbor;
+cbor_type_encoder_f IEEE_binary64_w0_encode_cbor;
 
 /*** <<< CODE [IEEE-binary64-w0] >>> ***/
 

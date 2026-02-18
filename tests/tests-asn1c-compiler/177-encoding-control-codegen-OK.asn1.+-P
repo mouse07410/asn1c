@@ -147,6 +147,8 @@ ber_type_decoder_f HexData_decode_ber;
 der_type_encoder_f HexData_encode_der;
 xer_type_decoder_f HexData_decode_xer;
 xer_type_encoder_f HexData_encode_xer;
+cbor_type_decoder_f HexData_decode_cbor;
+cbor_type_encoder_f HexData_encode_cbor;
 
 /*** <<< CODE [HexData] >>> ***/
 
@@ -271,6 +273,11 @@ asn_TYPE_operation_t asn_OP_HexData = {
 	0,
 #endif  /* !defined(ASN_DISABLE_RFILL_SUPPORT) */
 	0	/* No outmost tag fetcher */
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+	,
+	OCTET_STRING_decode_cbor,
+	OCTET_STRING_encode_cbor
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
 };
 
 asn_TYPE_descriptor_t asn_DEF_HexData = {
@@ -318,6 +325,8 @@ ber_type_decoder_f TextData_decode_ber;
 der_type_encoder_f TextData_encode_der;
 xer_type_decoder_f TextData_decode_xer;
 xer_type_encoder_f TextData_encode_xer;
+cbor_type_decoder_f TextData_decode_cbor;
+cbor_type_encoder_f TextData_encode_cbor;
 
 /*** <<< CODE [TextData] >>> ***/
 
@@ -425,6 +434,11 @@ asn_TYPE_operation_t asn_OP_TextData = {
 	0,
 #endif  /* !defined(ASN_DISABLE_RFILL_SUPPORT) */
 	0	/* No outmost tag fetcher */
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+	,
+	OCTET_STRING_decode_cbor,
+	OCTET_STRING_encode_cbor
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
 };
 
 asn_TYPE_descriptor_t asn_DEF_TextData = {
@@ -472,6 +486,8 @@ ber_type_decoder_f Base64Data_decode_ber;
 der_type_encoder_f Base64Data_encode_der;
 xer_type_decoder_f Base64Data_decode_xer;
 xer_type_encoder_f Base64Data_encode_xer;
+cbor_type_decoder_f Base64Data_decode_cbor;
+cbor_type_encoder_f Base64Data_encode_cbor;
 
 /*** <<< CODE [Base64Data] >>> ***/
 

@@ -328,6 +328,8 @@ ber_type_decoder_f ConstrainedInteger_decode_ber;
 der_type_encoder_f ConstrainedInteger_encode_der;
 xer_type_decoder_f ConstrainedInteger_decode_xer;
 xer_type_encoder_f ConstrainedInteger_encode_xer;
+cbor_type_decoder_f ConstrainedInteger_decode_cbor;
+cbor_type_encoder_f ConstrainedInteger_encode_cbor;
 
 /*** <<< CODE [ConstrainedInteger] >>> ***/
 

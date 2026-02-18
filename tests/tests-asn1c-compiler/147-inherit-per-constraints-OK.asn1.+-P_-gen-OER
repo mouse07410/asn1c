@@ -18,6 +18,8 @@ ber_type_decoder_f Short_decode_ber;
 der_type_encoder_f Short_encode_der;
 xer_type_decoder_f Short_decode_xer;
 xer_type_encoder_f Short_encode_xer;
+cbor_type_decoder_f Short_decode_cbor;
+cbor_type_encoder_f Short_encode_cbor;
 oer_type_decoder_f Short_decode_oer;
 oer_type_encoder_f Short_encode_oer;
 
@@ -112,6 +114,8 @@ ber_type_decoder_f Alias_decode_ber;
 der_type_encoder_f Alias_encode_der;
 xer_type_decoder_f Alias_decode_xer;
 xer_type_encoder_f Alias_encode_xer;
+cbor_type_decoder_f Alias_decode_cbor;
+cbor_type_encoder_f Alias_encode_cbor;
 oer_type_decoder_f Alias_decode_oer;
 oer_type_encoder_f Alias_encode_oer;
 

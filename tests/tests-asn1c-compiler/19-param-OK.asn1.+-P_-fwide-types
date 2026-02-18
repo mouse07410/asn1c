@@ -308,6 +308,8 @@ ber_type_decoder_f Certificate_decode_ber;
 der_type_encoder_f Certificate_encode_der;
 xer_type_decoder_f Certificate_decode_xer;
 xer_type_encoder_f Certificate_encode_xer;
+cbor_type_decoder_f Certificate_decode_cbor;
+cbor_type_encoder_f Certificate_encode_cbor;
 
 /*** <<< CODE [Certificate] >>> ***/
 

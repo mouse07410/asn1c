@@ -17,6 +17,8 @@ ber_type_decoder_f ProtocolIE_ID_decode_ber;
 der_type_encoder_f ProtocolIE_ID_encode_der;
 xer_type_decoder_f ProtocolIE_ID_decode_xer;
 xer_type_encoder_f ProtocolIE_ID_encode_xer;
+cbor_type_decoder_f ProtocolIE_ID_decode_cbor;
+cbor_type_encoder_f ProtocolIE_ID_encode_cbor;
 
 /*** <<< CODE [ProtocolIE-ID] >>> ***/
 
@@ -109,6 +111,8 @@ ber_type_decoder_f Criticality_decode_ber;
 der_type_encoder_f Criticality_encode_der;
 xer_type_decoder_f Criticality_decode_xer;
 xer_type_encoder_f Criticality_encode_xer;
+cbor_type_decoder_f Criticality_decode_cbor;
+cbor_type_encoder_f Criticality_encode_cbor;
 
 /*** <<< CODE [Criticality] >>> ***/
 
@@ -209,6 +213,8 @@ ber_type_decoder_f Presence_decode_ber;
 der_type_encoder_f Presence_encode_der;
 xer_type_decoder_f Presence_decode_xer;
 xer_type_encoder_f Presence_encode_xer;
+cbor_type_decoder_f Presence_decode_cbor;
+cbor_type_encoder_f Presence_encode_cbor;
 
 /*** <<< CODE [Presence] >>> ***/
 
@@ -977,6 +983,8 @@ ber_type_decoder_f ProtocolIE_SingleContainer_52P0_decode_ber;
 der_type_encoder_f ProtocolIE_SingleContainer_52P0_encode_der;
 xer_type_decoder_f ProtocolIE_SingleContainer_52P0_decode_xer;
 xer_type_encoder_f ProtocolIE_SingleContainer_52P0_encode_xer;
+cbor_type_decoder_f ProtocolIE_SingleContainer_52P0_decode_cbor;
+cbor_type_encoder_f ProtocolIE_SingleContainer_52P0_encode_cbor;
 extern asn_TYPE_descriptor_t asn_DEF_ProtocolIE_SingleContainer_52P1;
 asn_struct_free_f ProtocolIE_SingleContainer_52P1_free;
 asn_struct_print_f ProtocolIE_SingleContainer_52P1_print;
@@ -985,6 +993,8 @@ ber_type_decoder_f ProtocolIE_SingleContainer_52P1_decode_ber;
 der_type_encoder_f ProtocolIE_SingleContainer_52P1_encode_der;
 xer_type_decoder_f ProtocolIE_SingleContainer_52P1_decode_xer;
 xer_type_encoder_f ProtocolIE_SingleContainer_52P1_encode_xer;
+cbor_type_decoder_f ProtocolIE_SingleContainer_52P1_decode_cbor;
+cbor_type_encoder_f ProtocolIE_SingleContainer_52P1_encode_cbor;
 
 /*** <<< CODE [ProtocolIE-SingleContainer] >>> ***/
 
@@ -1166,6 +1176,8 @@ ber_type_decoder_f SampleContainer_decode_ber;
 der_type_encoder_f SampleContainer_encode_der;
 xer_type_decoder_f SampleContainer_decode_xer;
 xer_type_encoder_f SampleContainer_encode_xer;
+cbor_type_decoder_f SampleContainer_decode_cbor;
+cbor_type_encoder_f SampleContainer_encode_cbor;
 
 /*** <<< CODE [SampleContainer] >>> ***/
 
@@ -1225,6 +1237,8 @@ ber_type_decoder_f AnotherContainer_decode_ber;
 der_type_encoder_f AnotherContainer_encode_der;
 xer_type_decoder_f AnotherContainer_decode_xer;
 xer_type_encoder_f AnotherContainer_encode_xer;
+cbor_type_decoder_f AnotherContainer_decode_cbor;
+cbor_type_encoder_f AnotherContainer_encode_cbor;
 
 /*** <<< CODE [AnotherContainer] >>> ***/
 
@@ -1284,6 +1298,8 @@ ber_type_decoder_f SampleList_decode_ber;
 der_type_encoder_f SampleList_encode_der;
 xer_type_decoder_f SampleList_decode_xer;
 xer_type_encoder_f SampleList_encode_xer;
+cbor_type_decoder_f SampleList_decode_cbor;
+cbor_type_encoder_f SampleList_encode_cbor;
 
 /*** <<< CODE [SampleList] >>> ***/
 

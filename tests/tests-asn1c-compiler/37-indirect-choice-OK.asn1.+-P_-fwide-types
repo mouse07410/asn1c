@@ -481,6 +481,8 @@ ber_type_decoder_f Choice3_decode_ber;
 der_type_encoder_f Choice3_encode_der;
 xer_type_decoder_f Choice3_decode_xer;
 xer_type_encoder_f Choice3_encode_xer;
+cbor_type_decoder_f Choice3_decode_cbor;
+cbor_type_encoder_f Choice3_encode_cbor;
 
 /*** <<< CODE [Choice3] >>> ***/
 
@@ -541,6 +543,8 @@ ber_type_decoder_f Choice4_decode_ber;
 der_type_encoder_f Choice4_encode_der;
 xer_type_decoder_f Choice4_decode_xer;
 xer_type_encoder_f Choice4_encode_xer;
+cbor_type_decoder_f Choice4_decode_cbor;
+cbor_type_encoder_f Choice4_encode_cbor;
 
 /*** <<< CODE [Choice4] >>> ***/
 
@@ -601,6 +605,8 @@ ber_type_decoder_f Choice5_decode_ber;
 der_type_encoder_f Choice5_encode_der;
 xer_type_decoder_f Choice5_decode_xer;
 xer_type_encoder_f Choice5_encode_xer;
+cbor_type_decoder_f Choice5_decode_cbor;
+cbor_type_encoder_f Choice5_encode_cbor;
 
 /*** <<< CODE [Choice5] >>> ***/
 
@@ -660,6 +666,8 @@ ber_type_decoder_f Choice6_decode_ber;
 der_type_encoder_f Choice6_encode_der;
 xer_type_decoder_f Choice6_decode_xer;
 xer_type_encoder_f Choice6_encode_xer;
+cbor_type_decoder_f Choice6_decode_cbor;
+cbor_type_encoder_f Choice6_encode_cbor;
 
 /*** <<< CODE [Choice6] >>> ***/
 

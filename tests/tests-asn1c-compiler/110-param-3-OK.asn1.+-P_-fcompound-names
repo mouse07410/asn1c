@@ -317,6 +317,8 @@ ber_type_decoder_f IntegerColorFlag_decode_ber;
 der_type_encoder_f IntegerColorFlag_encode_der;
 xer_type_decoder_f IntegerColorFlag_decode_xer;
 xer_type_encoder_f IntegerColorFlag_encode_xer;
+cbor_type_decoder_f IntegerColorFlag_decode_cbor;
+cbor_type_encoder_f IntegerColorFlag_encode_cbor;
 
 /*** <<< CODE [IntegerColorFlag] >>> ***/
 
@@ -376,6 +378,8 @@ ber_type_decoder_f EnumeratedColorFlag_decode_ber;
 der_type_encoder_f EnumeratedColorFlag_encode_der;
 xer_type_decoder_f EnumeratedColorFlag_decode_xer;
 xer_type_encoder_f EnumeratedColorFlag_encode_xer;
+cbor_type_decoder_f EnumeratedColorFlag_decode_cbor;
+cbor_type_encoder_f EnumeratedColorFlag_encode_cbor;
 
 /*** <<< CODE [EnumeratedColorFlag] >>> ***/
 

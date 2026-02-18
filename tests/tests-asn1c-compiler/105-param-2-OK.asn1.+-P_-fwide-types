@@ -281,6 +281,8 @@ ber_type_decoder_f SignedREAL_decode_ber;
 der_type_encoder_f SignedREAL_encode_der;
 xer_type_decoder_f SignedREAL_decode_xer;
 xer_type_encoder_f SignedREAL_encode_xer;
+cbor_type_decoder_f SignedREAL_decode_cbor;
+cbor_type_encoder_f SignedREAL_encode_cbor;
 
 /*** <<< CODE [SignedREAL] >>> ***/
 
@@ -340,6 +342,8 @@ ber_type_decoder_f SignedSET_decode_ber;
 der_type_encoder_f SignedSET_encode_der;
 xer_type_decoder_f SignedSET_decode_xer;
 xer_type_encoder_f SignedSET_encode_xer;
+cbor_type_decoder_f SignedSET_decode_cbor;
+cbor_type_encoder_f SignedSET_encode_cbor;
 
 /*** <<< CODE [SignedSET] >>> ***/
 

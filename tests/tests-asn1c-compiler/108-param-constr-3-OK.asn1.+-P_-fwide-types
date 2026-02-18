@@ -17,6 +17,8 @@ ber_type_decoder_f MinMax_16P0_decode_ber;
 der_type_encoder_f MinMax_16P0_encode_der;
 xer_type_decoder_f MinMax_16P0_decode_xer;
 xer_type_encoder_f MinMax_16P0_encode_xer;
+cbor_type_decoder_f MinMax_16P0_decode_cbor;
+cbor_type_encoder_f MinMax_16P0_encode_cbor;
 
 /*** <<< CODE [MinMax] >>> ***/
 
@@ -106,6 +108,8 @@ ber_type_decoder_f ThreePlus_decode_ber;
 der_type_encoder_f ThreePlus_encode_der;
 xer_type_decoder_f ThreePlus_decode_xer;
 xer_type_encoder_f ThreePlus_encode_xer;
+cbor_type_decoder_f ThreePlus_decode_cbor;
+cbor_type_encoder_f ThreePlus_encode_cbor;
 
 /*** <<< CODE [ThreePlus] >>> ***/
 

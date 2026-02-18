@@ -17,6 +17,8 @@ ber_type_decoder_f T1_decode_ber;
 der_type_encoder_f T1_encode_der;
 xer_type_decoder_f T1_decode_xer;
 xer_type_encoder_f T1_encode_xer;
+cbor_type_decoder_f T1_decode_cbor;
+cbor_type_encoder_f T1_encode_cbor;
 
 /*** <<< CODE [T1] >>> ***/
 
@@ -86,6 +88,8 @@ ber_type_decoder_f T2_decode_ber;
 der_type_encoder_f T2_encode_der;
 xer_type_decoder_f T2_decode_xer;
 xer_type_encoder_f T2_encode_xer;
+cbor_type_decoder_f T2_decode_cbor;
+cbor_type_encoder_f T2_encode_cbor;
 
 /*** <<< CODE [T2] >>> ***/
 
@@ -153,6 +157,8 @@ ber_type_decoder_f T3_decode_ber;
 der_type_encoder_f T3_encode_der;
 xer_type_decoder_f T3_decode_xer;
 xer_type_encoder_f T3_encode_xer;
+cbor_type_decoder_f T3_decode_cbor;
+cbor_type_encoder_f T3_encode_cbor;
 
 /*** <<< CODE [T3] >>> ***/
 
@@ -218,6 +224,8 @@ ber_type_decoder_f T4_decode_ber;
 der_type_encoder_f T4_encode_der;
 xer_type_decoder_f T4_decode_xer;
 xer_type_encoder_f T4_encode_xer;
+cbor_type_decoder_f T4_decode_cbor;
+cbor_type_encoder_f T4_encode_cbor;
 
 /*** <<< CODE [T4] >>> ***/
 
@@ -278,6 +286,8 @@ ber_type_decoder_f T5_decode_ber;
 der_type_encoder_f T5_encode_der;
 xer_type_decoder_f T5_decode_xer;
 xer_type_encoder_f T5_encode_xer;
+cbor_type_decoder_f T5_decode_cbor;
+cbor_type_encoder_f T5_encode_cbor;
 
 /*** <<< CODE [T5] >>> ***/
 
@@ -337,6 +347,8 @@ ber_type_decoder_f T6_decode_ber;
 der_type_encoder_f T6_encode_der;
 xer_type_decoder_f T6_decode_xer;
 xer_type_encoder_f T6_encode_xer;
+cbor_type_decoder_f T6_decode_cbor;
+cbor_type_encoder_f T6_encode_cbor;
 
 /*** <<< CODE [T6] >>> ***/
 
@@ -395,6 +407,8 @@ ber_type_decoder_f T_decode_ber;
 der_type_encoder_f T_encode_der;
 xer_type_decoder_f T_decode_xer;
 xer_type_encoder_f T_encode_xer;
+cbor_type_decoder_f T_decode_cbor;
+cbor_type_encoder_f T_encode_cbor;
 
 /*** <<< CODE [T] >>> ***/
 

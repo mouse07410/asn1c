@@ -17,6 +17,8 @@ ber_type_decoder_f A_noc_decode_ber;
 der_type_encoder_f A_noc_encode_der;
 xer_type_decoder_f A_noc_decode_xer;
 xer_type_encoder_f A_noc_encode_xer;
+cbor_type_decoder_f A_noc_decode_cbor;
+cbor_type_encoder_f A_noc_encode_cbor;
 oer_type_decoder_f A_noc_decode_oer;
 oer_type_encoder_f A_noc_encode_oer;
 
@@ -77,6 +79,8 @@ ber_type_decoder_f B_0_0_decode_ber;
 der_type_encoder_f B_0_0_encode_der;
 xer_type_decoder_f B_0_0_decode_xer;
 xer_type_encoder_f B_0_0_encode_xer;
+cbor_type_decoder_f B_0_0_decode_cbor;
+cbor_type_encoder_f B_0_0_encode_cbor;
 oer_type_decoder_f B_0_0_decode_oer;
 oer_type_encoder_f B_0_0_encode_oer;
 
@@ -170,6 +174,8 @@ ber_type_decoder_f C_1_2_decode_ber;
 der_type_encoder_f C_1_2_encode_der;
 xer_type_decoder_f C_1_2_decode_xer;
 xer_type_encoder_f C_1_2_encode_xer;
+cbor_type_decoder_f C_1_2_decode_cbor;
+cbor_type_encoder_f C_1_2_encode_cbor;
 oer_type_decoder_f C_1_2_decode_oer;
 oer_type_encoder_f C_1_2_encode_oer;
 
@@ -263,6 +269,8 @@ ber_type_decoder_f D_inv_decode_ber;
 der_type_encoder_f D_inv_encode_der;
 xer_type_decoder_f D_inv_decode_xer;
 xer_type_encoder_f D_inv_encode_xer;
+cbor_type_decoder_f D_inv_decode_cbor;
+cbor_type_encoder_f D_inv_encode_cbor;
 oer_type_decoder_f D_inv_decode_oer;
 oer_type_encoder_f D_inv_encode_oer;
 
@@ -356,6 +364,8 @@ ber_type_decoder_f E_2_5_decode_ber;
 der_type_encoder_f E_2_5_encode_der;
 xer_type_decoder_f E_2_5_decode_xer;
 xer_type_encoder_f E_2_5_encode_xer;
+cbor_type_decoder_f E_2_5_decode_cbor;
+cbor_type_encoder_f E_2_5_encode_cbor;
 oer_type_decoder_f E_2_5_decode_oer;
 oer_type_encoder_f E_2_5_encode_oer;
 
@@ -449,6 +459,8 @@ ber_type_decoder_f F_inv_decode_ber;
 der_type_encoder_f F_inv_encode_der;
 xer_type_decoder_f F_inv_decode_xer;
 xer_type_encoder_f F_inv_encode_xer;
+cbor_type_decoder_f F_inv_decode_cbor;
+cbor_type_encoder_f F_inv_encode_cbor;
 oer_type_decoder_f F_inv_decode_oer;
 oer_type_encoder_f F_inv_encode_oer;
 
@@ -542,6 +554,8 @@ ber_type_decoder_f G_3_3_decode_ber;
 der_type_encoder_f G_3_3_encode_der;
 xer_type_decoder_f G_3_3_decode_xer;
 xer_type_encoder_f G_3_3_encode_xer;
+cbor_type_decoder_f G_3_3_decode_cbor;
+cbor_type_encoder_f G_3_3_encode_cbor;
 oer_type_decoder_f G_3_3_decode_oer;
 oer_type_encoder_f G_3_3_encode_oer;
 
@@ -635,6 +649,8 @@ ber_type_decoder_f H_4_5_decode_ber;
 der_type_encoder_f H_4_5_encode_der;
 xer_type_decoder_f H_4_5_decode_xer;
 xer_type_encoder_f H_4_5_encode_xer;
+cbor_type_decoder_f H_4_5_decode_cbor;
+cbor_type_encoder_f H_4_5_encode_cbor;
 oer_type_decoder_f H_4_5_decode_oer;
 oer_type_encoder_f H_4_5_encode_oer;
 
@@ -728,6 +744,8 @@ ber_type_decoder_f I_1_5_decode_ber;
 der_type_encoder_f I_1_5_encode_der;
 xer_type_decoder_f I_1_5_decode_xer;
 xer_type_encoder_f I_1_5_encode_xer;
+cbor_type_decoder_f I_1_5_decode_cbor;
+cbor_type_encoder_f I_1_5_encode_cbor;
 oer_type_decoder_f I_1_5_decode_oer;
 oer_type_encoder_f I_1_5_encode_oer;
 
@@ -821,6 +839,8 @@ ber_type_decoder_f J_4_5_decode_ber;
 der_type_encoder_f J_4_5_encode_der;
 xer_type_decoder_f J_4_5_decode_xer;
 xer_type_encoder_f J_4_5_encode_xer;
+cbor_type_decoder_f J_4_5_decode_cbor;
+cbor_type_encoder_f J_4_5_encode_cbor;
 oer_type_decoder_f J_4_5_decode_oer;
 oer_type_encoder_f J_4_5_encode_oer;
 
@@ -914,6 +934,8 @@ ber_type_decoder_f K_1_4_decode_ber;
 der_type_encoder_f K_1_4_encode_der;
 xer_type_decoder_f K_1_4_decode_xer;
 xer_type_encoder_f K_1_4_encode_xer;
+cbor_type_decoder_f K_1_4_decode_cbor;
+cbor_type_encoder_f K_1_4_encode_cbor;
 oer_type_decoder_f K_1_4_decode_oer;
 oer_type_encoder_f K_1_4_encode_oer;
 
@@ -1007,6 +1029,8 @@ ber_type_decoder_f L_0_5_decode_ber;
 der_type_encoder_f L_0_5_encode_der;
 xer_type_decoder_f L_0_5_decode_xer;
 xer_type_encoder_f L_0_5_encode_xer;
+cbor_type_decoder_f L_0_5_decode_cbor;
+cbor_type_encoder_f L_0_5_encode_cbor;
 oer_type_decoder_f L_0_5_decode_oer;
 oer_type_encoder_f L_0_5_encode_oer;
 
@@ -1100,6 +1124,8 @@ ber_type_decoder_f M_inv_decode_ber;
 der_type_encoder_f M_inv_encode_der;
 xer_type_decoder_f M_inv_decode_xer;
 xer_type_encoder_f M_inv_encode_xer;
+cbor_type_decoder_f M_inv_decode_cbor;
+cbor_type_encoder_f M_inv_encode_cbor;
 oer_type_decoder_f M_inv_decode_oer;
 oer_type_encoder_f M_inv_encode_oer;
 
@@ -1193,6 +1219,8 @@ ber_type_decoder_f N_0_5_decode_ber;
 der_type_encoder_f N_0_5_encode_der;
 xer_type_decoder_f N_0_5_decode_xer;
 xer_type_encoder_f N_0_5_encode_xer;
+cbor_type_decoder_f N_0_5_decode_cbor;
+cbor_type_encoder_f N_0_5_encode_cbor;
 oer_type_decoder_f N_0_5_decode_oer;
 oer_type_encoder_f N_0_5_encode_oer;
 
@@ -1286,6 +1314,8 @@ ber_type_decoder_f O_inv_decode_ber;
 der_type_encoder_f O_inv_encode_der;
 xer_type_decoder_f O_inv_decode_xer;
 xer_type_encoder_f O_inv_encode_xer;
+cbor_type_decoder_f O_inv_decode_cbor;
+cbor_type_encoder_f O_inv_encode_cbor;
 oer_type_decoder_f O_inv_decode_oer;
 oer_type_encoder_f O_inv_encode_oer;
 
@@ -1379,6 +1409,8 @@ ber_type_decoder_f EConstr_decode_ber;
 der_type_encoder_f EConstr_encode_der;
 xer_type_decoder_f EConstr_decode_xer;
 xer_type_encoder_f EConstr_encode_xer;
+cbor_type_decoder_f EConstr_decode_cbor;
+cbor_type_encoder_f EConstr_encode_cbor;
 oer_type_decoder_f EConstr_decode_oer;
 oer_type_encoder_f EConstr_encode_oer;
 
@@ -1472,6 +1504,8 @@ ber_type_decoder_f FConstr_decode_ber;
 der_type_encoder_f FConstr_encode_der;
 xer_type_decoder_f FConstr_decode_xer;
 xer_type_encoder_f FConstr_encode_xer;
+cbor_type_decoder_f FConstr_decode_cbor;
+cbor_type_encoder_f FConstr_encode_cbor;
 oer_type_decoder_f FConstr_decode_oer;
 oer_type_encoder_f FConstr_encode_oer;
 

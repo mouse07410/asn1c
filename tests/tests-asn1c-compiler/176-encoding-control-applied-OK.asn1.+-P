@@ -124,6 +124,8 @@ ber_type_decoder_f BinaryData_decode_ber;
 der_type_encoder_f BinaryData_encode_der;
 xer_type_decoder_f BinaryData_decode_xer;
 xer_type_encoder_f BinaryData_encode_xer;
+cbor_type_decoder_f BinaryData_decode_cbor;
+cbor_type_encoder_f BinaryData_encode_cbor;
 
 /*** <<< CODE [BinaryData] >>> ***/
 
@@ -248,6 +250,11 @@ asn_TYPE_operation_t asn_OP_BinaryData = {
 	0,
 #endif  /* !defined(ASN_DISABLE_RFILL_SUPPORT) */
 	0	/* No outmost tag fetcher */
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+	,
+	OCTET_STRING_decode_cbor,
+	OCTET_STRING_encode_cbor
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
 };
 
 asn_TYPE_descriptor_t asn_DEF_BinaryData = {
@@ -295,6 +302,8 @@ ber_type_decoder_f TextData_decode_ber;
 der_type_encoder_f TextData_encode_der;
 xer_type_decoder_f TextData_decode_xer;
 xer_type_encoder_f TextData_encode_xer;
+cbor_type_decoder_f TextData_decode_cbor;
+cbor_type_encoder_f TextData_encode_cbor;
 
 /*** <<< CODE [TextData] >>> ***/
 
@@ -402,6 +411,11 @@ asn_TYPE_operation_t asn_OP_TextData = {
 	0,
 #endif  /* !defined(ASN_DISABLE_RFILL_SUPPORT) */
 	0	/* No outmost tag fetcher */
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+	,
+	OCTET_STRING_decode_cbor,
+	OCTET_STRING_encode_cbor
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
 };
 
 asn_TYPE_descriptor_t asn_DEF_TextData = {
