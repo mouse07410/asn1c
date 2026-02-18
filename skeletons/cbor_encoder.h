@@ -19,6 +19,17 @@ extern "C" {
 struct asn_TYPE_descriptor_s;  /* Forward declaration */
 
 /*
+ * Type of the generic CBOR encoder function.
+ */
+typedef asn_enc_rval_t(cbor_type_encoder_f)(
+    const struct asn_TYPE_descriptor_s *type_descriptor,
+    const asn_cbor_constraints_t *constraints,
+    const void *struct_ptr,                    /* Structure to be encoded */
+    asn_app_consume_bytes_f *consume_bytes_cb, /* Callback */
+    void *app_key                              /* Arbitrary callback argument */
+);
+
+/*
  * The CBOR encoder for any ASN.1 type. May be invoked by the application.
  * Produces Canonical CBOR output (RFC 8949).
  */
@@ -38,17 +49,6 @@ asn_enc_rval_t cbor_encode_to_buffer(
     const void *struct_ptr, /* Structure to be encoded */
     void *buffer,           /* Pre-allocated buffer */
     size_t buffer_size      /* Maximum buffer size */
-);
-
-/*
- * Type of the generic CBOR encoder function.
- */
-typedef asn_enc_rval_t(cbor_type_encoder_f)(
-    const struct asn_TYPE_descriptor_s *type_descriptor,
-    const asn_cbor_constraints_t *constraints,
-    const void *struct_ptr,                    /* Structure to be encoded */
-    asn_app_consume_bytes_f *consume_bytes_cb, /* Callback */
-    void *app_key                              /* Arbitrary callback argument */
 );
 
 #ifdef __cplusplus

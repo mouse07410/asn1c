@@ -20,6 +20,7 @@ check_PROGRAMS =                \
     check-XER-formatting-regression \
     check-XER-CHOICE-formatting \
     check-JER                   \
+    check-CBOR                  \
     check-OER-support           \
     check-OER-INTEGER           \
     check-OER-NativeEnumerated  \

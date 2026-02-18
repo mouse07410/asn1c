@@ -35,6 +35,7 @@ typedef struct {
         FDEP_PRINT = (1 << 10),       /* Use contents only if not -no-gen-print */
         FDEP_RFILL = (1 << 11),       /* Use contents only if not -no-gen-random-fill */
         FDEP_CODEC_JER = (1 << 12),   /* Use contents only if not -no-gen-JER */
+        FDEP_CODEC_CBOR = (1 << 13),  /* Use contents only if not -no-gen-CBOR */
     } section;                        /* Some file refers to it */
 
     /* Whether this chain is alive and has to be present in the output */

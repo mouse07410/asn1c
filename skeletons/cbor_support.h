@@ -68,9 +68,8 @@ size_t cbor_encode_uint_header(uint8_t major, uint64_t value,
 /*
  * Write a CBOR header (major type + length/value) via callback.
  * Returns: number of bytes written, or -1 on failure.
+ * Note: cb must be compatible with asn_app_consume_bytes_f signature.
  */
-typedef int(asn_app_consume_bytes_f)(const void *buffer, size_t size,
-                                     void *application_specific_key);
 ssize_t cbor_write_uint_header(uint8_t major, uint64_t value,
                                 asn_app_consume_bytes_f *cb, void *app_key);
 
@@ -87,54 +86,20 @@ ssize_t cbor_write_uint_header(uint8_t major, uint64_t value,
 ssize_t cbor_read_uint_header(const uint8_t *buf, size_t size,
                                uint8_t *major_out, uint64_t *value_out);
 
-/*
- * Encode a CBOR text string header via callback.
- * Returns: number of header bytes written, or -1 on failure.
- */
-ssize_t cbor_write_text_header(size_t length,
-                                asn_app_consume_bytes_f *cb, void *app_key);
-
-/*
- * Encode a CBOR byte string header via callback.
- * Returns: number of header bytes written, or -1 on failure.
- */
-ssize_t cbor_write_bytes_header(size_t length,
-                                 asn_app_consume_bytes_f *cb, void *app_key);
-
-/*
- * Encode a CBOR array header via callback.
- * Returns: number of header bytes written, or -1 on failure.
- */
-ssize_t cbor_write_array_header(size_t count,
-                                 asn_app_consume_bytes_f *cb, void *app_key);
-
-/*
- * Encode a CBOR map header via callback.
- * Returns: number of header bytes written, or -1 on failure.
- */
-ssize_t cbor_write_map_header(size_t count,
-                               asn_app_consume_bytes_f *cb, void *app_key);
-
-/*
- * Encode a CBOR simple value (major type 7) via callback.
- * Returns: number of bytes written, or -1 on failure.
- */
-ssize_t cbor_write_simple(uint8_t simple_value,
-                           asn_app_consume_bytes_f *cb, void *app_key);
-
-/*
- * Encode a CBOR tag via callback.
- * Returns: number of bytes written, or -1 on failure.
- */
-ssize_t cbor_write_tag(uint64_t tag_number,
-                        asn_app_consume_bytes_f *cb, void *app_key);
-
-/*
- * Encode a CBOR double-precision float via callback.
- * Returns: number of bytes written (9), or -1 on failure.
- */
-ssize_t cbor_write_double(double value,
-                           asn_app_consume_bytes_f *cb, void *app_key);
+ssize_t cbor_write_text_header(size_t length, asn_app_consume_bytes_f *cb,
+                                void *app_key);
+ssize_t cbor_write_bytes_header(size_t length, asn_app_consume_bytes_f *cb,
+                                 void *app_key);
+ssize_t cbor_write_array_header(size_t count, asn_app_consume_bytes_f *cb,
+                                 void *app_key);
+ssize_t cbor_write_map_header(size_t count, asn_app_consume_bytes_f *cb,
+                               void *app_key);
+ssize_t cbor_write_simple(uint8_t simple_value, asn_app_consume_bytes_f *cb,
+                           void *app_key);
+ssize_t cbor_write_tag(uint64_t tag_number, asn_app_consume_bytes_f *cb,
+                        void *app_key);
+ssize_t cbor_write_double(double value, asn_app_consume_bytes_f *cb,
+                           void *app_key);
 
 #ifdef __cplusplus
 }

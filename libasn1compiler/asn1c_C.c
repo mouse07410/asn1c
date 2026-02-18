@@ -1900,6 +1900,10 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
         if(arg->flags & A1C_GEN_JER) {
             OUT("jer_type_encoder_f %s_encode_jer;\n", p);
         }
+        if(arg->flags & A1C_GEN_CBOR) {
+            OUT("cbor_type_decoder_f %s_decode_cbor;\n", p);
+            OUT("cbor_type_encoder_f %s_encode_cbor;\n", p);
+        }
 		if(arg->flags & A1C_GEN_OER) {
 			OUT("oer_type_decoder_f %s_decode_oer;\n", p);
 			OUT("oer_type_encoder_f %s_encode_oer;\n", p);
