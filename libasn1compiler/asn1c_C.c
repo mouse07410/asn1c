@@ -2607,6 +2607,16 @@ emit_custom_operation_structure(arg_t *arg, asn1p_expr_t *expr) {
     OUT_NOINDENT("#endif  /* !defined(ASN_DISABLE_RFILL_SUPPORT) */\n");
     
     OUT("0\t/* No outmost tag fetcher */\n");
+
+    OUT_NOINDENT("#if !defined(ASN_DISABLE_CBOR_SUPPORT)\n");
+    if(arg->flags & A1C_GEN_CBOR) {
+        OUT("%s_decode_cbor,\n", base_type);
+        OUT("%s_encode_cbor,\n", base_type);
+    } else {
+        OUT("0,\n");
+        OUT("0,\n");
+    }
+    OUT_NOINDENT("#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */\n");
     
     INDENT(-1);
     OUT("};\n");

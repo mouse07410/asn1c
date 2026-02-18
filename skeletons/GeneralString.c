@@ -70,6 +70,11 @@ asn_TYPE_operation_t asn_OP_GeneralString = {
     0,
 #endif  /* !defined(ASN_DISABLE_RFILL_SUPPORT) */
     0  /* Use generic outmost tag fetcher */
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+    ,
+    OCTET_STRING_decode_cbor_utf8,
+    OCTET_STRING_encode_cbor_utf8
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
 };
 asn_TYPE_descriptor_t asn_DEF_GeneralString = {
     "GeneralString",

@@ -179,6 +179,11 @@ ssize_t OBJECT_IDENTIFIER_get_single_arc(const uint8_t *arcbuf,
 ssize_t OBJECT_IDENTIFIER_set_single_arc(uint8_t *arcbuf, size_t arcbuf_len,
                                          asn_oid_arc_t arc_value);
 
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+cbor_type_decoder_f OBJECT_IDENTIFIER_decode_cbor;
+cbor_type_encoder_f OBJECT_IDENTIFIER_encode_cbor;
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
+
 #ifdef __cplusplus
 }
 #endif

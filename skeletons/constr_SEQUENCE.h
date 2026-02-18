@@ -90,6 +90,11 @@ asn_random_fill_f SEQUENCE_random_fill;
 
 extern asn_TYPE_operation_t asn_OP_SEQUENCE;
 
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+cbor_type_decoder_f SEQUENCE_decode_cbor;
+cbor_type_encoder_f SEQUENCE_encode_cbor;
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
+
 #ifdef __cplusplus
 }
 #endif

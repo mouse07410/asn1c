@@ -136,6 +136,11 @@ enum asn_strtox_result_e asn_strtoumax_lim(const char *str, const char **end,
 const asn_INTEGER_enum_map_t *INTEGER_map_value2enum(
     const asn_INTEGER_specifics_t *specs, long value);
 
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+cbor_type_decoder_f INTEGER_decode_cbor;
+cbor_type_encoder_f INTEGER_encode_cbor;
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
+
 #ifdef __cplusplus
 }
 #endif

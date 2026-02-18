@@ -74,6 +74,11 @@ asn_TYPE_operation_t asn_OP_BIT_STRING = {
     0,
 #endif  /* !defined(ASN_DISABLE_RFILL_SUPPORT) */
     0  /* Use generic outmost tag fetcher */
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+    ,
+    BIT_STRING_decode_cbor,
+    BIT_STRING_encode_cbor
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
 };
 asn_TYPE_descriptor_t asn_DEF_BIT_STRING = {
     "BIT STRING",

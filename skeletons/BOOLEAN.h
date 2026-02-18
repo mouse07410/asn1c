@@ -65,6 +65,11 @@ per_type_encoder_f BOOLEAN_encode_aper;
 asn_random_fill_f BOOLEAN_random_fill;
 #endif  /* !defined(ASN_DISABLE_RFILL_SUPPORT) */
 
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+cbor_type_decoder_f BOOLEAN_decode_cbor;
+cbor_type_encoder_f BOOLEAN_encode_cbor;
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
+
 #ifdef __cplusplus
 }
 #endif

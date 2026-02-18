@@ -27,6 +27,9 @@ libasn1cskeletons_c89_la_SOURCES = $(libasn1cskeletons_la_SOURCES)
 
 libasn1cskeletons_la_CFLAGS = $(TESTSUITE_CFLAGS)
 libasn1cskeletons_la_SOURCES =                  \
+    cbor_decoder.c cbor_decoder.h             \
+    cbor_encoder.c cbor_encoder.h             \
+    cbor_support.c cbor_support.h             \
     ANY.c ANY.h                                 \
     BIT_STRING.c BIT_STRING.h                   \
     BIT_STRING_oer.c                            \
@@ -111,11 +114,13 @@ libasn1cskeletons_la_SOURCES =                  \
     ANY_uper.c                                  \
     ANY_xer.c                                   \
     ANY_jer.c                                   \
+    ANY_cbor.c                                  \
     BIT_STRING_print.c                          \
     BIT_STRING_rfill.c                          \
     BIT_STRING_uper.c                           \
     BIT_STRING_xer.c                            \
     BIT_STRING_jer.c                            \
+    BIT_STRING_cbor.c                           \
     BMPString_print.c                           \
     BMPString_xer.c                             \
     BOOLEAN_aper.c                              \
@@ -126,10 +131,12 @@ libasn1cskeletons_la_SOURCES =                  \
     BOOLEAN_uper.c                              \
     BOOLEAN_xer.c                               \
     BOOLEAN_jer.c                               \
+    BOOLEAN_cbor.c                              \
     ENUMERATED_aper.c                           \
     ENUMERATED_jer.c                            \
     ENUMERATED_oer.c                            \
     ENUMERATED_uper.c                           \
+    ENUMERATED_cbor.c                           \
     GeneralizedTime_ber.c                       \
     GeneralizedTime_print.c                     \
     GeneralizedTime_rfill.c                     \
@@ -142,6 +149,7 @@ libasn1cskeletons_la_SOURCES =                  \
     INTEGER_uper.c                              \
     INTEGER_xer.c                               \
     INTEGER_jer.c                               \
+    INTEGER_cbor.c                              \
     NULL_aper.c                                 \
     NULL_ber.c                                  \
     NULL_oer.c                                  \
@@ -150,11 +158,13 @@ libasn1cskeletons_la_SOURCES =                  \
     NULL_uper.c                                 \
     NULL_xer.c                                  \
     NULL_jer.c                                  \
+    NULL_cbor.c                                 \
     NativeEnumerated_aper.c                     \
     NativeEnumerated_ber.c                      \
     NativeEnumerated_uper.c                     \
     NativeEnumerated_xer.c                      \
     NativeEnumerated_jer.c                      \
+    NativeEnumerated_cbor.c                     \
     NativeInteger_aper.c                        \
     NativeInteger_ber.c                         \
     NativeInteger_print.c                       \
@@ -162,6 +172,7 @@ libasn1cskeletons_la_SOURCES =                  \
     NativeInteger_uper.c                        \
     NativeInteger_xer.c                         \
     NativeInteger_jer.c                         \
+    NativeInteger_cbor.c                        \
     NativeReal_aper.c                           \
     NativeReal_ber.c                            \
     NativeReal_oer.c                            \
@@ -170,10 +181,12 @@ libasn1cskeletons_la_SOURCES =                  \
     NativeReal_uper.c                           \
     NativeReal_xer.c                            \
     NativeReal_jer.c                            \
+    NativeReal_cbor.c                           \
     OBJECT_IDENTIFIER_print.c                   \
     OBJECT_IDENTIFIER_rfill.c                   \
     OBJECT_IDENTIFIER_xer.c                     \
     OBJECT_IDENTIFIER_jer.c                     \
+    OBJECT_IDENTIFIER_cbor.c                    \
     OCTET_STRING_aper.c                         \
     OCTET_STRING_ber.c                          \
     OCTET_STRING_print.c                        \
@@ -181,6 +194,7 @@ libasn1cskeletons_la_SOURCES =                  \
     OCTET_STRING_uper.c                         \
     OCTET_STRING_xer.c                          \
     OCTET_STRING_jer.c                          \
+    OCTET_STRING_cbor.c                         \
     OPEN_TYPE_aper.c                            \
     OPEN_TYPE_ber.c                             \
     OPEN_TYPE_print.c                           \
@@ -194,6 +208,7 @@ libasn1cskeletons_la_SOURCES =                  \
     REAL_uper.c                                 \
     REAL_xer.c                                  \
     REAL_jer.c                                  \
+    REAL_cbor.c                                 \
     RELATIVE-OID_print.c                        \
     RELATIVE-OID_rfill.c                        \
     RELATIVE-OID_xer.c                          \
@@ -217,11 +232,13 @@ libasn1cskeletons_la_SOURCES =                  \
     constr_CHOICE_uper.c                        \
     constr_CHOICE_xer.c                         \
     constr_CHOICE_jer.c                         \
+    constr_CHOICE_cbor.c                        \
     constr_SEQUENCE_OF_aper.c                   \
     constr_SEQUENCE_OF_ber.c                    \
     constr_SEQUENCE_OF_uper.c                   \
     constr_SEQUENCE_OF_xer.c                    \
     constr_SEQUENCE_OF_jer.c                    \
+    constr_SEQUENCE_OF_cbor.c                   \
     constr_SEQUENCE_aper.c                      \
     constr_SEQUENCE_ber.c                       \
     constr_SEQUENCE_print.c                     \
@@ -229,6 +246,7 @@ libasn1cskeletons_la_SOURCES =                  \
     constr_SEQUENCE_uper.c                      \
     constr_SEQUENCE_xer.c                       \
     constr_SEQUENCE_jer.c                       \
+    constr_SEQUENCE_cbor.c                      \
     constr_SET_OF_aper.c                        \
     constr_SET_OF_ber.c                         \
     constr_SET_OF_print.c                       \
@@ -236,11 +254,13 @@ libasn1cskeletons_la_SOURCES =                  \
     constr_SET_OF_uper.c                        \
     constr_SET_OF_xer.c                         \
     constr_SET_OF_jer.c                         \
+    constr_SET_OF_cbor.c                        \
     constr_SET_ber.c                            \
     constr_SET_print.c                          \
     constr_SET_rfill.c                          \
     constr_SET_xer.c                            \
-    constr_SET_jer.c
+    constr_SET_jer.c                            \
+    constr_SET_cbor.c
 
 check_PROGRAMS =                    \
     check-converter_example         \

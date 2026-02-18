@@ -70,6 +70,11 @@ asn_random_fill_f BIT_STRING_random_fill;
 
 const BIT_STRING_t *BIT_STRING__compactify(const BIT_STRING_t *st, BIT_STRING_t *tmp);
 
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+cbor_type_decoder_f BIT_STRING_decode_cbor;
+cbor_type_encoder_f BIT_STRING_encode_cbor;
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
+
 #ifdef __cplusplus
 }
 #endif

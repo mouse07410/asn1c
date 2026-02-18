@@ -108,6 +108,11 @@ int _SET_is_populated(const asn_TYPE_descriptor_t *td, const void *st);
 		|= (1u << ((8 * sizeof(unsigned int)) - 1		\
 		- ((PR_x) % (8 * sizeof(unsigned int))))))
 
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+cbor_type_decoder_f SET_decode_cbor;
+cbor_type_encoder_f SET_encode_cbor;
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
+
 #ifdef __cplusplus
 }
 #endif

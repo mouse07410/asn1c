@@ -60,6 +60,11 @@ per_type_encoder_f ENUMERATED_encode_aper;
 #define ENUMERATED_random_fill INTEGER_random_fill
 #endif  /* !defined(ASN_DISABLE_RFILL_SUPPORT) */
 
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+cbor_type_decoder_f ENUMERATED_decode_cbor;
+cbor_type_encoder_f ENUMERATED_encode_cbor;
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
+
 #ifdef __cplusplus
 }
 #endif

@@ -80,6 +80,11 @@ int ANY_to_type_aper_checked(ANY_t *, asn_TYPE_descriptor_t *td, void **struct_p
 #define	ANY_new_fromBuf(buf, size)	OCTET_STRING_new_fromBuf(	\
 						&asn_DEF_ANY, (buf), (size))
 
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+cbor_type_decoder_f ANY_decode_cbor;
+cbor_type_encoder_f ANY_encode_cbor;
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
+
 #ifdef __cplusplus
 }
 #endif

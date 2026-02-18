@@ -114,6 +114,11 @@ unsigned CHOICE_variant_get_presence(const asn_TYPE_descriptor_t *td,
 int CHOICE_variant_set_presence(const asn_TYPE_descriptor_t *td,
                                 void *structure_ptr, unsigned present);
 
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+cbor_type_decoder_f CHOICE_decode_cbor;
+cbor_type_encoder_f CHOICE_encode_cbor;
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
+
 #ifdef __cplusplus
 }
 #endif

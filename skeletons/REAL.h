@@ -117,6 +117,11 @@ int asn_double2REAL(REAL_t *real_ptr, double d);
  */
 int asn_double2float(double d, float *outcome);
 
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+cbor_type_decoder_f REAL_decode_cbor;
+cbor_type_encoder_f REAL_encode_cbor;
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
+
 #ifdef __cplusplus
 }
 #endif

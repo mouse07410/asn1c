@@ -129,15 +129,20 @@ enum asn1c_flags {
 	 */
 	A1C_GEN_JER                     = 0x100000000,
 	/*
+	 * -gen-CBOR / -no-gen-CBOR
+	 * Generate Concise Binary Object Representation support code
+	 */
+	A1C_GEN_CBOR                    = 0x200000000,
+	/*
 	 * -fgen-only-pdu-deps
 	 * Generate code only for PDU dependencies
 	 */
-	A1C_GEN_ONLY_PDU_DEPS           = 0x200000000,
+	A1C_GEN_ONLY_PDU_DEPS           = 0x400000000,
 	/*
 	 * -flist-deps
 	 * List PDU dependencies without generating code
 	 */
-	A1C_LIST_DEPS                   = 0x400000000,
+	A1C_LIST_DEPS                   = 0x800000000,
 };
 
 /*

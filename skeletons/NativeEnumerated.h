@@ -72,6 +72,11 @@ int NativeEnumerated__compar_value2enum(
         const void *bp);
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
 
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+cbor_type_decoder_f NativeEnumerated_decode_cbor;
+cbor_type_encoder_f NativeEnumerated_encode_cbor;
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
+
 #ifdef __cplusplus
 }
 #endif

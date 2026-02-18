@@ -76,6 +76,11 @@ asn_TYPE_operation_t asn_OP_NativeEnumerated = {
     0,
 #endif  /* !defined(ASN_DISABLE_RFILL_SUPPORT) */
     0  /* Use generic outmost tag fetcher */
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+    ,
+    NativeEnumerated_decode_cbor,
+    NativeEnumerated_encode_cbor
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
 };
 
 int

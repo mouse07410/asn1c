@@ -5,6 +5,9 @@
 #include <asn_internal.h>
 #include <OPEN_TYPE.h>
 #include <constr_CHOICE.h>
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+#include <ANY.h>
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
 
 asn_TYPE_operation_t asn_OP_OPEN_TYPE = {
     .kind = ASN_KIND_PRIMITIVE,
@@ -64,4 +67,9 @@ asn_TYPE_operation_t asn_OP_OPEN_TYPE = {
     0,
 #endif  /* !defined(ASN_DISABLE_RFILL_SUPPORT) */
     0  /* Use generic outmost tag fetcher */
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+    ,
+    ANY_decode_cbor,
+    ANY_encode_cbor
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
 };

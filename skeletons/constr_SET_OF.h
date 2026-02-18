@@ -103,6 +103,11 @@ void SET_OF__encode_sorted_free(
         struct _el_buffer *el_buf,
         size_t count);
 
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+cbor_type_decoder_f SET_OF_decode_cbor;
+cbor_type_encoder_f SET_OF_encode_cbor;
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
+
 #ifdef __cplusplus
 }
 #endif

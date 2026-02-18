@@ -69,6 +69,11 @@ extern asn_TYPE_operation_t asn_OP_SEQUENCE_OF;
  */
 extern asn_TYPE_descriptor_t asn_DEF_SEQUENCE_OF;
 
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+cbor_type_decoder_f SEQUENCE_OF_decode_cbor;
+cbor_type_encoder_f SEQUENCE_OF_encode_cbor;
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
+
 #ifdef __cplusplus
 }
 #endif

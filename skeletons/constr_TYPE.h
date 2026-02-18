@@ -84,6 +84,14 @@ typedef void (oer_type_decoder_f)(void);
 typedef void (oer_type_encoder_f)(void);
 #endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
 
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+#include <cbor_decoder.h>  /* CBOR (Concise Binary Object Representation) decoder */
+#include <cbor_encoder.h>  /* CBOR encoder */
+#else
+typedef void (cbor_type_decoder_f)(void);
+typedef void (cbor_type_encoder_f)(void);
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
+
 /*
  * Free the structure according to its specification.
  * Use one of ASN_STRUCT_{FREE,RESET,CONTENTS_ONLY} macros instead.
@@ -203,6 +211,10 @@ typedef struct asn_TYPE_operation_s {
     per_type_encoder_f *aper_encoder;     /* Aligned PER encoder */
     asn_random_fill_f *random_fill;       /* Initialize with a random value */
     asn_outmost_tag_f *outmost_tag;       /* <optional, internal> */
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+    cbor_type_decoder_f *cbor_decoder;    /* Generic CBOR decoder */
+    cbor_type_encoder_f *cbor_encoder;    /* Canonical CBOR encoder */
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
 } asn_TYPE_operation_t;
 
 /*

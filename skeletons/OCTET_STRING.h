@@ -173,6 +173,13 @@ struct _stack {
 };
 #endif  /* !defined(ASN_DISABLE_BER_SUPPORT) */
 
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+cbor_type_decoder_f OCTET_STRING_decode_cbor;
+cbor_type_decoder_f OCTET_STRING_decode_cbor_utf8;  /* UTF-8 text string */
+cbor_type_encoder_f OCTET_STRING_encode_cbor;
+cbor_type_encoder_f OCTET_STRING_encode_cbor_utf8;  /* UTF-8 text string */
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
+
 #ifdef __cplusplus
 }
 #endif
