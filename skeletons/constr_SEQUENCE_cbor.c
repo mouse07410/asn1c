@@ -55,21 +55,17 @@ SEQUENCE_encode_cbor(const asn_TYPE_descriptor_t *td,
     if(ret < 0) ASN__ENCODE_FAILED;
     er.encoded += ret;
 
-    /* Encode each present member */
+    /* Encode each present member (absent DEFAULT/OPTIONAL members are omitted) */
     for(edx = 0; edx < td->elements_count; edx++) {
         const asn_TYPE_member_t *elm = &td->elements[edx];
         const void *memb_ptr;
         const void *memb_ptr_actual;
-        void *tmp_def_val = NULL;
 
         if(elm->flags & ATF_POINTER) {
             memb_ptr = *(const void *const *)((const char *)sptr + elm->memb_offset);
             if(!memb_ptr) {
-                if(elm->default_value_set) {
-                    if(elm->default_value_set(&tmp_def_val)) ASN__ENCODE_FAILED;
-                    memb_ptr_actual = tmp_def_val;
-                } else if(elm->optional) {
-                    continue;  /* Skip absent optional */
+                if(elm->default_value_set || elm->optional) {
+                    continue;  /* Omit absent DEFAULT/optional (canonical encoding) */
                 } else {
                     ASN__ENCODE_FAILED;  /* Missing mandatory */
                 }
@@ -84,16 +80,10 @@ SEQUENCE_encode_cbor(const asn_TYPE_descriptor_t *td,
         {
             size_t mlen = strlen(elm->name);
             ret = cbor_write_text_header(mlen, cb, app_key);
-            if(ret < 0) {
-                if(tmp_def_val) ASN_STRUCT_FREE(*elm->type, tmp_def_val);
-                ASN__ENCODE_FAILED;
-            }
+            if(ret < 0) ASN__ENCODE_FAILED;
             er.encoded += ret;
             if(mlen > 0) {
-                if(cb(elm->name, mlen, app_key) < 0) {
-                    if(tmp_def_val) ASN_STRUCT_FREE(*elm->type, tmp_def_val);
-                    ASN__ENCODE_FAILED;
-                }
+                if(cb(elm->name, mlen, app_key) < 0) ASN__ENCODE_FAILED;
                 er.encoded += (ssize_t)mlen;
             }
         }
@@ -107,12 +97,7 @@ SEQUENCE_encode_cbor(const asn_TYPE_descriptor_t *td,
                     NULL,  /* No CBOR-specific constraints yet */
                     memb_ptr_actual, cb, app_key);
             } else {
-                if(tmp_def_val) ASN_STRUCT_FREE(*elm->type, tmp_def_val);
                 ASN__ENCODE_FAILED;
-            }
-            if(tmp_def_val) {
-                ASN_STRUCT_FREE(*elm->type, tmp_def_val);
-                tmp_def_val = NULL;
             }
             if(tmper.encoded < 0) return tmper;
             er.encoded += tmper.encoded;

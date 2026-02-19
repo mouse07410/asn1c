@@ -138,15 +138,28 @@ INTEGER_decode_cbor(const asn_codec_ctx_t *opt_codec_ctx,
             int64_t neg = -1 - (int64_t)value;
             if(asn_int642INTEGER(st, neg) != 0) ASN__DECODE_FAILED;
         } else {
-            /* Value -1 - INT64_MIN underflows; use bignum path via BER */
-            /* Encode as big-endian two's complement */
-            uint8_t buf[9];
-            size_t blen;
-            /* value == 2^63 - 1: result is INT64_MIN = -2^63 */
-            /* Two's complement of (value+1) = value+1 negated */
-            /* For simplicity, approximate using int64 minimum */
-            if(asn_int642INTEGER(st, INT64_MIN) != 0) ASN__DECODE_FAILED;
-            (void)buf; (void)blen;
+            /*
+             * value > INT64_MAX: result n = -1 - value does not fit in int64_t.
+             * Since value is in [2^63, 2^64-1], n is in [-2^64, -2^63-1].
+             * Construct a 9-byte big-endian two's complement buffer:
+             * 0xFF || NOT(big-endian-8-byte(value)).
+             */
+            uint8_t *bignum_buf;
+            size_t i;
+            uint64_t tmp = value;
+
+            bignum_buf = (uint8_t *)MALLOC(9);
+            if(!bignum_buf) ASN__DECODE_FAILED;
+
+            bignum_buf[0] = 0xFF;  /* sign byte: NOT of leading 0x00 */
+            for(i = 0; i < 8; i++) {
+                bignum_buf[8 - i] = (uint8_t)(~(tmp & 0xFF));
+                tmp >>= 8;
+            }
+
+            if(st->buf) FREEMEM(st->buf);
+            st->buf = bignum_buf;
+            st->size = 9;
         }
         asn_dec_rval_t rval = {RC_OK, (size_t)hlen};
         return rval;
