@@ -132,7 +132,7 @@ Mouse <5923577+mouse07410@users.noreply.github.com>}
 
 One of the most common need is to create some sort of analysis tool
 for the existing ASN.1 data files. Let's build a converter for existing
-Rectangle binary files between BER, OER, PER, and XER (XML).
+Rectangle binary files between BER, OER, PER, XER (XML), and CBOR.
 
 \begin{enumerate}
 \item Create a file named \textbf{rectangle.asn} with the following contents:
@@ -415,7 +415,7 @@ The compiler reads the specification and emits a series of target
 language structures (C structs, unions, enums) describing the corresponding
 ASN.1 types. The compiler also creates the code which allows automatic
 serialization and deserialization of these structures using several
-standardized encoding rules (BER, DER, OER, PER, XER).
+standardized encoding rules (BER, DER, OER, PER, XER, CBOR).
 
 The compiler includes advanced features for handling complex specifications:
 \begin{itemize}
@@ -576,6 +576,8 @@ may produce a shorter executable.}\\
 {\ttfamily -no-gen-OER} & {\small Do not generate the Octet Encoding Rules (OER, X.696) support code.}\\
 {\ttfamily -no-gen-UPER} & {\small Do not generate the Unaligned Packed Encoding Rules (PER, X.691) support code.}\\
 {\ttfamily -no-gen-APER} & {\small Do not generate the Aligned Packed Encoding Rules (PER, X.691) support code.}\\
+{\ttfamily -gen-CBOR} & {\small Generate the Concise Binary Object Representation (CBOR, RFC~8949) support code. CBOR support is disabled by default and must be explicitly enabled with this flag.}\\
+{\ttfamily -no-gen-CBOR} & {\small Do not generate the CBOR (RFC~8949) support code (default).}\\
 {\ttfamily -no-gen-print} & {\small Do not generate the print code.}\\
 {\ttfamily -no-gen-random-fill} & {\small Do not generate the random fill code.}\\
 {\ttfamily -no-gen-example} & {\small Do not generate the ASN.1 format converter example.}\\
@@ -1572,6 +1574,7 @@ enum asn_transfer_syntax {
     ATS_UNALIGNED_CANONICAL_PER,
     ATS_BASIC_XER,
     ATS_CANONICAL_XER,
+    ATS_CBOR,
 };
 \end{codesample}
 
@@ -1819,6 +1822,93 @@ please read the \fref{sec:Decoding-BER} to know more.
 
 Look into xer\_decoder.h for the precise definition of xer\_decode()
 and related types.
+
+
+\section{\label{sec:Encoding-CBOR}Encoding and Decoding CBOR}
+
+CBOR (Concise Binary Object Representation) is a compact, self-describing binary
+data format defined in RFC~8949 (updated from RFC~7049) and further profiled in
+RFCs~8742, 8610, 9052, and 9581. CBOR support is an optional codec that must be
+explicitly requested at code-generation time using the \cmd{-gen-CBOR} flag:
+
+\begin{bash}
+asn1c -gen-CBOR %\textbf{rectangle.asn}%
+\end{bash}
+
+The compile-time guard \code{ASN\_DISABLE\_CBOR\_SUPPORT} controls whether CBOR
+symbols are compiled into the runtime. When \cmd{-gen-CBOR} is \emph{not} used,
+\code{ASN\_DISABLE\_CBOR\_SUPPORT} is defined and all CBOR-related function pointers
+are omitted from the generated \code{asn\_TYPE\_operation\_t} initializers, keeping
+the compiled objects free of CBOR overhead.
+
+\paragraph{Encoding.}
+Use the generic \code{asn\_encode()} or \code{asn\_encode\_to\_buffer()} functions
+with the \code{ATS\_CBOR} transfer syntax selector:
+
+\begin{codesample}
+uint8_t buffer[256];
+asn_enc_rval_t er;
+
+er = asn_encode_to_buffer(0, ATS_CBOR, &asn_DEF_Rectangle, rect,
+                          buffer, sizeof(buffer));
+if(er.encoded == -1) {
+    fprintf(stderr, "CBOR encoding of %\%%s failed\n", asn_DEF_Rectangle.name);
+} else {
+    fprintf(stderr, "%\%%s encoded in %\%%zd bytes (CBOR)\n",
+        asn_DEF_Rectangle.name, er.encoded);
+}
+\end{codesample}
+
+An ASN.1 \texttt{SEQUENCE} type is encoded as a CBOR map, where each field name
+(the ASN.1 member identifier string) is used as the map key and the field value is
+recursively CBOR-encoded. Fields that are absent and marked \texttt{OPTIONAL} or
+\texttt{DEFAULT} with a \texttt{NULL} pointer are omitted from the encoded map.
+
+\paragraph{Decoding.}
+Use \code{asn\_decode()} with \code{ATS\_CBOR}:
+
+\begin{codesample}
+Rectangle_t *%$\underbracket{\textrm{\listingfont rect = 0}}$%;
+asn_dec_rval_t rval;
+
+rval = asn_decode(0, ATS_CBOR, &asn_DEF_Rectangle, (void **)&rect,
+                  buffer, buf_size);
+if(rval.code == RC_OK) {
+    asn_fprint(stdout, &asn_DEF_Rectangle, rect);
+    ASN_STRUCT_FREE(&asn_DEF_Rectangle, rect);
+} else {
+    ASN_STRUCT_FREE(&asn_DEF_Rectangle, rect);
+    fprintf(stderr, "CBOR decoding failed\n");
+}
+\end{codesample}
+
+The CBOR decoder is \emph{not} restartable; if the buffer is incomplete,
+\code{RC\_FAIL} is returned and the partially decoded structure must be discarded.
+
+\paragraph{Type mapping.}
+The following table summarises how ASN.1 types map to CBOR major types
+(as defined by RFC~8949 \S3.1):
+
+\begin{center}
+\begin{tabular}[h!]{ll}
+\toprule
+\textbf{ASN.1 type} & \textbf{CBOR encoding}\\
+\midrule
+\texttt{BOOLEAN}            & Major type~7 simple value (20 = false, 21 = true)\\
+\texttt{INTEGER} / \texttt{NativeInteger} & Major types~0/1 (non-negative / negative integer)\\
+\texttt{NULL}               & Major type~7 simple value 22 (null)\\
+\texttt{REAL} / \texttt{NativeReal} & Major type~7 double-precision float (tag~0xFB)\\
+\texttt{ENUMERATED} / \texttt{NativeEnumerated} & Major types~0/1 (encoded as integer value)\\
+\texttt{OCTET STRING}       & Major type~2 (byte string)\\
+\texttt{BIT STRING}         & Major type~6 tag~3 (expected bit array) wrapping major type~2\\
+\texttt{OBJECT IDENTIFIER}  & Major type~6 tag~111 wrapping a major type~2 DER-encoded OID\\
+\texttt{SEQUENCE} / \texttt{SET} & Major type~5 (map, keyed by member name strings)\\
+\texttt{SEQUENCE OF} / \texttt{SET OF} & Major type~4 (array)\\
+\texttt{CHOICE}             & Major type~5 (single-entry map, keyed by chosen member name)\\
+\texttt{ANY}                & Major type~2 (opaque byte string containing the raw value)\\
+\bottomrule
+\end{tabular}
+\end{center}
 
 
 \section{\label{sec:Validating-the-target}Validating the target structure}
