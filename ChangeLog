@@ -11,7 +11,8 @@
 	  ASN_DISABLE_CBOR_SUPPORT. ATS_CBOR is added to the asn_transfer_syntax enum,
 	  enabling CBOR via the generic asn_encode()/asn_decode() API. The compiler
 	  emits CBOR function pointers into generated type descriptor initializers.
-	  New CLI flags -gen-CBOR and -no-gen-CBOR control CBOR code generation.
+	  New CLI flag -no-gen-CBOR disables CBOR code generation; CBOR is enabled
+	  by default, consistent with all other supported encoding rules.
 	  (PR #457)
 
 	FIXES:

@@ -211,8 +211,6 @@ main(int ac, char **av) {
                 asn1_compiler_flags |= A1C_GEN_XER;
             } else if(strcmp(optarg, "en-JER") == 0) {
                 asn1_compiler_flags |= A1C_GEN_JER;
-            } else if(strcmp(optarg, "en-CBOR") == 0) {
-                asn1_compiler_flags |= A1C_GEN_CBOR;
             } else if(strcmp(optarg, "en-OER") == 0) {
                 asn1_compiler_flags |= A1C_GEN_OER;
             } else if(strcmp(optarg, "en-UPER") == 0) {
