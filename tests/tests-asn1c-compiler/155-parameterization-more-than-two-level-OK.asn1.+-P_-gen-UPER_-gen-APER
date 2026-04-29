@@ -727,14 +727,14 @@ typedef struct value {
 	
 	/* Context for parsing across buffer boundaries */
 	asn_struct_ctx_t _asn_ctx;
-} value;
+} ClassItem__value;
 
 /*** <<< TYPE-DECLS [Packet] >>> ***/
 
 typedef struct ClassItem {
 	PacketId_t	 id;
 	Color_t	 color;
-	value value;
+	ClassItem__value value;
 	
 	/* Context for parsing across buffer boundaries */
 	asn_struct_ctx_t _asn_ctx;

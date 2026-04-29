@@ -415,7 +415,7 @@ asn1c_lang_C_type_SEQUENCE(arg_t *arg) {
 			if (arg->embed > 2) {
 				/* For deeply nested SEQUENCE OF, just use the type name */
 				OUT("%s%s", (expr->marker.flags & EM_INDIRECT)?"*":"",
-					c_name(arg).base_name);
+					c_name(arg).compound_name);
 				return asn1c_lang_C_type_SEQUENCE_def(arg, ioc_tao.ioct ? &ioc_tao : 0);
 			}
 			REDIR(OT_FWD_DEFS);
@@ -464,12 +464,12 @@ asn1c_lang_C_type_SEQUENCE(arg_t *arg) {
 
 	if (arg->embed && expr->_anonymous_type && arg->embed <= 2) {
 		OUT("} %s%s;\n", (expr->marker.flags & EM_INDIRECT)?"*":"",
-			c_name(arg).base_name);
+			c_name(arg).compound_name);
 
 		REDIR(saved_target);
 
 		OUT("%s%s", (expr->marker.flags & EM_INDIRECT)?"*":"",
-			c_name(arg).base_name);
+			c_name(arg).compound_name);
 	} else {
 		OUT("} %s%s", (expr->marker.flags & EM_INDIRECT)?"*":"",
 			arg->embed ? c_name(arg).as_member : c_name(arg).short_name);
@@ -717,12 +717,12 @@ asn1c_lang_C_type_SET(arg_t *arg) {
 
 	if (arg->embed && expr->_anonymous_type && arg->embed == 1) {
 		OUT("} %s%s;\n", (expr->marker.flags & EM_INDIRECT)?"*":"",
-			c_name(arg).base_name);
+			c_name(arg).compound_name);
 
 		REDIR(saved_target);
 
 		OUT("%s%s", (expr->marker.flags & EM_INDIRECT)?"*":"",
-			c_name(arg).base_name);
+			c_name(arg).compound_name);
 	} else {
 		OUT("} %s%s", (expr->marker.flags & EM_INDIRECT)?"*":"",
 			arg->embed ? c_name(arg).as_member : c_name(arg).short_name);
@@ -954,7 +954,7 @@ generate_typedef_for_constructed_member(arg_t *arg, asn1p_expr_t *expr, int targ
 	}
 	
 	PCTX_DEF;
-	OUT("} %s;\n", c_name(&tmp).base_name);
+	OUT("} %s;\n", c_name(&tmp).compound_name);
 	
 	/* Restore state */
 	REDIR(saved_target);
@@ -1115,9 +1115,9 @@ asn1c_lang_C_type_SEx_OF(arg_t *arg) {
 	PCTX_DEF;
 
 	if (arg->embed && expr->_anonymous_type && arg->embed >= 1) {
-		OUT("} %s%s;\n", (expr->marker.flags & EM_INDIRECT)?"*":"", c_name(arg).base_name);
+		OUT("} %s%s;\n", (expr->marker.flags & EM_INDIRECT)?"*":"", c_name(arg).compound_name);
 		REDIR(saved_target);
-		OUT("%s%s", (expr->marker.flags & EM_INDIRECT)?"*":"", c_name(arg).base_name);
+		OUT("%s%s", (expr->marker.flags & EM_INDIRECT)?"*":"", c_name(arg).compound_name);
 	} else {
 		OUT("} %s%s", (expr->marker.flags & EM_INDIRECT)?"*":"",
 		    arg->embed ? c_name(arg).as_member : c_name(arg).short_name);
@@ -1277,14 +1277,14 @@ asn1c_lang_C_type_CHOICE(arg_t *arg) {
 
 	if (arg->embed && expr->_anonymous_type) {
 		OUT("} %s%s;\n", (expr->marker.flags & EM_INDIRECT)?"*":"",
-			c_name(arg).base_name);
+			c_name(arg).compound_name);
 
 		REDIR(saved_target);
 
 		/* Don't output the type name if we're in STAT_DEFS context (member table) */
 		if(saved_target != OT_STAT_DEFS) {
 			OUT("%s%s", (expr->marker.flags & EM_INDIRECT)?"*":"",
-				c_name(arg).base_name);
+				c_name(arg).compound_name);
 		}
 	} else {
 		OUT("} %s%s", (expr->marker.flags & EM_INDIRECT)?"*":"",

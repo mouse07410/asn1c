@@ -485,8 +485,18 @@ asn1c_type_name(arg_t *arg, asn1p_expr_t *expr, enum tnfmt _format) {
 		return asn1c_make_identifier(stdname ? 0 : AMI_USE_PREFIX, exprid,
 				exprid?"t":typename, exprid?0:"t", (char*)0);
 	case TNF_RSAFE:	/* Recursion-safe type */
+		/*
+		 * Keep the recursion-safe "struct" keyword outside the generated
+		 * type name, but still apply -fprefix to the struct tag itself.
+		 *
+		 * Pass an empty token after prefix so asn1c_make_identifier() does
+		 * not insert an extra '_' between a prefix such as "S1AP_" and
+		 * the generated type name. This yields
+		 * "struct S1AP_Foo", not "struct S1AP__Foo".
+		 */
 		return asn1c_make_identifier(AMI_CHECK_RESERVED | AMI_NODELIMITER, 0,
-			"struct", " ", prefix, MODULE_NAME_OF(exprid), typename, (char*)0);
+			"struct", " ", prefix, "", MODULE_NAME_OF(exprid), typename,
+			(char*)0);
 	}
 
 	assert(!"unreachable");

@@ -128,13 +128,13 @@ typedef struct value {
 	
 	/* Context for parsing across buffer boundaries */
 	asn_struct_ctx_t _asn_ctx;
-} value;
+} TotalRegionExtension__value;
 
 /*** <<< TYPE-DECLS [SpecializedContent] >>> ***/
 
 typedef struct TotalRegionExtension {
 	long	 id;
-	value value;
+	TotalRegionExtension__value value;
 	
 	/* Context for parsing across buffer boundaries */
 	asn_struct_ctx_t _asn_ctx;

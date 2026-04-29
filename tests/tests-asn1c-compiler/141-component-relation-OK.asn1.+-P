@@ -30,13 +30,13 @@ typedef struct value {
 	
 	/* Context for parsing across buffer boundaries */
 	asn_struct_ctx_t _asn_ctx;
-} value;
+} Frame__value;
 
 /*** <<< TYPE-DECLS [Frame] >>> ***/
 
 typedef struct Frame {
 	ConstrainedInteger_t	 ident;
-	value value;
+	Frame__value value;
 	/*
 	 * This type is extensible,
 	 * possible extensions are below.
