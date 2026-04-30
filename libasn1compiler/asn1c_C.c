@@ -2772,6 +2772,22 @@ emit_single_member_OER_constraint_size(arg_t *arg, asn1cnst_range_t *range) {
 }
 
 static int
+asn1c_per_range_needs_generic_size_fallback(asn1cnst_range_t *range) {
+    if(!range) return 1;
+    if(range->incompatible || range->not_PER_visible) return 1;
+
+    /*
+     * emit_single_member_PER_constraint() can only emit a constrained
+     * PER size if both bounds are concrete values.  Anything else will
+     * be printed as APC_UNCONSTRAINED, so try the generic SIZE range.
+     */
+    if(range->left.type != ARE_VALUE || range->right.type != ARE_VALUE)
+        return 1;
+
+    return 0;
+}
+
+static int
 emit_single_member_PER_constraint(arg_t *arg, asn1cnst_range_t *range, int alphabetsize, const char *type) {
     if(!range || range->incompatible || range->not_PER_visible) {
         OUT("{ APC_UNCONSTRAINED,\t-1, -1,  0,  0 }");
@@ -3149,6 +3165,42 @@ emit_member_PER_constraints(arg_t *arg, asn1p_expr_t *expr, const char *pfx) {
 
 	range = asn1constraint_compute_PER_range(expr->Identifier, etype,
 			expr->combined_constraints, ACT_CT_SIZE, 0, 0, 0);
+
+	/*
+	 * UTF8String (SIZE(lb..ub, ...)) has no PER-visible alphabet
+	 * constraint, but its extensible size constraint is still PER-visible.
+	 * Some inputs are reduced to an unconstrained PER range here, which
+	 * makes the generated APER decoder miss the extension bit and fail to
+	 * decode otherwise valid messages.  Fall back to the generic constraint
+	 * range only when the PER range has lost the size constraint.
+	 */
+	if((etype & ASN_STRING_MASK)
+	&& asn1c_per_range_needs_generic_size_fallback(range)) {
+		asn1cnst_range_t *generic_range =
+			asn1constraint_compute_constraint_range(
+				expr->Identifier, etype, expr->combined_constraints,
+				ACT_CT_SIZE, 0, 0, 0);
+
+		if(generic_range
+		&& !generic_range->incompatible
+		&& !generic_range->empty_constraint
+		&& !(generic_range->left.type == ARE_MIN
+			&& generic_range->right.type == ARE_MAX)) {
+			/*
+			 * The generic constraint range is not produced by
+			 * asn1constraint_compute_PER_range(), so it can still carry
+			 * not_PER_visible even though SIZE(lb..ub, ...) is exactly
+			 * what PER needs for constrained length encoding.
+			 */
+			generic_range->not_PER_visible = 0;
+
+			if(range) asn1constraint_range_free(range);
+			range = generic_range;
+		} else {
+			if(generic_range) asn1constraint_range_free(generic_range);
+		}
+	}
+
 	if(emit_single_member_PER_constraint(arg, range, 0, "SIZE"))
 		return -1;
 	asn1constraint_range_free(range);
