@@ -185,13 +185,18 @@ CHOICE_encode_aper(const asn_TYPE_descriptor_t *td,
     }
 
     if(ct && ct->range_bits >= 0) {
+        asn_enc_rval_t rval;
+
         if(per_put_few_bits(po, present_enc, ct->range_bits)) {
             APER_ENCODER_RECURSION_DEPTH_DEC();
             ASN__ENCODE_FAILED;
         }
 
-        return elm->type->op->aper_encoder(elm->type, elm->encoding_constraints.per_constraints,
+        rval = elm->type->op->aper_encoder(elm->type, elm->encoding_constraints.per_constraints,
                                            memb_ptr, po);
+
+        APER_ENCODER_RECURSION_DEPTH_DEC();
+        return rval;
     } else {
         asn_enc_rval_t rval = {0,0,0};
         if(specs->ext_start == -1) {
