@@ -135,6 +135,9 @@ _asn1f_parse_object_cb(const uint8_t *buf, size_t size, void *keyp) {
     /*
      * Add a copy of the object to the Information Object Set.
      */
+	if(_asn1f_add_unique_row(arg, eclass, row) != 0)
+		return -1;
+
 	row = asn1p_ioc_row_new(eclass);
 	assert(row);
     ret = _asn1f_parse_class_object_data(arg, eclass, row, eclass->with_syntax,
