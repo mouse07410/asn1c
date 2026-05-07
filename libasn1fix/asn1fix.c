@@ -74,6 +74,16 @@ asn1f_process(asn1p_t *asn, enum asn1f_flags flags,
 		}
 	}
 
+	if(flags & A1F_PREFER_IMPORT_SOURCE) {
+		arg.flags |= A1F_PREFER_IMPORT_SOURCE;
+		flags &= ~A1F_PREFER_IMPORT_SOURCE;
+		if(arg.debug) {
+			arg.debug(-1,
+				"IMPORTS resolution: require explicit xp_members match");
+		}
+	}
+
+
 	a1f_replace_me_with_proper_interface_arg = arg;
 
 	/*
