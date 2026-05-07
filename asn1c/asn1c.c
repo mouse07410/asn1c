@@ -163,6 +163,8 @@ main(int ac, char **av) {
                 assert(ret == 0 || errno == EEXIST);
             } else if(strcmp(optarg, "allow-newer-modules") == 0) {
                 asn1_fixer_flags |= A1F_ALLOW_NEWER_MODULES;
+            } else if(strcmp(optarg, "prefer-import-source") == 0) {
+                asn1_fixer_flags |= A1F_PREFER_IMPORT_SOURCE;
             } else if(strcmp(optarg, "native-types") == 0) {
                 fprintf(stderr, "-f%s: Deprecated option\n", optarg);
                 asn1_compiler_flags &= ~A1C_USE_WIDE_TYPES;

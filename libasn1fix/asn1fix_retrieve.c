@@ -60,6 +60,16 @@ asn1f_lookup_in_imports(arg_t *arg, asn1p_module_t *mod, const char *name) {
             if(strcmp(name, tc->Identifier) == 0)
 				break;
 
+			/*
+			 * In strict mode, an unqualified name MUST be listed
+			 * explicitly in the IMPORTS group's xp_members to be
+			 * considered as imported from this group.  This avoids
+			 * picking up a same-named type that happens to live in a
+			 * from-module that imports unrelated names.
+			 */
+			if(arg->flags & A1F_PREFER_IMPORT_SOURCE)
+				continue;
+
 			if(!fromModule)
 				continue;
 
