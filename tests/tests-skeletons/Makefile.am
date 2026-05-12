@@ -11,6 +11,7 @@ check_PROGRAMS =                \
     check-UTF8String            \
     check-UTCTime               \
     check-INTEGER               \
+    check-BER-NativeInteger-uint64 \
     check-REAL                  \
     check-XER                   \
     check-XER-base64            \
@@ -153,6 +154,8 @@ check_CBOR_SOURCES=check-CBOR.c
 CFLAGS = $(filter-out $(CODE_COVERAGE_CFLAGS), @CFLAGS@) \
     -I$(top_srcdir)/skeletons $(TESTSUITE_CFLAGS)
 LDADD = -lm $(top_builddir)/skeletons/libasn1cskeletons.la
+
+check_BER_NativeInteger_uint64_LDADD = $(LDADD)
 
 # Enable XER_ALLOW_EMPTY_OPTIONALS for the empty optionals test
 check_XER_empty_optionals_CFLAGS = -DXER_ALLOW_EMPTY_OPTIONALS $(CFLAGS)
