@@ -47,6 +47,13 @@ enum asn1c_fitslong_e {
 };
 enum asn1c_fitslong_e asn1c_type_fits_long(arg_t *arg, asn1p_expr_t *expr);
 
+/*
+ * Returns 1 if expr is INTEGER with low >= 0 and high > INT64_MAX (uint64 range).
+ * Returns 2 if additionally high > UINT64_MAX (warn: overflows uint64).
+ * Returns 0 otherwise.
+ */
+int asn1c_type_is_uint64_range(asn1p_expr_t *expr);
+
 enum asn1c_fitsfloat_e {
     RL_NOTFIT,
     RL_FITS_FLOAT32,
