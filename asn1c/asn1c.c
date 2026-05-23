@@ -161,6 +161,8 @@ main(int ac, char **av) {
                 char *known_type = optarg + 18;
                 ret = asn1f_make_known_external_type(known_type);
                 assert(ret == 0 || errno == EEXIST);
+            } else if(strcmp(optarg, "allow-newer-modules") == 0) {
+                asn1_fixer_flags |= A1F_ALLOW_NEWER_MODULES;
             } else if(strcmp(optarg, "native-types") == 0) {
                 fprintf(stderr, "-f%s: Deprecated option\n", optarg);
                 asn1_compiler_flags &= ~A1C_USE_WIDE_TYPES;
@@ -493,6 +495,13 @@ main(int ac, char **av) {
     }
 
     /*
+     * Propagate fixer flags (e.g. A1F_ALLOW_NEWER_MODULES) so that
+     * asn1f_lookup_symbol_ex() / asn1f_find_terminal_type_ex() can
+     * resolve cross-module references correctly during compilation.
+     */
+    asn1f_set_compiler_flags(asn1_fixer_flags);
+
+    /*
      * Compile the ASN.1 tree into a set of source files
      * of another language.
      */
@@ -643,6 +652,7 @@ usage(const char *av0) {
 "  -findirect-choice     Compile members of CHOICE as indirect pointers\n"
 "  -fincludes-quoted     Generate #includes in \"double\" instead of <angle> quotes\n"
 "  -fknown-extern-type=<name>    Pretend the specified type is known\n"
+"  -fallow-newer-modules   Accept a module whose version OID is newer than imported; fail if older\n"
 "  -fline-refs           Include ASN.1 module's line numbers in comments\n"
 "  -fno-constraints      Do not generate the constraint checking code\n"
 "  -fno-include-deps     Do not generate the courtesy #includes for dependencies\n"

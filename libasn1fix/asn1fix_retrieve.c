@@ -170,6 +170,44 @@ asn1f_lookup_module(arg_t *arg, const char *module_name, const asn1p_oid_t *oid,
 		if(strcmp(module_name, mod->ModuleName) == 0)
 			return mod;
 	}
+	if(ret == NULL && oid != NULL && (arg->flags & A1F_ALLOW_NEWER_MODULES)) {
+		/*
+		 * OID-based lookup failed.  If -fallow-newer-modules is set,
+		 * fall back to name-based lookup and compare version arcs
+		 * (the last OID arc by ETSI/3GPP convention).
+		 * Accept if the available module is newer; fail if older.
+		 */
+		TQ_FOR(mod, &(arg->asn->modules), mod_next) {
+			if(strcmp(module_name, mod->ModuleName) != 0) continue;
+			if(!mod->module_oid || mod->module_oid->arcs_count != oid->arcs_count)
+				continue;
+			int n = oid->arcs_count;
+			int prefix_ok = 1;
+			for(int i = 0; i < n - 1; i++) {
+				if(oid->arcs[i].number != mod->module_oid->arcs[i].number) {
+					prefix_ok = 0;
+					break;
+				}
+			}
+			if(!prefix_ok) continue;
+			long req   = (long)oid->arcs[n-1].number;
+			long avail = (long)mod->module_oid->arcs[n-1].number;
+			if(avail > req) {
+				WARNING("Module \"%s\": available version %ld is newer than "
+					"imported version %ld; accepting (-fallow-newer-modules)",
+					module_name, avail, req);
+				return mod;
+			} else if(avail < req) {
+				FATAL("Module \"%s\": available version %ld is older than "
+					"imported version %ld",
+					module_name, avail, req);
+				errno = ENOENT;
+				return NULL;
+			}
+			/* avail == req: OID prefix must differ; not the same module family */
+		}
+	}
+
 	if(ret == NULL) {
 		DEBUG("\tModule \"%s\" not found", module_name);
 		errno = ENOENT;
@@ -275,10 +313,17 @@ asn1f_lookup_symbol_impl(arg_t *arg, asn1p_expr_t *rhs_pspecs, const asn1p_ref_t
     if(modulename) {
         imports_from = asn1f_lookup_module(arg, modulename, 0, 0);
         if(imports_from == NULL) {
-            FATAL(
-                "Module \"%s\" "
-                "mentioned at line %d is not found",
-                modulename, ref->_lineno);
+            if(arg->flags & A1F_ALLOW_NEWER_MODULES) {
+                WARNING("Module \"%s\" mentioned at line %d is not found; "
+                    "treating reference as known external",
+                    modulename, ref->_lineno);
+                errno = EEXIST;
+            } else {
+                FATAL(
+                    "Module \"%s\" "
+                    "mentioned at line %d is not found",
+                    modulename, ref->_lineno);
+            }
             return NULL;
         }
 

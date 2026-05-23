@@ -74,6 +74,11 @@ asn1f_process(asn1p_t *asn, enum asn1f_flags flags,
 		}
 	}
 
+	if(flags & A1F_ALLOW_NEWER_MODULES) {
+		arg.flags |= A1F_ALLOW_NEWER_MODULES;
+		flags &= ~A1F_ALLOW_NEWER_MODULES;
+	}
+
 	a1f_replace_me_with_proper_interface_arg = arg;
 
 	/*
