@@ -581,7 +581,7 @@ static struct dynamic_buffer {
     off_t  bytes_shifted;    /* Number of bytes ever shifted */
 } DynamicBuffer;
 
-static void
+static void __attribute__((unused))
 buffer_dump() {
     uint8_t *p = DynamicBuffer.data + DynamicBuffer.offset;
     uint8_t *e = p + DynamicBuffer.length;
