@@ -1,7 +1,10 @@
 #include <stdio.h>
 #include <assert.h>
+#include <inttypes.h>
+#include <stdint.h>
 
 #include <INTEGER.h>
+#include <UInteger.h>
 #include <INTEGER.c>
 #include <INTEGER_uper.c>
 #include <per_support.c>
@@ -129,6 +132,64 @@ check_per_encode_constrained(int lineno, int unsigned_, long value, long lbound,
 #define	CHECK(u, v, l, r, b)	\
 	check_per_encode_constrained(__LINE__, u, v, l, r, b)
 
+static void
+check_uinteger_uint64_full_range(int lineno, uint64_t value) {
+    INTEGER_t st;
+    INTEGER_t *reconstructed_st = 0;
+    asn_per_constraints_t cts;
+    asn_enc_rval_t enc_rval;
+    asn_dec_rval_t dec_rval;
+    asn_per_outp_t po;
+    asn_per_data_t pd;
+    uintmax_t reconstructed_value = 0;
+
+    printf("%d: Recoding UInteger %" PRIu64 " [0..%" PRIu64 "]\n", lineno,
+           value, UINT64_MAX);
+
+    memset(&st, 0, sizeof(st));
+    memset(&po, 0, sizeof(po));
+    memset(&pd, 0, sizeof(pd));
+    memset(&cts, 0, sizeof(cts));
+
+    cts.value.flags = APC_CONSTRAINED;
+    cts.value.range_bits = 64;
+    cts.value.effective_bits = 64;
+    cts.value.lower_bound = 0;
+#if UINT64_MAX <= INTMAX_MAX
+    cts.value.upper_bound = (intmax_t)UINT64_MAX;
+#else
+    printf("%d: Skipped UInteger full-range test, unsupported intmax_t\n",
+           lineno);
+    return;
+#endif
+
+    assert(asn_umax2INTEGER(&st, (uintmax_t)value) == 0);
+
+    po.buffer = po.tmpspace;
+    po.nboff = 0;
+    po.nbits = 8 * sizeof(po.tmpspace);
+    po.output = FailOut;
+
+    enc_rval = INTEGER_encode_uper(&asn_DEF_UInteger, &cts, &st, &po);
+    assert(enc_rval.encoded == 0);
+
+    pd.buffer = po.tmpspace;
+    pd.nboff = 0;
+    pd.nbits = 8 * (po.buffer - po.tmpspace) + po.nboff;
+    pd.moved = 0;
+
+    dec_rval = INTEGER_decode_uper(0, &asn_DEF_UInteger, &cts,
+                                   (void **)&reconstructed_st, &pd);
+    assert(dec_rval.code == RC_OK);
+    assert(asn_INTEGER2umax(reconstructed_st, &reconstructed_value) == 0);
+    assert(reconstructed_value == (uintmax_t)value);
+
+    ASN_STRUCT_RESET(asn_DEF_UInteger, &st);
+    ASN_STRUCT_FREE(asn_DEF_UInteger, reconstructed_st);
+}
+
+#define	CHECK_U64(v) check_uinteger_uint64_full_range(__LINE__, v)
+
 int
 main() {
   int unsigned_;
@@ -229,5 +290,10 @@ main() {
 #endif
  }
 
-  return 0;
+ CHECK_U64(UINT64_C(0));
+ CHECK_U64(UINT64_C(1));
+ CHECK_U64(UINT64_C(0x0123456789ABCDEF));
+ CHECK_U64(UINT64_MAX);
+
+ return 0;
 }

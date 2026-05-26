@@ -1,0 +1,9 @@
+-- OK: Ensure UINT64 constrained INTEGER does not force UInteger when PER generation is disabled
+
+ModuleNoPerUInteger
+    DEFINITIONS ::=
+BEGIN
+
+    NoPerU64 ::= INTEGER (0..18446744073709551615)
+
+END

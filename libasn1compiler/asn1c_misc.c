@@ -1,8 +1,11 @@
 #include "asn1c_internal.h"
 #include "asn1c_misc.h"
+#include <stdint.h>  /* INT64_MAX, UINT64_MAX */
 
 #include <asn1fix_crange.h>	/* constraint groker from libasn1fix */
 #include <asn1fix_export.h>	/* other exportable stuff from libasn1fix */
+
+static int asn1c_type_is_uint64_range(asn1p_expr_t *expr);
 
 /*
  * Checks that the given string is not a reserved C/C++ keyword [1],[2].
@@ -366,6 +369,22 @@ asn1c_type_name(arg_t *arg, asn1p_expr_t *expr, enum tnfmt _format) {
 	case ASN_BASIC_INTEGER:
 	case ASN_BASIC_ENUMERATED:
 	case ASN_BASIC_REAL:
+		/* uint64 range: low >= 0 and high > INT64_MAX — use UInteger */
+		if(expr->expr_type == ASN_BASIC_INTEGER
+		   && (arg->flags & (A1C_GEN_UPER | A1C_GEN_APER))) {
+			int u64 = asn1c_type_is_uint64_range(expr);
+			if(u64 == 2) {
+				FATAL("INTEGER constraint at line %d: upper bound "
+				      "exceeds UINT64_MAX; cannot generate constrained UPER",
+				      expr->_lineno);
+			} else if(u64) {
+				stdname = 1;
+				exprid = NULL;
+				typename = "UInteger";
+				break;
+			}
+		}
+
         if((expr->expr_type == ASN_BASIC_REAL
             && (_format == TNF_CONSTYPE || !(arg->flags & A1C_USE_WIDE_TYPES)
                 || asn1c_REAL_fits(arg, expr) != RL_NOTFIT))
@@ -662,4 +681,41 @@ asn1c_type_fits_long(arg_t *arg, asn1p_expr_t *expr) {
 	}
 
 	return FL_FITS_SIGNED;
+}
+
+static int
+asn1c_type_is_uint64_range(asn1p_expr_t *expr) {
+    asn1cnst_range_t *range;
+    asn1cnst_edge_t left, right;
+    int result = 0;
+
+    if(expr->expr_type != ASN_BASIC_INTEGER)
+        return 0;
+    if(!expr->combined_constraints)
+        return 0;
+
+    range = asn1constraint_compute_PER_range(expr->Identifier, expr->expr_type,
+        expr->combined_constraints, ACT_EL_RANGE, 0, 0, 0);
+    if(!range || range->incompatible || range->not_PER_visible
+    || range->empty_constraint) {
+        asn1constraint_range_free(range);
+        return 0;
+    }
+
+    left  = range->left;
+    right = range->right;
+    asn1constraint_range_free(range);
+
+    if(left.type != ARE_VALUE || left.value < 0)
+        return 0;
+    if(right.type != ARE_VALUE)
+        return 0;
+    if(right.value <= (asn1c_integer_t)INT64_MAX)
+        return 0;  /* fits signed int64 — no issue */
+
+    result = 1;
+    if(right.value > (asn1c_integer_t)UINT64_MAX)
+        result = 2;  /* overflows uint64 — caller should warn */
+
+    return result;
 }
