@@ -100,26 +100,29 @@ asn_enc_rval_t
 NativeInteger_encode_der(const asn_TYPE_descriptor_t *sd, const void *ptr,
                          int tag_mode, ber_tlv_tag_t tag,
                          asn_app_consume_bytes_f *cb, void *app_key) {
+    const asn_INTEGER_specifics_t *specs =
+        (const asn_INTEGER_specifics_t *)sd->specifics;
     unsigned long native = *(const unsigned long *)ptr; /* Disable sign ext. */
     asn_enc_rval_t erval = {0,0,0};
     INTEGER_t tmp;
+    uint8_t buf[sizeof(native) + 1]; /* +1 for sign/pad byte (X.690 §8.3.3) */
+
+    /* Sign/pad byte handling for canonical DER. */
+    buf[0] = (specs && specs->field_unsigned)
+                 ? 0x00
+                 : ((long)native < 0 ? 0xFF : 0x00);
 
 #ifdef WORDS_BIGENDIAN  /* Opportunistic optimization */
-
-    tmp.buf = (uint8_t *)&native;
-    tmp.size = sizeof(native);
-
+    memcpy(buf + 1, &native, sizeof(native));
 #else  /* Works even if WORDS_BIGENDIAN is not set where should've been */
-    uint8_t buf[sizeof(native)];
     uint8_t *p;
 
     /* Prepare a fake INTEGER */
-    for(p = buf + sizeof(buf) - 1; p >= buf; p--, native >>= 8)
+    for(p = buf + sizeof(buf) - 1; p >= buf + 1; p--, native >>= 8)
         *p = (uint8_t)native;
-
+#endif  /* WORDS_BIGENDIAN */
     tmp.buf = buf;
     tmp.size = sizeof(buf);
-#endif  /* WORDS_BIGENDIAN */
 
     /* Encode fake INTEGER */
     erval = INTEGER_encode_der(sd, &tmp, tag_mode, tag, cb, app_key);
