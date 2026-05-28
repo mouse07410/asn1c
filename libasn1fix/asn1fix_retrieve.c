@@ -179,32 +179,53 @@ asn1f_lookup_module(arg_t *arg, const char *module_name, const asn1p_oid_t *oid,
 		 */
 		TQ_FOR(mod, &(arg->asn->modules), mod_next) {
 			if(strcmp(module_name, mod->ModuleName) != 0) continue;
-			if(!mod->module_oid || mod->module_oid->arcs_count != oid->arcs_count)
+			if(!mod->module_oid)
 				continue;
-			int n = oid->arcs_count;
-			int prefix_ok = 1;
-			for(int i = 0; i < n - 1; i++) {
-				if(oid->arcs[i].number != mod->module_oid->arcs[i].number) {
-					prefix_ok = 0;
-					break;
+			/*
+			 * If the imported OID is a strict prefix of the available module
+			 * OID (e.g. LI-PS-PDU imports UmtsHI2Operations by base OID only,
+			 * while the 3GPP module adds r17(17) version-0(0) arcs), accept
+			 * unconditionally — the importer explicitly left the version open.
+			 */
+			if(oid->arcs_count < mod->module_oid->arcs_count) {
+				int prefix = 1;
+				for(unsigned int j = 0; j < oid->arcs_count; j++) {
+					if(mod->module_oid->arcs[j].number
+					   != oid->arcs[j].number) {
+						prefix = 0;
+						break;
+					}
+				}
+				if(prefix) {
+					WARNING("Module \"%s\": imported OID is a prefix of "
+						"available OID; accepting (-fallow-newer-modules)",
+						module_name);
+					return mod;
 				}
 			}
-			if(!prefix_ok) continue;
-			long req   = (long)oid->arcs[n-1].number;
-			long avail = (long)mod->module_oid->arcs[n-1].number;
-			if(avail > req) {
-				WARNING("Module \"%s\": available version %ld is newer than "
-					"imported version %ld; accepting (-fallow-newer-modules)",
-					module_name, avail, req);
+			/*
+			 * Compare OIDs lexicographically (arc by arc from the left).
+			 * A larger OID means a newer version — this handles both ETSI
+			 * modules that version the last arc (version42(42)) and 3GPP
+			 * modules that version a penultimate arc (r17(17) version-0(0)).
+			 * asn1p_oid_compare(a,b) returns positive when b > a.
+			 */
+			int cmp = asn1p_oid_compare(mod->module_oid, oid);
+			if(cmp < 0) {
+				/* oid (imported) < mod->module_oid (available): available is newer */
+				WARNING("Module \"%s\": available OID is newer than "
+					"imported OID; accepting (-fallow-newer-modules)",
+					module_name);
 				return mod;
-			} else if(avail < req) {
-				FATAL("Module \"%s\": available version %ld is older than "
-					"imported version %ld",
-					module_name, avail, req);
+			} else if(cmp > 0) {
+				/* oid (imported) > mod->module_oid (available): available is older */
+				FATAL("Module \"%s\": available OID is older than "
+					"imported OID",
+					module_name);
 				errno = ENOENT;
 				return NULL;
 			}
-			/* avail == req: OID prefix must differ; not the same module family */
+			/* cmp == 0: identical OIDs but OID-based lookup above failed — skip */
 		}
 	}
 

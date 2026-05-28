@@ -1,0 +1,31 @@
+-- OK: -fallow-newer-modules accepts available module whose OID is a superset
+-- Imported OID is a 3-arc prefix; available module has 5-arc OID with same prefix -> accept
+
+TestAllowPrefix
+	{ iso org(3) dod(6) internet(1) private(4) enterprise(1)
+	  spelio(9363) software(1) asn1c(5) test(1) 206 }
+	DEFINITIONS AUTOMATIC TAGS ::=
+BEGIN
+
+	IMPORTS ImportedType
+	FROM ImportedModule206
+	{ iso org(3) dod(6) internet(1) private(4)
+	  enterprise(1) spelio(9363) }
+	;
+
+	Type ::= ImportedType
+
+END
+
+
+ImportedModule206
+	{ iso org(3) dod(6) internet(1) private(4)
+	  enterprise(1) spelio(9363) software(1) asn1c(5) test(1) }
+	DEFINITIONS AUTOMATIC TAGS ::=
+BEGIN
+
+	IMPORTS -- nothing --;
+
+	ImportedType ::= INTEGER
+
+END
