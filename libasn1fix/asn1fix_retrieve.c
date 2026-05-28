@@ -313,17 +313,10 @@ asn1f_lookup_symbol_impl(arg_t *arg, asn1p_expr_t *rhs_pspecs, const asn1p_ref_t
     if(modulename) {
         imports_from = asn1f_lookup_module(arg, modulename, 0, 0);
         if(imports_from == NULL) {
-            if(arg->flags & A1F_ALLOW_NEWER_MODULES) {
-                WARNING("Module \"%s\" mentioned at line %d is not found; "
-                    "treating reference as known external",
-                    modulename, ref->_lineno);
-                errno = EEXIST;
-            } else {
-                FATAL(
-                    "Module \"%s\" "
-                    "mentioned at line %d is not found",
-                    modulename, ref->_lineno);
-            }
+            FATAL(
+                "Module \"%s\" "
+                "mentioned at line %d is not found",
+                modulename, ref->_lineno);
             return NULL;
         }
 
