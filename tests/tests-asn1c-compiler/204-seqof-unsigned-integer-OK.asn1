@@ -1,0 +1,9 @@
+-- Regression: SEQUENCE OF INTEGER (0..4294967295) must compile cleanly.
+-- FL_FITS_UNSIGN on the anonymous element previously drove complex_contents=true
+-- and emitted &asn_DEF_Member — a symbol never defined — causing a link error.
+-- Fixed by excluding anonymous elements from the FL_FITS_UNSIGN complex_contents path.
+SeqOfUnsignedTest DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+SeqOfUInt32 ::= SEQUENCE OF INTEGER (0..4294967295)
+
+END

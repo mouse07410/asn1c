@@ -3917,6 +3917,7 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 			&& expr->expr_type == ASN_BASIC_INTEGER
 			&& expr_elements_count(arg, expr))
 		|| (expr->expr_type == ASN_BASIC_INTEGER
+			&& !expr->_anonymous_type  /* anonymous SEQUENCE OF elements have no asn_DEF_Member */
 			&& asn1c_type_fits_long(arg, expr) == FL_FITS_UNSIGN);
 
 	if(C99_MODE) OUT(".type = ");
