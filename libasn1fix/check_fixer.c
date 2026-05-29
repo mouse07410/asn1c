@@ -175,6 +175,8 @@ check(const char *fname,
 	/* Flag modifiers */
 	if(strstr(fname, "-blessSize-"))
 		fixer_flags |= A1F_EXTENDED_SizeConstraint;
+	if(strstr(fname, "-fallow-newer-modules"))
+		fixer_flags |= A1F_ALLOW_NEWER_MODULES;
 
 	fprintf(stderr, "[=> %s]\n", fname);
 
