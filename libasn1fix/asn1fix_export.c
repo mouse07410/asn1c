@@ -3,6 +3,18 @@
 
 extern arg_t a1f_replace_me_with_proper_interface_arg;
 
+/*
+ * Persistent copy of the fixer flags for use during the compiler phase.
+ * a1f_replace_me_with_proper_interface_arg is cleared at end of asn1f_process,
+ * so we need a separate copy that survives into the compilation phase.
+ */
+static enum asn1f_flags asn1f_persistent_flags_;
+
+void
+asn1f_set_compiler_flags(enum asn1f_flags flags) {
+    asn1f_persistent_flags_ = flags;
+}
+
 static asn1p_t *asn1f_ssn_asn_;
 
 static void
@@ -58,6 +70,7 @@ asn1f_lookup_symbol_ex(asn1p_t *asn, asn1_namespace_t *ns, asn1p_expr_t *expr,
     arg.expr = expr;
     arg.eh = a1f_replace_me_with_proper_interface_arg.eh;
     arg.debug = a1f_replace_me_with_proper_interface_arg.debug;
+    arg.flags = asn1f_persistent_flags_;
 
     return asn1f_lookup_symbol(&arg, expr->rhs_pspecs, ref);
 }
@@ -96,6 +109,7 @@ asn1f_find_terminal_type_ex(asn1p_t *asn, asn1_namespace_t *ns,
     arg.expr = expr;
     arg.eh = a1f_replace_me_with_proper_interface_arg.eh;
     arg.debug = a1f_replace_me_with_proper_interface_arg.debug;
+    arg.flags = asn1f_persistent_flags_;
 
     return asn1f_find_terminal_type(&arg, expr);
 }

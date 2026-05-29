@@ -170,6 +170,65 @@ asn1f_lookup_module(arg_t *arg, const char *module_name, const asn1p_oid_t *oid,
 		if(strcmp(module_name, mod->ModuleName) == 0)
 			return mod;
 	}
+	if(ret == NULL && oid != NULL && (arg->flags & A1F_ALLOW_NEWER_MODULES)) {
+		/*
+		 * OID-based lookup failed.  If -fallow-newer-modules is set,
+		 * fall back to name-based lookup and compare version arcs
+		 * (the last OID arc by ETSI/3GPP convention).
+		 * Accept if the available module is newer; fail if older.
+		 */
+		TQ_FOR(mod, &(arg->asn->modules), mod_next) {
+			if(strcmp(module_name, mod->ModuleName) != 0) continue;
+			if(!mod->module_oid)
+				continue;
+			/*
+			 * If the imported OID is a strict prefix of the available module
+			 * OID (e.g. LI-PS-PDU imports UmtsHI2Operations by base OID only,
+			 * while the 3GPP module adds r17(17) version-0(0) arcs), accept
+			 * unconditionally — the importer explicitly left the version open.
+			 */
+			if(oid->arcs_count < mod->module_oid->arcs_count) {
+				int prefix = 1;
+				for(unsigned int j = 0; j < oid->arcs_count; j++) {
+					if(mod->module_oid->arcs[j].number
+					   != oid->arcs[j].number) {
+						prefix = 0;
+						break;
+					}
+				}
+				if(prefix) {
+					WARNING("Module \"%s\": imported OID is a prefix of "
+						"available OID; accepting (-fallow-newer-modules)",
+						module_name);
+					return mod;
+				}
+			}
+			/*
+			 * Compare OIDs lexicographically (arc by arc from the left).
+			 * A larger OID means a newer version — this handles both ETSI
+			 * modules that version the last arc (version42(42)) and 3GPP
+			 * modules that version a penultimate arc (r17(17) version-0(0)).
+			 * asn1p_oid_compare(a,b) returns positive when b > a.
+			 */
+			int cmp = asn1p_oid_compare(mod->module_oid, oid);
+			if(cmp < 0) {
+				/* oid (imported) < mod->module_oid (available): available is newer */
+				WARNING("Module \"%s\": available OID is newer than "
+					"imported OID; accepting (-fallow-newer-modules)",
+					module_name);
+				return mod;
+			} else if(cmp > 0) {
+				/* oid (imported) > mod->module_oid (available): available is older */
+				FATAL("Module \"%s\": available OID is older than "
+					"imported OID",
+					module_name);
+				errno = ENOENT;
+				return NULL;
+			}
+			/* cmp == 0: identical OIDs but OID-based lookup above failed — skip */
+		}
+	}
+
 	if(ret == NULL) {
 		DEBUG("\tModule \"%s\" not found", module_name);
 		errno = ENOENT;

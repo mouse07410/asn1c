@@ -1,0 +1,31 @@
+-- SE: -fallow-newer-modules rejects available module with OLDER OID arc
+-- Imported OID version(5), available module version(3): older -> fatal error
+
+TestRejectOlder
+	{ iso org(3) dod(6) internet(1) private(4) enterprise(1)
+	  spelio(9363) software(1) asn1c(5) test(1) 205 }
+	DEFINITIONS AUTOMATIC TAGS ::=
+BEGIN
+
+	IMPORTS ImportedType
+	FROM ImportedModule205
+	{ iso org(3) dod(6) internet(1) private(4) enterprise(1)
+	  spelio(9363) software(1) asn1c(5) test(1) 205 version(5) }
+	;
+
+	Type ::= ImportedType
+
+END
+
+
+ImportedModule205
+	{ iso org(3) dod(6) internet(1) private(4) enterprise(1)
+	  spelio(9363) software(1) asn1c(5) test(1) 205 version(3) }
+	DEFINITIONS AUTOMATIC TAGS ::=
+BEGIN
+
+	IMPORTS -- nothing --;
+
+	ImportedType ::= INTEGER
+
+END
