@@ -97,6 +97,10 @@ CBOR and other encoding rules.
     The compiler will assume the target language source files
     for the given type have been provided manually.
 
+-fallow-newer-modules
+:   Accept a module whose version OID is newer than the OID listed in
+    `IMPORTS`; fail if the available module is older.
+
 -fline-refs
 :   Include ASN.1 module's line numbers in generated code comments.
 
