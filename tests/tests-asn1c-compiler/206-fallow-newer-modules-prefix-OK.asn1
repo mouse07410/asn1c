@@ -1,5 +1,5 @@
 -- OK: -fallow-newer-modules accepts available module whose OID is a superset
--- Imported OID is a 3-arc prefix; available module has 5-arc OID with same prefix -> accept
+-- Imported OID is a strict prefix; available module has additional arcs with same prefix -> accept
 
 TestAllowPrefix
 	{ iso org(3) dod(6) internet(1) private(4) enterprise(1)
