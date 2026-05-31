@@ -2,7 +2,6 @@
 /*** <<< INCLUDES [T] >>> ***/
 
 #include <NativeInteger.h>
-#include <INTEGER.h>
 #include <constr_SEQUENCE.h>
 
 /*** <<< TYPE-DECLS [T] >>> ***/
@@ -12,7 +11,7 @@ typedef struct T {
 	long	 unsigned16;
 	long	 unsigned16stack;
 	long	 unsigned16stack_ext;
-	INTEGER_t	 unsigned33;
+	long	 unsigned33;
 	/*
 	 * This type is extensible,
 	 * possible extensions are below.
@@ -22,7 +21,7 @@ typedef struct T {
 	long	*signed16stack;
 	long	*signed16stack_ext;
 	long	*signed32;
-	INTEGER_t	*signed33ext;
+	long	*signed33ext;
 	long	*minmax;	/* OPTIONAL */
 	
 	/* Context for parsing across buffer boundaries */
@@ -138,7 +137,6 @@ memb_unsigned16stack_ext_constraint_1(const asn_TYPE_descriptor_t *td, const voi
 static int
 memb_unsigned33_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
 			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
-	const INTEGER_t *st = (const INTEGER_t *)sptr;
 	unsigned long value;
 	
 	if(!sptr) {
@@ -148,12 +146,7 @@ memb_unsigned33_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
 		return -1;
 	}
 	
-	if(asn_INTEGER2ulong(st, &value)) {
-		ASN__CTFAIL(app_key, td, sptr,
-			"%s: value too large (%s:%d)",
-			td->name, __FILE__, __LINE__);
-		return -1;
-	}
+	value = *(const long *)sptr;
 	
 	if((value <= 5000000000UL)) {
 		/* Constraint check succeeded */
@@ -294,7 +287,6 @@ memb_signed32_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
 static int
 memb_signed33ext_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
 			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
-	const INTEGER_t *st = (const INTEGER_t *)sptr;
 	long value;
 	
 	if(!sptr) {
@@ -304,12 +296,7 @@ memb_signed33ext_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
 		return -1;
 	}
 	
-	if(asn_INTEGER2long(st, &value)) {
-		ASN__CTFAIL(app_key, td, sptr,
-			"%s: value too large (%s:%d)",
-			td->name, __FILE__, __LINE__);
-		return -1;
-	}
+	value = *(const long *)sptr;
 	
 	if((value >= -4000000000L && value <= 4000000000L)) {
 		/* Constraint check succeeded */
@@ -513,7 +500,7 @@ static asn_TYPE_member_t asn_MBR_T_1[] = {
 	{ ATF_NOFLAGS, 0, offsetof(struct T, unsigned33),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (3 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
-		.type = &asn_DEF_INTEGER,
+		.type = &asn_DEF_NativeInteger,
 		.type_selector = 0,
 		{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
@@ -634,7 +621,7 @@ static asn_TYPE_member_t asn_MBR_T_1[] = {
 	{ ATF_POINTER, 2, offsetof(struct T, signed33ext),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (8 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
-		.type = &asn_DEF_INTEGER,
+		.type = &asn_DEF_NativeInteger,
 		.type_selector = 0,
 		{
 #if !defined(ASN_DISABLE_OER_SUPPORT)

@@ -1,29 +1,29 @@
 
-/*** <<< INCLUDES [SeqOfUInt32] >>> ***/
+/*** <<< INCLUDES [SeqOf34] >>> ***/
 
 #include <NativeInteger.h>
 #include <asn_SEQUENCE_OF.h>
 #include <constr_SEQUENCE_OF.h>
 
-/*** <<< TYPE-DECLS [SeqOfUInt32] >>> ***/
+/*** <<< TYPE-DECLS [SeqOf34] >>> ***/
 
-typedef struct SeqOfUInt32 {
-	A_SEQUENCE_OF(unsigned long) list;
+typedef struct SeqOf34 {
+	A_SEQUENCE_OF(long) list;
 	
 	/* Context for parsing across buffer boundaries */
 	asn_struct_ctx_t _asn_ctx;
-} SeqOfUInt32_t;
+} SeqOf34_t;
 
-/*** <<< FUNC-DECLS [SeqOfUInt32] >>> ***/
+/*** <<< FUNC-DECLS [SeqOf34] >>> ***/
 
-extern asn_TYPE_descriptor_t asn_DEF_SeqOfUInt32;
+extern asn_TYPE_descriptor_t asn_DEF_SeqOf34;
 
-/*** <<< CODE [SeqOfUInt32] >>> ***/
+/*** <<< CODE [SeqOf34] >>> ***/
 
 static int
 memb_NativeInteger_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
 			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
-	unsigned long value;
+	long value;
 	
 	if(!sptr) {
 		ASN__CTFAIL(app_key, td, sptr,
@@ -32,9 +32,9 @@ memb_NativeInteger_constraint_1(const asn_TYPE_descriptor_t *td, const void *spt
 		return -1;
 	}
 	
-	value = *(const unsigned long *)sptr;
+	value = *(const long *)sptr;
 	
-	if((value <= 4294967295UL)) {
+	if((value >= 3L && value <= 4L)) {
 		/* Constraint check succeeded */
 		return 0;
 	} else {
@@ -46,9 +46,9 @@ memb_NativeInteger_constraint_1(const asn_TYPE_descriptor_t *td, const void *spt
 }
 
 
-/*** <<< STAT-DEFS [SeqOfUInt32] >>> ***/
+/*** <<< STAT-DEFS [SeqOf34] >>> ***/
 
-static asn_TYPE_member_t asn_MBR_SeqOfUInt32_1[] = {
+static asn_TYPE_member_t asn_MBR_SeqOf34_1[] = {
 	{ ATF_POINTER, 0, 0,
 		.tag = (ASN_TAG_CLASS_UNIVERSAL | (2 << 2)),
 		.tag_mode = 0,
@@ -70,24 +70,24 @@ static asn_TYPE_member_t asn_MBR_SeqOfUInt32_1[] = {
 		.name = ""
 		},
 };
-static const ber_tlv_tag_t asn_DEF_SeqOfUInt32_tags_1[] = {
+static const ber_tlv_tag_t asn_DEF_SeqOf34_tags_1[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
 };
-static asn_SET_OF_specifics_t asn_SPC_SeqOfUInt32_specs_1 = {
-	sizeof(struct SeqOfUInt32),
-	offsetof(struct SeqOfUInt32, _asn_ctx),
+static asn_SET_OF_specifics_t asn_SPC_SeqOf34_specs_1 = {
+	sizeof(struct SeqOf34),
+	offsetof(struct SeqOf34, _asn_ctx),
 	0,	/* XER encoding is XMLDelimitedItemList */
 };
-asn_TYPE_descriptor_t asn_DEF_SeqOfUInt32 = {
-	"SeqOfUInt32",
-	"SeqOfUInt32",
+asn_TYPE_descriptor_t asn_DEF_SeqOf34 = {
+	"SeqOf34",
+	"SeqOf34",
 	&asn_OP_SEQUENCE_OF,
-	asn_DEF_SeqOfUInt32_tags_1,
-	sizeof(asn_DEF_SeqOfUInt32_tags_1)
-		/sizeof(asn_DEF_SeqOfUInt32_tags_1[0]), /* 1 */
-	asn_DEF_SeqOfUInt32_tags_1,	/* Same as above */
-	sizeof(asn_DEF_SeqOfUInt32_tags_1)
-		/sizeof(asn_DEF_SeqOfUInt32_tags_1[0]), /* 1 */
+	asn_DEF_SeqOf34_tags_1,
+	sizeof(asn_DEF_SeqOf34_tags_1)
+		/sizeof(asn_DEF_SeqOf34_tags_1[0]), /* 1 */
+	asn_DEF_SeqOf34_tags_1,	/* Same as above */
+	sizeof(asn_DEF_SeqOf34_tags_1)
+		/sizeof(asn_DEF_SeqOf34_tags_1[0]), /* 1 */
 	{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
 		0,
@@ -100,9 +100,9 @@ asn_TYPE_descriptor_t asn_DEF_SeqOfUInt32 = {
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		SEQUENCE_OF_constraint
 	},
-	asn_MBR_SeqOfUInt32_1,
+	asn_MBR_SeqOf34_1,
 	1,	/* Single element */
-	&asn_SPC_SeqOfUInt32_specs_1	/* Additional specs */
+	&asn_SPC_SeqOf34_specs_1	/* Additional specs */
 };
 
 

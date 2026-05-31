@@ -1,0 +1,8 @@
+-- Regression: SEQUENCE OF INTEGER (0..18446744073709551615) anonymous element
+-- must compile cleanly and use native unsigned long storage (FL_FITS_UNSIGN
+-- extended to ULONG_MAX on 64-bit hosts).
+SeqOfU64MaxTest DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+SeqOfU64Max ::= SEQUENCE OF INTEGER (0..18446744073709551615)
+
+END

@@ -1,5 +1,7 @@
 /*
  * Verify OER with constrained INTEGER code gen.
+ * On 64-bit (LONG_MAX > UINT32_MAX): wide fields are native long.
+ * On 32-bit: wide fields are INTEGER_t blobs.
  */
 #undef	NDEBUG
 #include <stdio.h>
@@ -7,8 +9,7 @@
 #include <sys/types.h>
 #include <string.h>
 #include <assert.h>
-#include <ctype.h>
-#include <errno.h>
+#include <limits.h>
 
 #include <T.h>
 
@@ -19,8 +20,13 @@ int main() {
 
     memset(&source, 0, sizeof(source));
 
-    /* Fill in complex INTEGER */
+#if LONG_MAX > 4294967295L
+    /* 64-bit: unsigned33 is native long */
+    source.unsigned33 = 0;
+#else
+    /* 32-bit: unsigned33 is INTEGER_t blob */
     asn_long2INTEGER(&source.unsigned33, 0);
+#endif
 
     asn_enc_rval_t er =
         oer_encode_to_buffer(&asn_DEF_T, 0, &source, tmpbuf, sizeof(tmpbuf));
@@ -42,4 +48,3 @@ int main() {
     ASN_STRUCT_FREE(asn_DEF_T, decoded);
     return 0;
 }
-

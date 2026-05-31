@@ -262,11 +262,11 @@ asn_TYPE_descriptor_t asn_DEF_CN_IntegerMinLow = {
 
 /*** <<< INCLUDES [NO-IntegerMinHigh] >>> ***/
 
-#include <INTEGER.h>
+#include <NativeInteger.h>
 
 /*** <<< TYPE-DECLS [NO-IntegerMinHigh] >>> ***/
 
-typedef INTEGER_t	 NO_IntegerMinHigh_t;
+typedef long	 NO_IntegerMinHigh_t;
 
 /*** <<< FUNC-DECLS [NO-IntegerMinHigh] >>> ***/
 
@@ -290,7 +290,6 @@ per_type_encoder_f NO_IntegerMinHigh_encode_aper;
 int
 NO_IntegerMinHigh_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
-	const INTEGER_t *st = (const INTEGER_t *)sptr;
 	long value;
 	
 	if(!sptr) {
@@ -300,12 +299,7 @@ NO_IntegerMinHigh_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		return -1;
 	}
 	
-	if(asn_INTEGER2long(st, &value)) {
-		ASN__CTFAIL(app_key, td, sptr,
-			"%s: value too large (%s:%d)",
-			td->name, __FILE__, __LINE__);
-		return -1;
-	}
+	value = *(const long *)sptr;
 	
 	if((value <= 3000000000L)) {
 		/* Constraint check succeeded */
@@ -319,7 +313,7 @@ NO_IntegerMinHigh_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 }
 
 /*
- * This type is implemented using INTEGER,
+ * This type is implemented using NativeInteger,
  * so here we adjust the DEF accordingly.
  */
 
@@ -341,7 +335,7 @@ static const ber_tlv_tag_t asn_DEF_NO_IntegerMinHigh_tags_1[] = {
 asn_TYPE_descriptor_t asn_DEF_NO_IntegerMinHigh = {
 	"NO-IntegerMinHigh",
 	"NO-IntegerMinHigh",
-	&asn_OP_INTEGER,
+	&asn_OP_NativeInteger,
 	asn_DEF_NO_IntegerMinHigh_tags_1,
 	sizeof(asn_DEF_NO_IntegerMinHigh_tags_1)
 		/sizeof(asn_DEF_NO_IntegerMinHigh_tags_1[0]), /* 1 */
@@ -371,7 +365,7 @@ asn_TYPE_descriptor_t asn_DEF_NO_IntegerMinHigh = {
 
 /*** <<< TYPE-DECLS [NO-IntegerLowHigh] >>> ***/
 
-typedef unsigned long	 NO_IntegerLowHigh_t;
+typedef long	 NO_IntegerLowHigh_t;
 
 /*** <<< FUNC-DECLS [NO-IntegerLowHigh] >>> ***/
 
@@ -404,7 +398,7 @@ NO_IntegerLowHigh_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		return -1;
 	}
 	
-	value = *(const unsigned long *)sptr;
+	value = *(const long *)sptr;
 	
 	if((value >= 1UL && value <= 3000000000UL)) {
 		/* Constraint check succeeded */
@@ -434,11 +428,6 @@ static asn_per_constraints_t asn_PER_type_NO_IntegerLowHigh_constr_1 CC_NOTUSED 
 
 /*** <<< STAT-DEFS [NO-IntegerLowHigh] >>> ***/
 
-static const asn_INTEGER_specifics_t asn_SPC_NO_IntegerLowHigh_specs_1 = {
-	0,	0,	0,	0,	0,
-	0,	/* Native long size */
-	1	/* Unsigned representation */
-};
 static const ber_tlv_tag_t asn_DEF_NO_IntegerLowHigh_tags_1[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (2 << 2))
 };
@@ -465,7 +454,7 @@ asn_TYPE_descriptor_t asn_DEF_NO_IntegerLowHigh = {
 		NO_IntegerLowHigh_constraint
 	},
 	0, 0,	/* No members */
-	&asn_SPC_NO_IntegerLowHigh_specs_1	/* Additional specs */
+	0	/* No specifics */
 };
 
 
@@ -575,11 +564,11 @@ asn_TYPE_descriptor_t asn_DEF_CN_IntegerLowMax = {
 
 /*** <<< INCLUDES [NO-IntegerHighMax] >>> ***/
 
-#include <INTEGER.h>
+#include <NativeInteger.h>
 
 /*** <<< TYPE-DECLS [NO-IntegerHighMax] >>> ***/
 
-typedef INTEGER_t	 NO_IntegerHighMax_t;
+typedef unsigned long	 NO_IntegerHighMax_t;
 
 /*** <<< FUNC-DECLS [NO-IntegerHighMax] >>> ***/
 
@@ -603,7 +592,6 @@ per_type_encoder_f NO_IntegerHighMax_encode_aper;
 int
 NO_IntegerHighMax_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
-	const INTEGER_t *st = (const INTEGER_t *)sptr;
 	long value;
 	
 	if(!sptr) {
@@ -613,12 +601,7 @@ NO_IntegerHighMax_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		return -1;
 	}
 	
-	if(asn_INTEGER2long(st, &value)) {
-		ASN__CTFAIL(app_key, td, sptr,
-			"%s: value too large (%s:%d)",
-			td->name, __FILE__, __LINE__);
-		return -1;
-	}
+	value = *(const unsigned long *)sptr;
 	
 	if((value >= 3000000000L)) {
 		/* Constraint check succeeded */
@@ -632,7 +615,7 @@ NO_IntegerHighMax_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 }
 
 /*
- * This type is implemented using INTEGER,
+ * This type is implemented using NativeInteger,
  * so here we adjust the DEF accordingly.
  */
 
@@ -648,13 +631,18 @@ static asn_per_constraints_t asn_PER_type_NO_IntegerHighMax_constr_1 CC_NOTUSED 
 
 /*** <<< STAT-DEFS [NO-IntegerHighMax] >>> ***/
 
+static const asn_INTEGER_specifics_t asn_SPC_NO_IntegerHighMax_specs_1 = {
+	0,	0,	0,	0,	0,
+	0,	/* Native long size */
+	1	/* Unsigned representation */
+};
 static const ber_tlv_tag_t asn_DEF_NO_IntegerHighMax_tags_1[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (2 << 2))
 };
 asn_TYPE_descriptor_t asn_DEF_NO_IntegerHighMax = {
 	"NO-IntegerHighMax",
 	"NO-IntegerHighMax",
-	&asn_OP_INTEGER,
+	&asn_OP_NativeInteger,
 	asn_DEF_NO_IntegerHighMax_tags_1,
 	sizeof(asn_DEF_NO_IntegerHighMax_tags_1)
 		/sizeof(asn_DEF_NO_IntegerHighMax_tags_1[0]), /* 1 */
@@ -674,17 +662,17 @@ asn_TYPE_descriptor_t asn_DEF_NO_IntegerHighMax = {
 		NO_IntegerHighMax_constraint
 	},
 	0, 0,	/* No members */
-	0	/* No specifics */
+	&asn_SPC_NO_IntegerHighMax_specs_1	/* Additional specs */
 };
 
 
 /*** <<< INCLUDES [NO-IntegerLowestMax] >>> ***/
 
-#include <INTEGER.h>
+#include <NativeInteger.h>
 
 /*** <<< TYPE-DECLS [NO-IntegerLowestMax] >>> ***/
 
-typedef INTEGER_t	 NO_IntegerLowestMax_t;
+typedef long	 NO_IntegerLowestMax_t;
 
 /*** <<< FUNC-DECLS [NO-IntegerLowestMax] >>> ***/
 
@@ -708,7 +696,6 @@ per_type_encoder_f NO_IntegerLowestMax_encode_aper;
 int
 NO_IntegerLowestMax_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
-	const INTEGER_t *st = (const INTEGER_t *)sptr;
 	long value;
 	
 	if(!sptr) {
@@ -718,12 +705,7 @@ NO_IntegerLowestMax_constraint(const asn_TYPE_descriptor_t *td, const void *sptr
 		return -1;
 	}
 	
-	if(asn_INTEGER2long(st, &value)) {
-		ASN__CTFAIL(app_key, td, sptr,
-			"%s: value too large (%s:%d)",
-			td->name, __FILE__, __LINE__);
-		return -1;
-	}
+	value = *(const long *)sptr;
 	
 	if((value >= -3000000000L)) {
 		/* Constraint check succeeded */
@@ -737,7 +719,7 @@ NO_IntegerLowestMax_constraint(const asn_TYPE_descriptor_t *td, const void *sptr
 }
 
 /*
- * This type is implemented using INTEGER,
+ * This type is implemented using NativeInteger,
  * so here we adjust the DEF accordingly.
  */
 
@@ -759,7 +741,7 @@ static const ber_tlv_tag_t asn_DEF_NO_IntegerLowestMax_tags_1[] = {
 asn_TYPE_descriptor_t asn_DEF_NO_IntegerLowestMax = {
 	"NO-IntegerLowestMax",
 	"NO-IntegerLowestMax",
-	&asn_OP_INTEGER,
+	&asn_OP_NativeInteger,
 	asn_DEF_NO_IntegerLowestMax_tags_1,
 	sizeof(asn_DEF_NO_IntegerLowestMax_tags_1)
 		/sizeof(asn_DEF_NO_IntegerLowestMax_tags_1[0]), /* 1 */
@@ -789,7 +771,7 @@ asn_TYPE_descriptor_t asn_DEF_NO_IntegerLowestMax = {
 
 /*** <<< TYPE-DECLS [NO-IntegerOutRange] >>> ***/
 
-typedef unsigned long	 NO_IntegerOutRange_t;
+typedef long	 NO_IntegerOutRange_t;
 
 /*** <<< FUNC-DECLS [NO-IntegerOutRange] >>> ***/
 
@@ -822,7 +804,7 @@ NO_IntegerOutRange_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		return -1;
 	}
 	
-	value = *(const unsigned long *)sptr;
+	value = *(const long *)sptr;
 	
 	if((value >= 3000000000UL && value <= 3000000001UL)) {
 		/* Constraint check succeeded */
@@ -852,11 +834,6 @@ static asn_per_constraints_t asn_PER_type_NO_IntegerOutRange_constr_1 CC_NOTUSED
 
 /*** <<< STAT-DEFS [NO-IntegerOutRange] >>> ***/
 
-static const asn_INTEGER_specifics_t asn_SPC_NO_IntegerOutRange_specs_1 = {
-	0,	0,	0,	0,	0,
-	0,	/* Native long size */
-	1	/* Unsigned representation */
-};
 static const ber_tlv_tag_t asn_DEF_NO_IntegerOutRange_tags_1[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (2 << 2))
 };
@@ -883,7 +860,7 @@ asn_TYPE_descriptor_t asn_DEF_NO_IntegerOutRange = {
 		NO_IntegerOutRange_constraint
 	},
 	0, 0,	/* No members */
-	&asn_SPC_NO_IntegerOutRange_specs_1	/* Additional specs */
+	0	/* No specifics */
 };
 
 
@@ -893,7 +870,7 @@ asn_TYPE_descriptor_t asn_DEF_NO_IntegerOutRange = {
 
 /*** <<< TYPE-DECLS [NO-IntegerOutValue] >>> ***/
 
-typedef unsigned long	 NO_IntegerOutValue_t;
+typedef long	 NO_IntegerOutValue_t;
 
 /*** <<< FUNC-DECLS [NO-IntegerOutValue] >>> ***/
 
@@ -926,7 +903,7 @@ NO_IntegerOutValue_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		return -1;
 	}
 	
-	value = *(const unsigned long *)sptr;
+	value = *(const long *)sptr;
 	
 	if((value == 3000000000UL)) {
 		/* Constraint check succeeded */
@@ -956,11 +933,6 @@ static asn_per_constraints_t asn_PER_type_NO_IntegerOutValue_constr_1 CC_NOTUSED
 
 /*** <<< STAT-DEFS [NO-IntegerOutValue] >>> ***/
 
-static const asn_INTEGER_specifics_t asn_SPC_NO_IntegerOutValue_specs_1 = {
-	0,	0,	0,	0,	0,
-	0,	/* Native long size */
-	1	/* Unsigned representation */
-};
 static const ber_tlv_tag_t asn_DEF_NO_IntegerOutValue_tags_1[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (2 << 2))
 };
@@ -987,7 +959,7 @@ asn_TYPE_descriptor_t asn_DEF_NO_IntegerOutValue = {
 		NO_IntegerOutValue_constraint
 	},
 	0, 0,	/* No members */
-	&asn_SPC_NO_IntegerOutValue_specs_1	/* Additional specs */
+	0	/* No specifics */
 };
 
 
@@ -1492,7 +1464,7 @@ asn_TYPE_descriptor_t asn_DEF_OK_IntegerInRange5 = {
 
 /*** <<< TYPE-DECLS [NO-IntegerInRange6] >>> ***/
 
-typedef unsigned long	 NO_IntegerInRange6_t;
+typedef long	 NO_IntegerInRange6_t;
 
 /*** <<< FUNC-DECLS [NO-IntegerInRange6] >>> ***/
 
@@ -1525,7 +1497,7 @@ NO_IntegerInRange6_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		return -1;
 	}
 	
-	value = *(const unsigned long *)sptr;
+	value = *(const long *)sptr;
 	
 	if((value <= 4294967295UL)) {
 		/* Constraint check succeeded */
@@ -1555,11 +1527,6 @@ static asn_per_constraints_t asn_PER_type_NO_IntegerInRange6_constr_1 CC_NOTUSED
 
 /*** <<< STAT-DEFS [NO-IntegerInRange6] >>> ***/
 
-static const asn_INTEGER_specifics_t asn_SPC_NO_IntegerInRange6_specs_1 = {
-	0,	0,	0,	0,	0,
-	0,	/* Native long size */
-	1	/* Unsigned representation */
-};
 static const ber_tlv_tag_t asn_DEF_NO_IntegerInRange6_tags_1[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (2 << 2))
 };
@@ -1586,7 +1553,7 @@ asn_TYPE_descriptor_t asn_DEF_NO_IntegerInRange6 = {
 		NO_IntegerInRange6_constraint
 	},
 	0, 0,	/* No members */
-	&asn_SPC_NO_IntegerInRange6_specs_1	/* Additional specs */
+	0	/* No specifics */
 };
 
 
@@ -1663,7 +1630,7 @@ asn_TYPE_descriptor_t asn_DEF_CN_IntegerEnumerated1 = {
 
 /*** <<< INCLUDES [NO-IntegerEnumerated2] >>> ***/
 
-#include <INTEGER.h>
+#include <NativeInteger.h>
 
 /*** <<< DEPS [NO-IntegerEnumerated2] >>> ***/
 
@@ -1674,7 +1641,7 @@ typedef enum NO_IntegerEnumerated2 {
 
 /*** <<< TYPE-DECLS [NO-IntegerEnumerated2] >>> ***/
 
-typedef INTEGER_t	 NO_IntegerEnumerated2_t;
+typedef long	 NO_IntegerEnumerated2_t;
 
 /*** <<< FUNC-DECLS [NO-IntegerEnumerated2] >>> ***/
 
@@ -1696,7 +1663,7 @@ per_type_encoder_f NO_IntegerEnumerated2_encode_aper;
 /*** <<< CODE [NO-IntegerEnumerated2] >>> ***/
 
 /*
- * This type is implemented using INTEGER,
+ * This type is implemented using NativeInteger,
  * so here we adjust the DEF accordingly.
  */
 
@@ -1708,7 +1675,7 @@ static const ber_tlv_tag_t asn_DEF_NO_IntegerEnumerated2_tags_1[] = {
 asn_TYPE_descriptor_t asn_DEF_NO_IntegerEnumerated2 = {
 	"NO-IntegerEnumerated2",
 	"NO-IntegerEnumerated2",
-	&asn_OP_INTEGER,
+	&asn_OP_NativeInteger,
 	asn_DEF_NO_IntegerEnumerated2_tags_1,
 	sizeof(asn_DEF_NO_IntegerEnumerated2_tags_1)
 		/sizeof(asn_DEF_NO_IntegerEnumerated2_tags_1[0]), /* 1 */
@@ -1725,7 +1692,7 @@ asn_TYPE_descriptor_t asn_DEF_NO_IntegerEnumerated2 = {
 #if !defined(ASN_DISABLE_JER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
-		INTEGER_constraint
+		NativeInteger_constraint
 	},
 	0, 0,	/* Defined elsewhere */
 	0	/* No specifics */

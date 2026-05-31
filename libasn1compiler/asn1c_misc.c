@@ -1,6 +1,7 @@
 #include "asn1c_internal.h"
 #include "asn1c_misc.h"
 #include <stdint.h>  /* INT64_MAX, UINT64_MAX */
+#include <limits.h>  /* ULONG_MAX */
 
 #include <asn1fix_crange.h>	/* constraint groker from libasn1fix */
 #include <asn1fix_export.h>	/* other exportable stuff from libasn1fix */
@@ -369,9 +370,10 @@ asn1c_type_name(arg_t *arg, asn1p_expr_t *expr, enum tnfmt _format) {
 	case ASN_BASIC_INTEGER:
 	case ASN_BASIC_ENUMERATED:
 	case ASN_BASIC_REAL:
-		/* uint64 range: low >= 0 and high > INT64_MAX — use UInteger */
+		/* uint64 range: exceeds ULONG_MAX — flag as unsupported */
 		if(expr->expr_type == ASN_BASIC_INTEGER
-		   && (arg->flags & (A1C_GEN_UPER | A1C_GEN_APER))) {
+		   && (arg->flags & (A1C_GEN_UPER | A1C_GEN_APER))
+		   && asn1c_type_fits_long(arg, expr) != FL_FITS_UNSIGN) {
 			int u64 = asn1c_type_is_uint64_range(expr);
 			if(u64 == 2) {
 				FATAL("INTEGER constraint at line %d: upper bound "
@@ -575,8 +577,8 @@ asn1c_type_fits_long(arg_t *arg, asn1p_expr_t *expr) {
  * standard will give it an unsigned type.
  * It is defined here as a constant expression.
  */
-#define	RIGHTMAX	2147483647	/* of 32-bit integer type */
-#define	LEFTMIN		(-RIGHTMAX-1)	/* of 32-bit integer type */
+#define	RIGHTMAX	LONG_MAX
+#define	LEFTMIN		LONG_MIN
 
 	/* Descend to the terminal type */
     expr = WITH_MODULE_NAMESPACE(
@@ -654,15 +656,15 @@ asn1c_type_fits_long(arg_t *arg, asn1p_expr_t *expr) {
 
 	/* Special case for unsigned */
     if(!(arg->flags & A1C_USE_WIDE_TYPES) && left.type == ARE_VALUE
-       && left.value >= 0 && left.value <= 2147483647
+       && left.value >= 0 && left.value <= LONG_MAX
        && right.type == ARE_MAX) {
         return FL_FITS_UNSIGN;
     }
     if(left.type == ARE_VALUE
 		&& left.value >= 0
 	&& right.type == ARE_VALUE
-		&& right.value > 2147483647
-		&& right.value <= (asn1c_integer_t)(4294967295UL))
+		&& right.value > LONG_MAX    /* exceeds signed long range; needs unsigned storage */
+		&& right.value <= (asn1c_integer_t)ULONG_MAX)  /* fits in host unsigned long */
 		return FL_FITS_UNSIGN;
 		
 

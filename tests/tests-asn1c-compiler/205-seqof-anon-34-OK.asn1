@@ -1,0 +1,6 @@
+-- Regression: SEQUENCE OF INTEGER (3..4) anonymous element must compile cleanly.
+SeqOf34Test DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+SeqOf34 ::= SEQUENCE OF INTEGER (3..4)
+
+END

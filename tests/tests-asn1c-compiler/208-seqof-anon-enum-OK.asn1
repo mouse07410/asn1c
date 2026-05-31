@@ -1,0 +1,6 @@
+-- Regression: SEQUENCE OF ENUMERATED anonymous element must compile cleanly.
+SeqOfEnumTest DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+SeqOfPill ::= SEQUENCE OF ENUMERATED { bluepill, redpill }
+
+END

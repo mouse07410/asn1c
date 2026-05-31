@@ -1,11 +1,11 @@
 
 /*** <<< INCLUDES [NoPerU64] >>> ***/
 
-#include <INTEGER.h>
+#include <NativeInteger.h>
 
 /*** <<< TYPE-DECLS [NoPerU64] >>> ***/
 
-typedef INTEGER_t	 NoPerU64_t;
+typedef unsigned long	 NoPerU64_t;
 
 /*** <<< FUNC-DECLS [NoPerU64] >>> ***/
 
@@ -25,7 +25,6 @@ cbor_type_encoder_f NoPerU64_encode_cbor;
 int
 NoPerU64_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
-	const INTEGER_t *st = (const INTEGER_t *)sptr;
 	unsigned long value;
 	
 	if(!sptr) {
@@ -35,12 +34,7 @@ NoPerU64_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		return -1;
 	}
 	
-	if(asn_INTEGER2ulong(st, &value)) {
-		ASN__CTFAIL(app_key, td, sptr,
-			"%s: value too large (%s:%d)",
-			td->name, __FILE__, __LINE__);
-		return -1;
-	}
+	value = *(const unsigned long *)sptr;
 	
 	if((value <= 18446744073709551615UL)) {
 		/* Constraint check succeeded */
@@ -54,19 +48,24 @@ NoPerU64_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 }
 
 /*
- * This type is implemented using INTEGER,
+ * This type is implemented using NativeInteger,
  * so here we adjust the DEF accordingly.
  */
 
 /*** <<< STAT-DEFS [NoPerU64] >>> ***/
 
+static const asn_INTEGER_specifics_t asn_SPC_NoPerU64_specs_1 = {
+	0,	0,	0,	0,	0,
+	0,	/* Native long size */
+	1	/* Unsigned representation */
+};
 static const ber_tlv_tag_t asn_DEF_NoPerU64_tags_1[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (2 << 2))
 };
 asn_TYPE_descriptor_t asn_DEF_NoPerU64 = {
 	"NoPerU64",
 	"NoPerU64",
-	&asn_OP_INTEGER,
+	&asn_OP_NativeInteger,
 	asn_DEF_NoPerU64_tags_1,
 	sizeof(asn_DEF_NoPerU64_tags_1)
 		/sizeof(asn_DEF_NoPerU64_tags_1[0]), /* 1 */
@@ -86,7 +85,7 @@ asn_TYPE_descriptor_t asn_DEF_NoPerU64 = {
 		NoPerU64_constraint
 	},
 	0, 0,	/* No members */
-	0	/* No specifics */
+	&asn_SPC_NoPerU64_specs_1	/* Additional specs */
 };
 
 

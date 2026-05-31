@@ -1051,6 +1051,9 @@ asn1c_lang_C_type_SEx_OF(arg_t *arg) {
 	   (memb->expr_type & ASN_CONSTR_MASK)
 	   || (memb->expr_type == ASN_BASIC_ENUMERATED && expr_elements_count(arg, memb))
 	   || (memb_ioc.ioct && is_open_type(arg, memb, &memb_ioc))
+	   /* Anonymous unsigned INTEGER needs a local descriptor with field_unsigned=1 */
+	   || (memb->expr_type == ASN_BASIC_INTEGER
+	       && asn1c_type_fits_long(arg, memb) == FL_FITS_UNSIGN)
 	   ) {
 		arg_t tmp;
 		enum asn1p_expr_marker_e flags = memb->marker.flags;
@@ -3917,7 +3920,6 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 			&& expr->expr_type == ASN_BASIC_INTEGER
 			&& expr_elements_count(arg, expr))
 		|| (expr->expr_type == ASN_BASIC_INTEGER
-			&& !expr->_anonymous_type  /* anonymous SEQUENCE OF elements have no asn_DEF_Member */
 			&& asn1c_type_fits_long(arg, expr) == FL_FITS_UNSIGN);
 
 	if(C99_MODE) OUT(".type = ");
@@ -3942,7 +3944,8 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 		 * was generated with static storage.
 		 */
 		if(is_open_type(arg, expr, opt_ioc) || (arg->flags & A1C_ALL_DEFS_GLOBAL) ||
-		   (expr->parent_expr && ((expr->expr_type & ASN_CONSTR_MASK) || expr->expr_type == ASN_BASIC_ENUMERATED))) {
+		   (expr->parent_expr && ((expr->expr_type & ASN_CONSTR_MASK) || expr->expr_type == ASN_BASIC_ENUMERATED))
+		   || expr->_anonymous_type) {
 			OUT("_%d", expr->_type_unique_index);
 		}
 		OUT(",\n");

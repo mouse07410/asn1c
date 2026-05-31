@@ -67,6 +67,12 @@ TESTS += check-src/check-173.-findirect-choice.-fcompound-names.-gen-UPER.-gen-A
 TESTS += check-src/check-201.c
 TESTS += check-src/check-202.-gen-CBOR.c
 TESTS += check-src/check-204.c
+TESTS += check-src/check-204.-gen-UPER.c
+TESTS += check-src/check-205.c
+TESTS += check-src/check-205.-gen-UPER.c
+TESTS += check-src/check-206.c
+TESTS += check-src/check-207.c
+TESTS += check-src/check-208.-gen-UPER.c
 
 if TEST_64BIT
 TESTS += check-src/check64-134.-gen-UPER.c

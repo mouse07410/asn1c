@@ -333,7 +333,7 @@ asn_TYPE_descriptor_t asn_DEF_NO_IntegerMinHigh = {
 
 /*** <<< TYPE-DECLS [NO-IntegerLowHigh] >>> ***/
 
-typedef unsigned long	 NO_IntegerLowHigh_t;
+typedef long	 NO_IntegerLowHigh_t;
 
 /*** <<< FUNC-DECLS [NO-IntegerLowHigh] >>> ***/
 
@@ -362,7 +362,7 @@ NO_IntegerLowHigh_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		return -1;
 	}
 	
-	value = *(const unsigned long *)sptr;
+	value = *(const long *)sptr;
 	
 	if((value >= 1UL && value <= 3000000000UL)) {
 		/* Constraint check succeeded */
@@ -382,11 +382,6 @@ NO_IntegerLowHigh_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 
 /*** <<< STAT-DEFS [NO-IntegerLowHigh] >>> ***/
 
-static const asn_INTEGER_specifics_t asn_SPC_NO_IntegerLowHigh_specs_1 = {
-	0,	0,	0,	0,	0,
-	0,	/* Native long size */
-	1	/* Unsigned representation */
-};
 static const ber_tlv_tag_t asn_DEF_NO_IntegerLowHigh_tags_1[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (2 << 2))
 };
@@ -413,7 +408,7 @@ asn_TYPE_descriptor_t asn_DEF_NO_IntegerLowHigh = {
 		NO_IntegerLowHigh_constraint
 	},
 	0, 0,	/* No members */
-	&asn_SPC_NO_IntegerLowHigh_specs_1	/* Additional specs */
+	0	/* No specifics */
 };
 
 
@@ -696,7 +691,7 @@ asn_TYPE_descriptor_t asn_DEF_NO_IntegerLowestMax = {
 
 /*** <<< TYPE-DECLS [NO-IntegerOutRange] >>> ***/
 
-typedef unsigned long	 NO_IntegerOutRange_t;
+typedef long	 NO_IntegerOutRange_t;
 
 /*** <<< FUNC-DECLS [NO-IntegerOutRange] >>> ***/
 
@@ -725,7 +720,7 @@ NO_IntegerOutRange_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		return -1;
 	}
 	
-	value = *(const unsigned long *)sptr;
+	value = *(const long *)sptr;
 	
 	if((value >= 3000000000UL && value <= 3000000001UL)) {
 		/* Constraint check succeeded */
@@ -745,11 +740,6 @@ NO_IntegerOutRange_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 
 /*** <<< STAT-DEFS [NO-IntegerOutRange] >>> ***/
 
-static const asn_INTEGER_specifics_t asn_SPC_NO_IntegerOutRange_specs_1 = {
-	0,	0,	0,	0,	0,
-	0,	/* Native long size */
-	1	/* Unsigned representation */
-};
 static const ber_tlv_tag_t asn_DEF_NO_IntegerOutRange_tags_1[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (2 << 2))
 };
@@ -776,7 +766,7 @@ asn_TYPE_descriptor_t asn_DEF_NO_IntegerOutRange = {
 		NO_IntegerOutRange_constraint
 	},
 	0, 0,	/* No members */
-	&asn_SPC_NO_IntegerOutRange_specs_1	/* Additional specs */
+	0	/* No specifics */
 };
 
 
@@ -786,7 +776,7 @@ asn_TYPE_descriptor_t asn_DEF_NO_IntegerOutRange = {
 
 /*** <<< TYPE-DECLS [NO-IntegerOutValue] >>> ***/
 
-typedef unsigned long	 NO_IntegerOutValue_t;
+typedef long	 NO_IntegerOutValue_t;
 
 /*** <<< FUNC-DECLS [NO-IntegerOutValue] >>> ***/
 
@@ -815,7 +805,7 @@ NO_IntegerOutValue_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		return -1;
 	}
 	
-	value = *(const unsigned long *)sptr;
+	value = *(const long *)sptr;
 	
 	if((value == 3000000000UL)) {
 		/* Constraint check succeeded */
@@ -835,11 +825,6 @@ NO_IntegerOutValue_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 
 /*** <<< STAT-DEFS [NO-IntegerOutValue] >>> ***/
 
-static const asn_INTEGER_specifics_t asn_SPC_NO_IntegerOutValue_specs_1 = {
-	0,	0,	0,	0,	0,
-	0,	/* Native long size */
-	1	/* Unsigned representation */
-};
 static const ber_tlv_tag_t asn_DEF_NO_IntegerOutValue_tags_1[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (2 << 2))
 };
@@ -866,7 +851,7 @@ asn_TYPE_descriptor_t asn_DEF_NO_IntegerOutValue = {
 		NO_IntegerOutValue_constraint
 	},
 	0, 0,	/* No members */
-	&asn_SPC_NO_IntegerOutValue_specs_1	/* Additional specs */
+	0	/* No specifics */
 };
 
 
@@ -1307,7 +1292,7 @@ asn_TYPE_descriptor_t asn_DEF_OK_IntegerInRange5 = {
 
 /*** <<< TYPE-DECLS [NO-IntegerInRange6] >>> ***/
 
-typedef unsigned long	 NO_IntegerInRange6_t;
+typedef long	 NO_IntegerInRange6_t;
 
 /*** <<< FUNC-DECLS [NO-IntegerInRange6] >>> ***/
 
@@ -1336,7 +1321,7 @@ NO_IntegerInRange6_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		return -1;
 	}
 	
-	value = *(const unsigned long *)sptr;
+	value = *(const long *)sptr;
 	
 	if((value <= 4294967295UL)) {
 		/* Constraint check succeeded */
@@ -1356,11 +1341,6 @@ NO_IntegerInRange6_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 
 /*** <<< STAT-DEFS [NO-IntegerInRange6] >>> ***/
 
-static const asn_INTEGER_specifics_t asn_SPC_NO_IntegerInRange6_specs_1 = {
-	0,	0,	0,	0,	0,
-	0,	/* Native long size */
-	1	/* Unsigned representation */
-};
 static const ber_tlv_tag_t asn_DEF_NO_IntegerInRange6_tags_1[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (2 << 2))
 };
@@ -1387,7 +1367,7 @@ asn_TYPE_descriptor_t asn_DEF_NO_IntegerInRange6 = {
 		NO_IntegerInRange6_constraint
 	},
 	0, 0,	/* No members */
-	&asn_SPC_NO_IntegerInRange6_specs_1	/* Additional specs */
+	0	/* No specifics */
 };
 
 
