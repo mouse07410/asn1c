@@ -1,0 +1,79 @@
+-- ============================================================
+--  Demonstrates the whole-module-fallback bug that
+--  -fprefer-import-source fixes.
+--
+--  SecA imports DuplicateA FROM TerA and DuplicateB FROM TerB.
+--  Without -fprefer-import-source, resolving DuplicateB scans
+--  the TerA xp group first; DuplicateB is not listed there, so
+--  the fallback searches TerA's module body and finds
+--  TerA::DuplicateB (BOOLEAN) instead of TerB::DuplicateB
+--  (OCTET STRING).  SecB has the mirror cross-wiring.
+-- ============================================================
+
+Prim { 1 3 6 1 4 1 99999 1 1 1 }
+DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+IMPORTS
+    SeqA
+        FROM SecA { 1 3 6 1 4 1 99999 2 1 1 }
+    SeqB
+        FROM SecB { 1 3 6 1 4 1 99999 2 2 1 };
+
+ChoiceField ::= CHOICE {
+    seqA    SeqA,
+    seqB    SeqB
+}
+
+END
+
+
+SecA { 1 3 6 1 4 1 99999 2 1 1 }
+DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+IMPORTS
+    DuplicateA
+        FROM TerA { 1 3 6 1 4 1 99999 3 1 1 }
+    DuplicateB
+        FROM TerB { 1 3 6 1 4 1 99999 3 2 1 };
+
+SeqA ::= SEQUENCE {
+    fieldA  DuplicateA,
+    fieldB  DuplicateB
+}
+
+END
+
+
+SecB { 1 3 6 1 4 1 99999 2 2 1 }
+DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+IMPORTS
+    DuplicateA
+        FROM TerB { 1 3 6 1 4 1 99999 3 2 1 }
+    DuplicateB
+        FROM TerA { 1 3 6 1 4 1 99999 3 1 1 };
+
+SeqB ::= SEQUENCE {
+    fieldA  DuplicateA,
+    fieldB  DuplicateB
+}
+
+END
+
+
+TerA { 1 3 6 1 4 1 99999 3 1 1 }
+DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+    DuplicateA ::= INTEGER
+    DuplicateB ::= BOOLEAN
+
+END
+
+
+TerB { 1 3 6 1 4 1 99999 3 2 1 }
+DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+    DuplicateA ::= ENUMERATED { alpha(0), beta(1), gamma(2) }
+    DuplicateB ::= OCTET STRING
+
+END
