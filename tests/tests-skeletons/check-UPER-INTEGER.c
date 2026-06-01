@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <assert.h>
+#include <inttypes.h>
+#include <stdint.h>
 
 #include <INTEGER.h>
 #include <INTEGER.c>
@@ -229,5 +231,5 @@ main() {
 #endif
  }
 
-  return 0;
+ return 0;
 }

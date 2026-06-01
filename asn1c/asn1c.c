@@ -301,7 +301,7 @@ main(int ac, char **av) {
             skeletons_dir = optarg;
             break;
         case 'v':
-            fprintf(stderr, "ASN.1 Compiler, v" VERSION " (" PACKAGE_BUGREPORT ")\n" COPYRIGHT);
+            fprintf(stderr, "ASN.1 Compiler, " VERSION " (" PACKAGE_BUGREPORT ")\n" COPYRIGHT);
             exit(0);
             break;
         case 'W':
@@ -618,7 +618,7 @@ static void __attribute__((noreturn))
 usage(const char *av0) {
     /* clang-format off */
 	fprintf(stderr,
-"ASN.1 Compiler, v" VERSION "\n" COPYRIGHT
+"ASN.1 Compiler, " VERSION "\n" COPYRIGHT
 "Usage: %s [options] file ...\n"
 "Options:\n"
 "  -E                    Run only the ASN.1 parser and print out the tree\n"

@@ -344,7 +344,7 @@ asn1f_lookup_symbol_impl(arg_t *arg, asn1p_expr_t *rhs_pspecs, const asn1p_ref_t
             if(ref_tc) {
                 /* It is acceptable that we don't use input parameters */
                 if(rhs_pspecs && !ref_tc->lhs_params) {
-                    WARNING(
+                    DEBUG(
                         "Parameterized type %s expected "
                         "for %s at line %d",
                         ref_tc->Identifier, asn1f_printable_reference(ref),

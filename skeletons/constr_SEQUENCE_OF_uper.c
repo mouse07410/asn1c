@@ -47,6 +47,8 @@ SEQUENCE_OF_encode_uper(const asn_TYPE_descriptor_t *td,
             }
             if(not_in_root) ct = 0;
         } else if(not_in_root && ct->effective_bits >= 0) {
+            ASN_DEBUG("SEQOF[%s] count=%d out of root [%"ASN_PRIdMAX"..%"ASN_PRIdMAX"] not extensible",
+                      td->name, list->count, ct->lower_bound, ct->upper_bound);
             UPER_ENCODER_RECURSION_DEPTH_DEC();
             ASN__ENCODE_FAILED;
         }
@@ -98,6 +100,9 @@ SEQUENCE_OF_encode_uper(const asn_TYPE_descriptor_t *td,
                 elm->type, elm->encoding_constraints.per_constraints, memb_ptr,
                 po);
             if(er.encoded == -1) {
+                ASN_DEBUG("SEQOF[%s] element[%zu] failed: inner failed_type=%s",
+                          td->name, edx,
+                          er.failed_type ? er.failed_type->name : "(null)");
                 UPER_ENCODER_RECURSION_DEPTH_DEC();
                 ASN__ENCODE_FAILED;
             }

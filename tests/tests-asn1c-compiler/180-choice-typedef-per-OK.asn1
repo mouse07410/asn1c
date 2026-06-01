@@ -1,0 +1,23 @@
+
+-- OK: Test PER constraint emission for CHOICE typedef
+
+-- iso.org.dod.internet.private.enterprise (1.3.6.1.4.1)
+-- .spelio.software.asn1c.test (9363.1.5.1)
+-- .180
+
+ModuleCHOICETypedefPER
+	{ iso org(3) dod(6) internet (1) private(4) enterprise(1)
+		spelio(9363) software(1) asn1c(5) test(1) 180 }
+	DEFINITIONS AUTOMATIC TAGS ::=
+BEGIN
+
+	-- A basic CHOICE with two alternatives
+	MyChoice ::= CHOICE {
+		a  INTEGER,
+		b  OCTET STRING
+	}
+
+	-- A typedef referencing a CHOICE: must inherit non-null per_constraints
+	MyChoiceAlias ::= MyChoice
+
+END

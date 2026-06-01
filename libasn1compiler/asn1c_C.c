@@ -921,10 +921,18 @@ generate_typedef_for_constructed_member(arg_t *arg, asn1p_expr_t *expr, int targ
 	
 	/* Set up the member for typedef generation */
 	expr->marker.flags &= ~EM_INDIRECT;
-	expr->_anonymous_type = 1;
 	if(expr->Identifier == 0) {
-		expr->Identifier = strdup("Member");
+		/* Use the direct parent SEQUENCE OF name for uniqueness. */
+		const char *pid = (expr->parent_expr && expr->parent_expr->Identifier)
+			? expr->parent_expr->Identifier
+			: (arg->expr && arg->expr->Identifier ? arg->expr->Identifier : "seq");
+		int idlen = snprintf(NULL, 0, "%s_Member", pid) + 1;
+		expr->Identifier = malloc(idlen);
 		assert(expr->Identifier);
+		snprintf(expr->Identifier, idlen, "%s_Member", pid);
+		expr->_anonymous_type = 2;	/* 2 = synthesized identifier */
+	} else {
+		expr->_anonymous_type = 1;	/* 1 = user-provided name in anonymous context */
 	}
 	
 	/* Create a temporary arg with the target embed level */
@@ -1050,6 +1058,8 @@ asn1c_lang_C_type_SEx_OF(arg_t *arg) {
 	   /* Constructed/enum-with-map OR Open Type with IoS */
 	   (memb->expr_type & ASN_CONSTR_MASK)
 	   || (memb->expr_type == ASN_BASIC_ENUMERATED && expr_elements_count(arg, memb))
+	   || ((memb->expr_type == ASN_BASIC_INTEGER || memb->expr_type == A1TC_REFERENCE)
+	       && !strcmp(asn1c_type_name(arg, memb, TNF_CTYPE), "unsigned long"))
 	   || (memb_ioc.ioct && is_open_type(arg, memb, &memb_ioc))
 	   ) {
 		arg_t tmp;
@@ -1059,10 +1069,18 @@ asn1c_lang_C_type_SEx_OF(arg_t *arg) {
 		tmp = *arg;
 		tmp.expr = memb;
 		memb->marker.flags &= ~EM_INDIRECT;
-		memb->_anonymous_type = 1;
 		if(memb->Identifier == 0) {
-			memb->Identifier = strdup("Member");
+			/* Use parent type name to avoid clashes when multiple
+			 * SEQUENCE OF types appear in the same module. */
+			const char *pid = arg->expr->Identifier
+				? arg->expr->Identifier : "seq";
+			int idlen = snprintf(NULL, 0, "%s_Member", pid) + 1;
+			memb->Identifier = malloc(idlen);
 			assert(memb->Identifier);
+			snprintf(memb->Identifier, idlen, "%s_Member", pid);
+			memb->_anonymous_type = 2;	/* 2 = synthesized identifier */
+		} else {
+			memb->_anonymous_type = 1;	/* 1 = user-provided name */
 		}
 
 		if(memb_ioc.ioct && is_open_type(&tmp, memb, &memb_ioc)) {
@@ -1161,11 +1179,23 @@ asn1c_lang_C_type_SEx_OF_def(arg_t *arg, int seq_of) {
 	    c_name(arg).compound_name, expr->_type_unique_index);
 	INDENT(+1);
 	v = TQ_FIRST(&(expr->members));
-	if(!v->Identifier) {
-		v->Identifier = strdup("Member");
-		assert(v->Identifier);
+	if(!v->_anonymous_type) {
+		/* _anonymous_type not yet set by the outer SEQUENCE_OF handler
+		 * (which runs for constructed/enum inline members). Set it here. */
+		int id_was_null = !v->Identifier;
+		if(!v->Identifier) {
+			/* Use parent type name to avoid clashes when multiple
+			 * SEQUENCE OF types appear in the same module. */
+			const char *pid = expr->Identifier ? expr->Identifier : "seq";
+			int idlen = snprintf(NULL, 0, "%s_Member", pid) + 1;
+			v->Identifier = malloc(idlen);
+			assert(v->Identifier);
+			snprintf(v->Identifier, idlen, "%s_Member", pid);
+		}
+		/* 2 = synthesized identifier (no name in ASN.1 source)
+		 * 1 = user-provided name in anonymous SEQUENCE/SET OF context */
+		v->_anonymous_type = id_was_null ? 2 : 1;
 	}
-	v->_anonymous_type = 1;
 	arg->embed++;
 
 	/* NEW: compute IoS for the element */
@@ -1632,6 +1662,7 @@ asn1c_lang_C_type_REFERENCE(arg_t *arg) {
 int
 asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 	asn1p_expr_t *expr = arg->expr;
+	int fits_unsigned_integer;
 	int tags_count;
 	int all_tags_count;
 	enum tvm_compat tv_mode;
@@ -1760,12 +1791,16 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 			expr->_anonymous_type ? "":";\n");
 	}
 
+	fits_unsigned_integer =
+		(expr->expr_type == ASN_BASIC_INTEGER
+		 || expr->expr_type == A1TC_REFERENCE)
+		&& !strcmp(asn1c_type_name(arg, expr, TNF_CTYPE), "unsigned long");
+
 	if((expr->expr_type == ASN_BASIC_ENUMERATED)
 	|| (0 /* -- prohibited by X.693:8.3.4 */
 		&& expr->expr_type == ASN_BASIC_INTEGER
 		&& expr_elements_count(arg, expr))
-	|| (expr->expr_type == ASN_BASIC_INTEGER
-		&& asn1c_type_fits_long(arg, expr) == FL_FITS_UNSIGN)
+	|| fits_unsigned_integer
 	|| asn1c_REAL_fits(arg, expr) == RL_FITS_FLOAT32
 	)
 		etd_spec = ETD_HAS_SPECIFICS;
@@ -3838,6 +3873,7 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 	arg_t tmp_arg;
 	struct asn1p_type_tag_s outmost_tag_s;
 	struct asn1p_type_tag_s *outmost_tag;
+	int fits_unsigned_integer;
 	int complex_contents;
 	const char *p;
 
@@ -3909,6 +3945,11 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 		OUT("0,\n");
 	}
 
+	fits_unsigned_integer =
+		(expr->expr_type == ASN_BASIC_INTEGER
+		 || expr->expr_type == A1TC_REFERENCE)
+		&& !strcmp(asn1c_type_name(arg, expr, TNF_CTYPE), "unsigned long");
+
 	complex_contents =
 		is_open_type(arg, expr, opt_ioc)
 		|| (expr->expr_type & ASN_CONSTR_MASK)
@@ -3916,8 +3957,7 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 		|| (0 /* -- prohibited by X.693:8.3.4 */
 			&& expr->expr_type == ASN_BASIC_INTEGER
 			&& expr_elements_count(arg, expr))
-		|| (expr->expr_type == ASN_BASIC_INTEGER
-			&& asn1c_type_fits_long(arg, expr) == FL_FITS_UNSIGN);
+		|| fits_unsigned_integer;
 
 	if(C99_MODE) OUT(".type = ");
 	/*
@@ -3940,8 +3980,12 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 		 * generation, so arg->embed is back to 0 even though the type descriptor
 		 * was generated with static storage.
 		 */
-		if(is_open_type(arg, expr, opt_ioc) || (arg->flags & A1C_ALL_DEFS_GLOBAL) ||
-		   (expr->parent_expr && ((expr->expr_type & ASN_CONSTR_MASK) || expr->expr_type == ASN_BASIC_ENUMERATED))) {
+		if(is_open_type(arg, expr, opt_ioc)
+		   || (arg->flags & A1C_ALL_DEFS_GLOBAL)
+		   || (expr->parent_expr
+		       && ((expr->expr_type & ASN_CONSTR_MASK)
+		           || expr->expr_type == ASN_BASIC_ENUMERATED))
+		   || (expr->_anonymous_type && fits_unsigned_integer)) {
 			OUT("_%d", expr->_type_unique_index);
 		}
 		OUT(",\n");
@@ -4012,8 +4056,7 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 			OUT("0\n");
 		} else {
 			const char *id = MKID(expr);
-			if(expr->_anonymous_type
-					&& !strcmp(expr->Identifier, "Member"))
+			if(expr->_anonymous_type >= 2)
 				id = asn1c_type_name(arg, expr, TNF_SAFE);
 			OUT("memb_%s_constraint_%d\n", id,
 				arg->expr->_type_unique_index);
@@ -4029,7 +4072,8 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 		OUT("0, 0, /* No default value */\n");
 	}
 	if(C99_MODE) OUT(".name = ");
-	if(expr->_anonymous_type && !strcmp(expr->Identifier, "Member")) {
+	if(expr->_anonymous_type >= 2) {
+		/* No user-provided name: synthesized identifier, emit empty string. */
 		OUT("\"\"\n");
 	} else {
 		OUT("\"%s\"\n", expr->Identifier);
@@ -4043,7 +4087,7 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 	save_target = arg->target->target;
 	REDIR(OT_CODE);
 
-	if(expr->_anonymous_type && !strcmp(expr->Identifier, "Member"))
+	if(expr->_anonymous_type >= 2)
 		p = asn1c_type_name(arg, expr, TNF_SAFE);
 	else
 		p = MKID(expr);
@@ -4224,7 +4268,8 @@ emit_type_DEF(arg_t *arg, asn1p_expr_t *expr, enum tvm_compat tv_mode, int tags_
                || expr->expr_type == ASN_BASIC_ENUMERATED
                || expr->expr_type == ASN_CONSTR_CHOICE
                || (expr->expr_type & ASN_STRING_KM_MASK)
-               || (expr->expr_type == A1TC_REFERENCE && terminal && terminal->expr_type == ASN_BASIC_ENUMERATED)) {
+               || (expr->expr_type == A1TC_REFERENCE && terminal && terminal->expr_type == ASN_BASIC_ENUMERATED)
+               || (expr->expr_type == A1TC_REFERENCE && terminal && terminal->expr_type == ASN_CONSTR_CHOICE)) {
                 OUT("&asn_PER_type_%s_constr_%d",
 					expr_id, expr->_type_unique_index);
 			} else {
