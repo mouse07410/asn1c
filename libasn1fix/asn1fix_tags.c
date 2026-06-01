@@ -1,6 +1,7 @@
 #include "asn1fix_internal.h"
 #include <asn1_namespace.h>
 
+
 #define	ADD_TAG(skip, newtag)	do {					\
 	void *__p;							\
 	if(skip && !(flags & AFT_FULL_COLLECT)) {			\
@@ -166,6 +167,7 @@ asn1f_fetch_tags(asn1p_t *asn, asn1_namespace_t *ns, asn1p_module_t *mod, asn1p_
 	arg.ns = ns;
 	arg.mod = mod;
 	arg.expr = expr;
+	arg.flags = a1f_replace_me_with_proper_interface_arg.flags;
 
 	count = asn1f_fetch_tags_impl(&arg, &tags, 0, 0, flags);
 	if (count <= 0) {

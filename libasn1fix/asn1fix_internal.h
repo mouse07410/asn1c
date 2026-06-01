@@ -57,6 +57,8 @@ typedef struct arg_s {
     enum asn1f_flags flags;
 } arg_t;
 
+extern arg_t a1f_replace_me_with_proper_interface_arg;
+
 /*
  * Functions performing normalization of various types.
  */

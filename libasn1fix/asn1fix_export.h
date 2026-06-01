@@ -6,7 +6,6 @@
 #define	ASN1FIX_EXPORT_H
 
 #include "asn1fix_tags.h"
-
 struct asn1_namespace_s;   /* Forward declaration. */
 
 void asn1f_use_standard_namespaces(asn1p_t *asn);

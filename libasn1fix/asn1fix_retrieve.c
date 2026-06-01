@@ -48,7 +48,7 @@ asn1p_module_t *
 asn1f_lookup_in_imports(arg_t *arg, asn1p_module_t *mod, const char *name) {
 	asn1p_xports_t *xp;
 
-	/*
+/*
 	 * Search in which exactly module this name is defined.
 	 */
 	TQ_FOR(xp, &(mod->imports), xp_next) {

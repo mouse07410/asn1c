@@ -120,7 +120,13 @@ asn1f_process(asn1p_t *asn, enum asn1f_flags flags,
         arg.ns = 0;
     }
 
+    error_logger_f _saved_eh    = a1f_replace_me_with_proper_interface_arg.eh;
+    error_logger_f _saved_debug = a1f_replace_me_with_proper_interface_arg.debug;
+    enum asn1f_flags _saved_flags = a1f_replace_me_with_proper_interface_arg.flags;
     memset(&a1f_replace_me_with_proper_interface_arg, 0, sizeof(arg_t));
+    a1f_replace_me_with_proper_interface_arg.eh    = _saved_eh;
+    a1f_replace_me_with_proper_interface_arg.debug = _saved_debug;
+    a1f_replace_me_with_proper_interface_arg.flags = _saved_flags;
 
 	/*
 	 * Compute a return value.
