@@ -1,0 +1,13 @@
+-- OK: Regression: multiple SEQUENCE OF ENUMERATED in one module must compile
+-- cleanly.  Each element type gets a unique generated name so that the
+-- resulting C identifiers (e.g. e_SeqOfColours_Member, e_SeqOfSizes_Member)
+-- do not collide.
+-- Unsigned INTEGER is tested separately in 204-seqof-anon-unsigned-OK.asn1.
+-- SET OF unsigned INTEGER is tested in 205-setof-anon-unsigned-OK.asn1.
+
+SeqOfEnumTest DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+SeqOfColours ::= SEQUENCE OF ENUMERATED { red, green, blue }
+SeqOfSizes   ::= SEQUENCE OF ENUMERATED { small, medium, large }
+
+END

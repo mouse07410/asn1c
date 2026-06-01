@@ -1,78 +1,88 @@
 
-/*** <<< INCLUDES [NoPerU64] >>> ***/
+/*** <<< INCLUDES [SeqOfColours] >>> ***/
 
-#include <INTEGER.h>
+#include <NativeEnumerated.h>
+#include <asn_SEQUENCE_OF.h>
+#include <constr_SEQUENCE_OF.h>
 
-/*** <<< TYPE-DECLS [NoPerU64] >>> ***/
+/*** <<< DEPS [SeqOfColours] >>> ***/
 
-typedef INTEGER_t	 NoPerU64_t;
+typedef enum SeqOfColours_Member {
+	SeqOfColours_Member_red	= 0,
+	SeqOfColours_Member_green	= 1,
+	SeqOfColours_Member_blue	= 2
+} e_SeqOfColours_Member;
 
-/*** <<< FUNC-DECLS [NoPerU64] >>> ***/
+/*** <<< TYPE-DECLS [SeqOfColours] >>> ***/
 
-extern asn_TYPE_descriptor_t asn_DEF_NoPerU64;
-asn_struct_free_f NoPerU64_free;
-asn_struct_print_f NoPerU64_print;
-asn_constr_check_f NoPerU64_constraint;
-ber_type_decoder_f NoPerU64_decode_ber;
-der_type_encoder_f NoPerU64_encode_der;
-xer_type_decoder_f NoPerU64_decode_xer;
-xer_type_encoder_f NoPerU64_encode_xer;
-cbor_type_decoder_f NoPerU64_decode_cbor;
-cbor_type_encoder_f NoPerU64_encode_cbor;
-
-/*** <<< CODE [NoPerU64] >>> ***/
-
-int
-NoPerU64_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
-			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
-	const INTEGER_t *st = (const INTEGER_t *)sptr;
-	unsigned long value;
+typedef struct SeqOfColours {
+	A_SEQUENCE_OF(long) list;
 	
-	if(!sptr) {
-		ASN__CTFAIL(app_key, td, sptr,
-			"%s: value not given (%s:%d)",
-			td->name, __FILE__, __LINE__);
-		return -1;
-	}
-	
-	if(asn_INTEGER2ulong(st, &value)) {
-		ASN__CTFAIL(app_key, td, sptr,
-			"%s: value too large (%s:%d)",
-			td->name, __FILE__, __LINE__);
-		return -1;
-	}
-	
-	if((value <= 18446744073709551615UL)) {
-		/* Constraint check succeeded */
-		return 0;
-	} else {
-		ASN__CTFAIL(app_key, td, sptr,
-			"%s: constraint failed (%s:%d)",
-			td->name, __FILE__, __LINE__);
-		return -1;
-	}
-}
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} SeqOfColours_t;
+
+/*** <<< FUNC-DECLS [SeqOfColours] >>> ***/
+
+/* extern asn_TYPE_descriptor_t asn_DEF_SeqOfColours_Member_2;	// (Use -fall-defs-global to expose) */
+extern asn_TYPE_descriptor_t asn_DEF_SeqOfColours;
+
+/*** <<< CODE [SeqOfColours] >>> ***/
 
 /*
- * This type is implemented using INTEGER,
+ * This type is implemented using NativeEnumerated,
  * so here we adjust the DEF accordingly.
  */
 
-/*** <<< STAT-DEFS [NoPerU64] >>> ***/
+/*** <<< STAT-DEFS [SeqOfColours] >>> ***/
 
-static const ber_tlv_tag_t asn_DEF_NoPerU64_tags_1[] = {
-	(ASN_TAG_CLASS_UNIVERSAL | (2 << 2))
+static const asn_INTEGER_enum_map_t asn_MAP_SeqOfColours_Member_value2enum_2[] = {
+	{ 0,	3,	"red" },
+	{ 1,	5,	"green" },
+	{ 2,	4,	"blue" }
 };
-asn_TYPE_descriptor_t asn_DEF_NoPerU64 = {
-	"NoPerU64",
-	"NoPerU64",
-	&asn_OP_INTEGER,
-	asn_DEF_NoPerU64_tags_1,
-	sizeof(asn_DEF_NoPerU64_tags_1)
-		/sizeof(asn_DEF_NoPerU64_tags_1[0]), /* 1 */
-	asn_DEF_NoPerU64_tags_1,	/* Same as above */
-	sizeof(asn_DEF_NoPerU64_tags_1)
-		/sizeof(asn_DEF_NoPerU64_tags_1[0]), /* 1 */
+static int asn_validate_SeqOfColours_Member_2(const asn_TYPE_descriptor_t *td,
+                       const void *sptr,
+                       asn_app_constraint_failed_f *ctfailcb,
+                       void* app_key) {
+    if(! sptr) { return -1; }
+    e_SeqOfColours_Member value = *(e_SeqOfColours_Member*)sptr;
+    switch(value) {
+    case SeqOfColours_Member_red:
+    case SeqOfColours_Member_green:
+    case SeqOfColours_Member_blue:
+        return 0;
+    }
+    return -1;
+}
+static const unsigned int asn_MAP_SeqOfColours_Member_enum2value_2[] = {
+	2,	/* blue(2) */
+	1,	/* green(1) */
+	0	/* red(0) */
+};
+static const asn_INTEGER_specifics_t asn_SPC_SeqOfColours_Member_specs_2 = {
+	asn_MAP_SeqOfColours_Member_value2enum_2,	/* "tag" => N; sorted by tag */
+	asn_MAP_SeqOfColours_Member_enum2value_2,	/* N => "tag"; sorted by N */
+	3,	/* Number of elements in the maps */
+	0,	/* Enumeration is not extensible */
+	1,	/* Strict enumeration */
+	0,	/* Native long size */
+	0
+};
+static const ber_tlv_tag_t asn_DEF_SeqOfColours_Member_tags_2[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (10 << 2))
+};
+static /* Use -fall-defs-global to expose */
+asn_TYPE_descriptor_t asn_DEF_SeqOfColours_Member_2 = {
+	"ENUMERATED",
+	"ENUMERATED",
+	&asn_OP_NativeEnumerated,
+	asn_DEF_SeqOfColours_Member_tags_2,
+	sizeof(asn_DEF_SeqOfColours_Member_tags_2)
+		/sizeof(asn_DEF_SeqOfColours_Member_tags_2[0]), /* 1 */
+	asn_DEF_SeqOfColours_Member_tags_2,	/* Same as above */
+	sizeof(asn_DEF_SeqOfColours_Member_tags_2)
+		/sizeof(asn_DEF_SeqOfColours_Member_tags_2[0]), /* 1 */
 	{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
 		0,
@@ -83,10 +93,225 @@ asn_TYPE_descriptor_t asn_DEF_NoPerU64 = {
 #if !defined(ASN_DISABLE_JER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
-		NoPerU64_constraint
+		asn_validate_SeqOfColours_Member_2
 	},
-	0, 0,	/* No members */
-	0	/* No specifics */
+	0, 0,	/* Defined elsewhere */
+	&asn_SPC_SeqOfColours_Member_specs_2	/* Additional specs */
+};
+
+static asn_TYPE_member_t asn_MBR_SeqOfColours_1[] = {
+	{ ATF_POINTER, 0, 0,
+		.tag = (ASN_TAG_CLASS_UNIVERSAL | (10 << 2)),
+		.tag_mode = 0,
+		.type = &asn_DEF_SeqOfColours_Member_2,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = ""
+		},
+};
+static const ber_tlv_tag_t asn_DEF_SeqOfColours_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+static asn_SET_OF_specifics_t asn_SPC_SeqOfColours_specs_1 = {
+	sizeof(struct SeqOfColours),
+	offsetof(struct SeqOfColours, _asn_ctx),
+	1,	/* XER encoding is XMLValueList */
+};
+asn_TYPE_descriptor_t asn_DEF_SeqOfColours = {
+	"SeqOfColours",
+	"SeqOfColours",
+	&asn_OP_SEQUENCE_OF,
+	asn_DEF_SeqOfColours_tags_1,
+	sizeof(asn_DEF_SeqOfColours_tags_1)
+		/sizeof(asn_DEF_SeqOfColours_tags_1[0]), /* 1 */
+	asn_DEF_SeqOfColours_tags_1,	/* Same as above */
+	sizeof(asn_DEF_SeqOfColours_tags_1)
+		/sizeof(asn_DEF_SeqOfColours_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_OF_constraint
+	},
+	asn_MBR_SeqOfColours_1,
+	1,	/* Single element */
+	&asn_SPC_SeqOfColours_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [SeqOfSizes] >>> ***/
+
+#include <NativeEnumerated.h>
+#include <asn_SEQUENCE_OF.h>
+#include <constr_SEQUENCE_OF.h>
+
+/*** <<< DEPS [SeqOfSizes] >>> ***/
+
+typedef enum SeqOfSizes_Member {
+	SeqOfSizes_Member_small	= 0,
+	SeqOfSizes_Member_medium	= 1,
+	SeqOfSizes_Member_large	= 2
+} e_SeqOfSizes_Member;
+
+/*** <<< TYPE-DECLS [SeqOfSizes] >>> ***/
+
+typedef struct SeqOfSizes {
+	A_SEQUENCE_OF(long) list;
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} SeqOfSizes_t;
+
+/*** <<< FUNC-DECLS [SeqOfSizes] >>> ***/
+
+/* extern asn_TYPE_descriptor_t asn_DEF_SeqOfSizes_Member_2;	// (Use -fall-defs-global to expose) */
+extern asn_TYPE_descriptor_t asn_DEF_SeqOfSizes;
+
+/*** <<< CODE [SeqOfSizes] >>> ***/
+
+/*
+ * This type is implemented using NativeEnumerated,
+ * so here we adjust the DEF accordingly.
+ */
+
+/*** <<< STAT-DEFS [SeqOfSizes] >>> ***/
+
+static const asn_INTEGER_enum_map_t asn_MAP_SeqOfSizes_Member_value2enum_2[] = {
+	{ 0,	5,	"small" },
+	{ 1,	6,	"medium" },
+	{ 2,	5,	"large" }
+};
+static int asn_validate_SeqOfSizes_Member_2(const asn_TYPE_descriptor_t *td,
+                       const void *sptr,
+                       asn_app_constraint_failed_f *ctfailcb,
+                       void* app_key) {
+    if(! sptr) { return -1; }
+    e_SeqOfSizes_Member value = *(e_SeqOfSizes_Member*)sptr;
+    switch(value) {
+    case SeqOfSizes_Member_small:
+    case SeqOfSizes_Member_medium:
+    case SeqOfSizes_Member_large:
+        return 0;
+    }
+    return -1;
+}
+static const unsigned int asn_MAP_SeqOfSizes_Member_enum2value_2[] = {
+	2,	/* large(2) */
+	1,	/* medium(1) */
+	0	/* small(0) */
+};
+static const asn_INTEGER_specifics_t asn_SPC_SeqOfSizes_Member_specs_2 = {
+	asn_MAP_SeqOfSizes_Member_value2enum_2,	/* "tag" => N; sorted by tag */
+	asn_MAP_SeqOfSizes_Member_enum2value_2,	/* N => "tag"; sorted by N */
+	3,	/* Number of elements in the maps */
+	0,	/* Enumeration is not extensible */
+	1,	/* Strict enumeration */
+	0,	/* Native long size */
+	0
+};
+static const ber_tlv_tag_t asn_DEF_SeqOfSizes_Member_tags_2[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (10 << 2))
+};
+static /* Use -fall-defs-global to expose */
+asn_TYPE_descriptor_t asn_DEF_SeqOfSizes_Member_2 = {
+	"ENUMERATED",
+	"ENUMERATED",
+	&asn_OP_NativeEnumerated,
+	asn_DEF_SeqOfSizes_Member_tags_2,
+	sizeof(asn_DEF_SeqOfSizes_Member_tags_2)
+		/sizeof(asn_DEF_SeqOfSizes_Member_tags_2[0]), /* 1 */
+	asn_DEF_SeqOfSizes_Member_tags_2,	/* Same as above */
+	sizeof(asn_DEF_SeqOfSizes_Member_tags_2)
+		/sizeof(asn_DEF_SeqOfSizes_Member_tags_2[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		asn_validate_SeqOfSizes_Member_2
+	},
+	0, 0,	/* Defined elsewhere */
+	&asn_SPC_SeqOfSizes_Member_specs_2	/* Additional specs */
+};
+
+static asn_TYPE_member_t asn_MBR_SeqOfSizes_1[] = {
+	{ ATF_POINTER, 0, 0,
+		.tag = (ASN_TAG_CLASS_UNIVERSAL | (10 << 2)),
+		.tag_mode = 0,
+		.type = &asn_DEF_SeqOfSizes_Member_2,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = ""
+		},
+};
+static const ber_tlv_tag_t asn_DEF_SeqOfSizes_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+static asn_SET_OF_specifics_t asn_SPC_SeqOfSizes_specs_1 = {
+	sizeof(struct SeqOfSizes),
+	offsetof(struct SeqOfSizes, _asn_ctx),
+	1,	/* XER encoding is XMLValueList */
+};
+asn_TYPE_descriptor_t asn_DEF_SeqOfSizes = {
+	"SeqOfSizes",
+	"SeqOfSizes",
+	&asn_OP_SEQUENCE_OF,
+	asn_DEF_SeqOfSizes_tags_1,
+	sizeof(asn_DEF_SeqOfSizes_tags_1)
+		/sizeof(asn_DEF_SeqOfSizes_tags_1[0]), /* 1 */
+	asn_DEF_SeqOfSizes_tags_1,	/* Same as above */
+	sizeof(asn_DEF_SeqOfSizes_tags_1)
+		/sizeof(asn_DEF_SeqOfSizes_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_OF_constraint
+	},
+	asn_MBR_SeqOfSizes_1,
+	1,	/* Single element */
+	&asn_SPC_SeqOfSizes_specs_1	/* Additional specs */
 };
 
 
@@ -384,26 +609,3 @@ asn_TYPE_descriptor_t asn_DEF_EXTERNAL = {
 	&asn_SPC_EXTERNAL_specs_1	/* Additional specs */
 };
 
-
-/*** <<< asn_constant.h >>> ***/
-
-/*
- * Generated by asn1c-0.9.29 (http://lionet.info/asn1c)
- */
-
-#ifndef _ASN_CONSTANT_H
-#define _ASN_CONSTANT_H
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#define min_val_NoPerU64 (0)
-#define max_val_NoPerU64 (18446744073709551615)
-
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* _ASN_CONSTANT_H */
