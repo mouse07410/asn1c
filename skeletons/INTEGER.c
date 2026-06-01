@@ -104,39 +104,6 @@ asn_TYPE_descriptor_t asn_DEF_INTEGER = {
 };
 
 /*
- * Unsigned INTEGER_t: identical to asn_DEF_INTEGER but with field_unsigned=1.
- * Used for INTEGER (low..high) where low >= 0 and high > INT64_MAX (fits uint64).
- */
-static const asn_INTEGER_specifics_t asn_SPC_UInteger = {
-    0, 0, 0, 0, 0,  /* no enum map */
-    0,              /* field_width: unused */
-    1               /* field_unsigned = 1 */
-};
-asn_TYPE_descriptor_t asn_DEF_UInteger = {
-    "INTEGER",
-    "INTEGER",
-    &asn_OP_INTEGER,
-    asn_DEF_INTEGER_tags,
-    sizeof(asn_DEF_INTEGER_tags) / sizeof(asn_DEF_INTEGER_tags[0]),
-    asn_DEF_INTEGER_tags,
-    sizeof(asn_DEF_INTEGER_tags) / sizeof(asn_DEF_INTEGER_tags[0]),
-    {
-#if !defined(ASN_DISABLE_OER_SUPPORT)
-        0,
-#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
-#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-        0,
-#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-#if !defined(ASN_DISABLE_JER_SUPPORT)
-        0,
-#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
-        asn_generic_no_constraint
-    },
-    0, 0,  /* No members */
-    &asn_SPC_UInteger
-};
-
-/*
  * INTEGER specific human-readable output.
  */
 ssize_t

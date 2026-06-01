@@ -1058,6 +1058,8 @@ asn1c_lang_C_type_SEx_OF(arg_t *arg) {
 	   /* Constructed/enum-with-map OR Open Type with IoS */
 	   (memb->expr_type & ASN_CONSTR_MASK)
 	   || (memb->expr_type == ASN_BASIC_ENUMERATED && expr_elements_count(arg, memb))
+	   || ((memb->expr_type == ASN_BASIC_INTEGER || memb->expr_type == A1TC_REFERENCE)
+	       && !strcmp(asn1c_type_name(arg, memb, TNF_CTYPE), "unsigned long"))
 	   || (memb_ioc.ioct && is_open_type(arg, memb, &memb_ioc))
 	   ) {
 		arg_t tmp;
@@ -1660,6 +1662,7 @@ asn1c_lang_C_type_REFERENCE(arg_t *arg) {
 int
 asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 	asn1p_expr_t *expr = arg->expr;
+	int fits_unsigned_integer;
 	int tags_count;
 	int all_tags_count;
 	enum tvm_compat tv_mode;
@@ -1788,12 +1791,16 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 			expr->_anonymous_type ? "":";\n");
 	}
 
+	fits_unsigned_integer =
+		(expr->expr_type == ASN_BASIC_INTEGER
+		 || expr->expr_type == A1TC_REFERENCE)
+		&& !strcmp(asn1c_type_name(arg, expr, TNF_CTYPE), "unsigned long");
+
 	if((expr->expr_type == ASN_BASIC_ENUMERATED)
 	|| (0 /* -- prohibited by X.693:8.3.4 */
 		&& expr->expr_type == ASN_BASIC_INTEGER
 		&& expr_elements_count(arg, expr))
-	|| (expr->expr_type == ASN_BASIC_INTEGER
-		&& asn1c_type_fits_long(arg, expr) == FL_FITS_UNSIGN)
+	|| fits_unsigned_integer
 	|| asn1c_REAL_fits(arg, expr) == RL_FITS_FLOAT32
 	)
 		etd_spec = ETD_HAS_SPECIFICS;
@@ -3866,6 +3873,7 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 	arg_t tmp_arg;
 	struct asn1p_type_tag_s outmost_tag_s;
 	struct asn1p_type_tag_s *outmost_tag;
+	int fits_unsigned_integer;
 	int complex_contents;
 	const char *p;
 
@@ -3937,6 +3945,11 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 		OUT("0,\n");
 	}
 
+	fits_unsigned_integer =
+		(expr->expr_type == ASN_BASIC_INTEGER
+		 || expr->expr_type == A1TC_REFERENCE)
+		&& !strcmp(asn1c_type_name(arg, expr, TNF_CTYPE), "unsigned long");
+
 	complex_contents =
 		is_open_type(arg, expr, opt_ioc)
 		|| (expr->expr_type & ASN_CONSTR_MASK)
@@ -3944,9 +3957,7 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 		|| (0 /* -- prohibited by X.693:8.3.4 */
 			&& expr->expr_type == ASN_BASIC_INTEGER
 			&& expr_elements_count(arg, expr))
-		|| (expr->expr_type == ASN_BASIC_INTEGER
-			&& !expr->_anonymous_type
-			&& asn1c_type_fits_long(arg, expr) == FL_FITS_UNSIGN);
+		|| fits_unsigned_integer;
 
 	if(C99_MODE) OUT(".type = ");
 	/*
@@ -3969,8 +3980,12 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 		 * generation, so arg->embed is back to 0 even though the type descriptor
 		 * was generated with static storage.
 		 */
-		if(is_open_type(arg, expr, opt_ioc) || (arg->flags & A1C_ALL_DEFS_GLOBAL) ||
-		   (expr->parent_expr && ((expr->expr_type & ASN_CONSTR_MASK) || expr->expr_type == ASN_BASIC_ENUMERATED))) {
+		if(is_open_type(arg, expr, opt_ioc)
+		   || (arg->flags & A1C_ALL_DEFS_GLOBAL)
+		   || (expr->parent_expr
+		       && ((expr->expr_type & ASN_CONSTR_MASK)
+		           || expr->expr_type == ASN_BASIC_ENUMERATED))
+		   || (expr->_anonymous_type && fits_unsigned_integer)) {
 			OUT("_%d", expr->_type_unique_index);
 		}
 		OUT(",\n");
