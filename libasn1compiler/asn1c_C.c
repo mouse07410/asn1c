@@ -921,10 +921,18 @@ generate_typedef_for_constructed_member(arg_t *arg, asn1p_expr_t *expr, int targ
 	
 	/* Set up the member for typedef generation */
 	expr->marker.flags &= ~EM_INDIRECT;
-	expr->_anonymous_type = 1;
 	if(expr->Identifier == 0) {
-		expr->Identifier = strdup("Member");
+		/* Use the direct parent SEQUENCE OF name for uniqueness. */
+		const char *pid = (expr->parent_expr && expr->parent_expr->Identifier)
+			? expr->parent_expr->Identifier
+			: (arg->expr && arg->expr->Identifier ? arg->expr->Identifier : "seq");
+		int idlen = snprintf(NULL, 0, "%s_Member", pid) + 1;
+		expr->Identifier = malloc(idlen);
 		assert(expr->Identifier);
+		snprintf(expr->Identifier, idlen, "%s_Member", pid);
+		expr->_anonymous_type = 2;	/* 2 = synthesized identifier */
+	} else {
+		expr->_anonymous_type = 1;	/* 1 = user-provided name in anonymous context */
 	}
 	
 	/* Create a temporary arg with the target embed level */
@@ -1059,10 +1067,18 @@ asn1c_lang_C_type_SEx_OF(arg_t *arg) {
 		tmp = *arg;
 		tmp.expr = memb;
 		memb->marker.flags &= ~EM_INDIRECT;
-		memb->_anonymous_type = 1;
 		if(memb->Identifier == 0) {
-			memb->Identifier = strdup("Member");
+			/* Use parent type name to avoid clashes when multiple
+			 * SEQUENCE OF types appear in the same module. */
+			const char *pid = arg->expr->Identifier
+				? arg->expr->Identifier : "seq";
+			int idlen = snprintf(NULL, 0, "%s_Member", pid) + 1;
+			memb->Identifier = malloc(idlen);
 			assert(memb->Identifier);
+			snprintf(memb->Identifier, idlen, "%s_Member", pid);
+			memb->_anonymous_type = 2;	/* 2 = synthesized identifier */
+		} else {
+			memb->_anonymous_type = 1;	/* 1 = user-provided name */
 		}
 
 		if(memb_ioc.ioct && is_open_type(&tmp, memb, &memb_ioc)) {
@@ -1161,11 +1177,23 @@ asn1c_lang_C_type_SEx_OF_def(arg_t *arg, int seq_of) {
 	    c_name(arg).compound_name, expr->_type_unique_index);
 	INDENT(+1);
 	v = TQ_FIRST(&(expr->members));
-	if(!v->Identifier) {
-		v->Identifier = strdup("Member");
-		assert(v->Identifier);
+	if(!v->_anonymous_type) {
+		/* _anonymous_type not yet set by the outer SEQUENCE_OF handler
+		 * (which runs for constructed/enum inline members). Set it here. */
+		int id_was_null = !v->Identifier;
+		if(!v->Identifier) {
+			/* Use parent type name to avoid clashes when multiple
+			 * SEQUENCE OF types appear in the same module. */
+			const char *pid = expr->Identifier ? expr->Identifier : "seq";
+			int idlen = snprintf(NULL, 0, "%s_Member", pid) + 1;
+			v->Identifier = malloc(idlen);
+			assert(v->Identifier);
+			snprintf(v->Identifier, idlen, "%s_Member", pid);
+		}
+		/* 2 = synthesized identifier (no name in ASN.1 source)
+		 * 1 = user-provided name in anonymous SEQUENCE/SET OF context */
+		v->_anonymous_type = id_was_null ? 2 : 1;
 	}
-	v->_anonymous_type = 1;
 	arg->embed++;
 
 	/* NEW: compute IoS for the element */
@@ -3917,6 +3945,7 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 			&& expr->expr_type == ASN_BASIC_INTEGER
 			&& expr_elements_count(arg, expr))
 		|| (expr->expr_type == ASN_BASIC_INTEGER
+			&& !expr->_anonymous_type
 			&& asn1c_type_fits_long(arg, expr) == FL_FITS_UNSIGN);
 
 	if(C99_MODE) OUT(".type = ");
@@ -4012,8 +4041,7 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 			OUT("0\n");
 		} else {
 			const char *id = MKID(expr);
-			if(expr->_anonymous_type
-					&& !strcmp(expr->Identifier, "Member"))
+			if(expr->_anonymous_type >= 2)
 				id = asn1c_type_name(arg, expr, TNF_SAFE);
 			OUT("memb_%s_constraint_%d\n", id,
 				arg->expr->_type_unique_index);
@@ -4029,7 +4057,8 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 		OUT("0, 0, /* No default value */\n");
 	}
 	if(C99_MODE) OUT(".name = ");
-	if(expr->_anonymous_type && !strcmp(expr->Identifier, "Member")) {
+	if(expr->_anonymous_type >= 2) {
+		/* No user-provided name: synthesized identifier, emit empty string. */
 		OUT("\"\"\n");
 	} else {
 		OUT("\"%s\"\n", expr->Identifier);
@@ -4043,7 +4072,7 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 	save_target = arg->target->target;
 	REDIR(OT_CODE);
 
-	if(expr->_anonymous_type && !strcmp(expr->Identifier, "Member"))
+	if(expr->_anonymous_type >= 2)
 		p = asn1c_type_name(arg, expr, TNF_SAFE);
 	else
 		p = MKID(expr);
@@ -4224,7 +4253,8 @@ emit_type_DEF(arg_t *arg, asn1p_expr_t *expr, enum tvm_compat tv_mode, int tags_
                || expr->expr_type == ASN_BASIC_ENUMERATED
                || expr->expr_type == ASN_CONSTR_CHOICE
                || (expr->expr_type & ASN_STRING_KM_MASK)
-               || (expr->expr_type == A1TC_REFERENCE && terminal && terminal->expr_type == ASN_BASIC_ENUMERATED)) {
+               || (expr->expr_type == A1TC_REFERENCE && terminal && terminal->expr_type == ASN_BASIC_ENUMERATED)
+               || (expr->expr_type == A1TC_REFERENCE && terminal && terminal->expr_type == ASN_CONSTR_CHOICE)) {
                 OUT("&asn_PER_type_%s_constr_%d",
 					expr_id, expr->_type_unique_index);
 			} else {

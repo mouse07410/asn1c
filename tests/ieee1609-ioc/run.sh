@@ -35,13 +35,13 @@ if [ ! -f ContributedExtensionBlock.c ]; then
 fi
 
 # Verify that the struct has correct structure (forward declaration of Member)
-if ! grep -q "typedef struct ContributedExtensionBlock__extns__Member" ContributedExtensionBlock.h; then
+if ! grep -Eq "typedef struct ContributedExtensionBlock__extns__.*_Member" ContributedExtensionBlock.h; then
   echo "ERROR: Forward declaration of Member not found" >&2
   exit 1
 fi
 
 # Verify that extns uses the forward-declared Member type
-if ! grep -q "A_SEQUENCE_OF(ContributedExtensionBlock__extns__Member)" ContributedExtensionBlock.h; then
+if ! grep -Eq "A_SEQUENCE_OF\\(ContributedExtensionBlock__extns__.*_Member\\)" ContributedExtensionBlock.h; then
   echo "ERROR: SEQUENCE OF Member not found in extns" >&2
   exit 1
 fi

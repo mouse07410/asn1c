@@ -17,20 +17,20 @@ typedef enum TestMessage__content_PR {
 
 /*** <<< FWD-DEFS [TestMessage] >>> ***/
 
-typedef struct TestMessage__content__type2Bit__Member {
+typedef struct TestMessage__content__type2Bit__type2Bit_Member {
 	long	 value;
 	long	*optional;	/* OPTIONAL */
 	
 	/* Context for parsing across buffer boundaries */
 	asn_struct_ctx_t _asn_ctx;
-} TestMessage__content__type2Bit__Member;
-typedef struct TestMessage__content__type4Bit__Member {
+} TestMessage__content__type2Bit__type2Bit_Member;
+typedef struct TestMessage__content__type4Bit__type4Bit_Member {
 	long	 value;
 	long	*optional;	/* OPTIONAL */
 	
 	/* Context for parsing across buffer boundaries */
 	asn_struct_ctx_t _asn_ctx;
-} TestMessage__content__type4Bit__Member;
+} TestMessage__content__type4Bit__type4Bit_Member;
 
 /*** <<< TYPE-DECLS [TestMessage] >>> ***/
 
@@ -39,13 +39,13 @@ typedef struct TestMessage {
 		TestMessage__content_PR present;
 		union TestMessage__content_u {
 			struct TestMessage__content__type2Bit {
-				A_SEQUENCE_OF(TestMessage__content__type2Bit__Member) list;
+				A_SEQUENCE_OF(TestMessage__content__type2Bit__type2Bit_Member) list;
 				
 				/* Context for parsing across buffer boundaries */
 				asn_struct_ctx_t _asn_ctx;
 			} type2Bit;
 			struct TestMessage__content__type4Bit {
-				A_SEQUENCE_OF(TestMessage__content__type4Bit__Member) list;
+				A_SEQUENCE_OF(TestMessage__content__type4Bit__type4Bit_Member) list;
 				
 				/* Context for parsing across buffer boundaries */
 				asn_struct_ctx_t _asn_ctx;
@@ -204,8 +204,8 @@ __attribute__((constructor)) static void asn_DEF_content_2_alias_init(void) {
 
 /*** <<< STAT-DEFS [TestMessage] >>> ***/
 
-static asn_TYPE_member_t asn_MBR_TestMessage__content__type2Bit__Member_4[] = {
-	{ ATF_NOFLAGS, 0, offsetof(struct TestMessage__content__type2Bit__Member, value),
+static asn_TYPE_member_t asn_MBR_TestMessage__content__type2Bit__type2Bit_Member_4[] = {
+	{ ATF_NOFLAGS, 0, offsetof(struct TestMessage__content__type2Bit__type2Bit_Member, value),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_NativeInteger,
@@ -225,7 +225,7 @@ static asn_TYPE_member_t asn_MBR_TestMessage__content__type2Bit__Member_4[] = {
 		0, 0, /* No default value */
 		.name = "value"
 		},
-	{ ATF_POINTER, 1, offsetof(struct TestMessage__content__type2Bit__Member, optional),
+	{ ATF_POINTER, 1, offsetof(struct TestMessage__content__type2Bit__type2Bit_Member, optional),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_NativeInteger,
@@ -246,32 +246,32 @@ static asn_TYPE_member_t asn_MBR_TestMessage__content__type2Bit__Member_4[] = {
 		.name = "optional"
 		},
 };
-static const ber_tlv_tag_t asn_DEF_Member_tags_4[] = {
+static const ber_tlv_tag_t asn_DEF_type2Bit_Member_tags_4[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
 };
-static const asn_TYPE_tag2member_t asn_MAP_Member_tag2el_4[] = {
+static const asn_TYPE_tag2member_t asn_MAP_type2Bit_Member_tag2el_4[] = {
     { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* value */
     { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 } /* optional */
 };
-static asn_SEQUENCE_specifics_t asn_SPC_Member_specs_4 = {
-	sizeof(struct TestMessage__content__type2Bit__Member),
-	offsetof(struct TestMessage__content__type2Bit__Member, _asn_ctx),
-	.tag2el = asn_MAP_Member_tag2el_4,
+static asn_SEQUENCE_specifics_t asn_SPC_type2Bit_Member_specs_4 = {
+	sizeof(struct TestMessage__content__type2Bit__type2Bit_Member),
+	offsetof(struct TestMessage__content__type2Bit__type2Bit_Member, _asn_ctx),
+	.tag2el = asn_MAP_type2Bit_Member_tag2el_4,
 	.tag2el_count = 2,	/* Count of tags in the map */
 	0, 0, 0,	/* Optional elements (not needed) */
 	-1,	/* First extension addition */
 };
 static /* Use -fall-defs-global to expose */
-asn_TYPE_descriptor_t asn_DEF_Member_4 = {
+asn_TYPE_descriptor_t asn_DEF_type2Bit_Member_4 = {
 	"SEQUENCE",
 	"SEQUENCE",
 	&asn_OP_SEQUENCE,
-	asn_DEF_Member_tags_4,
-	sizeof(asn_DEF_Member_tags_4)
-		/sizeof(asn_DEF_Member_tags_4[0]), /* 1 */
-	asn_DEF_Member_tags_4,	/* Same as above */
-	sizeof(asn_DEF_Member_tags_4)
-		/sizeof(asn_DEF_Member_tags_4[0]), /* 1 */
+	asn_DEF_type2Bit_Member_tags_4,
+	sizeof(asn_DEF_type2Bit_Member_tags_4)
+		/sizeof(asn_DEF_type2Bit_Member_tags_4[0]), /* 1 */
+	asn_DEF_type2Bit_Member_tags_4,	/* Same as above */
+	sizeof(asn_DEF_type2Bit_Member_tags_4)
+		/sizeof(asn_DEF_type2Bit_Member_tags_4[0]), /* 1 */
 	{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
 		0,
@@ -284,16 +284,16 @@ asn_TYPE_descriptor_t asn_DEF_Member_4 = {
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		SEQUENCE_constraint
 	},
-	asn_MBR_TestMessage__content__type2Bit__Member_4,
+	asn_MBR_TestMessage__content__type2Bit__type2Bit_Member_4,
 	2,	/* Elements count */
-	&asn_SPC_Member_specs_4	/* Additional specs */
+	&asn_SPC_type2Bit_Member_specs_4	/* Additional specs */
 };
 
 static asn_TYPE_member_t asn_MBR_TestMessage__content__type2Bit_3[] = {
 	{ ATF_POINTER, 0, 0,
 		.tag = (ASN_TAG_CLASS_UNIVERSAL | (16 << 2)),
 		.tag_mode = 0,
-		.type = &asn_DEF_Member_4,
+		.type = &asn_DEF_type2Bit_Member_4,
 		.type_selector = 0,
 		{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
@@ -348,8 +348,8 @@ asn_TYPE_descriptor_t asn_DEF_type2Bit_3 = {
 	&asn_SPC_type2Bit_specs_3	/* Additional specs */
 };
 
-static asn_TYPE_member_t asn_MBR_TestMessage__content__type4Bit__Member_8[] = {
-	{ ATF_NOFLAGS, 0, offsetof(struct TestMessage__content__type4Bit__Member, value),
+static asn_TYPE_member_t asn_MBR_TestMessage__content__type4Bit__type4Bit_Member_8[] = {
+	{ ATF_NOFLAGS, 0, offsetof(struct TestMessage__content__type4Bit__type4Bit_Member, value),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_NativeInteger,
@@ -369,7 +369,7 @@ static asn_TYPE_member_t asn_MBR_TestMessage__content__type4Bit__Member_8[] = {
 		0, 0, /* No default value */
 		.name = "value"
 		},
-	{ ATF_POINTER, 1, offsetof(struct TestMessage__content__type4Bit__Member, optional),
+	{ ATF_POINTER, 1, offsetof(struct TestMessage__content__type4Bit__type4Bit_Member, optional),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_NativeInteger,
@@ -390,32 +390,32 @@ static asn_TYPE_member_t asn_MBR_TestMessage__content__type4Bit__Member_8[] = {
 		.name = "optional"
 		},
 };
-static const ber_tlv_tag_t asn_DEF_Member_tags_8[] = {
+static const ber_tlv_tag_t asn_DEF_type4Bit_Member_tags_8[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
 };
-static const asn_TYPE_tag2member_t asn_MAP_Member_tag2el_8[] = {
+static const asn_TYPE_tag2member_t asn_MAP_type4Bit_Member_tag2el_8[] = {
     { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* value */
     { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 } /* optional */
 };
-static asn_SEQUENCE_specifics_t asn_SPC_Member_specs_8 = {
-	sizeof(struct TestMessage__content__type4Bit__Member),
-	offsetof(struct TestMessage__content__type4Bit__Member, _asn_ctx),
-	.tag2el = asn_MAP_Member_tag2el_8,
+static asn_SEQUENCE_specifics_t asn_SPC_type4Bit_Member_specs_8 = {
+	sizeof(struct TestMessage__content__type4Bit__type4Bit_Member),
+	offsetof(struct TestMessage__content__type4Bit__type4Bit_Member, _asn_ctx),
+	.tag2el = asn_MAP_type4Bit_Member_tag2el_8,
 	.tag2el_count = 2,	/* Count of tags in the map */
 	0, 0, 0,	/* Optional elements (not needed) */
 	-1,	/* First extension addition */
 };
 static /* Use -fall-defs-global to expose */
-asn_TYPE_descriptor_t asn_DEF_Member_8 = {
+asn_TYPE_descriptor_t asn_DEF_type4Bit_Member_8 = {
 	"SEQUENCE",
 	"SEQUENCE",
 	&asn_OP_SEQUENCE,
-	asn_DEF_Member_tags_8,
-	sizeof(asn_DEF_Member_tags_8)
-		/sizeof(asn_DEF_Member_tags_8[0]), /* 1 */
-	asn_DEF_Member_tags_8,	/* Same as above */
-	sizeof(asn_DEF_Member_tags_8)
-		/sizeof(asn_DEF_Member_tags_8[0]), /* 1 */
+	asn_DEF_type4Bit_Member_tags_8,
+	sizeof(asn_DEF_type4Bit_Member_tags_8)
+		/sizeof(asn_DEF_type4Bit_Member_tags_8[0]), /* 1 */
+	asn_DEF_type4Bit_Member_tags_8,	/* Same as above */
+	sizeof(asn_DEF_type4Bit_Member_tags_8)
+		/sizeof(asn_DEF_type4Bit_Member_tags_8[0]), /* 1 */
 	{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
 		0,
@@ -428,16 +428,16 @@ asn_TYPE_descriptor_t asn_DEF_Member_8 = {
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		SEQUENCE_constraint
 	},
-	asn_MBR_TestMessage__content__type4Bit__Member_8,
+	asn_MBR_TestMessage__content__type4Bit__type4Bit_Member_8,
 	2,	/* Elements count */
-	&asn_SPC_Member_specs_8	/* Additional specs */
+	&asn_SPC_type4Bit_Member_specs_8	/* Additional specs */
 };
 
 static asn_TYPE_member_t asn_MBR_TestMessage__content__type4Bit_7[] = {
 	{ ATF_POINTER, 0, 0,
 		.tag = (ASN_TAG_CLASS_UNIVERSAL | (16 << 2)),
 		.tag_mode = 0,
-		.type = &asn_DEF_Member_8,
+		.type = &asn_DEF_type4Bit_Member_8,
 		.type_selector = 0,
 		{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
@@ -658,20 +658,20 @@ typedef enum DeepNesting__nested_PR {
 
 /*** <<< FWD-DEFS [DeepNesting] >>> ***/
 
-typedef struct DeepNesting__nested__branch1__items__Member {
+typedef struct DeepNesting__nested__branch1__items__items_Member {
 	long	 id;
 	OCTET_STRING_t	 data;
 	
 	/* Context for parsing across buffer boundaries */
 	asn_struct_ctx_t _asn_ctx;
-} DeepNesting__nested__branch1__items__Member;
-typedef struct DeepNesting__nested__branch2__items__Member {
+} DeepNesting__nested__branch1__items__items_Member;
+typedef struct DeepNesting__nested__branch2__items__items_Member {
 	long	 id;
 	UTF8String_t	 name;
 	
 	/* Context for parsing across buffer boundaries */
 	asn_struct_ctx_t _asn_ctx;
-} DeepNesting__nested__branch2__items__Member;
+} DeepNesting__nested__branch2__items__items_Member;
 
 /*** <<< TYPE-DECLS [DeepNesting] >>> ***/
 
@@ -681,7 +681,7 @@ typedef struct DeepNesting {
 		union DeepNesting__nested_u {
 			struct DeepNesting__nested__branch1 {
 				struct DeepNesting__nested__branch1__items {
-					A_SEQUENCE_OF(DeepNesting__nested__branch1__items__Member) list;
+					A_SEQUENCE_OF(DeepNesting__nested__branch1__items__items_Member) list;
 					
 					/* Context for parsing across buffer boundaries */
 					asn_struct_ctx_t _asn_ctx;
@@ -692,7 +692,7 @@ typedef struct DeepNesting {
 			} branch1;
 			struct DeepNesting__nested__branch2 {
 				struct DeepNesting__nested__branch2__items {
-					A_SEQUENCE_OF(DeepNesting__nested__branch2__items__Member) list;
+					A_SEQUENCE_OF(DeepNesting__nested__branch2__items__items_Member) list;
 					
 					/* Context for parsing across buffer boundaries */
 					asn_struct_ctx_t _asn_ctx;
@@ -827,8 +827,8 @@ __attribute__((constructor)) static void asn_DEF_nested_2_alias_init(void) {
 
 /*** <<< STAT-DEFS [DeepNesting] >>> ***/
 
-static asn_TYPE_member_t asn_MBR_DeepNesting__nested__branch1__items__Member_5[] = {
-	{ ATF_NOFLAGS, 0, offsetof(struct DeepNesting__nested__branch1__items__Member, id),
+static asn_TYPE_member_t asn_MBR_DeepNesting__nested__branch1__items__items_Member_5[] = {
+	{ ATF_NOFLAGS, 0, offsetof(struct DeepNesting__nested__branch1__items__items_Member, id),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_NativeInteger,
@@ -848,7 +848,7 @@ static asn_TYPE_member_t asn_MBR_DeepNesting__nested__branch1__items__Member_5[]
 		0, 0, /* No default value */
 		.name = "id"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct DeepNesting__nested__branch1__items__Member, data),
+	{ ATF_NOFLAGS, 0, offsetof(struct DeepNesting__nested__branch1__items__items_Member, data),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_OCTET_STRING,
@@ -869,32 +869,32 @@ static asn_TYPE_member_t asn_MBR_DeepNesting__nested__branch1__items__Member_5[]
 		.name = "data"
 		},
 };
-static const ber_tlv_tag_t asn_DEF_Member_tags_5[] = {
+static const ber_tlv_tag_t asn_DEF_items_Member_tags_5[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
 };
-static const asn_TYPE_tag2member_t asn_MAP_Member_tag2el_5[] = {
+static const asn_TYPE_tag2member_t asn_MAP_items_Member_tag2el_5[] = {
     { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* id */
     { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 } /* data */
 };
-static asn_SEQUENCE_specifics_t asn_SPC_Member_specs_5 = {
-	sizeof(struct DeepNesting__nested__branch1__items__Member),
-	offsetof(struct DeepNesting__nested__branch1__items__Member, _asn_ctx),
-	.tag2el = asn_MAP_Member_tag2el_5,
+static asn_SEQUENCE_specifics_t asn_SPC_items_Member_specs_5 = {
+	sizeof(struct DeepNesting__nested__branch1__items__items_Member),
+	offsetof(struct DeepNesting__nested__branch1__items__items_Member, _asn_ctx),
+	.tag2el = asn_MAP_items_Member_tag2el_5,
 	.tag2el_count = 2,	/* Count of tags in the map */
 	0, 0, 0,	/* Optional elements (not needed) */
 	-1,	/* First extension addition */
 };
 static /* Use -fall-defs-global to expose */
-asn_TYPE_descriptor_t asn_DEF_Member_5 = {
+asn_TYPE_descriptor_t asn_DEF_items_Member_5 = {
 	"SEQUENCE",
 	"SEQUENCE",
 	&asn_OP_SEQUENCE,
-	asn_DEF_Member_tags_5,
-	sizeof(asn_DEF_Member_tags_5)
-		/sizeof(asn_DEF_Member_tags_5[0]), /* 1 */
-	asn_DEF_Member_tags_5,	/* Same as above */
-	sizeof(asn_DEF_Member_tags_5)
-		/sizeof(asn_DEF_Member_tags_5[0]), /* 1 */
+	asn_DEF_items_Member_tags_5,
+	sizeof(asn_DEF_items_Member_tags_5)
+		/sizeof(asn_DEF_items_Member_tags_5[0]), /* 1 */
+	asn_DEF_items_Member_tags_5,	/* Same as above */
+	sizeof(asn_DEF_items_Member_tags_5)
+		/sizeof(asn_DEF_items_Member_tags_5[0]), /* 1 */
 	{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
 		0,
@@ -907,16 +907,16 @@ asn_TYPE_descriptor_t asn_DEF_Member_5 = {
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		SEQUENCE_constraint
 	},
-	asn_MBR_DeepNesting__nested__branch1__items__Member_5,
+	asn_MBR_DeepNesting__nested__branch1__items__items_Member_5,
 	2,	/* Elements count */
-	&asn_SPC_Member_specs_5	/* Additional specs */
+	&asn_SPC_items_Member_specs_5	/* Additional specs */
 };
 
 static asn_TYPE_member_t asn_MBR_DeepNesting__nested__branch1__items_4[] = {
 	{ ATF_POINTER, 0, 0,
 		.tag = (ASN_TAG_CLASS_UNIVERSAL | (16 << 2)),
 		.tag_mode = 0,
-		.type = &asn_DEF_Member_5,
+		.type = &asn_DEF_items_Member_5,
 		.type_selector = 0,
 		{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
@@ -1036,8 +1036,8 @@ asn_TYPE_descriptor_t asn_DEF_branch1_3 = {
 	&asn_SPC_branch1_specs_3	/* Additional specs */
 };
 
-static asn_TYPE_member_t asn_MBR_DeepNesting__nested__branch2__items__Member_10[] = {
-	{ ATF_NOFLAGS, 0, offsetof(struct DeepNesting__nested__branch2__items__Member, id),
+static asn_TYPE_member_t asn_MBR_DeepNesting__nested__branch2__items__items_Member_10[] = {
+	{ ATF_NOFLAGS, 0, offsetof(struct DeepNesting__nested__branch2__items__items_Member, id),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_NativeInteger,
@@ -1057,7 +1057,7 @@ static asn_TYPE_member_t asn_MBR_DeepNesting__nested__branch2__items__Member_10[
 		0, 0, /* No default value */
 		.name = "id"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct DeepNesting__nested__branch2__items__Member, name),
+	{ ATF_NOFLAGS, 0, offsetof(struct DeepNesting__nested__branch2__items__items_Member, name),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_UTF8String,
@@ -1078,32 +1078,32 @@ static asn_TYPE_member_t asn_MBR_DeepNesting__nested__branch2__items__Member_10[
 		.name = "name"
 		},
 };
-static const ber_tlv_tag_t asn_DEF_Member_tags_10[] = {
+static const ber_tlv_tag_t asn_DEF_items_Member_tags_10[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
 };
-static const asn_TYPE_tag2member_t asn_MAP_Member_tag2el_10[] = {
+static const asn_TYPE_tag2member_t asn_MAP_items_Member_tag2el_10[] = {
     { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* id */
     { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 } /* name */
 };
-static asn_SEQUENCE_specifics_t asn_SPC_Member_specs_10 = {
-	sizeof(struct DeepNesting__nested__branch2__items__Member),
-	offsetof(struct DeepNesting__nested__branch2__items__Member, _asn_ctx),
-	.tag2el = asn_MAP_Member_tag2el_10,
+static asn_SEQUENCE_specifics_t asn_SPC_items_Member_specs_10 = {
+	sizeof(struct DeepNesting__nested__branch2__items__items_Member),
+	offsetof(struct DeepNesting__nested__branch2__items__items_Member, _asn_ctx),
+	.tag2el = asn_MAP_items_Member_tag2el_10,
 	.tag2el_count = 2,	/* Count of tags in the map */
 	0, 0, 0,	/* Optional elements (not needed) */
 	-1,	/* First extension addition */
 };
 static /* Use -fall-defs-global to expose */
-asn_TYPE_descriptor_t asn_DEF_Member_10 = {
+asn_TYPE_descriptor_t asn_DEF_items_Member_10 = {
 	"SEQUENCE",
 	"SEQUENCE",
 	&asn_OP_SEQUENCE,
-	asn_DEF_Member_tags_10,
-	sizeof(asn_DEF_Member_tags_10)
-		/sizeof(asn_DEF_Member_tags_10[0]), /* 1 */
-	asn_DEF_Member_tags_10,	/* Same as above */
-	sizeof(asn_DEF_Member_tags_10)
-		/sizeof(asn_DEF_Member_tags_10[0]), /* 1 */
+	asn_DEF_items_Member_tags_10,
+	sizeof(asn_DEF_items_Member_tags_10)
+		/sizeof(asn_DEF_items_Member_tags_10[0]), /* 1 */
+	asn_DEF_items_Member_tags_10,	/* Same as above */
+	sizeof(asn_DEF_items_Member_tags_10)
+		/sizeof(asn_DEF_items_Member_tags_10[0]), /* 1 */
 	{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
 		0,
@@ -1116,16 +1116,16 @@ asn_TYPE_descriptor_t asn_DEF_Member_10 = {
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		SEQUENCE_constraint
 	},
-	asn_MBR_DeepNesting__nested__branch2__items__Member_10,
+	asn_MBR_DeepNesting__nested__branch2__items__items_Member_10,
 	2,	/* Elements count */
-	&asn_SPC_Member_specs_10	/* Additional specs */
+	&asn_SPC_items_Member_specs_10	/* Additional specs */
 };
 
 static asn_TYPE_member_t asn_MBR_DeepNesting__nested__branch2__items_9[] = {
 	{ ATF_POINTER, 0, 0,
 		.tag = (ASN_TAG_CLASS_UNIVERSAL | (16 << 2)),
 		.tag_mode = 0,
-		.type = &asn_DEF_Member_10,
+		.type = &asn_DEF_items_Member_10,
 		.type_selector = 0,
 		{
 #if !defined(ASN_DISABLE_OER_SUPPORT)

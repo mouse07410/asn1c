@@ -1369,10 +1369,10 @@ asn_TYPE_descriptor_t asn_DEF_SetOfREAL = {
 
 /*** <<< DEPS [SetOfEnums] >>> ***/
 
-typedef enum Member {
-	Member_one	= 0,
-	Member_oneMore	= 1
-} e_Member;
+typedef enum SetOfEnums_Member {
+	SetOfEnums_Member_one	= 0,
+	SetOfEnums_Member_oneMore	= 1
+} e_SetOfEnums_Member;
 
 /*** <<< TYPE-DECLS [SetOfEnums] >>> ***/
 
@@ -1385,7 +1385,7 @@ typedef struct SetOfEnums {
 
 /*** <<< FUNC-DECLS [SetOfEnums] >>> ***/
 
-/* extern asn_TYPE_descriptor_t asn_DEF_Member_2;	// (Use -fall-defs-global to expose) */
+/* extern asn_TYPE_descriptor_t asn_DEF_SetOfEnums_Member_2;	// (Use -fall-defs-global to expose) */
 extern asn_TYPE_descriptor_t asn_DEF_SetOfEnums;
 extern asn_SET_OF_specifics_t asn_SPC_SetOfEnums_specs_1;
 extern asn_TYPE_member_t asn_MBR_SetOfEnums_1[1];
@@ -1399,37 +1399,37 @@ extern asn_TYPE_member_t asn_MBR_SetOfEnums_1[1];
 
 /*** <<< STAT-DEFS [SetOfEnums] >>> ***/
 
-static const asn_INTEGER_enum_map_t asn_MAP_Member_value2enum_2[] = {
+static const asn_INTEGER_enum_map_t asn_MAP_SetOfEnums_Member_value2enum_2[] = {
 	{ 0,	3,	"one" },
 	{ 1,	7,	"oneMore" }
 };
-static const unsigned int asn_MAP_Member_enum2value_2[] = {
+static const unsigned int asn_MAP_SetOfEnums_Member_enum2value_2[] = {
 	0,	/* one(0) */
 	1	/* oneMore(1) */
 };
-static const asn_INTEGER_specifics_t asn_SPC_Member_specs_2 = {
-	asn_MAP_Member_value2enum_2,	/* "tag" => N; sorted by tag */
-	asn_MAP_Member_enum2value_2,	/* N => "tag"; sorted by N */
+static const asn_INTEGER_specifics_t asn_SPC_SetOfEnums_Member_specs_2 = {
+	asn_MAP_SetOfEnums_Member_value2enum_2,	/* "tag" => N; sorted by tag */
+	asn_MAP_SetOfEnums_Member_enum2value_2,	/* N => "tag"; sorted by N */
 	2,	/* Number of elements in the maps */
 	0,	/* Enumeration is not extensible */
 	1,	/* Strict enumeration */
 	0,	/* Native long size */
 	0
 };
-static const ber_tlv_tag_t asn_DEF_Member_tags_2[] = {
+static const ber_tlv_tag_t asn_DEF_SetOfEnums_Member_tags_2[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (10 << 2))
 };
 static /* Use -fall-defs-global to expose */
-asn_TYPE_descriptor_t asn_DEF_Member_2 = {
+asn_TYPE_descriptor_t asn_DEF_SetOfEnums_Member_2 = {
 	"ENUMERATED",
 	"ENUMERATED",
 	&asn_OP_ENUMERATED,
-	asn_DEF_Member_tags_2,
-	sizeof(asn_DEF_Member_tags_2)
-		/sizeof(asn_DEF_Member_tags_2[0]), /* 1 */
-	asn_DEF_Member_tags_2,	/* Same as above */
-	sizeof(asn_DEF_Member_tags_2)
-		/sizeof(asn_DEF_Member_tags_2[0]), /* 1 */
+	asn_DEF_SetOfEnums_Member_tags_2,
+	sizeof(asn_DEF_SetOfEnums_Member_tags_2)
+		/sizeof(asn_DEF_SetOfEnums_Member_tags_2[0]), /* 1 */
+	asn_DEF_SetOfEnums_Member_tags_2,	/* Same as above */
+	sizeof(asn_DEF_SetOfEnums_Member_tags_2)
+		/sizeof(asn_DEF_SetOfEnums_Member_tags_2[0]), /* 1 */
 	{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
 		0,
@@ -1443,14 +1443,14 @@ asn_TYPE_descriptor_t asn_DEF_Member_2 = {
 		ENUMERATED_constraint
 	},
 	0, 0,	/* Defined elsewhere */
-	&asn_SPC_Member_specs_2	/* Additional specs */
+	&asn_SPC_SetOfEnums_Member_specs_2	/* Additional specs */
 };
 
 asn_TYPE_member_t asn_MBR_SetOfEnums_1[] = {
 	{ ATF_POINTER, 0, 0,
 		.tag = (ASN_TAG_CLASS_UNIVERSAL | (10 << 2)),
 		.tag_mode = 0,
-		.type = &asn_DEF_Member_2,
+		.type = &asn_DEF_SetOfEnums_Member_2,
 		.type_selector = 0,
 		{
 #if !defined(ASN_DISABLE_OER_SUPPORT)

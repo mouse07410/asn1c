@@ -1,147 +1,58 @@
 
-/*** <<< INCLUDES [SeqWithNestedSOS] >>> ***/
+/*** <<< INCLUDES [SeqOfUInt32] >>> ***/
 
-#include <UTF8String.h>
+#include <NativeInteger.h>
 #include <asn_SEQUENCE_OF.h>
-#include <constr_SEQUENCE.h>
 #include <constr_SEQUENCE_OF.h>
 
-/*** <<< FWD-DEFS [SeqWithNestedSOS] >>> ***/
+/*** <<< TYPE-DECLS [SeqOfUInt32] >>> ***/
 
-typedef struct SeqWithNestedSOS__sos__sos_Member__nested_sos__nested_sos_Member {
-	UTF8String_t	 nested_string;
+typedef struct SeqOfUInt32 {
+	A_SEQUENCE_OF(unsigned long) list;
 	
 	/* Context for parsing across buffer boundaries */
 	asn_struct_ctx_t _asn_ctx;
-} SeqWithNestedSOS__sos__sos_Member__nested_sos__nested_sos_Member;
-typedef struct SeqWithNestedSOS__sos__sos_Member {
-	UTF8String_t	 anotherString;
-	struct SeqWithNestedSOS__sos__sos_Member__nested_sos {
-		A_SEQUENCE_OF(SeqWithNestedSOS__sos__sos_Member__nested_sos__nested_sos_Member) list;
-		
-		/* Context for parsing across buffer boundaries */
-		asn_struct_ctx_t _asn_ctx;
-	} nested_sos;
+} SeqOfUInt32_t;
+
+/*** <<< FUNC-DECLS [SeqOfUInt32] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_SeqOfUInt32;
+
+/*** <<< CODE [SeqOfUInt32] >>> ***/
+
+static int
+memb_NativeInteger_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
+			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
+	unsigned long value;
 	
-	/* Context for parsing across buffer boundaries */
-	asn_struct_ctx_t _asn_ctx;
-} SeqWithNestedSOS__sos__sos_Member;
-
-/*** <<< TYPE-DECLS [SeqWithNestedSOS] >>> ***/
-
-typedef struct SeqWithNestedSOS {
-	UTF8String_t	 someString;
-	struct SeqWithNestedSOS__sos {
-		A_SEQUENCE_OF(SeqWithNestedSOS__sos__sos_Member) list;
-		
-		/* Context for parsing across buffer boundaries */
-		asn_struct_ctx_t _asn_ctx;
-	} sos;
+	if(!sptr) {
+		ASN__CTFAIL(app_key, td, sptr,
+			"%s: value not given (%s:%d)",
+			td->name, __FILE__, __LINE__);
+		return -1;
+	}
 	
-	/* Context for parsing across buffer boundaries */
-	asn_struct_ctx_t _asn_ctx;
-} SeqWithNestedSOS_t;
-
-/*** <<< FUNC-DECLS [SeqWithNestedSOS] >>> ***/
-
-extern asn_TYPE_descriptor_t asn_DEF_SeqWithNestedSOS;
-
-/*** <<< CODE [SeqWithNestedSOS] >>> ***/
-
-#ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
-#if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-extern asn_TYPE_descriptor_t asn_DEF_nested_sos __attribute__((weak, alias("asn_DEF_nested_sos_6")));
-#else
-static asn_TYPE_descriptor_t asn_DEF_nested_sos_6;
-static asn_TYPE_descriptor_t asn_DEF_nested_sos;
-__attribute__((constructor)) static void asn_DEF_nested_sos_6_alias_init(void) {
-	asn_DEF_nested_sos = asn_DEF_nested_sos_6;
+	value = *(const unsigned long *)sptr;
+	
+	if((value <= 4294967295UL)) {
+		/* Constraint check succeeded */
+		return 0;
+	} else {
+		ASN__CTFAIL(app_key, td, sptr,
+			"%s: constraint failed (%s:%d)",
+			td->name, __FILE__, __LINE__);
+		return -1;
+	}
 }
-#endif
-#endif /* ASN1C_NO_UNSUFFIXED_PDU_ALIAS */
-#ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
-#if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
-extern asn_TYPE_descriptor_t asn_DEF_sos __attribute__((weak, alias("asn_DEF_sos_3")));
-#else
-static asn_TYPE_descriptor_t asn_DEF_sos_3;
-static asn_TYPE_descriptor_t asn_DEF_sos;
-__attribute__((constructor)) static void asn_DEF_sos_3_alias_init(void) {
-	asn_DEF_sos = asn_DEF_sos_3;
-}
-#endif
-#endif /* ASN1C_NO_UNSUFFIXED_PDU_ALIAS */
 
-/*** <<< STAT-DEFS [SeqWithNestedSOS] >>> ***/
 
-static asn_TYPE_member_t asn_MBR_SeqWithNestedSOS__sos__sos_Member__nested_sos__nested_sos_Member_7[] = {
-	{ ATF_NOFLAGS, 0, offsetof(struct SeqWithNestedSOS__sos__sos_Member__nested_sos__nested_sos_Member, nested_string),
-		.tag = (ASN_TAG_CLASS_CONTEXT | (4 << 2)),
-		.tag_mode = -1,	/* IMPLICIT tag at current level */
-		.type = &asn_DEF_UTF8String,
-		.type_selector = 0,
-		{
-#if !defined(ASN_DISABLE_OER_SUPPORT)
-			.oer_constraints = 0,
-#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
-#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-			.per_constraints = 0,
-#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-#if !defined(ASN_DISABLE_JER_SUPPORT)
-			.jer_constraints = 0,
-#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
-			.general_constraints = 0
-		},
-		0, 0, /* No default value */
-		.name = "nested-string"
-		},
-};
-static const ber_tlv_tag_t asn_DEF_nested_sos_Member_tags_7[] = {
-	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
-};
-static const asn_TYPE_tag2member_t asn_MAP_nested_sos_Member_tag2el_7[] = {
-    { (ASN_TAG_CLASS_CONTEXT | (4 << 2)), 0, 0, 0 } /* nested-string */
-};
-static asn_SEQUENCE_specifics_t asn_SPC_nested_sos_Member_specs_7 = {
-	sizeof(struct SeqWithNestedSOS__sos__sos_Member__nested_sos__nested_sos_Member),
-	offsetof(struct SeqWithNestedSOS__sos__sos_Member__nested_sos__nested_sos_Member, _asn_ctx),
-	.tag2el = asn_MAP_nested_sos_Member_tag2el_7,
-	.tag2el_count = 1,	/* Count of tags in the map */
-	0, 0, 0,	/* Optional elements (not needed) */
-	-1,	/* First extension addition */
-};
-static /* Use -fall-defs-global to expose */
-asn_TYPE_descriptor_t asn_DEF_nested_sos_Member_7 = {
-	"SEQUENCE",
-	"SEQUENCE",
-	&asn_OP_SEQUENCE,
-	asn_DEF_nested_sos_Member_tags_7,
-	sizeof(asn_DEF_nested_sos_Member_tags_7)
-		/sizeof(asn_DEF_nested_sos_Member_tags_7[0]), /* 1 */
-	asn_DEF_nested_sos_Member_tags_7,	/* Same as above */
-	sizeof(asn_DEF_nested_sos_Member_tags_7)
-		/sizeof(asn_DEF_nested_sos_Member_tags_7[0]), /* 1 */
-	{
-#if !defined(ASN_DISABLE_OER_SUPPORT)
-		0,
-#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
-#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-		0,
-#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-#if !defined(ASN_DISABLE_JER_SUPPORT)
-		0,
-#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
-		SEQUENCE_constraint
-	},
-	asn_MBR_SeqWithNestedSOS__sos__sos_Member__nested_sos__nested_sos_Member_7,
-	1,	/* Elements count */
-	&asn_SPC_nested_sos_Member_specs_7	/* Additional specs */
-};
+/*** <<< STAT-DEFS [SeqOfUInt32] >>> ***/
 
-static asn_TYPE_member_t asn_MBR_SeqWithNestedSOS__sos__sos_Member__nested_sos_6[] = {
+static asn_TYPE_member_t asn_MBR_SeqOfUInt32_1[] = {
 	{ ATF_POINTER, 0, 0,
-		.tag = (ASN_TAG_CLASS_UNIVERSAL | (16 << 2)),
+		.tag = (ASN_TAG_CLASS_UNIVERSAL | (2 << 2)),
 		.tag_mode = 0,
-		.type = &asn_DEF_nested_sos_Member_7,
+		.type = &asn_DEF_NativeInteger,
 		.type_selector = 0,
 		{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
@@ -153,32 +64,30 @@ static asn_TYPE_member_t asn_MBR_SeqWithNestedSOS__sos__sos_Member__nested_sos_6
 #if !defined(ASN_DISABLE_JER_SUPPORT)
 			.jer_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
-			.general_constraints = 0
+			.general_constraints = memb_NativeInteger_constraint_1
 		},
 		0, 0, /* No default value */
 		.name = ""
 		},
 };
-static const ber_tlv_tag_t asn_DEF_nested_sos_tags_6[] = {
-	(ASN_TAG_CLASS_CONTEXT | (3 << 2)),
+static const ber_tlv_tag_t asn_DEF_SeqOfUInt32_tags_1[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
 };
-static asn_SET_OF_specifics_t asn_SPC_nested_sos_specs_6 = {
-	sizeof(struct SeqWithNestedSOS__sos__sos_Member__nested_sos),
-	offsetof(struct SeqWithNestedSOS__sos__sos_Member__nested_sos, _asn_ctx),
+static asn_SET_OF_specifics_t asn_SPC_SeqOfUInt32_specs_1 = {
+	sizeof(struct SeqOfUInt32),
+	offsetof(struct SeqOfUInt32, _asn_ctx),
 	0,	/* XER encoding is XMLDelimitedItemList */
 };
-static /* Use -fall-defs-global to expose */
-asn_TYPE_descriptor_t asn_DEF_nested_sos_6 = {
-	"nested-sos",
-	"nested-sos",
+asn_TYPE_descriptor_t asn_DEF_SeqOfUInt32 = {
+	"SeqOfUInt32",
+	"SeqOfUInt32",
 	&asn_OP_SEQUENCE_OF,
-	asn_DEF_nested_sos_tags_6,
-	sizeof(asn_DEF_nested_sos_tags_6)
-		/sizeof(asn_DEF_nested_sos_tags_6[0]) - 1, /* 1 */
-	asn_DEF_nested_sos_tags_6,	/* Same as above */
-	sizeof(asn_DEF_nested_sos_tags_6)
-		/sizeof(asn_DEF_nested_sos_tags_6[0]), /* 2 */
+	asn_DEF_SeqOfUInt32_tags_1,
+	sizeof(asn_DEF_SeqOfUInt32_tags_1)
+		/sizeof(asn_DEF_SeqOfUInt32_tags_1[0]), /* 1 */
+	asn_DEF_SeqOfUInt32_tags_1,	/* Same as above */
+	sizeof(asn_DEF_SeqOfUInt32_tags_1)
+		/sizeof(asn_DEF_SeqOfUInt32_tags_1[0]), /* 1 */
 	{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
 		0,
@@ -191,101 +100,66 @@ asn_TYPE_descriptor_t asn_DEF_nested_sos_6 = {
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		SEQUENCE_OF_constraint
 	},
-	asn_MBR_SeqWithNestedSOS__sos__sos_Member__nested_sos_6,
+	asn_MBR_SeqOfUInt32_1,
 	1,	/* Single element */
-	&asn_SPC_nested_sos_specs_6	/* Additional specs */
+	&asn_SPC_SeqOfUInt32_specs_1	/* Additional specs */
 };
 
-static asn_TYPE_member_t asn_MBR_SeqWithNestedSOS__sos__sos_Member_4[] = {
-	{ ATF_NOFLAGS, 0, offsetof(struct SeqWithNestedSOS__sos__sos_Member, anotherString),
-		.tag = (ASN_TAG_CLASS_CONTEXT | (2 << 2)),
-		.tag_mode = -1,	/* IMPLICIT tag at current level */
-		.type = &asn_DEF_UTF8String,
-		.type_selector = 0,
-		{
-#if !defined(ASN_DISABLE_OER_SUPPORT)
-			.oer_constraints = 0,
-#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
-#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-			.per_constraints = 0,
-#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-#if !defined(ASN_DISABLE_JER_SUPPORT)
-			.jer_constraints = 0,
-#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
-			.general_constraints = 0
-		},
-		0, 0, /* No default value */
-		.name = "anotherString"
-		},
-	{ ATF_NOFLAGS, 0, offsetof(struct SeqWithNestedSOS__sos__sos_Member, nested_sos),
-		.tag = (ASN_TAG_CLASS_CONTEXT | (3 << 2)),
-		.tag_mode = 0,
-		.type = &asn_DEF_nested_sos_6,
-		.type_selector = 0,
-		{
-#if !defined(ASN_DISABLE_OER_SUPPORT)
-			.oer_constraints = 0,
-#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
-#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-			.per_constraints = 0,
-#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-#if !defined(ASN_DISABLE_JER_SUPPORT)
-			.jer_constraints = 0,
-#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
-			.general_constraints = 0
-		},
-		0, 0, /* No default value */
-		.name = "nested-sos"
-		},
-};
-static const ber_tlv_tag_t asn_DEF_sos_Member_tags_4[] = {
-	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
-};
-static const asn_TYPE_tag2member_t asn_MAP_sos_Member_tag2el_4[] = {
-    { (ASN_TAG_CLASS_CONTEXT | (2 << 2)), 0, 0, 0 }, /* anotherString */
-    { (ASN_TAG_CLASS_CONTEXT | (3 << 2)), 1, 0, 0 } /* nested-sos */
-};
-static asn_SEQUENCE_specifics_t asn_SPC_sos_Member_specs_4 = {
-	sizeof(struct SeqWithNestedSOS__sos__sos_Member),
-	offsetof(struct SeqWithNestedSOS__sos__sos_Member, _asn_ctx),
-	.tag2el = asn_MAP_sos_Member_tag2el_4,
-	.tag2el_count = 2,	/* Count of tags in the map */
-	0, 0, 0,	/* Optional elements (not needed) */
-	-1,	/* First extension addition */
-};
-static /* Use -fall-defs-global to expose */
-asn_TYPE_descriptor_t asn_DEF_sos_Member_4 = {
-	"SEQUENCE",
-	"SEQUENCE",
-	&asn_OP_SEQUENCE,
-	asn_DEF_sos_Member_tags_4,
-	sizeof(asn_DEF_sos_Member_tags_4)
-		/sizeof(asn_DEF_sos_Member_tags_4[0]), /* 1 */
-	asn_DEF_sos_Member_tags_4,	/* Same as above */
-	sizeof(asn_DEF_sos_Member_tags_4)
-		/sizeof(asn_DEF_sos_Member_tags_4[0]), /* 1 */
-	{
-#if !defined(ASN_DISABLE_OER_SUPPORT)
-		0,
-#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
-#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-		0,
-#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-#if !defined(ASN_DISABLE_JER_SUPPORT)
-		0,
-#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
-		SEQUENCE_constraint
-	},
-	asn_MBR_SeqWithNestedSOS__sos__sos_Member_4,
-	2,	/* Elements count */
-	&asn_SPC_sos_Member_specs_4	/* Additional specs */
-};
 
-static asn_TYPE_member_t asn_MBR_SeqWithNestedSOS__sos_3[] = {
+/*** <<< INCLUDES [SeqOf34] >>> ***/
+
+#include <NativeInteger.h>
+#include <asn_SEQUENCE_OF.h>
+#include <constr_SEQUENCE_OF.h>
+
+/*** <<< TYPE-DECLS [SeqOf34] >>> ***/
+
+typedef struct SeqOf34 {
+	A_SEQUENCE_OF(long) list;
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} SeqOf34_t;
+
+/*** <<< FUNC-DECLS [SeqOf34] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_SeqOf34;
+
+/*** <<< CODE [SeqOf34] >>> ***/
+
+static int
+memb_NativeInteger_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
+			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
+	long value;
+	
+	if(!sptr) {
+		ASN__CTFAIL(app_key, td, sptr,
+			"%s: value not given (%s:%d)",
+			td->name, __FILE__, __LINE__);
+		return -1;
+	}
+	
+	value = *(const long *)sptr;
+	
+	if((value >= 3L && value <= 4L)) {
+		/* Constraint check succeeded */
+		return 0;
+	} else {
+		ASN__CTFAIL(app_key, td, sptr,
+			"%s: constraint failed (%s:%d)",
+			td->name, __FILE__, __LINE__);
+		return -1;
+	}
+}
+
+
+/*** <<< STAT-DEFS [SeqOf34] >>> ***/
+
+static asn_TYPE_member_t asn_MBR_SeqOf34_1[] = {
 	{ ATF_POINTER, 0, 0,
-		.tag = (ASN_TAG_CLASS_UNIVERSAL | (16 << 2)),
+		.tag = (ASN_TAG_CLASS_UNIVERSAL | (2 << 2)),
 		.tag_mode = 0,
-		.type = &asn_DEF_sos_Member_4,
+		.type = &asn_DEF_NativeInteger,
 		.type_selector = 0,
 		{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
@@ -297,32 +171,30 @@ static asn_TYPE_member_t asn_MBR_SeqWithNestedSOS__sos_3[] = {
 #if !defined(ASN_DISABLE_JER_SUPPORT)
 			.jer_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
-			.general_constraints = 0
+			.general_constraints = memb_NativeInteger_constraint_1
 		},
 		0, 0, /* No default value */
 		.name = ""
 		},
 };
-static const ber_tlv_tag_t asn_DEF_sos_tags_3[] = {
-	(ASN_TAG_CLASS_CONTEXT | (1 << 2)),
+static const ber_tlv_tag_t asn_DEF_SeqOf34_tags_1[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
 };
-static asn_SET_OF_specifics_t asn_SPC_sos_specs_3 = {
-	sizeof(struct SeqWithNestedSOS__sos),
-	offsetof(struct SeqWithNestedSOS__sos, _asn_ctx),
+static asn_SET_OF_specifics_t asn_SPC_SeqOf34_specs_1 = {
+	sizeof(struct SeqOf34),
+	offsetof(struct SeqOf34, _asn_ctx),
 	0,	/* XER encoding is XMLDelimitedItemList */
 };
-static /* Use -fall-defs-global to expose */
-asn_TYPE_descriptor_t asn_DEF_sos_3 = {
-	"sos",
-	"sos",
+asn_TYPE_descriptor_t asn_DEF_SeqOf34 = {
+	"SeqOf34",
+	"SeqOf34",
 	&asn_OP_SEQUENCE_OF,
-	asn_DEF_sos_tags_3,
-	sizeof(asn_DEF_sos_tags_3)
-		/sizeof(asn_DEF_sos_tags_3[0]) - 1, /* 1 */
-	asn_DEF_sos_tags_3,	/* Same as above */
-	sizeof(asn_DEF_sos_tags_3)
-		/sizeof(asn_DEF_sos_tags_3[0]), /* 2 */
+	asn_DEF_SeqOf34_tags_1,
+	sizeof(asn_DEF_SeqOf34_tags_1)
+		/sizeof(asn_DEF_SeqOf34_tags_1[0]), /* 1 */
+	asn_DEF_SeqOf34_tags_1,	/* Same as above */
+	sizeof(asn_DEF_SeqOf34_tags_1)
+		/sizeof(asn_DEF_SeqOf34_tags_1[0]), /* 1 */
 	{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
 		0,
@@ -335,36 +207,72 @@ asn_TYPE_descriptor_t asn_DEF_sos_3 = {
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 		SEQUENCE_OF_constraint
 	},
-	asn_MBR_SeqWithNestedSOS__sos_3,
+	asn_MBR_SeqOf34_1,
 	1,	/* Single element */
-	&asn_SPC_sos_specs_3	/* Additional specs */
+	&asn_SPC_SeqOf34_specs_1	/* Additional specs */
 };
 
-static asn_TYPE_member_t asn_MBR_SeqWithNestedSOS_1[] = {
-	{ ATF_NOFLAGS, 0, offsetof(struct SeqWithNestedSOS, someString),
-		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
-		.tag_mode = -1,	/* IMPLICIT tag at current level */
-		.type = &asn_DEF_UTF8String,
-		.type_selector = 0,
-		{
-#if !defined(ASN_DISABLE_OER_SUPPORT)
-			.oer_constraints = 0,
-#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
-#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
-			.per_constraints = 0,
-#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
-#if !defined(ASN_DISABLE_JER_SUPPORT)
-			.jer_constraints = 0,
-#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
-			.general_constraints = 0
-		},
-		0, 0, /* No default value */
-		.name = "someString"
-		},
-	{ ATF_NOFLAGS, 0, offsetof(struct SeqWithNestedSOS, sos),
-		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
+
+/*** <<< INCLUDES [SeqOfU64Max] >>> ***/
+
+#include <INTEGER.h>
+#include <asn_SEQUENCE_OF.h>
+#include <constr_SEQUENCE_OF.h>
+
+/*** <<< TYPE-DECLS [SeqOfU64Max] >>> ***/
+
+typedef struct SeqOfU64Max {
+	A_SEQUENCE_OF(INTEGER_t) list;
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} SeqOfU64Max_t;
+
+/*** <<< FUNC-DECLS [SeqOfU64Max] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_SeqOfU64Max;
+
+/*** <<< CODE [SeqOfU64Max] >>> ***/
+
+static int
+memb_INTEGER_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
+			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
+	const INTEGER_t *st = (const INTEGER_t *)sptr;
+	unsigned long value;
+	
+	if(!sptr) {
+		ASN__CTFAIL(app_key, td, sptr,
+			"%s: value not given (%s:%d)",
+			td->name, __FILE__, __LINE__);
+		return -1;
+	}
+	
+	if(asn_INTEGER2ulong(st, &value)) {
+		ASN__CTFAIL(app_key, td, sptr,
+			"%s: value too large (%s:%d)",
+			td->name, __FILE__, __LINE__);
+		return -1;
+	}
+	
+	if((value <= 18446744073709551615UL)) {
+		/* Constraint check succeeded */
+		return 0;
+	} else {
+		ASN__CTFAIL(app_key, td, sptr,
+			"%s: constraint failed (%s:%d)",
+			td->name, __FILE__, __LINE__);
+		return -1;
+	}
+}
+
+
+/*** <<< STAT-DEFS [SeqOfU64Max] >>> ***/
+
+static asn_TYPE_member_t asn_MBR_SeqOfU64Max_1[] = {
+	{ ATF_POINTER, 0, 0,
+		.tag = (ASN_TAG_CLASS_UNIVERSAL | (2 << 2)),
 		.tag_mode = 0,
-		.type = &asn_DEF_sos_3,
+		.type = &asn_DEF_INTEGER,
 		.type_selector = 0,
 		{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
@@ -376,37 +284,30 @@ static asn_TYPE_member_t asn_MBR_SeqWithNestedSOS_1[] = {
 #if !defined(ASN_DISABLE_JER_SUPPORT)
 			.jer_constraints = 0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
-			.general_constraints = 0
+			.general_constraints = memb_INTEGER_constraint_1
 		},
 		0, 0, /* No default value */
-		.name = "sos"
+		.name = ""
 		},
 };
-static const ber_tlv_tag_t asn_DEF_SeqWithNestedSOS_tags_1[] = {
+static const ber_tlv_tag_t asn_DEF_SeqOfU64Max_tags_1[] = {
 	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
 };
-static const asn_TYPE_tag2member_t asn_MAP_SeqWithNestedSOS_tag2el_1[] = {
-    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* someString */
-    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 } /* sos */
+static asn_SET_OF_specifics_t asn_SPC_SeqOfU64Max_specs_1 = {
+	sizeof(struct SeqOfU64Max),
+	offsetof(struct SeqOfU64Max, _asn_ctx),
+	0,	/* XER encoding is XMLDelimitedItemList */
 };
-static asn_SEQUENCE_specifics_t asn_SPC_SeqWithNestedSOS_specs_1 = {
-	sizeof(struct SeqWithNestedSOS),
-	offsetof(struct SeqWithNestedSOS, _asn_ctx),
-	.tag2el = asn_MAP_SeqWithNestedSOS_tag2el_1,
-	.tag2el_count = 2,	/* Count of tags in the map */
-	0, 0, 0,	/* Optional elements (not needed) */
-	-1,	/* First extension addition */
-};
-asn_TYPE_descriptor_t asn_DEF_SeqWithNestedSOS = {
-	"SeqWithNestedSOS",
-	"SeqWithNestedSOS",
-	&asn_OP_SEQUENCE,
-	asn_DEF_SeqWithNestedSOS_tags_1,
-	sizeof(asn_DEF_SeqWithNestedSOS_tags_1)
-		/sizeof(asn_DEF_SeqWithNestedSOS_tags_1[0]), /* 1 */
-	asn_DEF_SeqWithNestedSOS_tags_1,	/* Same as above */
-	sizeof(asn_DEF_SeqWithNestedSOS_tags_1)
-		/sizeof(asn_DEF_SeqWithNestedSOS_tags_1[0]), /* 1 */
+asn_TYPE_descriptor_t asn_DEF_SeqOfU64Max = {
+	"SeqOfU64Max",
+	"SeqOfU64Max",
+	&asn_OP_SEQUENCE_OF,
+	asn_DEF_SeqOfU64Max_tags_1,
+	sizeof(asn_DEF_SeqOfU64Max_tags_1)
+		/sizeof(asn_DEF_SeqOfU64Max_tags_1[0]), /* 1 */
+	asn_DEF_SeqOfU64Max_tags_1,	/* Same as above */
+	sizeof(asn_DEF_SeqOfU64Max_tags_1)
+		/sizeof(asn_DEF_SeqOfU64Max_tags_1[0]), /* 1 */
 	{
 #if !defined(ASN_DISABLE_OER_SUPPORT)
 		0,
@@ -417,11 +318,11 @@ asn_TYPE_descriptor_t asn_DEF_SeqWithNestedSOS = {
 #if !defined(ASN_DISABLE_JER_SUPPORT)
 		0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
-		SEQUENCE_constraint
+		SEQUENCE_OF_constraint
 	},
-	asn_MBR_SeqWithNestedSOS_1,
-	2,	/* Elements count */
-	&asn_SPC_SeqWithNestedSOS_specs_1	/* Additional specs */
+	asn_MBR_SeqOfU64Max_1,
+	1,	/* Single element */
+	&asn_SPC_SeqOfU64Max_specs_1	/* Additional specs */
 };
 
 
@@ -438,12 +339,12 @@ asn_TYPE_descriptor_t asn_DEF_SeqWithNestedSOS = {
 
 /*** <<< DEPS [EXTERNAL] >>> ***/
 
-typedef enum EXTERNAL__encoding_PR {
-	EXTERNAL__encoding_PR_NOTHING,	/* No components present */
-	EXTERNAL__encoding_PR_single_ASN1_type,
-	EXTERNAL__encoding_PR_octet_aligned,
-	EXTERNAL__encoding_PR_arbitrary
-} EXTERNAL__encoding_PR;
+typedef enum encoding_PR {
+	encoding_PR_NOTHING,	/* No components present */
+	encoding_PR_single_ASN1_type,
+	encoding_PR_octet_aligned,
+	encoding_PR_arbitrary
+} encoding_PR;
 
 /*** <<< TYPE-DECLS [EXTERNAL] >>> ***/
 
@@ -451,8 +352,8 @@ typedef struct EXTERNAL {
 	OBJECT_IDENTIFIER_t	*direct_reference;	/* OPTIONAL */
 	long	*indirect_reference;	/* OPTIONAL */
 	ObjectDescriptor_t	*data_value_descriptor;	/* OPTIONAL */
-	struct EXTERNAL__encoding {
-		EXTERNAL__encoding_PR present;
+	struct encoding {
+		encoding_PR present;
 		union EXTERNAL__encoding_u {
 			ANY_t	 single_ASN1_type;
 			OCTET_STRING_t	 octet_aligned;
@@ -488,7 +389,7 @@ __attribute__((constructor)) static void asn_DEF_encoding_5_alias_init(void) {
 /*** <<< STAT-DEFS [EXTERNAL] >>> ***/
 
 static asn_TYPE_member_t asn_MBR_EXTERNAL__encoding_5[] = {
-	{ ATF_NOFLAGS, 0, offsetof(struct EXTERNAL__encoding, choice.single_ASN1_type),
+	{ ATF_NOFLAGS, 0, offsetof(struct encoding, choice.single_ASN1_type),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
 		.tag_mode = +1,	/* EXPLICIT tag at current level */
 		.type = &asn_DEF_ANY,
@@ -508,7 +409,7 @@ static asn_TYPE_member_t asn_MBR_EXTERNAL__encoding_5[] = {
 		0, 0, /* No default value */
 		.name = "single-ASN1-type"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct EXTERNAL__encoding, choice.octet_aligned),
+	{ ATF_NOFLAGS, 0, offsetof(struct encoding, choice.octet_aligned),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_OCTET_STRING,
@@ -528,7 +429,7 @@ static asn_TYPE_member_t asn_MBR_EXTERNAL__encoding_5[] = {
 		0, 0, /* No default value */
 		.name = "octet-aligned"
 		},
-	{ ATF_NOFLAGS, 0, offsetof(struct EXTERNAL__encoding, choice.arbitrary),
+	{ ATF_NOFLAGS, 0, offsetof(struct encoding, choice.arbitrary),
 		.tag = (ASN_TAG_CLASS_CONTEXT | (2 << 2)),
 		.tag_mode = -1,	/* IMPLICIT tag at current level */
 		.type = &asn_DEF_BIT_STRING,
@@ -555,10 +456,10 @@ static const asn_TYPE_tag2member_t asn_MAP_encoding_tag2el_5[] = {
     { (ASN_TAG_CLASS_CONTEXT | (2 << 2)), 2, 0, 0 } /* arbitrary */
 };
 static asn_CHOICE_specifics_t asn_SPC_encoding_specs_5 = {
-	sizeof(struct EXTERNAL__encoding),
-	offsetof(struct EXTERNAL__encoding, _asn_ctx),
-	offsetof(struct EXTERNAL__encoding, present),
-	sizeof(((struct EXTERNAL__encoding *)0)->present),
+	sizeof(struct encoding),
+	offsetof(struct encoding, _asn_ctx),
+	offsetof(struct encoding, present),
+	sizeof(((struct encoding *)0)->present),
 	.tag2el = asn_MAP_encoding_tag2el_5,
 	.tag2el_count = 3,	/* Count of tags in the map */
 	0, 0,
