@@ -3,6 +3,6 @@
 <!-- ASN.1 module
 ModuleBitStringConstraint { iso org(3) dod(6) internet(1) private(4)
 	enterprise(1) spelio(9363) software(1) asn1c(5) test(1) 125 }
-found in ./tests/tests-asn1c-0.9.29 -->
+found in /sessions/inspiring-eager-pascal/mnt/asn1c/tests/tests-asn1c-0.9.29 -->
 
 <!ELEMENT T (flag1?, flag2?, flag3?)>

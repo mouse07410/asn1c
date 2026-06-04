@@ -16,9 +16,11 @@ The asn1c is arguably the most evolved open source ASN.1 compiler.
 
 ## Latest release
 
-Current release: **1.4.2**
+Current release: **1.4.3**
 
-This release includes post-v1.4 fixes across APER/UPER/OER decoding,
+This release adds the `-fprefer-import-source` flag, which fixes incorrect type
+binding when two modules export identically-named types and a consumer imports
+one from each. It also includes post-v1.4 fixes across APER/UPER/OER decoding,
 PER size constraint handling, `-fprefix` generation for anonymous typedefs
 and member symbols, parser/compiler warning cleanup, circular-reference
 include fixes, and multiple code-scanning fixes. It also addresses security
@@ -145,6 +147,20 @@ of the types. You can specify multiple PDUs:
     asn1c -pdu=PDU1 -pdu=PDU2 -fgen-only-pdu-deps module.asn1
 
 The `-fgen-only-pdu-deps` option also works with `-pdu=all` and `-pdu=auto`.
+
+## Resolving ambiguous imports (-fprefer-import-source)
+
+When two ASN.1 modules export identically-named types and a third module
+imports one from each, the resolver can silently bind to the wrong module's
+definition. Use `-fprefer-import-source` to restrict the lookup to the
+explicit IMPORTS list only:
+
+    asn1c -fprefer-import-source <module1.asn1> <module2.asn1> ...
+
+Without this flag (the default) the resolver falls back to scanning the full
+module body when a name is not found in the IMPORTS list, which can produce
+incorrect bindings. With the flag, only an explicit `FROM ModuleName` import
+is accepted, and an error is raised if the name cannot be resolved that way.
 
 # Model of operation
 

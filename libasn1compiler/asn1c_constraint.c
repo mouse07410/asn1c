@@ -3,6 +3,7 @@
 #include "asn1c_misc.h"
 #include "asn1c_out.h"
 #include "asn1c_naming.h"
+#include "asn1c_bigint.h"
 
 #include <asn1fix_crange.h>	/* constraint groker from libasn1fix */
 #include <asn1fix_export.h>	/* other exportables from libasn1fix */
@@ -17,6 +18,188 @@ static abuf *emit_range_comparison_code(asn1cnst_range_t *range,
                                           asn1c_integer_t natural_start,
                                           asn1c_integer_t natural_stop);
 static int native_long_sign(arg_t *arg, asn1cnst_range_t *r);	/* -1, 0, 1 */
+
+/*
+ * True if either edge of the value range is a concrete value outside the
+ * guaranteed-portable signed 32-bit window.  Such bounds cannot be enforced
+ * through the legacy long-based path on all targets.
+ */
+static int
+range_exceeds_int32(const asn1cnst_range_t *r) {
+    const asn1c_integer_t rmax = 2147483647;
+    const asn1c_integer_t rmin = -2147483647 - 1;
+    if(r->left.type == ARE_VALUE
+       && (r->left.value < rmin || r->left.value > rmax))
+        return 1;
+    if(r->right.type == ARE_VALUE
+       && (r->right.value < rmin || r->right.value > rmax))
+        return 1;
+    return 0;
+}
+
+/*
+ * Emit a single static asn_cval_t constraint bound named asn_CVAL_<id>_<sfx>
+ * for the given range edge.  Open edges (MIN/MAX) become ACV_ABSENT.
+ */
+static void
+emit_cval_bound(arg_t *arg, const char *id, int idx, const char *sfx,
+                const asn1cnst_edge_t *edge) {
+    if(edge->type != ARE_VALUE) {
+        OUT("static const asn_cval_t asn_CVAL_%s_%d_%s = "
+            "{ ACV_ABSENT, { 0 } };\n", id, idx, sfx);
+        return;
+    }
+    {
+        asn1c_integer_t v = edge->value;
+        const asn1c_integer_t U64MAX = ((asn1c_integer_t)INT64_MAX << 1) + 1;
+        const asn1c_integer_t IMAX = (asn1c_integer_t)INTMAX_MAX;
+        const asn1c_integer_t IMIN = -(asn1c_integer_t)INTMAX_MAX - 1;
+        int use_bytes;
+        char dec[64];
+        const char *s = asn1p_itoa(v);
+        strncpy(dec, s ? s : "0", sizeof(dec) - 1);
+        dec[sizeof(dec) - 1] = '\0';
+
+        /* Negative fitting intmax_t -> SINT; non-negative fitting uintmax_t
+         * -> UINT; everything else -> canonical INTEGER content octets. */
+        use_bytes = (v < 0) ? (v < IMIN) : (v > U64MAX);
+
+        if(!use_bytes && v < 0) {
+            (void)IMAX;
+            OUT("static const asn_cval_t asn_CVAL_%s_%d_%s = "
+                "{ ACV_SINT, { .s = INTMAX_C(%s) } };\n", id, idx, sfx, dec);
+        } else if(!use_bytes) {
+            OUT("static const asn_cval_t asn_CVAL_%s_%d_%s = "
+                "{ ACV_UINT, { .u = UINTMAX_C(%s) } };\n", id, idx, sfx, dec);
+        } else {
+            /* Oversized: emit canonical INTEGER content octets. */
+            asn1c_bigint_t b;
+            uint8_t *buf = 0;
+            size_t sz = 0, i;
+            if(asn1c_bigint_from_decimal(dec, &b) == 0
+               && asn1c_bigint_to_integer_content_octets(&b, &buf, &sz) == 0) {
+                OUT("static const uint8_t asn_CVAL_%s_%d_%s_bytes[] = { ",
+                    id, idx, sfx);
+                for(i = 0; i < sz; i++)
+                    OUT("0x%02x%s", buf[i], (i + 1 < sz) ? ", " : "");
+                OUT(" };\n");
+                OUT("static const asn_cval_t asn_CVAL_%s_%d_%s = "
+                    "{ ACV_INTEGER_BYTES, { .b = { asn_CVAL_%s_%d_%s_bytes, "
+                    "sizeof asn_CVAL_%s_%d_%s_bytes } } };\n",
+                    id, idx, sfx, id, idx, sfx, id, idx, sfx);
+                free(buf);
+                asn1c_bigint_free(&b);
+            } else {
+                if(buf) free(buf);
+                asn1c_bigint_free(&b);
+                OUT("static const asn_cval_t asn_CVAL_%s_%d_%s = "
+                    "{ ACV_ABSENT, { 0 } };\n", id, idx, sfx);
+            }
+        }
+    }
+}
+
+/*
+ * Emit a complete constraint-function body for a wide INTEGER (int64_t,
+ * uint64_t, or oversized INTEGER_t storage) using the asn_cval_t runtime
+ * helpers.  This enforces unsigned and >32-bit bounds that the legacy
+ * long-based path cannot represent.
+ */
+static void
+emit_wide_integer_constraint(arg_t *arg, asn1cnst_range_t *r_value,
+                             asn1c_integer_storage_kind_e isk) {
+    asn1p_expr_t *expr = arg->expr;
+    const char *id = asn1c_make_identifier(AMI_USE_PREFIX, expr, 0);
+    int idx = expr->_type_unique_index;
+    int saved = arg->target->target;
+
+    /*
+     * Pull in the runtime header once per generated header (the dependency
+     * tracker deduplicates OT_INCLUDES).  The bounds themselves are emitted as
+     * function-local statics (below) so that the type's own _constraint and
+     * any per-member memb_*_constraint can each carry an independent copy
+     * without clashing at file scope.
+     */
+    (void)saved;
+    GEN_INCLUDE_STD("asn_constraint_value");
+
+    /* Function-local static bounds. */
+    emit_cval_bound(arg, id, idx, "lb", &r_value->left);
+    emit_cval_bound(arg, id, idx, "ub", &r_value->right);
+
+    if(isk == AISK_UINT64 || isk == AISK_UINT32) {
+        const char *cty = (isk == AISK_UINT64) ? "uint64_t" : "uint32_t";
+        OUT("uintmax_t value;\n");
+        OUT("\n");
+        OUT("if(!sptr) {\n");
+        INDENT(+1);
+        OUT("ASN__CTFAIL(app_key, td, sptr,\n");
+        OUT("\t\"%%s: value not given (%%s:%%d)\",\n");
+        OUT("\ttd->name, __FILE__, __LINE__);\n");
+        OUT("return -1;\n");
+        INDENT(-1);
+        OUT("}\n");
+        OUT("\n");
+        OUT("value = (uintmax_t)(*(const %s *)sptr);\n", cty);
+        OUT("\n");
+        OUT("if(asn_check_integer_range_uint(value, "
+            "&asn_CVAL_%s_%d_lb, &asn_CVAL_%s_%d_ub) == 0) {\n",
+            id, idx, id, idx);
+    } else if(isk == AISK_INT64 || isk == AISK_INT32) {
+        const char *cty = (isk == AISK_INT64) ? "int64_t" : "int32_t";
+        OUT("intmax_t value;\n");
+        OUT("\n");
+        OUT("if(!sptr) {\n");
+        INDENT(+1);
+        OUT("ASN__CTFAIL(app_key, td, sptr,\n");
+        OUT("\t\"%%s: value not given (%%s:%%d)\",\n");
+        OUT("\ttd->name, __FILE__, __LINE__);\n");
+        OUT("return -1;\n");
+        INDENT(-1);
+        OUT("}\n");
+        OUT("\n");
+        OUT("value = (intmax_t)(*(const %s *)sptr);\n", cty);
+        OUT("\n");
+        OUT("if(asn_check_integer_range_sint(value, "
+            "&asn_CVAL_%s_%d_lb, &asn_CVAL_%s_%d_ub) == 0) {\n",
+            id, idx, id, idx);
+    } else {
+        /*
+         * INTEGER_t-backed oversized bounds.  An INTEGER_t always holds a
+         * canonical signed two's-complement value (large positive values
+         * carry a leading 0x00 octet), so the comparator must interpret it
+         * as signed: pass value_is_unsigned = 0.
+         */
+        int value_unsigned = 0;
+        OUT("const INTEGER_t *st = (const INTEGER_t *)sptr;\n");
+        OUT("\n");
+        OUT("if(!sptr) {\n");
+        INDENT(+1);
+        OUT("ASN__CTFAIL(app_key, td, sptr,\n");
+        OUT("\t\"%%s: value not given (%%s:%%d)\",\n");
+        OUT("\ttd->name, __FILE__, __LINE__);\n");
+        OUT("return -1;\n");
+        INDENT(-1);
+        OUT("}\n");
+        OUT("\n");
+        OUT("if(asn_check_INTEGER_range(st, "
+            "&asn_CVAL_%s_%d_lb, &asn_CVAL_%s_%d_ub, %d) == 0) {\n",
+            id, idx, id, idx, value_unsigned);
+    }
+
+    INDENT(+1);
+    OUT("/* Constraint check succeeded */\n");
+    OUT("return 0;\n");
+    INDENT(-1);
+    OUT("} else {\n");
+    INDENT(+1);
+    OUT("ASN__CTFAIL(app_key, td, sptr,\n");
+    OUT("\t\"%%s: constraint failed (%%s:%%d)\",\n");
+    OUT("\ttd->name, __FILE__, __LINE__);\n");
+    OUT("return -1;\n");
+    INDENT(-1);
+    OUT("}\n");
+}
 
 static int
 ulong_optimization(arg_t *arg, asn1p_expr_type_e etype, asn1cnst_range_t *r_size,
@@ -70,6 +253,23 @@ asn1c_emit_constraint_checking_code(arg_t *arg) {
 		) {
 			asn1constraint_range_free(r_size);
 			r_size = 0;
+		}
+	}
+
+	/*
+	 * Wide / unsigned / oversized INTEGER value ranges are checked through
+	 * the asn_cval_t runtime helpers, which preserve unsigned semantics and
+	 * enforce bounds beyond signed 32-bit / native long storage.
+	 */
+	if(etype == ASN_BASIC_INTEGER && r_value && !r_size) {
+		asn1c_integer_storage_kind_e isk =
+			asn1c_select_integer_storage(arg, expr);
+		if(isk == AISK_INT32 || isk == AISK_UINT32
+		   || isk == AISK_INT64 || isk == AISK_UINT64
+		   || (isk == AISK_INTEGER_T && range_exceeds_int32(r_value))) {
+			emit_wide_integer_constraint(arg, r_value, isk);
+			ret = 0;
+			goto end;
 		}
 	}
 

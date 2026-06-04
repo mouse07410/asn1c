@@ -7,6 +7,9 @@
 #include "asn1c_encoding.h"
 #include <asn1fix_export.h>
 
+/* Global integer native storage policy; see asn1compiler.h */
+asn_integer_native_type_e asn1c_integer_native_type = AINT_NATIVE_AUTO;
+
 static void default_logger_cb(int, const char *fmt, ...);
 static int asn1c_compile_expr(arg_t *arg, const asn1c_ioc_table_and_objset_t *);
 static int asn1c_detach_streams(asn1p_expr_t *expr);

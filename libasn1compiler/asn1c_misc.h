@@ -47,6 +47,25 @@ enum asn1c_fitslong_e {
 };
 enum asn1c_fitslong_e asn1c_type_fits_long(arg_t *arg, asn1p_expr_t *expr);
 
+/*
+ * Generated C storage selection for a (possibly constrained) ASN.1 INTEGER.
+ * Answers only the storage-type question; constraint bounds are represented
+ * separately (see asn_cval_t).  The decision honors the -finteger-native-type
+ * policy (asn1c_integer_native_type) and the type's PER-visible range.
+ */
+typedef enum asn1c_integer_storage_kind_e {
+	AISK_INTEGER_T = 0,	/* arbitrary precision INTEGER_t */
+	AISK_LONG,		/* signed long (traditional native; auto mode) */
+	AISK_ULONG,		/* unsigned long (traditional native; auto mode) */
+	AISK_INT32,		/* int32_t  (explicit fixed-width modes) */
+	AISK_UINT32,		/* uint32_t (explicit fixed-width modes) */
+	AISK_INT64,		/* int64_t  (explicit fixed-width modes) */
+	AISK_UINT64		/* uint64_t (explicit fixed-width modes) */
+} asn1c_integer_storage_kind_e;
+
+asn1c_integer_storage_kind_e
+asn1c_select_integer_storage(arg_t *arg, asn1p_expr_t *expr);
+
 enum asn1c_fitsfloat_e {
     RL_NOTFIT,
     RL_FITS_FLOAT32,

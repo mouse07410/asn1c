@@ -12,6 +12,7 @@ noinst_LTLIBRARIES = libasn1compiler.la
 libasn1compiler_la_SOURCES =                \
     asn1compiler.c asn1compiler.h           \
     asn1c_misc.c asn1c_misc.h               \
+    asn1c_bigint.c asn1c_bigint.h           \
     asn1c_out.c asn1c_out.h                 \
     asn1c_lang.c asn1c_lang.h               \
     asn1c_naming.c asn1c_naming.h           \

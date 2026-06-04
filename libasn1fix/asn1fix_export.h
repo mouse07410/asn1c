@@ -13,13 +13,6 @@ struct asn1_namespace_s;   /* Forward declaration. */
 void asn1f_use_standard_namespaces(asn1p_t *asn);
 
 /*
- * Store fixer flags for use during the compiler phase.
- * Must be called before asn1_compile() so that asn1f_lookup_symbol_ex()
- * and asn1f_find_terminal_type_ex() can apply flags like A1F_ALLOW_NEWER_MODULES.
- */
-void asn1f_set_compiler_flags(enum asn1f_flags flags);
-
-/*
  * Lookup the module by its oid. oid is mandatory.
  */
 asn1p_module_t *asn1f_lookup_module_ex(asn1p_t *asn, const char *module_name,

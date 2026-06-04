@@ -13,20 +13,23 @@ NativeInteger_encode_cbor(const asn_TYPE_descriptor_t *td, const void *sptr,
                           asn_app_consume_bytes_f *cb, void *app_key) {
     const asn_INTEGER_specifics_t *specs =
         (const asn_INTEGER_specifics_t *)td->specifics;
-    const long *native = (const long *)sptr;
     asn_enc_rval_t er = {0, 0, 0};
     ssize_t ret;
 
-    if(!native) ASN__ENCODE_FAILED;
+    if(!sptr) ASN__ENCODE_FAILED;
 
     if(specs && specs->field_unsigned) {
-        ret = cbor_encode_uint((uint64_t)(unsigned long)*native, cb, app_key);
-    } else if(*native >= 0) {
-        ret = cbor_encode_uint((uint64_t)*native, cb, app_key);
+        ret = cbor_encode_uint((uint64_t)NativeInteger_load_u(sptr, specs),
+                               cb, app_key);
     } else {
-        /* negative: CBOR negint argument = (-val) - 1 */
-        uint64_t argument = (uint64_t)(-((*native) + 1));
-        ret = cbor_encode_negint(argument, cb, app_key);
+        intmax_t v = NativeInteger_load_s(sptr, specs);
+        if(v >= 0) {
+            ret = cbor_encode_uint((uint64_t)v, cb, app_key);
+        } else {
+            /* negative: CBOR negint argument = (-val) - 1 */
+            uint64_t argument = (uint64_t)(-(v + 1));
+            ret = cbor_encode_negint(argument, cb, app_key);
+        }
     }
     if(ret < 0) ASN__ENCODE_FAILED;
     er.encoded = ret;
@@ -44,16 +47,19 @@ NativeInteger_decode_cbor(const asn_codec_ctx_t *opt_codec_ctx,
     uint8_t major;
     uint64_t argument;
     ssize_t hlen;
-    long *native;
+    void *native;
+    size_t w;
     asn_dec_rval_t rval = {RC_FAIL, 0};
 
     (void)opt_codec_ctx;
 
+    w = NativeInteger_field_width(specs);
+
     if(!*sptr) {
-        *sptr = CALLOC(1, sizeof(long));
+        *sptr = CALLOC(1, w);
         if(!*sptr) ASN__DECODE_FAILED;
     }
-    native = (long *)*sptr;
+    native = *sptr;
 
     if(size < 1) ASN__DECODE_FAILED;
 
@@ -67,16 +73,25 @@ NativeInteger_decode_cbor(const asn_codec_ctx_t *opt_codec_ctx,
 
     if(major == CBOR_MAJOR_UINT) {
         if(specs && specs->field_unsigned) {
-            if(argument > (uint64_t)ULONG_MAX) ASN__DECODE_FAILED;
-            *native = (long)(unsigned long)argument;
+            uint64_t umax = (w < 8) ? (((uint64_t)1 << (8 * w)) - 1)
+                                    : (uint64_t)UINT64_MAX;
+            if(argument > umax) ASN__DECODE_FAILED;
+            NativeInteger_store(native, specs, (uintmax_t)argument);
         } else {
-            if(argument > (uint64_t)LONG_MAX) ASN__DECODE_FAILED;
-            *native = (long)argument;
+            uint64_t smax = (w < 8) ? (((uint64_t)1 << (8 * w - 1)) - 1)
+                                    : (uint64_t)INT64_MAX;
+            if(argument > smax) ASN__DECODE_FAILED;
+            NativeInteger_store(native, specs, (uintmax_t)argument);
         }
     } else if(major == CBOR_MAJOR_NEGINT) {
-        /* value = -(argument+1) */
-        if(argument >= (uint64_t)LONG_MAX + 1ULL) ASN__DECODE_FAILED;
-        *native = -(long)argument - 1;
+        /* value = -(argument+1); reject for unsigned fields */
+        uint64_t maxarg;
+        if(specs && specs->field_unsigned) ASN__DECODE_FAILED;
+        maxarg = (w < 8) ? (((uint64_t)1 << (8 * w - 1)) - 1)
+                         : (uint64_t)INT64_MAX;
+        if(argument > maxarg) ASN__DECODE_FAILED;
+        NativeInteger_store(native, specs,
+                            (uintmax_t)(-(intmax_t)argument - 1));
     } else {
         ASN__DECODE_FAILED;
     }

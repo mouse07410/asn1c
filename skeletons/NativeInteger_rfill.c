@@ -15,7 +15,7 @@ NativeInteger_random_fill(const asn_TYPE_descriptor_t *td, void **sptr,
     asn_random_fill_result_t result_ok = {ARFILL_OK, 1};
     asn_random_fill_result_t result_failed = {ARFILL_FAILED, 0};
     asn_random_fill_result_t result_skipped = {ARFILL_SKIPPED, 0};
-    long *st = *sptr;
+    void *st = *sptr;
     const asn_INTEGER_enum_map_t *emap;
     size_t emap_len;
     intmax_t value;
@@ -24,7 +24,7 @@ NativeInteger_random_fill(const asn_TYPE_descriptor_t *td, void **sptr,
     if(max_length == 0) return result_skipped;
 
     if(st == NULL) {
-        st = (long *)CALLOC(1, sizeof(*st));
+        st = CALLOC(1, NativeInteger_field_width(specs));
         if(st == NULL) {
             return result_failed;
         }
@@ -82,6 +82,6 @@ NativeInteger_random_fill(const asn_TYPE_descriptor_t *td, void **sptr,
     }
 
     *sptr = st;
-    *st = value;
+    NativeInteger_store(st, specs, (uintmax_t)value);
     return result_ok;
 }

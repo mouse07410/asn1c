@@ -1,3 +1,15 @@
+1.4.3:
+	NEW FEATURES:
+	* Added `-fprefer-import-source` compiler flag.  When two modules export
+	  identically-named types and a consumer imports one from each,
+	  `asn1f_lookup_in_imports` previously fell back to a full-module body
+	  scan and silently bound to the wrong module's definition.  With
+	  `-fprefer-import-source` the resolver only accepts an explicit
+	  IMPORTS-list match, eliminating the ambiguity.  The fix also corrects
+	  flag propagation through `_ex` wrapper functions and across the
+	  `memset` that clears `a1f_replace_me_with_proper_interface_arg`, so
+	  compiler-phase lookups now correctly inherit caller-supplied flags.
+
 1.3.6:
 	FIXES:
 	* Initialize `char ch` before taking its address in

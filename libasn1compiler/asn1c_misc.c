@@ -5,7 +5,6 @@
 #include <asn1fix_crange.h>	/* constraint groker from libasn1fix */
 #include <asn1fix_export.h>	/* other exportable stuff from libasn1fix */
 
-static int asn1c_type_is_uint64_range(asn1p_expr_t *expr);
 
 /*
  * Checks that the given string is not a reserved C/C++ keyword [1],[2].
@@ -289,6 +288,7 @@ asn1c_type_name(arg_t *arg, asn1p_expr_t *expr, enum tnfmt _format) {
 	int stdname = 0;
 	const char *typename;
 	const char *prefix;
+	asn1c_integer_storage_kind_e int_isk = AISK_INTEGER_T;
 
 	/* Rewind to the topmost parent expression */
 	if((top_parent = expr->parent_expr))
@@ -369,14 +369,36 @@ asn1c_type_name(arg_t *arg, asn1p_expr_t *expr, enum tnfmt _format) {
 	case ASN_BASIC_INTEGER:
 	case ASN_BASIC_ENUMERATED:
 	case ASN_BASIC_REAL:
-        if((expr->expr_type == ASN_BASIC_REAL
-            && (_format == TNF_CONSTYPE || !(arg->flags & A1C_USE_WIDE_TYPES)
-                || asn1c_REAL_fits(arg, expr) != RL_NOTFIT))
-           || asn1c_type_fits_long(arg, expr)) {
+        {
+        /*
+         * For INTEGER the -finteger-native-type policy (via the storage
+         * selector) is authoritative: it decides long / unsigned long /
+         * int64_t / uint64_t / INTEGER_t.  ENUMERATED and REAL keep their
+         * traditional decisions.
+         */
+        int use_native;
+        if(expr->expr_type == ASN_BASIC_INTEGER) {
+            int_isk = asn1c_select_integer_storage(arg, expr);
+            use_native = (int_isk != AISK_INTEGER_T);
+        } else {
+            use_native = (expr->expr_type == ASN_BASIC_REAL
+                && (_format == TNF_CONSTYPE || !(arg->flags & A1C_USE_WIDE_TYPES)
+                    || asn1c_REAL_fits(arg, expr) != RL_NOTFIT))
+                || asn1c_type_fits_long(arg, expr);
+        }
+        if(use_native) {
+            const char *int_scalar =
+                (int_isk == AISK_UINT64) ? "uint64_t" :
+                (int_isk == AISK_INT64)  ? "int64_t"  :
+                (int_isk == AISK_UINT32) ? "uint32_t" :
+                (int_isk == AISK_INT32)  ? "int32_t"  :
+                (int_isk == AISK_ULONG)  ? "unsigned long" : "long";
             switch(_format) {
 			case TNF_CONSTYPE:
 				if(expr->expr_type == ASN_BASIC_REAL) {
                     return "double";
+                } else if(expr->expr_type == ASN_BASIC_INTEGER) {
+                    return int_scalar;
                 } else if(asn1c_type_fits_long(arg, expr) == FL_FITS_UNSIGN) {
                     return "unsigned long";
                 } else {
@@ -384,7 +406,9 @@ asn1c_type_name(arg_t *arg, asn1p_expr_t *expr, enum tnfmt _format) {
                 }
             case TNF_CTYPE:
             case TNF_RSAFE:
-                if(expr->expr_type == ASN_BASIC_REAL) {
+                if(expr->expr_type == ASN_BASIC_INTEGER) {
+                    return int_scalar;
+                } else if(expr->expr_type == ASN_BASIC_REAL) {
                     asn1cnst_range_t *range = asn1constraint_compute_OER_range(
                         expr->Identifier, ASN_BASIC_REAL,
                         expr->combined_constraints, ACT_EL_RANGE, 0, 0, 0);
@@ -420,6 +444,7 @@ asn1c_type_name(arg_t *arg, asn1p_expr_t *expr, enum tnfmt _format) {
 				stdname = 1;
 				break;
 			}
+		}
 		}
 		/* Fall through */
 	default:
@@ -667,39 +692,106 @@ asn1c_type_fits_long(arg_t *arg, asn1p_expr_t *expr) {
 	return FL_FITS_SIGNED;
 }
 
+/*
+ * Fetch the PER-visible value range of an INTEGER as 128-bit edges.
+ * Returns 0 and fills the has_lo/lo, has_hi/hi and extensible outputs on
+ * success; returns -1 if the range is unusable (incompatible / empty /
+ * not PER-visible).
+ */
 static int
-asn1c_type_is_uint64_range(asn1p_expr_t *expr) {
+asn1c_int_value_range(arg_t *arg, asn1p_expr_t *expr,
+                      int *has_lo, asn1c_integer_t *lo,
+                      int *has_hi, asn1c_integer_t *hi,
+                      int *extensible) {
     asn1cnst_range_t *range;
-    asn1cnst_edge_t left, right;
-    int result = 0;
+    asn1p_expr_t *t;
 
-    if(expr->expr_type != ASN_BASIC_INTEGER)
-        return 0;
-    if(!expr->combined_constraints)
-        return 0;
+    *has_lo = *has_hi = *extensible = 0;
 
-    range = asn1constraint_compute_PER_range(expr->Identifier, expr->expr_type,
-        expr->combined_constraints, ACT_EL_RANGE, 0, 0, 0);
-    if(!range || range->incompatible || range->not_PER_visible
-    || range->empty_constraint) {
+    t = WITH_MODULE_NAMESPACE(
+        expr->module, expr_ns,
+        asn1f_find_terminal_type_ex(arg->asn, expr_ns, expr));
+    if(!t || !t->combined_constraints)
+        return -1;
+
+    range = asn1constraint_compute_PER_range(t->Identifier, t->expr_type,
+        t->combined_constraints, ACT_EL_RANGE, 0, 0, 0);
+    if(!range || range->incompatible || range->empty_constraint
+       || range->not_PER_visible) {
         asn1constraint_range_free(range);
-        return 0;
+        return -1;
+    }
+    *extensible = range->extensible;
+    if(range->left.type == ARE_VALUE) { *has_lo = 1; *lo = range->left.value; }
+    if(range->right.type == ARE_VALUE) { *has_hi = 1; *hi = range->right.value; }
+    asn1constraint_range_free(range);
+    return 0;
+}
+
+asn1c_integer_storage_kind_e
+asn1c_select_integer_storage(arg_t *arg, asn1p_expr_t *expr) {
+    asn_integer_native_type_e mode = asn1c_integer_native_type;
+    enum asn1c_fitslong_e fl = asn1c_type_fits_long(arg, expr);
+    asn1p_expr_t *t;
+    int has_lo = 0, has_hi = 0, ext = 0, bounded;
+    asn1c_integer_t lo = 0, hi = 0;
+    /* Fixed-width comparison limits expressed in the 128-bit work type. */
+    const asn1c_integer_t I32MAX = (asn1c_integer_t)INT32_MAX;
+    const asn1c_integer_t I32MIN = (asn1c_integer_t)INT32_MIN;
+    const asn1c_integer_t U32MAX = (asn1c_integer_t)UINT32_MAX;
+    const asn1c_integer_t I64MAX = (asn1c_integer_t)INT64_MAX;
+    const asn1c_integer_t I64MIN = -(asn1c_integer_t)INT64_MAX - 1;
+    const asn1c_integer_t U64MAX = ((asn1c_integer_t)INT64_MAX << 1) + 1;
+
+    t = WITH_MODULE_NAMESPACE(
+        expr->module, expr_ns,
+        asn1f_find_terminal_type_ex(arg->asn, expr_ns, expr));
+    if(!t || t->expr_type != ASN_BASIC_INTEGER)
+        return AISK_INTEGER_T;
+
+    /*
+     * auto preserves the traditional storage decision exactly: signed/
+     * unsigned long for ranges that fit the conservative 32-bit native
+     * window, INTEGER_t otherwise.  This keeps the default-generated API
+     * unchanged.  Fixed-width int32_t/uint32_t/int64_t/uint64_t storage is
+     * opt-in through the explicit modes below.
+     */
+    if(mode == AINT_NATIVE_AUTO) {
+        if(fl == FL_FITS_UNSIGN) return AISK_ULONG;
+        if(fl == FL_NOTFIT) return AISK_INTEGER_T;
+        return AISK_LONG;   /* FL_FITS_SIGNED / FL_PRESUMED */
     }
 
-    left  = range->left;
-    right = range->right;
-    asn1constraint_range_free(range);
+    bounded = (asn1c_int_value_range(arg, expr, &has_lo, &lo, &has_hi, &hi,
+                                     &ext) == 0)
+              && !ext && has_lo && has_hi;
 
-    if(left.type != ARE_VALUE || left.value < 0)
-        return 0;
-    if(right.type != ARE_VALUE)
-        return 0;
-    if(right.value <= (asn1c_integer_t)INT64_MAX)
-        return 0;  /* fits signed int64 — no issue */
+    if(!bounded) {
+        switch(mode) {
+        case AINT_NATIVE_INT32:  return (fl == FL_NOTFIT) ? AISK_INTEGER_T : AISK_INT32;
+        case AINT_NATIVE_INT64:  return (fl == FL_NOTFIT) ? AISK_INTEGER_T : AISK_INT64;
+        case AINT_NATIVE_UINT32:
+        case AINT_NATIVE_UINT64: return AISK_INTEGER_T; /* cannot prove non-negative */
+        default:                 return AISK_INTEGER_T;
+        }
+    }
 
-    result = 1;
-    if(right.value > (asn1c_integer_t)UINT64_MAX)
-        result = 2;  /* overflows uint64 — caller should warn */
+    switch(mode) {
+    case AINT_NATIVE_INT32:
+        if(lo >= I32MIN && hi <= I32MAX) return AISK_INT32;
+        return AISK_INTEGER_T;
+    case AINT_NATIVE_UINT32:
+        if(lo >= 0 && hi <= U32MAX) return AISK_UINT32;
+        return AISK_INTEGER_T;
+    case AINT_NATIVE_INT64:
+        if(lo >= I64MIN && hi <= I64MAX) return AISK_INT64;
+        return AISK_INTEGER_T;
+    case AINT_NATIVE_UINT64:
+        if(lo >= 0 && hi <= U64MAX) return AISK_UINT64;
+        return AISK_INTEGER_T;
 
-    return result;
+    default:            /* AINT_NATIVE_AUTO handled above */
+        return AISK_INTEGER_T;
+    }
 }
+

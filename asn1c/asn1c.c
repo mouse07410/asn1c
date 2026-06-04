@@ -163,6 +163,8 @@ main(int ac, char **av) {
                 assert(ret == 0 || errno == EEXIST);
             } else if(strcmp(optarg, "allow-newer-modules") == 0) {
                 asn1_fixer_flags |= A1F_ALLOW_NEWER_MODULES;
+            } else if(strcmp(optarg, "prefer-import-source") == 0) {
+                asn1_fixer_flags |= A1F_PREFER_IMPORT_SOURCE;
             } else if(strcmp(optarg, "native-types") == 0) {
                 fprintf(stderr, "-f%s: Deprecated option\n", optarg);
                 asn1_compiler_flags &= ~A1C_USE_WIDE_TYPES;
@@ -187,6 +189,27 @@ main(int ac, char **av) {
                 asn1_compiler_flags |= A1C_GEN_ONLY_PDU_DEPS;
             } else if(strcmp(optarg, "list-deps") == 0) {
                 asn1_compiler_flags |= A1C_LIST_DEPS;
+            } else if(strncmp(optarg, "integer-native-type=", 20) == 0) {
+                char *mode = optarg + 20;
+                if(strcmp(mode, "auto") == 0) {
+                    asn1c_integer_native_type = AINT_NATIVE_AUTO;
+                } else if(strcmp(mode, "int32") == 0) {
+                    asn1c_integer_native_type = AINT_NATIVE_INT32;
+                } else if(strcmp(mode, "uint32") == 0) {
+                    asn1c_integer_native_type = AINT_NATIVE_UINT32;
+                } else if(strcmp(mode, "int64") == 0) {
+                    asn1c_integer_native_type = AINT_NATIVE_INT64;
+                } else if(strcmp(mode, "uint64") == 0) {
+                    asn1c_integer_native_type = AINT_NATIVE_UINT64;
+                } else if(strcmp(mode, "long") == 0) {
+                    /* Deprecated, ambiguous alias kept for compatibility. */
+                    asn1c_integer_native_type = AINT_NATIVE_AUTO;
+                } else {
+                    fprintf(stderr,
+                        "-finteger-native-type expects one of: "
+                        "int32, uint32, int64, uint64, auto\n");
+                    exit(EX_USAGE);
+                }
             } else if(strncmp(optarg, "prefix=", 7) == 0) {
                 char *prefix = optarg + 7;
                 asn1c_prefix_set(prefix);
@@ -495,13 +518,6 @@ main(int ac, char **av) {
     }
 
     /*
-     * Propagate fixer flags (e.g. A1F_ALLOW_NEWER_MODULES) so that
-     * asn1f_lookup_symbol_ex() / asn1f_find_terminal_type_ex() can
-     * resolve cross-module references correctly during compilation.
-     */
-    asn1f_set_compiler_flags(asn1_fixer_flags);
-
-    /*
      * Compile the ASN.1 tree into a set of source files
      * of another language.
      */
@@ -656,8 +672,13 @@ usage(const char *av0) {
 "  -fline-refs           Include ASN.1 module's line numbers in comments\n"
 "  -fno-constraints      Do not generate the constraint checking code\n"
 "  -fno-include-deps     Do not generate the courtesy #includes for dependencies\n"
+"  -fprefer-import-source  Require strict xp_members match for IMPORTS (fixes ambiguous same-name imports)\n"
 "  -funnamed-unions      Enable unnamed unions in structures\n"
 "  -fwide-types          Use INTEGER_t instead of \"long\" by default, etc.\n"
+"  -finteger-native-type=<mode>  Native C storage policy for constrained INTEGER\n"
+"                        types.  Modes: auto, int32, uint32, int64, uint64.\n"
+"                        Default: auto.  Values not fitting the policy are\n"
+"                        generated as INTEGER_t.\n"
 "  -fgen-only-pdu-deps   Generate code only for types that are dependencies of -pdu types\n"
 "  -flist-deps           List PDU dependencies (requires -pdu option, no code generated)\n"
 "  -fprefix=<prefix>     Add the specified prefix to generated types\n"

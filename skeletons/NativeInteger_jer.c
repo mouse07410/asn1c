@@ -20,24 +20,19 @@ NativeInteger_decode_jer(const asn_codec_ctx_t *opt_codec_ctx,
     asn_dec_rval_t rval;
     INTEGER_t st;
     void *st_ptr = (void *)&st;
-    long *native = (long *)*sptr;
+    void *native = *sptr;
 
     if(!native) {
-        native = (long *)(*sptr = CALLOC(1, sizeof(*native)));
+        native = (*sptr = CALLOC(1, NativeInteger_field_width(specs)));
         if(!native) ASN__DECODE_FAILED;
     }
 
     memset(&st, 0, sizeof(st));
     rval = INTEGER_decode_jer(opt_codec_ctx, td, constraints, &st_ptr, buf_ptr, size);
     if(rval.code == RC_OK) {
-        long l;
-        if((specs&&specs->field_unsigned)
-            ? asn_INTEGER2ulong(&st, (unsigned long *)&l) /* sic */
-            : asn_INTEGER2long(&st, &l)) {
+        if(NativeInteger_store_from_INTEGER(native, specs, &st)) {
             rval.code = RC_FAIL;
             rval.consumed = 0;
-        } else {
-            *native = l;
         }
     } else {
         /*
@@ -61,16 +56,18 @@ NativeInteger_encode_jer(const asn_TYPE_descriptor_t *td,
         (const asn_INTEGER_specifics_t *)td->specifics;
     char scratch[32];  /* Enough for 64-bit int */
     asn_enc_rval_t er = {0,0,0};
-    const long *native = (const long *)sptr;
 
     (void)ilevel;
     (void)flags;
 
-    if(!native) ASN__ENCODE_FAILED;
+    if(!sptr) ASN__ENCODE_FAILED;
 
-    er.encoded = snprintf(scratch, sizeof(scratch),
-                          (specs && specs->field_unsigned)
-                              ? "%lu" : "%ld", *native);
+    if(specs && specs->field_unsigned)
+        er.encoded = snprintf(scratch, sizeof(scratch), "%ju",
+                              NativeInteger_load_u(sptr, specs));
+    else
+        er.encoded = snprintf(scratch, sizeof(scratch), "%jd",
+                              NativeInteger_load_s(sptr, specs));
     if(er.encoded <= 0 || (size_t)er.encoded >= sizeof(scratch)
         || cb(scratch, er.encoded, app_key) < 0)
         ASN__ENCODE_FAILED;

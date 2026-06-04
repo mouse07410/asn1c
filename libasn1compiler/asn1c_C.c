@@ -110,6 +110,35 @@ static int emit_type_DEF(arg_t *arg, asn1p_expr_t *expr, enum tvm_compat tv_mode
 
 /* MKID_safe() without checking for reserved keywords */
 #define	MKID(expr)	(asn1c_make_identifier(AMI_USE_PREFIX, expr, 0))
+
+/*
+ * If the (possibly referenced) type resolves to an INTEGER stored in a
+ * fixed-width native type, report its octet width and signedness and return
+ * 1; otherwise return 0.  Used to emit and attach an asn_INTEGER_specifics_t
+ * carrying field_width/field_unsigned for the width-aware native codec.
+ */
+static int
+asn1c_int_native_specifics(arg_t *arg, asn1p_expr_t *expr,
+                           int *width, int *is_unsigned) {
+	switch(asn1c_select_integer_storage(arg, expr)) {
+	/* Traditional unsigned long (auto): width 0 == sizeof(long), unsigned.
+	 * This reproduces the historical unsigned-INTEGER specifics exactly. */
+	case AISK_ULONG:  *width = 0; *is_unsigned = 1; return 1;
+	case AISK_INT32:  *width = 4; *is_unsigned = 0; return 1;
+	case AISK_UINT32: *width = 4; *is_unsigned = 1; return 1;
+	case AISK_INT64:  *width = 8; *is_unsigned = 0; return 1;
+	case AISK_UINT64: *width = 8; *is_unsigned = 1; return 1;
+	/* AISK_LONG and AISK_INTEGER_T carry no per-type specifics. */
+	default: return 0;
+	}
+}
+
+/* Boolean convenience wrapper. */
+static int
+asn1c_int_has_native_specifics(arg_t *arg, asn1p_expr_t *expr) {
+	int w = 0, u = 0;
+	return asn1c_int_native_specifics(arg, expr, &w, &u);
+}
 #define	MKID_safe(expr)	(asn1c_make_identifier(AMI_CHECK_RESERVED, expr, 0))
 
 int
@@ -305,22 +334,26 @@ asn1c_lang_C_type_common_INTEGER(arg_t *arg) {
 		OUT("};\n");
 	}
 
-	if(expr->expr_type == ASN_BASIC_INTEGER
-	&& asn1c_type_fits_long(arg, expr) == FL_FITS_UNSIGN) {
-		REDIR(OT_STAT_DEFS);
-		if(!(expr->_type_referenced)) OUT("static ");
-		OUT("const asn_INTEGER_specifics_t asn_SPC_%s_specs_%d = {\n",
-			MKID(expr), expr->_type_unique_index);
-		INDENT(+1);
-		OUT("0,\t");
-		OUT("0,\t");
-		OUT("0,\t");
-		OUT("0,\t");
-		OUT("0,\n");
-		OUT("0,\t/* Native long size */\n");
-		OUT("1\t/* Unsigned representation */\n");
-		INDENT(-1);
-		OUT("};\n");
+	{
+		int fw = 0, fu = 0;
+		if(expr->expr_type == ASN_BASIC_INTEGER
+		   && asn1c_int_native_specifics(arg, expr, &fw, &fu)) {
+			REDIR(OT_STAT_DEFS);
+			if(!(expr->_type_referenced)) OUT("static ");
+			OUT("const asn_INTEGER_specifics_t asn_SPC_%s_specs_%d = {\n",
+				MKID(expr), expr->_type_unique_index);
+			INDENT(+1);
+			OUT("0,\t");
+			OUT("0,\t");
+			OUT("0,\t");
+			OUT("0,\t");
+			OUT("0,\n");
+			OUT("%d,\t/* Native integer width in octets */\n", fw);
+			OUT("%d\t/* %s representation */\n",
+				fu, fu ? "Unsigned" : "Signed");
+			INDENT(-1);
+			OUT("};\n");
+		}
 	}
 
 	REDIR(saved_target);
@@ -1054,10 +1087,15 @@ asn1c_lang_C_type_SEx_OF(arg_t *arg) {
 	/* README README: A_SET/SEQUENCE_OF macro implementation is already indirect. */
 	memb->marker.flags |= EM_INDIRECT;
 
+	int _ofw = 0, _ofu = 0;
 	if(
 	   /* Constructed/enum-with-map OR Open Type with IoS */
 	   (memb->expr_type & ASN_CONSTR_MASK)
 	   || (memb->expr_type == ASN_BASIC_ENUMERATED && expr_elements_count(arg, memb))
+	   /* An anonymous INTEGER element with fixed-width native storage needs
+	    * its own descriptor (carrying field_width specifics). */
+	   || (memb->expr_type == ASN_BASIC_INTEGER
+	       && asn1c_int_native_specifics(arg, memb, &_ofw, &_ofu))
 	   || ((memb->expr_type == ASN_BASIC_INTEGER || memb->expr_type == A1TC_REFERENCE)
 	       && !strcmp(asn1c_type_name(arg, memb, TNF_CTYPE), "unsigned long"))
 	   || (memb_ioc.ioct && is_open_type(arg, memb, &memb_ioc))
@@ -1791,10 +1829,17 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 			expr->_anonymous_type ? "":";\n");
 	}
 
-	fits_unsigned_integer =
-		(expr->expr_type == ASN_BASIC_INTEGER
-		 || expr->expr_type == A1TC_REFERENCE)
-		&& !strcmp(asn1c_type_name(arg, expr, TNF_CTYPE), "unsigned long");
+	{
+		int _w = 0, _u = 0;
+		/*
+		 * Only an inline (non-reference) INTEGER definition carries its own
+		 * specifics here; a reference defers to the referenced type's
+		 * descriptor, which already holds the specifics.
+		 */
+		fits_unsigned_integer =
+			(expr->expr_type == ASN_BASIC_INTEGER)
+			&& asn1c_int_native_specifics(arg, expr, &_w, &_u);
+	}
 
 	if((expr->expr_type == ASN_BASIC_ENUMERATED)
 	|| (0 /* -- prohibited by X.693:8.3.4 */
@@ -3945,10 +3990,14 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 		OUT("0,\n");
 	}
 
-	fits_unsigned_integer =
-		(expr->expr_type == ASN_BASIC_INTEGER
-		 || expr->expr_type == A1TC_REFERENCE)
-		&& !strcmp(asn1c_type_name(arg, expr, TNF_CTYPE), "unsigned long");
+	{
+		int _w = 0, _u = 0;
+		/* Inline INTEGER members carry their own specifics; references
+		 * point at the referenced type's descriptor instead. */
+		fits_unsigned_integer =
+			(expr->expr_type == ASN_BASIC_INTEGER)
+			&& asn1c_int_native_specifics(arg, expr, &_w, &_u);
+	}
 
 	complex_contents =
 		is_open_type(arg, expr, opt_ioc)
@@ -4375,7 +4424,7 @@ emit_type_DEF(arg_t *arg, asn1p_expr_t *expr, enum tvm_compat tv_mode, int tags_
 	            ((terminal->expr_type & ASN_CONSTR_MASK) ||
 	             (terminal->expr_type == ASN_BASIC_ENUMERATED) ||
 	             ((terminal->expr_type == ASN_BASIC_INTEGER) &&
-	              (asn1c_type_fits_long(arg, terminal) == FL_FITS_UNSIGN)))) {
+	              asn1c_int_has_native_specifics(arg, terminal)))) {
 		        OUT("&asn_SPC_%s_specs_%d\t/* Additional specs */\n",
 		            c_expr_name(arg, terminal).part_name,
 		            terminal->_type_unique_index);

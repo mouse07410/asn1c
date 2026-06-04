@@ -14,8 +14,9 @@ GeneralString.h GeneralString.c OCTET_STRING.h
 GeneralizedTime.h GeneralizedTime.c OCTET_STRING.h
 GraphicString.h GraphicString.c OCTET_STRING.h
 IA5String.h IA5String.c OCTET_STRING.h
-INTEGER.h INTEGER.c
+INTEGER.h INTEGER.c asn_constraint_value.h asn_constraint_value.c
 UInteger.h INTEGER.h INTEGER.c
+asn_constraint_value.h asn_constraint_value.c INTEGER.h
 ISO646String.h ISO646String.c OCTET_STRING.h
 NULL.h NULL.c
 NativeEnumerated.h NativeEnumerated.c NativeInteger.h ENUMERATED.h

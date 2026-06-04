@@ -1,0 +1,17 @@
+-- Test module for oversized INTEGER constraint support and the
+-- -finteger-native-type=long|int64|uint64|auto code-generation option.
+--
+-- See README.md in this directory for the expected generated storage type
+-- of each definition under each mode.
+TestOversizedIntegers DEFINITIONS ::= BEGIN
+
+    T1 ::= INTEGER (0..255)
+    T2 ::= INTEGER (-2147483648..2147483647)
+    T3 ::= INTEGER (0..4294967295)
+    T4 ::= INTEGER (0..9223372036854775807)
+    T5 ::= INTEGER (0..18446744073709551615)
+    T6 ::= INTEGER (18446744073709551610..18446744073709551615)
+    T7 ::= INTEGER (0..18446744073709551616)
+    T8 ::= INTEGER (-18446744073709551616..18446744073709551616)
+
+END

@@ -231,6 +231,7 @@ asn_TYPE_descriptor_t asn_DEF_CN_IntegerMinLow = {
 /*** <<< INCLUDES [NO-IntegerMinHigh] >>> ***/
 
 #include <INTEGER.h>
+#include <asn_constraint_value.h>
 
 /*** <<< TYPE-DECLS [NO-IntegerMinHigh] >>> ***/
 
@@ -254,8 +255,9 @@ cbor_type_encoder_f NO_IntegerMinHigh_encode_cbor;
 int
 NO_IntegerMinHigh_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
+	static const asn_cval_t asn_CVAL_NO_IntegerMinHigh_1_lb = { ACV_ABSENT, { 0 } };
+	static const asn_cval_t asn_CVAL_NO_IntegerMinHigh_1_ub = { ACV_UINT, { .u = UINTMAX_C(3000000000) } };
 	const INTEGER_t *st = (const INTEGER_t *)sptr;
-	long value;
 	
 	if(!sptr) {
 		ASN__CTFAIL(app_key, td, sptr,
@@ -264,14 +266,7 @@ NO_IntegerMinHigh_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		return -1;
 	}
 	
-	if(asn_INTEGER2long(st, &value)) {
-		ASN__CTFAIL(app_key, td, sptr,
-			"%s: value too large (%s:%d)",
-			td->name, __FILE__, __LINE__);
-		return -1;
-	}
-	
-	if((value <= 3000000000L)) {
+	if(asn_check_INTEGER_range(st, &asn_CVAL_NO_IntegerMinHigh_1_lb, &asn_CVAL_NO_IntegerMinHigh_1_ub, 0) == 0) {
 		/* Constraint check succeeded */
 		return 0;
 	} else {
@@ -376,7 +371,7 @@ NO_IntegerLowHigh_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 
 static const asn_INTEGER_specifics_t asn_SPC_NO_IntegerLowHigh_specs_1 = {
 	0,	0,	0,	0,	0,
-	0,	/* Native long size */
+	0,	/* Native integer width in octets */
 	1	/* Unsigned representation */
 };
 static const ber_tlv_tag_t asn_DEF_NO_IntegerLowHigh_tags_1[] = {
@@ -466,7 +461,7 @@ CN_IntegerLowMax_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 
 static const asn_INTEGER_specifics_t asn_SPC_CN_IntegerLowMax_specs_1 = {
 	0,	0,	0,	0,	0,
-	0,	/* Native long size */
+	0,	/* Native integer width in octets */
 	1	/* Unsigned representation */
 };
 static const ber_tlv_tag_t asn_DEF_CN_IntegerLowMax_tags_1[] = {
@@ -502,6 +497,7 @@ asn_TYPE_descriptor_t asn_DEF_CN_IntegerLowMax = {
 /*** <<< INCLUDES [NO-IntegerHighMax] >>> ***/
 
 #include <INTEGER.h>
+#include <asn_constraint_value.h>
 
 /*** <<< TYPE-DECLS [NO-IntegerHighMax] >>> ***/
 
@@ -525,8 +521,9 @@ cbor_type_encoder_f NO_IntegerHighMax_encode_cbor;
 int
 NO_IntegerHighMax_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
+	static const asn_cval_t asn_CVAL_NO_IntegerHighMax_1_lb = { ACV_UINT, { .u = UINTMAX_C(3000000000) } };
+	static const asn_cval_t asn_CVAL_NO_IntegerHighMax_1_ub = { ACV_ABSENT, { 0 } };
 	const INTEGER_t *st = (const INTEGER_t *)sptr;
-	long value;
 	
 	if(!sptr) {
 		ASN__CTFAIL(app_key, td, sptr,
@@ -535,14 +532,7 @@ NO_IntegerHighMax_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		return -1;
 	}
 	
-	if(asn_INTEGER2long(st, &value)) {
-		ASN__CTFAIL(app_key, td, sptr,
-			"%s: value too large (%s:%d)",
-			td->name, __FILE__, __LINE__);
-		return -1;
-	}
-	
-	if((value >= 3000000000L)) {
+	if(asn_check_INTEGER_range(st, &asn_CVAL_NO_IntegerHighMax_1_lb, &asn_CVAL_NO_IntegerHighMax_1_ub, 0) == 0) {
 		/* Constraint check succeeded */
 		return 0;
 	} else {
@@ -593,6 +583,7 @@ asn_TYPE_descriptor_t asn_DEF_NO_IntegerHighMax = {
 /*** <<< INCLUDES [NO-IntegerLowestMax] >>> ***/
 
 #include <INTEGER.h>
+#include <asn_constraint_value.h>
 
 /*** <<< TYPE-DECLS [NO-IntegerLowestMax] >>> ***/
 
@@ -616,8 +607,9 @@ cbor_type_encoder_f NO_IntegerLowestMax_encode_cbor;
 int
 NO_IntegerLowestMax_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
+	static const asn_cval_t asn_CVAL_NO_IntegerLowestMax_1_lb = { ACV_SINT, { .s = INTMAX_C(-3000000000) } };
+	static const asn_cval_t asn_CVAL_NO_IntegerLowestMax_1_ub = { ACV_ABSENT, { 0 } };
 	const INTEGER_t *st = (const INTEGER_t *)sptr;
-	long value;
 	
 	if(!sptr) {
 		ASN__CTFAIL(app_key, td, sptr,
@@ -626,14 +618,7 @@ NO_IntegerLowestMax_constraint(const asn_TYPE_descriptor_t *td, const void *sptr
 		return -1;
 	}
 	
-	if(asn_INTEGER2long(st, &value)) {
-		ASN__CTFAIL(app_key, td, sptr,
-			"%s: value too large (%s:%d)",
-			td->name, __FILE__, __LINE__);
-		return -1;
-	}
-	
-	if((value >= -3000000000L)) {
+	if(asn_check_INTEGER_range(st, &asn_CVAL_NO_IntegerLowestMax_1_lb, &asn_CVAL_NO_IntegerLowestMax_1_ub, 0) == 0) {
 		/* Constraint check succeeded */
 		return 0;
 	} else {
@@ -738,7 +723,7 @@ NO_IntegerOutRange_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 
 static const asn_INTEGER_specifics_t asn_SPC_NO_IntegerOutRange_specs_1 = {
 	0,	0,	0,	0,	0,
-	0,	/* Native long size */
+	0,	/* Native integer width in octets */
 	1	/* Unsigned representation */
 };
 static const ber_tlv_tag_t asn_DEF_NO_IntegerOutRange_tags_1[] = {
@@ -828,7 +813,7 @@ NO_IntegerOutValue_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 
 static const asn_INTEGER_specifics_t asn_SPC_NO_IntegerOutValue_specs_1 = {
 	0,	0,	0,	0,	0,
-	0,	/* Native long size */
+	0,	/* Native integer width in octets */
 	1	/* Unsigned representation */
 };
 static const ber_tlv_tag_t asn_DEF_NO_IntegerOutValue_tags_1[] = {
@@ -1343,7 +1328,7 @@ NO_IntegerInRange6_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 
 static const asn_INTEGER_specifics_t asn_SPC_NO_IntegerInRange6_specs_1 = {
 	0,	0,	0,	0,	0,
-	0,	/* Native long size */
+	0,	/* Native integer width in octets */
 	1	/* Unsigned representation */
 };
 static const ber_tlv_tag_t asn_DEF_NO_IntegerInRange6_tags_1[] = {

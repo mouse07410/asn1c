@@ -1,0 +1,918 @@
+
+/*** <<< INCLUDES [ChoiceField] >>> ***/
+
+#include <constr_CHOICE.h>
+
+/*** <<< DEPS [ChoiceField] >>> ***/
+
+typedef enum ChoiceField_PR {
+	ChoiceField_PR_NOTHING,	/* No components present */
+	ChoiceField_PR_seqA,
+	ChoiceField_PR_seqB
+} ChoiceField_PR;
+
+/*** <<< FWD-DECLS [ChoiceField] >>> ***/
+
+struct SeqA;
+struct SeqB;
+
+/*** <<< TYPE-DECLS [ChoiceField] >>> ***/
+
+typedef struct ChoiceField {
+	ChoiceField_PR present;
+	union ChoiceField_u {
+		struct SeqA	*seqA;
+		struct SeqB	*seqB;
+	} choice;
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} ChoiceField_t;
+
+/*** <<< FUNC-DECLS [ChoiceField] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_ChoiceField;
+
+/*** <<< POST-INCLUDE [ChoiceField] >>> ***/
+
+#include "SeqA.h"
+#include "SeqB.h"
+
+/*** <<< STAT-DEFS [ChoiceField] >>> ***/
+
+static asn_TYPE_member_t asn_MBR_ChoiceField_1[] = {
+	{ ATF_POINTER, 0, offsetof(struct ChoiceField, choice.seqA),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_SeqA,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "seqA"
+		},
+	{ ATF_POINTER, 0, offsetof(struct ChoiceField, choice.seqB),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_SeqB,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "seqB"
+		},
+};
+static const asn_TYPE_tag2member_t asn_MAP_ChoiceField_tag2el_1[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* seqA */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 } /* seqB */
+};
+static asn_CHOICE_specifics_t asn_SPC_ChoiceField_specs_1 = {
+	sizeof(struct ChoiceField),
+	offsetof(struct ChoiceField, _asn_ctx),
+	offsetof(struct ChoiceField, present),
+	sizeof(((struct ChoiceField *)0)->present),
+	.tag2el = asn_MAP_ChoiceField_tag2el_1,
+	.tag2el_count = 2,	/* Count of tags in the map */
+	0, 0,
+	.first_extension = -1	/* Extensions start */
+};
+asn_TYPE_descriptor_t asn_DEF_ChoiceField = {
+	"ChoiceField",
+	"ChoiceField",
+	&asn_OP_CHOICE,
+	0,	/* No effective tags (pointer) */
+	0,	/* No effective tags (count) */
+	0,	/* No tags (pointer) */
+	0,	/* No tags (count) */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		CHOICE_constraint
+	},
+	asn_MBR_ChoiceField_1,
+	2,	/* Elements count */
+	&asn_SPC_ChoiceField_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [SeqA] >>> ***/
+
+#include "TerA_DuplicateA.h"
+#include "TerB_DuplicateB.h"
+#include <constr_SEQUENCE.h>
+
+/*** <<< TYPE-DECLS [SeqA] >>> ***/
+
+typedef struct SeqA {
+	TerA_DuplicateA_t	 fieldA;
+	TerB_DuplicateB_t	 fieldB;
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} SeqA_t;
+
+/*** <<< FUNC-DECLS [SeqA] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_SeqA;
+extern asn_SEQUENCE_specifics_t asn_SPC_SeqA_specs_1;
+extern asn_TYPE_member_t asn_MBR_SeqA_1[2];
+
+/*** <<< STAT-DEFS [SeqA] >>> ***/
+
+asn_TYPE_member_t asn_MBR_SeqA_1[] = {
+	{ ATF_NOFLAGS, 0, offsetof(struct SeqA, fieldA),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_TerA_DuplicateA,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "fieldA"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct SeqA, fieldB),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_TerB_DuplicateB,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "fieldB"
+		},
+};
+static const ber_tlv_tag_t asn_DEF_SeqA_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+static const asn_TYPE_tag2member_t asn_MAP_SeqA_tag2el_1[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* fieldA */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 } /* fieldB */
+};
+asn_SEQUENCE_specifics_t asn_SPC_SeqA_specs_1 = {
+	sizeof(struct SeqA),
+	offsetof(struct SeqA, _asn_ctx),
+	.tag2el = asn_MAP_SeqA_tag2el_1,
+	.tag2el_count = 2,	/* Count of tags in the map */
+	0, 0, 0,	/* Optional elements (not needed) */
+	-1,	/* First extension addition */
+};
+asn_TYPE_descriptor_t asn_DEF_SeqA = {
+	"SeqA",
+	"SeqA",
+	&asn_OP_SEQUENCE,
+	asn_DEF_SeqA_tags_1,
+	sizeof(asn_DEF_SeqA_tags_1)
+		/sizeof(asn_DEF_SeqA_tags_1[0]), /* 1 */
+	asn_DEF_SeqA_tags_1,	/* Same as above */
+	sizeof(asn_DEF_SeqA_tags_1)
+		/sizeof(asn_DEF_SeqA_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_constraint
+	},
+	asn_MBR_SeqA_1,
+	2,	/* Elements count */
+	&asn_SPC_SeqA_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [SeqB] >>> ***/
+
+#include "TerB_DuplicateA.h"
+#include "TerA_DuplicateB.h"
+#include <constr_SEQUENCE.h>
+
+/*** <<< TYPE-DECLS [SeqB] >>> ***/
+
+typedef struct SeqB {
+	TerB_DuplicateA_t	 fieldA;
+	TerA_DuplicateB_t	 fieldB;
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} SeqB_t;
+
+/*** <<< FUNC-DECLS [SeqB] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_SeqB;
+extern asn_SEQUENCE_specifics_t asn_SPC_SeqB_specs_1;
+extern asn_TYPE_member_t asn_MBR_SeqB_1[2];
+
+/*** <<< STAT-DEFS [SeqB] >>> ***/
+
+asn_TYPE_member_t asn_MBR_SeqB_1[] = {
+	{ ATF_NOFLAGS, 0, offsetof(struct SeqB, fieldA),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_TerB_DuplicateA,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "fieldA"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct SeqB, fieldB),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_TerA_DuplicateB,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "fieldB"
+		},
+};
+static const ber_tlv_tag_t asn_DEF_SeqB_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+static const asn_TYPE_tag2member_t asn_MAP_SeqB_tag2el_1[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* fieldA */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 } /* fieldB */
+};
+asn_SEQUENCE_specifics_t asn_SPC_SeqB_specs_1 = {
+	sizeof(struct SeqB),
+	offsetof(struct SeqB, _asn_ctx),
+	.tag2el = asn_MAP_SeqB_tag2el_1,
+	.tag2el_count = 2,	/* Count of tags in the map */
+	0, 0, 0,	/* Optional elements (not needed) */
+	-1,	/* First extension addition */
+};
+asn_TYPE_descriptor_t asn_DEF_SeqB = {
+	"SeqB",
+	"SeqB",
+	&asn_OP_SEQUENCE,
+	asn_DEF_SeqB_tags_1,
+	sizeof(asn_DEF_SeqB_tags_1)
+		/sizeof(asn_DEF_SeqB_tags_1[0]), /* 1 */
+	asn_DEF_SeqB_tags_1,	/* Same as above */
+	sizeof(asn_DEF_SeqB_tags_1)
+		/sizeof(asn_DEF_SeqB_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_constraint
+	},
+	asn_MBR_SeqB_1,
+	2,	/* Elements count */
+	&asn_SPC_SeqB_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [DuplicateA] >>> ***/
+
+#include <NativeInteger.h>
+
+/*** <<< TYPE-DECLS [DuplicateA] >>> ***/
+
+typedef long	 TerA_DuplicateA_t;
+
+/*** <<< FUNC-DECLS [DuplicateA] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_TerA_DuplicateA;
+asn_struct_free_f TerA_DuplicateA_free;
+asn_struct_print_f TerA_DuplicateA_print;
+asn_constr_check_f TerA_DuplicateA_constraint;
+ber_type_decoder_f TerA_DuplicateA_decode_ber;
+der_type_encoder_f TerA_DuplicateA_encode_der;
+xer_type_decoder_f TerA_DuplicateA_decode_xer;
+xer_type_encoder_f TerA_DuplicateA_encode_xer;
+cbor_type_decoder_f TerA_DuplicateA_decode_cbor;
+cbor_type_encoder_f TerA_DuplicateA_encode_cbor;
+
+/*** <<< CODE [DuplicateA] >>> ***/
+
+/*
+ * This type is implemented using NativeInteger,
+ * so here we adjust the DEF accordingly.
+ */
+
+/*** <<< STAT-DEFS [DuplicateA] >>> ***/
+
+static const ber_tlv_tag_t asn_DEF_TerA_DuplicateA_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (2 << 2))
+};
+asn_TYPE_descriptor_t asn_DEF_TerA_DuplicateA = {
+	"DuplicateA",
+	"DuplicateA",
+	&asn_OP_NativeInteger,
+	asn_DEF_TerA_DuplicateA_tags_1,
+	sizeof(asn_DEF_TerA_DuplicateA_tags_1)
+		/sizeof(asn_DEF_TerA_DuplicateA_tags_1[0]), /* 1 */
+	asn_DEF_TerA_DuplicateA_tags_1,	/* Same as above */
+	sizeof(asn_DEF_TerA_DuplicateA_tags_1)
+		/sizeof(asn_DEF_TerA_DuplicateA_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		NativeInteger_constraint
+	},
+	0, 0,	/* No members */
+	0	/* No specifics */
+};
+
+
+/*** <<< INCLUDES [DuplicateB] >>> ***/
+
+#include <BOOLEAN.h>
+
+/*** <<< TYPE-DECLS [DuplicateB] >>> ***/
+
+typedef BOOLEAN_t	 TerA_DuplicateB_t;
+
+/*** <<< FUNC-DECLS [DuplicateB] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_TerA_DuplicateB;
+asn_struct_free_f TerA_DuplicateB_free;
+asn_struct_print_f TerA_DuplicateB_print;
+asn_constr_check_f TerA_DuplicateB_constraint;
+ber_type_decoder_f TerA_DuplicateB_decode_ber;
+der_type_encoder_f TerA_DuplicateB_encode_der;
+xer_type_decoder_f TerA_DuplicateB_decode_xer;
+xer_type_encoder_f TerA_DuplicateB_encode_xer;
+cbor_type_decoder_f TerA_DuplicateB_decode_cbor;
+cbor_type_encoder_f TerA_DuplicateB_encode_cbor;
+
+/*** <<< CODE [DuplicateB] >>> ***/
+
+/*
+ * This type is implemented using BOOLEAN,
+ * so here we adjust the DEF accordingly.
+ */
+
+/*** <<< STAT-DEFS [DuplicateB] >>> ***/
+
+static const ber_tlv_tag_t asn_DEF_TerA_DuplicateB_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (1 << 2))
+};
+asn_TYPE_descriptor_t asn_DEF_TerA_DuplicateB = {
+	"DuplicateB",
+	"DuplicateB",
+	&asn_OP_BOOLEAN,
+	asn_DEF_TerA_DuplicateB_tags_1,
+	sizeof(asn_DEF_TerA_DuplicateB_tags_1)
+		/sizeof(asn_DEF_TerA_DuplicateB_tags_1[0]), /* 1 */
+	asn_DEF_TerA_DuplicateB_tags_1,	/* Same as above */
+	sizeof(asn_DEF_TerA_DuplicateB_tags_1)
+		/sizeof(asn_DEF_TerA_DuplicateB_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		BOOLEAN_constraint
+	},
+	0, 0,	/* No members */
+	0	/* No specifics */
+};
+
+
+/*** <<< INCLUDES [DuplicateA] >>> ***/
+
+#include <NativeEnumerated.h>
+
+/*** <<< DEPS [DuplicateA] >>> ***/
+
+typedef enum TerB_DuplicateA {
+	TerB_DuplicateA_alpha	= 0,
+	TerB_DuplicateA_beta	= 1,
+	TerB_DuplicateA_gamma	= 2
+} e_TerB_DuplicateA;
+
+/*** <<< TYPE-DECLS [DuplicateA] >>> ***/
+
+typedef long	 TerB_DuplicateA_t;
+
+/*** <<< FUNC-DECLS [DuplicateA] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_TerB_DuplicateA;
+extern const asn_INTEGER_specifics_t asn_SPC_TerB_DuplicateA_specs_1;
+asn_struct_free_f TerB_DuplicateA_free;
+asn_struct_print_f TerB_DuplicateA_print;
+asn_constr_check_f TerB_DuplicateA_constraint;
+ber_type_decoder_f TerB_DuplicateA_decode_ber;
+der_type_encoder_f TerB_DuplicateA_encode_der;
+xer_type_decoder_f TerB_DuplicateA_decode_xer;
+xer_type_encoder_f TerB_DuplicateA_encode_xer;
+cbor_type_decoder_f TerB_DuplicateA_decode_cbor;
+cbor_type_encoder_f TerB_DuplicateA_encode_cbor;
+
+/*** <<< CODE [DuplicateA] >>> ***/
+
+/*
+ * This type is implemented using NativeEnumerated,
+ * so here we adjust the DEF accordingly.
+ */
+
+/*** <<< STAT-DEFS [DuplicateA] >>> ***/
+
+static const asn_INTEGER_enum_map_t asn_MAP_TerB_DuplicateA_value2enum_1[] = {
+	{ 0,	5,	"alpha" },
+	{ 1,	4,	"beta" },
+	{ 2,	5,	"gamma" }
+};
+static int asn_validate_TerB_DuplicateA_1(const asn_TYPE_descriptor_t *td,
+                       const void *sptr,
+                       asn_app_constraint_failed_f *ctfailcb,
+                       void* app_key) {
+    if(! sptr) { return -1; }
+    e_TerB_DuplicateA value = *(e_TerB_DuplicateA*)sptr;
+    switch(value) {
+    case TerB_DuplicateA_alpha:
+    case TerB_DuplicateA_beta:
+    case TerB_DuplicateA_gamma:
+        return 0;
+    }
+    return -1;
+}
+static const unsigned int asn_MAP_TerB_DuplicateA_enum2value_1[] = {
+	0,	/* alpha(0) */
+	1,	/* beta(1) */
+	2	/* gamma(2) */
+};
+const asn_INTEGER_specifics_t asn_SPC_TerB_DuplicateA_specs_1 = {
+	asn_MAP_TerB_DuplicateA_value2enum_1,	/* "tag" => N; sorted by tag */
+	asn_MAP_TerB_DuplicateA_enum2value_1,	/* N => "tag"; sorted by N */
+	3,	/* Number of elements in the maps */
+	0,	/* Enumeration is not extensible */
+	1,	/* Strict enumeration */
+	0,	/* Native long size */
+	0
+};
+static const ber_tlv_tag_t asn_DEF_TerB_DuplicateA_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (10 << 2))
+};
+asn_TYPE_descriptor_t asn_DEF_TerB_DuplicateA = {
+	"DuplicateA",
+	"DuplicateA",
+	&asn_OP_NativeEnumerated,
+	asn_DEF_TerB_DuplicateA_tags_1,
+	sizeof(asn_DEF_TerB_DuplicateA_tags_1)
+		/sizeof(asn_DEF_TerB_DuplicateA_tags_1[0]), /* 1 */
+	asn_DEF_TerB_DuplicateA_tags_1,	/* Same as above */
+	sizeof(asn_DEF_TerB_DuplicateA_tags_1)
+		/sizeof(asn_DEF_TerB_DuplicateA_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		asn_validate_TerB_DuplicateA_1
+	},
+	0, 0,	/* Defined elsewhere */
+	&asn_SPC_TerB_DuplicateA_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [DuplicateB] >>> ***/
+
+#include <OCTET_STRING.h>
+
+/*** <<< TYPE-DECLS [DuplicateB] >>> ***/
+
+typedef OCTET_STRING_t	 TerB_DuplicateB_t;
+
+/*** <<< FUNC-DECLS [DuplicateB] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_TerB_DuplicateB;
+asn_struct_free_f TerB_DuplicateB_free;
+asn_struct_print_f TerB_DuplicateB_print;
+asn_constr_check_f TerB_DuplicateB_constraint;
+ber_type_decoder_f TerB_DuplicateB_decode_ber;
+der_type_encoder_f TerB_DuplicateB_encode_der;
+xer_type_decoder_f TerB_DuplicateB_decode_xer;
+xer_type_encoder_f TerB_DuplicateB_encode_xer;
+cbor_type_decoder_f TerB_DuplicateB_decode_cbor;
+cbor_type_encoder_f TerB_DuplicateB_encode_cbor;
+
+/*** <<< CODE [DuplicateB] >>> ***/
+
+/*
+ * This type is implemented using OCTET_STRING,
+ * so here we adjust the DEF accordingly.
+ */
+
+/*** <<< STAT-DEFS [DuplicateB] >>> ***/
+
+static const ber_tlv_tag_t asn_DEF_TerB_DuplicateB_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (4 << 2))
+};
+asn_TYPE_descriptor_t asn_DEF_TerB_DuplicateB = {
+	"DuplicateB",
+	"DuplicateB",
+	&asn_OP_OCTET_STRING,
+	asn_DEF_TerB_DuplicateB_tags_1,
+	sizeof(asn_DEF_TerB_DuplicateB_tags_1)
+		/sizeof(asn_DEF_TerB_DuplicateB_tags_1[0]), /* 1 */
+	asn_DEF_TerB_DuplicateB_tags_1,	/* Same as above */
+	sizeof(asn_DEF_TerB_DuplicateB_tags_1)
+		/sizeof(asn_DEF_TerB_DuplicateB_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		OCTET_STRING_constraint
+	},
+	0, 0,	/* No members */
+	&asn_SPC_OCTET_STRING_specs	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [EXTERNAL] >>> ***/
+
+#include <OBJECT_IDENTIFIER.h>
+#include <NativeInteger.h>
+#include <ObjectDescriptor.h>
+#include <ANY.h>
+#include <OCTET_STRING.h>
+#include <BIT_STRING.h>
+#include <constr_CHOICE.h>
+#include <constr_SEQUENCE.h>
+
+/*** <<< DEPS [EXTERNAL] >>> ***/
+
+typedef enum EXTERNAL__encoding_PR {
+	EXTERNAL__encoding_PR_NOTHING,	/* No components present */
+	EXTERNAL__encoding_PR_single_ASN1_type,
+	EXTERNAL__encoding_PR_octet_aligned,
+	EXTERNAL__encoding_PR_arbitrary
+} EXTERNAL__encoding_PR;
+
+/*** <<< TYPE-DECLS [EXTERNAL] >>> ***/
+
+typedef struct EXTERNAL {
+	OBJECT_IDENTIFIER_t	*direct_reference;	/* OPTIONAL */
+	long	*indirect_reference;	/* OPTIONAL */
+	ObjectDescriptor_t	*data_value_descriptor;	/* OPTIONAL */
+	struct EXTERNAL__encoding {
+		EXTERNAL__encoding_PR present;
+		union EXTERNAL__encoding_u {
+			ANY_t	 single_ASN1_type;
+			OCTET_STRING_t	 octet_aligned;
+			BIT_STRING_t	 arbitrary;
+		} choice;
+		
+		/* Context for parsing across buffer boundaries */
+		asn_struct_ctx_t _asn_ctx;
+	} encoding;
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} EXTERNAL_t;
+
+/*** <<< FUNC-DECLS [EXTERNAL] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_EXTERNAL;
+
+/*** <<< CODE [EXTERNAL] >>> ***/
+
+#ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
+#if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
+extern asn_TYPE_descriptor_t asn_DEF_encoding __attribute__((weak, alias("asn_DEF_encoding_5")));
+#else
+static asn_TYPE_descriptor_t asn_DEF_encoding_5;
+static asn_TYPE_descriptor_t asn_DEF_encoding;
+__attribute__((constructor)) static void asn_DEF_encoding_5_alias_init(void) {
+	asn_DEF_encoding = asn_DEF_encoding_5;
+}
+#endif
+#endif /* ASN1C_NO_UNSUFFIXED_PDU_ALIAS */
+
+/*** <<< STAT-DEFS [EXTERNAL] >>> ***/
+
+static asn_TYPE_member_t asn_MBR_EXTERNAL__encoding_5[] = {
+	{ ATF_NOFLAGS, 0, offsetof(struct EXTERNAL__encoding, choice.single_ASN1_type),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = +1,	/* EXPLICIT tag at current level */
+		.type = &asn_DEF_ANY,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "single-ASN1-type"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct EXTERNAL__encoding, choice.octet_aligned),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_OCTET_STRING,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "octet-aligned"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct EXTERNAL__encoding, choice.arbitrary),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (2 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_BIT_STRING,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "arbitrary"
+		},
+};
+static const asn_TYPE_tag2member_t asn_MAP_encoding_tag2el_5[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* single-ASN1-type */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 }, /* octet-aligned */
+    { (ASN_TAG_CLASS_CONTEXT | (2 << 2)), 2, 0, 0 } /* arbitrary */
+};
+static asn_CHOICE_specifics_t asn_SPC_encoding_specs_5 = {
+	sizeof(struct EXTERNAL__encoding),
+	offsetof(struct EXTERNAL__encoding, _asn_ctx),
+	offsetof(struct EXTERNAL__encoding, present),
+	sizeof(((struct EXTERNAL__encoding *)0)->present),
+	.tag2el = asn_MAP_encoding_tag2el_5,
+	.tag2el_count = 3,	/* Count of tags in the map */
+	0, 0,
+	.first_extension = -1	/* Extensions start */
+};
+static /* Use -fall-defs-global to expose */
+asn_TYPE_descriptor_t asn_DEF_encoding_5 = {
+	"encoding",
+	"encoding",
+	&asn_OP_CHOICE,
+	0,	/* No effective tags (pointer) */
+	0,	/* No effective tags (count) */
+	0,	/* No tags (pointer) */
+	0,	/* No tags (count) */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		CHOICE_constraint
+	},
+	asn_MBR_EXTERNAL__encoding_5,
+	3,	/* Elements count */
+	&asn_SPC_encoding_specs_5	/* Additional specs */
+};
+
+static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
+	{ ATF_POINTER, 3, offsetof(struct EXTERNAL, direct_reference),
+		.tag = (ASN_TAG_CLASS_UNIVERSAL | (6 << 2)),
+		.tag_mode = 0,
+		.type = &asn_DEF_OBJECT_IDENTIFIER,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "direct-reference"
+		},
+	{ ATF_POINTER, 2, offsetof(struct EXTERNAL, indirect_reference),
+		.tag = (ASN_TAG_CLASS_UNIVERSAL | (2 << 2)),
+		.tag_mode = 0,
+		.type = &asn_DEF_NativeInteger,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "indirect-reference"
+		},
+	{ ATF_POINTER, 1, offsetof(struct EXTERNAL, data_value_descriptor),
+		.tag = (ASN_TAG_CLASS_UNIVERSAL | (7 << 2)),
+		.tag_mode = 0,
+		.type = &asn_DEF_ObjectDescriptor,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "data-value-descriptor"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct EXTERNAL, encoding),
+		.tag = -1 /* Ambiguous tag (CHOICE?) */,
+		.tag_mode = 0,
+		.type = &asn_DEF_encoding_5,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "encoding"
+		},
+};
+static const ber_tlv_tag_t asn_DEF_EXTERNAL_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (8 << 2)),
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+static const asn_TYPE_tag2member_t asn_MAP_EXTERNAL_tag2el_1[] = {
+    { (ASN_TAG_CLASS_UNIVERSAL | (2 << 2)), 1, 0, 0 }, /* indirect-reference */
+    { (ASN_TAG_CLASS_UNIVERSAL | (6 << 2)), 0, 0, 0 }, /* direct-reference */
+    { (ASN_TAG_CLASS_UNIVERSAL | (7 << 2)), 2, 0, 0 }, /* data-value-descriptor */
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 3, 0, 0 }, /* single-ASN1-type */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 3, 0, 0 }, /* octet-aligned */
+    { (ASN_TAG_CLASS_CONTEXT | (2 << 2)), 3, 0, 0 } /* arbitrary */
+};
+static asn_SEQUENCE_specifics_t asn_SPC_EXTERNAL_specs_1 = {
+	sizeof(struct EXTERNAL),
+	offsetof(struct EXTERNAL, _asn_ctx),
+	.tag2el = asn_MAP_EXTERNAL_tag2el_1,
+	.tag2el_count = 6,	/* Count of tags in the map */
+	0, 0, 0,	/* Optional elements (not needed) */
+	-1,	/* First extension addition */
+};
+asn_TYPE_descriptor_t asn_DEF_EXTERNAL = {
+	"EXTERNAL",
+	"EXTERNAL",
+	&asn_OP_SEQUENCE,
+	asn_DEF_EXTERNAL_tags_1,
+	sizeof(asn_DEF_EXTERNAL_tags_1)
+		/sizeof(asn_DEF_EXTERNAL_tags_1[0]) - 1, /* 1 */
+	asn_DEF_EXTERNAL_tags_1,	/* Same as above */
+	sizeof(asn_DEF_EXTERNAL_tags_1)
+		/sizeof(asn_DEF_EXTERNAL_tags_1[0]), /* 2 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_constraint
+	},
+	asn_MBR_EXTERNAL_1,
+	4,	/* Elements count */
+	&asn_SPC_EXTERNAL_specs_1	/* Additional specs */
+};
+

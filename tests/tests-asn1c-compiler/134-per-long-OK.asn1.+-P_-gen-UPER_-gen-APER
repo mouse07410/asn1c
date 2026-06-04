@@ -3,6 +3,7 @@
 
 #include <INTEGER.h>
 #include <constr_SEQUENCE.h>
+#include <asn_constraint_value.h>
 
 /*** <<< TYPE-DECLS [T] >>> ***/
 
@@ -25,8 +26,9 @@ extern asn_TYPE_descriptor_t asn_DEF_T;
 static int
 memb_unsigned33_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
 			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
+	static const asn_cval_t asn_CVAL_unsigned33_2_lb = { ACV_UINT, { .u = UINTMAX_C(0) } };
+	static const asn_cval_t asn_CVAL_unsigned33_2_ub = { ACV_UINT, { .u = UINTMAX_C(5000000000) } };
 	const INTEGER_t *st = (const INTEGER_t *)sptr;
-	unsigned long value;
 	
 	if(!sptr) {
 		ASN__CTFAIL(app_key, td, sptr,
@@ -35,14 +37,7 @@ memb_unsigned33_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
 		return -1;
 	}
 	
-	if(asn_INTEGER2ulong(st, &value)) {
-		ASN__CTFAIL(app_key, td, sptr,
-			"%s: value too large (%s:%d)",
-			td->name, __FILE__, __LINE__);
-		return -1;
-	}
-	
-	if((value <= 5000000000UL)) {
+	if(asn_check_INTEGER_range(st, &asn_CVAL_unsigned33_2_lb, &asn_CVAL_unsigned33_2_ub, 0) == 0) {
 		/* Constraint check succeeded */
 		return 0;
 	} else {
@@ -56,8 +51,9 @@ memb_unsigned33_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
 static int
 memb_unsigned42_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
 			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
+	static const asn_cval_t asn_CVAL_unsigned42_3_lb = { ACV_UINT, { .u = UINTMAX_C(0) } };
+	static const asn_cval_t asn_CVAL_unsigned42_3_ub = { ACV_UINT, { .u = UINTMAX_C(3153600000000) } };
 	const INTEGER_t *st = (const INTEGER_t *)sptr;
-	unsigned long value;
 	
 	if(!sptr) {
 		ASN__CTFAIL(app_key, td, sptr,
@@ -66,14 +62,7 @@ memb_unsigned42_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
 		return -1;
 	}
 	
-	if(asn_INTEGER2ulong(st, &value)) {
-		ASN__CTFAIL(app_key, td, sptr,
-			"%s: value too large (%s:%d)",
-			td->name, __FILE__, __LINE__);
-		return -1;
-	}
-	
-	if((value <= 3153600000000UL)) {
+	if(asn_check_INTEGER_range(st, &asn_CVAL_unsigned42_3_lb, &asn_CVAL_unsigned42_3_ub, 0) == 0) {
 		/* Constraint check succeeded */
 		return 0;
 	} else {
@@ -87,8 +76,9 @@ memb_unsigned42_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
 static int
 memb_signed33_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
 			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
+	static const asn_cval_t asn_CVAL_signed33_4_lb = { ACV_SINT, { .s = INTMAX_C(-4000000000) } };
+	static const asn_cval_t asn_CVAL_signed33_4_ub = { ACV_UINT, { .u = UINTMAX_C(4000000000) } };
 	const INTEGER_t *st = (const INTEGER_t *)sptr;
-	long value;
 	
 	if(!sptr) {
 		ASN__CTFAIL(app_key, td, sptr,
@@ -97,14 +87,7 @@ memb_signed33_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
 		return -1;
 	}
 	
-	if(asn_INTEGER2long(st, &value)) {
-		ASN__CTFAIL(app_key, td, sptr,
-			"%s: value too large (%s:%d)",
-			td->name, __FILE__, __LINE__);
-		return -1;
-	}
-	
-	if((value >= -4000000000L && value <= 4000000000L)) {
+	if(asn_check_INTEGER_range(st, &asn_CVAL_signed33_4_lb, &asn_CVAL_signed33_4_ub, 0) == 0) {
 		/* Constraint check succeeded */
 		return 0;
 	} else {
@@ -118,8 +101,9 @@ memb_signed33_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
 static int
 memb_signed33ext_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
 			asn_app_constraint_failed_f *ctfailcb, void *app_key) {
+	static const asn_cval_t asn_CVAL_signed33ext_5_lb = { ACV_SINT, { .s = INTMAX_C(-4000000000) } };
+	static const asn_cval_t asn_CVAL_signed33ext_5_ub = { ACV_UINT, { .u = UINTMAX_C(4000000000) } };
 	const INTEGER_t *st = (const INTEGER_t *)sptr;
-	long value;
 	
 	if(!sptr) {
 		ASN__CTFAIL(app_key, td, sptr,
@@ -128,14 +112,7 @@ memb_signed33ext_constraint_1(const asn_TYPE_descriptor_t *td, const void *sptr,
 		return -1;
 	}
 	
-	if(asn_INTEGER2long(st, &value)) {
-		ASN__CTFAIL(app_key, td, sptr,
-			"%s: value too large (%s:%d)",
-			td->name, __FILE__, __LINE__);
-		return -1;
-	}
-	
-	if((value >= -4000000000L && value <= 4000000000L)) {
+	if(asn_check_INTEGER_range(st, &asn_CVAL_signed33ext_5_lb, &asn_CVAL_signed33ext_5_ub, 0) == 0) {
 		/* Constraint check succeeded */
 		return 0;
 	} else {

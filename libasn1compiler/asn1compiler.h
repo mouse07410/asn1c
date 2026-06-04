@@ -3,6 +3,25 @@
 
 #include <asn1parser.h>
 
+/*
+ * Policy for selecting the native C storage type of constrained ASN.1
+ * INTEGER values.  Controlled by the -finteger-native-type=<mode> option.
+ */
+typedef enum asn_integer_native_type_e {
+	AINT_NATIVE_AUTO = 0,	/* Smallest safe fixed-width type, then INTEGER_t */
+	AINT_NATIVE_INT32,	/* Permit int32_t storage */
+	AINT_NATIVE_UINT32,	/* Permit uint32_t storage */
+	AINT_NATIVE_INT64,	/* Permit int64_t storage */
+	AINT_NATIVE_UINT64	/* Permit uint64_t storage */
+} asn_integer_native_type_e;
+
+/*
+ * Global selection of the integer native storage policy.
+ * Defaults to AINT_NATIVE_AUTO.  Set from the command line in asn1c.c
+ * before asn1_compile() is invoked, and consulted by the code generator.
+ */
+extern asn_integer_native_type_e asn1c_integer_native_type;
+
 enum asn1c_flags {
 	A1C_NOFLAGS,
 	/*

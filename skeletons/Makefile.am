@@ -39,6 +39,7 @@ libasn1cskeletons_la_SOURCES =                  \
     IA5String.c IA5String.h                     \
     INTEGER.c INTEGER.h                         \
     INTEGER_oer.c                               \
+    asn_constraint_value.c asn_constraint_value.h \
     ISO646String.c ISO646String.h               \
     NULL.c NULL.h                               \
     NativeEnumerated.c NativeEnumerated.h       \

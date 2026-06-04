@@ -439,7 +439,13 @@ asn_long2INTEGER(INTEGER_t *st, long value) {
 
 int
 asn_ulong2INTEGER(INTEGER_t *st, unsigned long value) {
-    return asn_imax2INTEGER(st, value);
+    /*
+     * Route through the unsigned conversion helper so that values above
+     * the signed maximum stay positive (a leading zero content octet is
+     * prepended when the high bit would otherwise imply a negative value).
+     * Using the signed helper here would misencode e.g. ULONG_MAX as -1.
+     */
+    return asn_umax2INTEGER(st, (uintmax_t)value);
 }
 
 int asn_INTEGER2int64(const INTEGER_t *st, int64_t *value) {
