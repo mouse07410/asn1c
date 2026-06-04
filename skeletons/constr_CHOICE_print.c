@@ -34,7 +34,7 @@ CHOICE_print(const asn_TYPE_descriptor_t *td, const void *sptr, int ilevel,
         }
 
         /* Print member's name and stuff */
-        if(0) {
+        if(1) {
             if(cb(elm->name, strlen(elm->name), app_key) < 0
             || cb(": ", 2, app_key) < 0)
                 return -1;
