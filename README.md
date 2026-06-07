@@ -16,7 +16,7 @@ The asn1c is arguably the most evolved open source ASN.1 compiler.
 
 ## Latest release
 
-Current release: **1.4.3**
+Current release: **1.5.0**
 
 This release adds the `-fprefer-import-source` flag, which fixes incorrect type
 binding when two modules export identically-named types and a consumer imports
@@ -226,5 +226,5 @@ For more details, see [PARTIAL_DECODING.md](PARTIAL_DECODING.md).
 
 
 -- 
-Lev Walkin
-vlm@lionet.info
+Mouse and Lev Walkin
+<none>    vlm@lionet.info
