@@ -25,7 +25,10 @@ typedef struct asn1p_xports_s {
 
 	enum asn1p_import_option {
 		XPT_WITH_SUCCESSORS = 1,
-		XPT_WITH_DESCENDANTS
+		XPT_WITH_DESCENDANTS,
+		XPT_WITH_NEWER  /* for ETSI/3GPP-style OIDs, allow import OID to omit the
+				 * last two version arcs and accept modules with newer
+				 * (release, minor) version arcs */
 	} option;
 
 	/*

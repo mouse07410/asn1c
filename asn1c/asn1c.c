@@ -161,6 +161,8 @@ main(int ac, char **av) {
                 char *known_type = optarg + 18;
                 ret = asn1f_make_known_external_type(known_type);
                 assert(ret == 0 || errno == EEXIST);
+            } else if(strcmp(optarg, "allow-newer-modules") == 0) {
+                asn1_fixer_flags |= A1F_ALLOW_NEWER_MODULES;
             } else if(strcmp(optarg, "prefer-import-source") == 0) {
                 asn1_fixer_flags |= A1F_PREFER_IMPORT_SOURCE;
             } else if(strcmp(optarg, "native-types") == 0) {
@@ -676,6 +678,7 @@ usage(const char *av0) {
 "  -findirect-choice     Compile members of CHOICE as indirect pointers\n"
 "  -fincludes-quoted     Generate #includes in \"double\" instead of <angle> quotes\n"
 "  -fknown-extern-type=<name>    Pretend the specified type is known\n"
+"  -fallow-newer-modules   Accept newer OID (last 2 arcs) or base+2 version arcs; fail if older\n"
 "  -fline-refs           Include ASN.1 module's line numbers in comments\n"
 "  -fno-constraints      Do not generate the constraint checking code\n"
 "  -fno-include-deps     Do not generate the courtesy #includes for dependencies\n"

@@ -1,3 +1,4 @@
+#include <limits.h>
 #include "asn1fix_internal.h"
 
 enum ftt_what {
@@ -115,6 +116,51 @@ asn1f_lookup_in_imports(arg_t *arg, asn1p_module_t *mod, const char *name) {
 	return mod;
 }
 
+/*
+ * ETSI/3GPP OID version comparison for -fallow-newer-modules.
+ * Last two arcs are (release, minor-version); everything before
+ * max(len_a, len_b)-2 must be identical.
+ *
+	 * Returns:
+	 *   -1  available is newer — accept
+	 *    0  version arcs are identical
+	 *    1  available is older — reject
+	 *    2  imported OID is a base prefix (no version arcs) — accept
+	 *  INT_MIN  base arcs differ (unrelated module) — skip
+ */
+static int
+oid_version_compare(const asn1p_oid_t *imported, const asn1p_oid_t *available) {
+	int ai = (int)imported->arcs_count;
+	int av = (int)available->arcs_count;
+	int ver_start = av - 2;
+
+	/* Available must carry at least 2 arcs (base + version pair). */
+	if(ver_start < 0) return INT_MIN;
+
+	/* Imported must not exceed available length. */
+	if(ai > av) return INT_MIN;
+
+	/* Imported more than 2 arcs shorter = not a valid base prefix. */
+	if(av - ai > 2) return INT_MIN;
+
+	/* Base arcs must match up to min(ai, ver_start). */
+	int base_end = ai < ver_start ? ai : ver_start;
+	for(int i = 0; i < base_end; i++) {
+		if(imported->arcs[i].number != available->arcs[i].number)
+			return INT_MIN;
+	}
+
+	if(ai <= ver_start) return 2;  /* imported has no version arcs — bare base prefix */
+
+	for(int i = ver_start; i < av; i++) {
+		asn1c_integer_t a = (i < ai) ? imported->arcs[i].number : -1;
+		asn1c_integer_t b = available->arcs[i].number;
+		if(b > a) return -1;  /* available newer */
+		if(b < a) return  1;  /* available older */
+	}
+	return 0;
+}
+
 asn1p_module_t *
 asn1f_lookup_module(arg_t *arg, const char *module_name, const asn1p_oid_t *oid, int oid_option) {
 	asn1p_module_t *mod, *ret = NULL;
@@ -153,6 +199,13 @@ asn1f_lookup_module(arg_t *arg, const char *module_name, const asn1p_oid_t *oid,
 		}
 	}
 
+	/* Enable version-aware matching for any OID-based lookup when flag is set.
+	 * Guard on arg->mod: internal/standard-module lookups use a zero-initialised
+	 * arg (no module context) and must not emit diagnostics. */
+	if(oid && (oid_option == 0 || oid_option == XPT_WITH_SUCCESSORS)
+	&& arg->mod && (arg->flags & A1F_ALLOW_NEWER_MODULES))
+		oid_option = XPT_WITH_NEWER;
+
 	/*
 	 * Perform lookup using OID or module_name.
 	 */
@@ -166,6 +219,29 @@ asn1f_lookup_module(arg_t *arg, const char *module_name, const asn1p_oid_t *oid,
 				} else if(oid_option == XPT_WITH_DESCENDANTS) {
 					if(oid->arcs_count == (-1 - r))
 						r = 0;
+				} else if(oid_option == XPT_WITH_NEWER) {
+					if(strcmp(module_name, mod->ModuleName) == 0) {
+						int vcmp = oid_version_compare(oid, mod->module_oid);
+						if(vcmp == 0) {
+							r = 0;  /* exact match — silent accept */
+						} else if(vcmp == 2) {
+							WARNING("Module \"%s\": imported OID is a base prefix of "
+								"available OID; accepting (-fallow-newer-modules)",
+								module_name);
+							r = 0;
+						} else if(vcmp == -1) {
+							WARNING("Module \"%s\": available OID is newer than "
+								"imported OID; accepting (-fallow-newer-modules)",
+								module_name);
+							r = 0;
+						} else if(vcmp == 1) {
+							FATAL("Module \"%s\": available OID is older than "
+								"imported OID", module_name);
+							errno = ENOENT;
+							return NULL;
+						}
+						/* INT_MIN: unrelated module family, skip */
+					}
 				}
 				if(0 == r) {
 					/* Match! Even if name doesn't. */
