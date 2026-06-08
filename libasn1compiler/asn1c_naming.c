@@ -178,7 +178,8 @@ c_name_impl(arg_t *arg, asn1p_expr_t *expr, int avoid_keywords) {
         if((expr_type & ASN_CONSTR_MASK)
            || expr_type == ASN_BASIC_ENUMERATED
            || ((expr_type == ASN_BASIC_INTEGER
-                || expr_type == ASN_BASIC_BIT_STRING))) {
+                || expr_type == ASN_BASIC_BIT_STRING))
+           || expr->encoding_control.encoding_type != EC_NONE) {
             compound_names = 1;
         }
     }
@@ -370,4 +371,3 @@ c_names_format(struct c_names ns) {
     abuf_printf(&nbuf, " .members_name=\"%s\" }", ns.members_name);
     return nbuf.buffer;
 }
-

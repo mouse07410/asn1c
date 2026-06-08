@@ -64,6 +64,8 @@ TESTS += check-src/check-158.-fcompound-names.c
 TESTS += check-src/check-159.c
 TESTS += check-src/check-164.c
 TESTS += check-src/check-173.-findirect-choice.-fcompound-names.-gen-UPER.-gen-APER.c
+TESTS += check-src/check-184.c
+TESTS += check-src/check-185.c
 TESTS += check-src/check-201.c
 TESTS += check-src/check-202.-gen-CBOR.c
 

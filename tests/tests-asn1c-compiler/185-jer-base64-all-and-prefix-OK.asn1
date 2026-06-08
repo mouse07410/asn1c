@@ -1,0 +1,47 @@
+-- Test JER BASE64 ALL and named [JER:BASE64] prefixes together.
+-- BASE64 ALL must apply to both top-level OCTET STRING typedefs and
+-- inline OCTET STRING members inside constructed types, including SEQUENCE,
+-- SET, CHOICE, SEQUENCE OF, and SET OF.
+-- The named [JER:BASE64] form must also survive when referenced by a member.
+
+TestJERBase64AllAndPrefix DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+PrefixedPayload ::= [JER:BASE64] OCTET STRING
+
+AllNamedPayload ::= OCTET STRING
+
+NestedPayload ::= SEQUENCE {
+    embedded OCTET STRING
+}
+
+NestedSet ::= SET {
+    setEmbedded OCTET STRING
+}
+
+PayloadChoice ::= CHOICE {
+    chosen          OCTET STRING,
+    chosenNamed     AllNamedPayload,
+    chosenPrefixed  PrefixedPayload
+}
+
+PayloadSeqOf ::= SEQUENCE OF OCTET STRING
+
+PayloadSetOf ::= SET OF OCTET STRING
+
+Message ::= SEQUENCE {
+    payload    OCTET STRING,
+    named      AllNamedPayload,
+    prefixed   PrefixedPayload,
+    nested     NestedPayload,
+    nestedSet  NestedSet,
+    choice     PayloadChoice,
+    seqOf      PayloadSeqOf,
+    setOf      PayloadSetOf,
+    count      INTEGER
+}
+
+ENCODING-CONTROL JER
+    BASE64 ALL
+END
+
+END

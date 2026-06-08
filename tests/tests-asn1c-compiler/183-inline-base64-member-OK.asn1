@@ -1,0 +1,11 @@
+-- Regression test: an inline [BASE64] OCTET STRING member must get its own
+-- descriptor and custom XER ops even when it is not lifted into a named type.
+
+TestInlineBase64Member DEFINITIONS ::= BEGIN
+
+Packet ::= SEQUENCE {
+    id      INTEGER,
+    payload [BASE64] OCTET STRING
+}
+
+END

@@ -135,6 +135,52 @@ validate_no_duplicate_jer_names(asn1p_module_t *mod) {
     return 0;
 }
 
+static int
+target_is_all(const char *head, const char *rest) {
+    return head && strcmp(head, "ALL") == 0 && rest == NULL;
+}
+
+static int
+encoding_control_applies_to_all_octets(
+        enum asn1p_encoding_control_type_e itype) {
+    switch(itype) {
+    case EC_XER_BASE64:
+    case EC_JER_BASE64:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static int
+apply_to_octet_strings(asn1p_t *asn, asn1p_expr_t *expr,
+                       const asn1p_expr_t *instr,
+                       enum asn1p_encoding_control_type_e itype) {
+    asn1p_expr_t *memb;
+    int applied = 0;
+
+    if(!expr || (expr->_mark & TM_ENCODING_INSTRUCTION))
+        return 0;
+
+    /*
+     * References inherit their target descriptor.  Applying ALL to the
+     * reference itself would create redundant generated member descriptors.
+     */
+    if(expr->expr_type != A1TC_REFERENCE
+    && expr->encoding_control.encoding_type == EC_NONE
+    && terminal_type(asn, expr) == ASN_BASIC_OCTET_STRING) {
+        copy_control(expr, instr);
+        expr->encoding_control.encoding_type = itype;
+        applied++;
+    }
+
+    TQ_FOR(memb, &(expr->members), next) {
+        applied += apply_to_octet_strings(asn, memb, instr, itype);
+    }
+
+    return applied;
+}
+
 int
 asn1c_apply_encoding_controls(asn1p_t *asn, asn1p_module_t *mod) {
     asn1p_expr_t *instr;
@@ -173,6 +219,20 @@ asn1c_apply_encoding_controls(asn1p_t *asn, asn1p_module_t *mod) {
                            ? instr->encoding_control.target_path
                            : instr->Identifier, &rest);
         if(!head) return -1;
+
+        instr->encoding_control.encoding_type = itype;
+
+        if(target_is_all(head, rest)
+        && encoding_control_applies_to_all_octets(itype)) {
+            asn1p_expr_t *type;
+            TQ_FOR(type, &(mod->members), next) {
+                applied += apply_to_octet_strings(asn, type, instr, itype);
+            }
+            free(head);
+            free(rest);
+            continue;
+        }
+
         target = find_module_type(mod, head);
         if(!target) {
             fprintf(stderr,
@@ -182,8 +242,6 @@ asn1c_apply_encoding_controls(asn1p_t *asn, asn1p_module_t *mod) {
             free(rest);
             return -1;
         }
-
-        instr->encoding_control.encoding_type = itype;
 
         if(itype == EC_JER_NAME) {
             asn1p_expr_t *memb;

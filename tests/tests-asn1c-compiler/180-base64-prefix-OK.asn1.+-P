@@ -1,0 +1,727 @@
+
+/*** <<< INCLUDES [ChecksumData] >>> ***/
+
+#include <OCTET_STRING.h>
+
+/*** <<< TYPE-DECLS [ChecksumData] >>> ***/
+
+typedef OCTET_STRING_t	 ChecksumData_t;
+
+/*** <<< FUNC-DECLS [ChecksumData] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_ChecksumData;
+asn_struct_free_f ChecksumData_free;
+asn_struct_print_f ChecksumData_print;
+asn_constr_check_f ChecksumData_constraint;
+ber_type_decoder_f ChecksumData_decode_ber;
+der_type_encoder_f ChecksumData_encode_der;
+cbor_type_decoder_f ChecksumData_decode_cbor;
+cbor_type_encoder_f ChecksumData_encode_cbor;
+
+/*** <<< CODE [ChecksumData] >>> ***/
+
+/*
+ * This type is implemented using OCTET_STRING,
+ * so here we adjust the DEF accordingly.
+ */
+
+/*** <<< STAT-DEFS [ChecksumData] >>> ***/
+
+static const ber_tlv_tag_t asn_DEF_ChecksumData_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (4 << 2))
+};
+
+/* Custom XER encoder per ENCODING-CONTROL directive */
+static asn_enc_rval_t
+ChecksumData_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr,
+	int ilevel, enum xer_encoder_flags_e flags,
+	asn_app_consume_bytes_f *cb, void *app_key) {
+	/* Base64 encoding per ENCODING-CONTROL XER ... ::= base64 */
+	return OCTET_STRING_encode_xer_base64(td, sptr, ilevel, flags, cb, app_key);
+}
+
+
+/* Custom XER decoder per ENCODING-CONTROL directive */
+static asn_dec_rval_t
+ChecksumData_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
+	const asn_TYPE_descriptor_t *td, void **sptr,
+	const char *opt_mname, const void *buf_ptr, size_t size) {
+	/* Base64 decoder pinned per ENCODING-CONTROL */
+	return OCTET_STRING_decode_xer_base64(opt_codec_ctx, td, sptr,
+		opt_mname, buf_ptr, size);
+}
+
+/*
+ * Custom operation structure per ENCODING-CONTROL directive:
+ * Format: base64
+ * Reference: XER
+ */
+asn_TYPE_operation_t asn_OP_ChecksumData = {
+	.kind = ASN_KIND_PRIMITIVE,
+	OCTET_STRING_free,
+#if !defined(ASN_DISABLE_PRINT_SUPPORT)
+	OCTET_STRING_print,
+#else
+	0,
+#endif  /* !defined(ASN_DISABLE_PRINT_SUPPORT) */
+	OCTET_STRING_compare,
+	OCTET_STRING_copy,
+#if !defined(ASN_DISABLE_BER_SUPPORT)
+	OCTET_STRING_decode_ber,
+	OCTET_STRING_encode_der,
+#else
+	0,
+	0,
+#endif  /* !defined(ASN_DISABLE_BER_SUPPORT) */
+#if !defined(ASN_DISABLE_XER_SUPPORT)
+	ChecksumData_decode_xer,  /* Custom per ENCODING-CONTROL */
+	ChecksumData_encode_xer,  /* Custom per ENCODING-CONTROL */
+#else
+	0,
+	0,
+#endif  /* !defined(ASN_DISABLE_XER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+	0,
+	0,
+#else
+	0,
+	0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+	0,
+	0,
+#else
+	0,
+	0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT)
+	0,
+	0,
+#else
+	0,
+	0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) */
+#if !defined(ASN_DISABLE_APER_SUPPORT)
+	0,
+	0,
+#else
+	0,
+	0,
+#endif  /* !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_RFILL_SUPPORT)
+	OCTET_STRING_random_fill,
+#else
+	0,
+#endif  /* !defined(ASN_DISABLE_RFILL_SUPPORT) */
+	0,	/* No outmost tag fetcher */
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+	OCTET_STRING_decode_cbor,
+	OCTET_STRING_encode_cbor,
+#else
+	0,
+	0,
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
+};
+
+asn_TYPE_descriptor_t asn_DEF_ChecksumData = {
+	"ChecksumData",
+	"ChecksumData",
+	&asn_OP_ChecksumData,  /* Custom operations per ENCODING-CONTROL */
+	asn_DEF_ChecksumData_tags_1,
+	sizeof(asn_DEF_ChecksumData_tags_1)
+		/sizeof(asn_DEF_ChecksumData_tags_1[0]), /* 1 */
+	asn_DEF_ChecksumData_tags_1,	/* Same as above */
+	sizeof(asn_DEF_ChecksumData_tags_1)
+		/sizeof(asn_DEF_ChecksumData_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		OCTET_STRING_constraint
+	},
+	0, 0,	/* No members */
+	&asn_SPC_OCTET_STRING_specs	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [SignatureBytes] >>> ***/
+
+#include <OCTET_STRING.h>
+
+/*** <<< TYPE-DECLS [SignatureBytes] >>> ***/
+
+typedef OCTET_STRING_t	 SignatureBytes_t;
+
+/*** <<< FUNC-DECLS [SignatureBytes] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_SignatureBytes;
+asn_struct_free_f SignatureBytes_free;
+asn_struct_print_f SignatureBytes_print;
+asn_constr_check_f SignatureBytes_constraint;
+ber_type_decoder_f SignatureBytes_decode_ber;
+der_type_encoder_f SignatureBytes_encode_der;
+cbor_type_decoder_f SignatureBytes_decode_cbor;
+cbor_type_encoder_f SignatureBytes_encode_cbor;
+
+/*** <<< CODE [SignatureBytes] >>> ***/
+
+/*
+ * This type is implemented using OCTET_STRING,
+ * so here we adjust the DEF accordingly.
+ */
+
+/*** <<< STAT-DEFS [SignatureBytes] >>> ***/
+
+static const ber_tlv_tag_t asn_DEF_SignatureBytes_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (4 << 2))
+};
+
+/* Custom XER encoder per ENCODING-CONTROL directive */
+static asn_enc_rval_t
+SignatureBytes_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr,
+	int ilevel, enum xer_encoder_flags_e flags,
+	asn_app_consume_bytes_f *cb, void *app_key) {
+	/* Base64 encoding per ENCODING-CONTROL XER ... ::= base64 */
+	return OCTET_STRING_encode_xer_base64(td, sptr, ilevel, flags, cb, app_key);
+}
+
+
+/* Custom XER decoder per ENCODING-CONTROL directive */
+static asn_dec_rval_t
+SignatureBytes_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
+	const asn_TYPE_descriptor_t *td, void **sptr,
+	const char *opt_mname, const void *buf_ptr, size_t size) {
+	/* Base64 decoder pinned per ENCODING-CONTROL */
+	return OCTET_STRING_decode_xer_base64(opt_codec_ctx, td, sptr,
+		opt_mname, buf_ptr, size);
+}
+
+/*
+ * Custom operation structure per ENCODING-CONTROL directive:
+ * Format: base64
+ * Reference: XER
+ */
+asn_TYPE_operation_t asn_OP_SignatureBytes = {
+	.kind = ASN_KIND_PRIMITIVE,
+	OCTET_STRING_free,
+#if !defined(ASN_DISABLE_PRINT_SUPPORT)
+	OCTET_STRING_print,
+#else
+	0,
+#endif  /* !defined(ASN_DISABLE_PRINT_SUPPORT) */
+	OCTET_STRING_compare,
+	OCTET_STRING_copy,
+#if !defined(ASN_DISABLE_BER_SUPPORT)
+	OCTET_STRING_decode_ber,
+	OCTET_STRING_encode_der,
+#else
+	0,
+	0,
+#endif  /* !defined(ASN_DISABLE_BER_SUPPORT) */
+#if !defined(ASN_DISABLE_XER_SUPPORT)
+	SignatureBytes_decode_xer,  /* Custom per ENCODING-CONTROL */
+	SignatureBytes_encode_xer,  /* Custom per ENCODING-CONTROL */
+#else
+	0,
+	0,
+#endif  /* !defined(ASN_DISABLE_XER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+	0,
+	0,
+#else
+	0,
+	0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+	0,
+	0,
+#else
+	0,
+	0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT)
+	0,
+	0,
+#else
+	0,
+	0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) */
+#if !defined(ASN_DISABLE_APER_SUPPORT)
+	0,
+	0,
+#else
+	0,
+	0,
+#endif  /* !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_RFILL_SUPPORT)
+	OCTET_STRING_random_fill,
+#else
+	0,
+#endif  /* !defined(ASN_DISABLE_RFILL_SUPPORT) */
+	0,	/* No outmost tag fetcher */
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+	OCTET_STRING_decode_cbor,
+	OCTET_STRING_encode_cbor,
+#else
+	0,
+	0,
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
+};
+
+asn_TYPE_descriptor_t asn_DEF_SignatureBytes = {
+	"SignatureBytes",
+	"SignatureBytes",
+	&asn_OP_SignatureBytes,  /* Custom operations per ENCODING-CONTROL */
+	asn_DEF_SignatureBytes_tags_1,
+	sizeof(asn_DEF_SignatureBytes_tags_1)
+		/sizeof(asn_DEF_SignatureBytes_tags_1[0]), /* 1 */
+	asn_DEF_SignatureBytes_tags_1,	/* Same as above */
+	sizeof(asn_DEF_SignatureBytes_tags_1)
+		/sizeof(asn_DEF_SignatureBytes_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		OCTET_STRING_constraint
+	},
+	0, 0,	/* No members */
+	&asn_SPC_OCTET_STRING_specs	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [MyPDU] >>> ***/
+
+#include <OCTET_STRING.h>
+#include "ChecksumData.h"
+#include "SignatureBytes.h"
+#include <constr_SEQUENCE.h>
+
+/*** <<< TYPE-DECLS [MyPDU] >>> ***/
+
+typedef struct MyPDU {
+	OCTET_STRING_t	 payload;
+	ChecksumData_t	 checksum;
+	SignatureBytes_t	 signature;
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} MyPDU_t;
+
+/*** <<< FUNC-DECLS [MyPDU] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_MyPDU;
+
+/*** <<< STAT-DEFS [MyPDU] >>> ***/
+
+static asn_TYPE_member_t asn_MBR_MyPDU_1[] = {
+	{ ATF_NOFLAGS, 0, offsetof(struct MyPDU, payload),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_OCTET_STRING,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "payload"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct MyPDU, checksum),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_ChecksumData,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "checksum"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct MyPDU, signature),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (2 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_SignatureBytes,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "signature"
+		},
+};
+static const ber_tlv_tag_t asn_DEF_MyPDU_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+static const asn_TYPE_tag2member_t asn_MAP_MyPDU_tag2el_1[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* payload */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 }, /* checksum */
+    { (ASN_TAG_CLASS_CONTEXT | (2 << 2)), 2, 0, 0 } /* signature */
+};
+static asn_SEQUENCE_specifics_t asn_SPC_MyPDU_specs_1 = {
+	sizeof(struct MyPDU),
+	offsetof(struct MyPDU, _asn_ctx),
+	.tag2el = asn_MAP_MyPDU_tag2el_1,
+	.tag2el_count = 3,	/* Count of tags in the map */
+	0, 0, 0,	/* Optional elements (not needed) */
+	-1,	/* First extension addition */
+};
+asn_TYPE_descriptor_t asn_DEF_MyPDU = {
+	"MyPDU",
+	"MyPDU",
+	&asn_OP_SEQUENCE,
+	asn_DEF_MyPDU_tags_1,
+	sizeof(asn_DEF_MyPDU_tags_1)
+		/sizeof(asn_DEF_MyPDU_tags_1[0]), /* 1 */
+	asn_DEF_MyPDU_tags_1,	/* Same as above */
+	sizeof(asn_DEF_MyPDU_tags_1)
+		/sizeof(asn_DEF_MyPDU_tags_1[0]), /* 1 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_constraint
+	},
+	asn_MBR_MyPDU_1,
+	3,	/* Elements count */
+	&asn_SPC_MyPDU_specs_1	/* Additional specs */
+};
+
+
+/*** <<< INCLUDES [EXTERNAL] >>> ***/
+
+#include <OBJECT_IDENTIFIER.h>
+#include <NativeInteger.h>
+#include <ObjectDescriptor.h>
+#include <ANY.h>
+#include <OCTET_STRING.h>
+#include <BIT_STRING.h>
+#include <constr_CHOICE.h>
+#include <constr_SEQUENCE.h>
+
+/*** <<< DEPS [EXTERNAL] >>> ***/
+
+typedef enum encoding_PR {
+	encoding_PR_NOTHING,	/* No components present */
+	encoding_PR_single_ASN1_type,
+	encoding_PR_octet_aligned,
+	encoding_PR_arbitrary
+} encoding_PR;
+
+/*** <<< TYPE-DECLS [EXTERNAL] >>> ***/
+
+typedef struct EXTERNAL {
+	OBJECT_IDENTIFIER_t	*direct_reference;	/* OPTIONAL */
+	long	*indirect_reference;	/* OPTIONAL */
+	ObjectDescriptor_t	*data_value_descriptor;	/* OPTIONAL */
+	struct encoding {
+		encoding_PR present;
+		union EXTERNAL__encoding_u {
+			ANY_t	 single_ASN1_type;
+			OCTET_STRING_t	 octet_aligned;
+			BIT_STRING_t	 arbitrary;
+		} choice;
+		
+		/* Context for parsing across buffer boundaries */
+		asn_struct_ctx_t _asn_ctx;
+	} encoding;
+	
+	/* Context for parsing across buffer boundaries */
+	asn_struct_ctx_t _asn_ctx;
+} EXTERNAL_t;
+
+/*** <<< FUNC-DECLS [EXTERNAL] >>> ***/
+
+extern asn_TYPE_descriptor_t asn_DEF_EXTERNAL;
+
+/*** <<< CODE [EXTERNAL] >>> ***/
+
+#ifndef ASN1C_NO_UNSUFFIXED_PDU_ALIAS
+#if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
+extern asn_TYPE_descriptor_t asn_DEF_encoding __attribute__((weak, alias("asn_DEF_encoding_5")));
+#else
+static asn_TYPE_descriptor_t asn_DEF_encoding_5;
+static asn_TYPE_descriptor_t asn_DEF_encoding;
+__attribute__((constructor)) static void asn_DEF_encoding_5_alias_init(void) {
+	asn_DEF_encoding = asn_DEF_encoding_5;
+}
+#endif
+#endif /* ASN1C_NO_UNSUFFIXED_PDU_ALIAS */
+
+/*** <<< STAT-DEFS [EXTERNAL] >>> ***/
+
+static asn_TYPE_member_t asn_MBR_EXTERNAL__encoding_5[] = {
+	{ ATF_NOFLAGS, 0, offsetof(struct encoding, choice.single_ASN1_type),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (0 << 2)),
+		.tag_mode = +1,	/* EXPLICIT tag at current level */
+		.type = &asn_DEF_ANY,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "single-ASN1-type"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct encoding, choice.octet_aligned),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (1 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_OCTET_STRING,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "octet-aligned"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct encoding, choice.arbitrary),
+		.tag = (ASN_TAG_CLASS_CONTEXT | (2 << 2)),
+		.tag_mode = -1,	/* IMPLICIT tag at current level */
+		.type = &asn_DEF_BIT_STRING,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "arbitrary"
+		},
+};
+static const asn_TYPE_tag2member_t asn_MAP_encoding_tag2el_5[] = {
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 0, 0, 0 }, /* single-ASN1-type */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 1, 0, 0 }, /* octet-aligned */
+    { (ASN_TAG_CLASS_CONTEXT | (2 << 2)), 2, 0, 0 } /* arbitrary */
+};
+static asn_CHOICE_specifics_t asn_SPC_encoding_specs_5 = {
+	sizeof(struct encoding),
+	offsetof(struct encoding, _asn_ctx),
+	offsetof(struct encoding, present),
+	sizeof(((struct encoding *)0)->present),
+	.tag2el = asn_MAP_encoding_tag2el_5,
+	.tag2el_count = 3,	/* Count of tags in the map */
+	0, 0,
+	.first_extension = -1	/* Extensions start */
+};
+static /* Use -fall-defs-global to expose */
+asn_TYPE_descriptor_t asn_DEF_encoding_5 = {
+	"encoding",
+	"encoding",
+	&asn_OP_CHOICE,
+	0,	/* No effective tags (pointer) */
+	0,	/* No effective tags (count) */
+	0,	/* No tags (pointer) */
+	0,	/* No tags (count) */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		CHOICE_constraint
+	},
+	asn_MBR_EXTERNAL__encoding_5,
+	3,	/* Elements count */
+	&asn_SPC_encoding_specs_5	/* Additional specs */
+};
+
+static asn_TYPE_member_t asn_MBR_EXTERNAL_1[] = {
+	{ ATF_POINTER, 3, offsetof(struct EXTERNAL, direct_reference),
+		.tag = (ASN_TAG_CLASS_UNIVERSAL | (6 << 2)),
+		.tag_mode = 0,
+		.type = &asn_DEF_OBJECT_IDENTIFIER,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "direct-reference"
+		},
+	{ ATF_POINTER, 2, offsetof(struct EXTERNAL, indirect_reference),
+		.tag = (ASN_TAG_CLASS_UNIVERSAL | (2 << 2)),
+		.tag_mode = 0,
+		.type = &asn_DEF_NativeInteger,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "indirect-reference"
+		},
+	{ ATF_POINTER, 1, offsetof(struct EXTERNAL, data_value_descriptor),
+		.tag = (ASN_TAG_CLASS_UNIVERSAL | (7 << 2)),
+		.tag_mode = 0,
+		.type = &asn_DEF_ObjectDescriptor,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "data-value-descriptor"
+		},
+	{ ATF_NOFLAGS, 0, offsetof(struct EXTERNAL, encoding),
+		.tag = -1 /* Ambiguous tag (CHOICE?) */,
+		.tag_mode = 0,
+		.type = &asn_DEF_encoding_5,
+		.type_selector = 0,
+		{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+			.oer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+			.per_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+			.jer_constraints = 0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+			.general_constraints = 0
+		},
+		0, 0, /* No default value */
+		.name = "encoding"
+		},
+};
+static const ber_tlv_tag_t asn_DEF_EXTERNAL_tags_1[] = {
+	(ASN_TAG_CLASS_UNIVERSAL | (8 << 2)),
+	(ASN_TAG_CLASS_UNIVERSAL | (16 << 2))
+};
+static const asn_TYPE_tag2member_t asn_MAP_EXTERNAL_tag2el_1[] = {
+    { (ASN_TAG_CLASS_UNIVERSAL | (2 << 2)), 1, 0, 0 }, /* indirect-reference */
+    { (ASN_TAG_CLASS_UNIVERSAL | (6 << 2)), 0, 0, 0 }, /* direct-reference */
+    { (ASN_TAG_CLASS_UNIVERSAL | (7 << 2)), 2, 0, 0 }, /* data-value-descriptor */
+    { (ASN_TAG_CLASS_CONTEXT | (0 << 2)), 3, 0, 0 }, /* single-ASN1-type */
+    { (ASN_TAG_CLASS_CONTEXT | (1 << 2)), 3, 0, 0 }, /* octet-aligned */
+    { (ASN_TAG_CLASS_CONTEXT | (2 << 2)), 3, 0, 0 } /* arbitrary */
+};
+static asn_SEQUENCE_specifics_t asn_SPC_EXTERNAL_specs_1 = {
+	sizeof(struct EXTERNAL),
+	offsetof(struct EXTERNAL, _asn_ctx),
+	.tag2el = asn_MAP_EXTERNAL_tag2el_1,
+	.tag2el_count = 6,	/* Count of tags in the map */
+	0, 0, 0,	/* Optional elements (not needed) */
+	-1,	/* First extension addition */
+};
+asn_TYPE_descriptor_t asn_DEF_EXTERNAL = {
+	"EXTERNAL",
+	"EXTERNAL",
+	&asn_OP_SEQUENCE,
+	asn_DEF_EXTERNAL_tags_1,
+	sizeof(asn_DEF_EXTERNAL_tags_1)
+		/sizeof(asn_DEF_EXTERNAL_tags_1[0]) - 1, /* 1 */
+	asn_DEF_EXTERNAL_tags_1,	/* Same as above */
+	sizeof(asn_DEF_EXTERNAL_tags_1)
+		/sizeof(asn_DEF_EXTERNAL_tags_1[0]), /* 2 */
+	{
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */
+#if !defined(ASN_DISABLE_JER_SUPPORT)
+		0,
+#endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
+		SEQUENCE_constraint
+	},
+	asn_MBR_EXTERNAL_1,
+	4,	/* Elements count */
+	&asn_SPC_EXTERNAL_specs_1	/* Additional specs */
+};
+

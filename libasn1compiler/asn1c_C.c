@@ -1121,6 +1121,8 @@ asn1c_lang_C_type_SEx_OF(arg_t *arg) {
 	    * its own descriptor (carrying field_width specifics). */
 	   || (memb->expr_type == ASN_BASIC_INTEGER
 	       && asn1c_int_native_specifics(arg, memb, &_ofw, &_ofu))
+	   || type_needs_custom_xer_encoder(arg, memb)
+	   || type_needs_custom_jer_encoder(arg, memb)
 	   || ((memb->expr_type == ASN_BASIC_INTEGER || memb->expr_type == A1TC_REFERENCE)
 	       && !strcmp(asn1c_type_name(arg, memb, TNF_CTYPE), "unsigned long"))
 	   || (memb_ioc.ioct && is_open_type(arg, memb, &memb_ioc))
@@ -1881,7 +1883,9 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 	 * If this type just blindly refers the other type, alias it.
 	 * 	Type1 ::= Type2
 	 */
-	if(arg->embed && etd_spec == ETD_NO_SPECIFICS) {
+	if(arg->embed && etd_spec == ETD_NO_SPECIFICS
+	&& !type_needs_custom_xer_encoder(arg, expr)
+	&& !type_needs_custom_jer_encoder(arg, expr)) {
 		REDIR(saved_target);
 		return 0;
 	}
@@ -4390,6 +4394,8 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 
 	complex_contents =
 		is_open_type(arg, expr, opt_ioc)
+		|| type_needs_custom_xer_encoder(arg, expr)
+		|| type_needs_custom_jer_encoder(arg, expr)
 		|| (expr->expr_type & ASN_CONSTR_MASK)
 		|| expr->expr_type == ASN_BASIC_ENUMERATED
 		|| (0 /* -- prohibited by X.693:8.3.4 */
@@ -4420,6 +4426,8 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 		 */
 		if(is_open_type(arg, expr, opt_ioc)
 		   || (arg->flags & A1C_ALL_DEFS_GLOBAL)
+		   || type_needs_custom_xer_encoder(arg, expr)
+		   || type_needs_custom_jer_encoder(arg, expr)
 		   || (expr->parent_expr
 		       && ((expr->expr_type & ASN_CONSTR_MASK)
 		           || expr->expr_type == ASN_BASIC_ENUMERATED))
