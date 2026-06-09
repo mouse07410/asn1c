@@ -8,7 +8,7 @@
  * INTEGER values.  Controlled by the -finteger-native-type=<mode> option.
  */
 typedef enum asn_integer_native_type_e {
-	AINT_NATIVE_AUTO = 0,	/* Smallest safe fixed-width type, then INTEGER_t */
+	AINT_NATIVE_AUTO = 0,	/* Preserve traditional long/INTEGER_t policy */
 	AINT_NATIVE_INT32,	/* Permit int32_t storage */
 	AINT_NATIVE_UINT32,	/* Permit uint32_t storage */
 	AINT_NATIVE_INT64,	/* Permit int64_t storage */

@@ -568,7 +568,9 @@ may produce a shorter executable.}\\
 {\ttfamily -fno-include-deps} & {\small Do not generate the courtesy \#include lines for non-critical dependencies.}\\
 {\ttfamily -fprefix=\emph{<prefix>}} & {\small Add the specified prefix to all generated type names and filenames. This helps avoid naming conflicts in several scenarios: (1) \textbf{System header conflicts}: On case-insensitive filesystems (macOS HFS+, Windows), ASN.1 types like \texttt{Time} may collide with system header \texttt{<time.h>}. asn1c now automatically disambiguates these generated filenames (for example, \texttt{Time.h} becomes \texttt{asn1c\_time.h} when no explicit prefix is set). Using \texttt{-fprefix=ASN1\_} still generates \texttt{ASN1\_Time.h} when a project-specific namespace is desired. (2) \textbf{Multiple ASN.1 modules}: When generating code for multiple ASN.1 syntaxes with type name clashes, a prefix prevents symbol collisions. (3) \textbf{Integration with existing code}: Prefixes help avoid conflicts with existing types in your codebase. When used with \texttt{-pdu} options, the prefix is automatically applied to PDU definitions in \texttt{converter-example.mk}. For example, \texttt{-fprefix=ASN1\_ -pdu=Certificate} generates \texttt{-DPDU=ASN1\_Certificate}. With \texttt{-pdu=all} or \texttt{-pdu=auto}, the generated \texttt{converter-example.mk} includes instructions for selecting specific prefixed PDU types.}\\
 {\ttfamily -funnamed-unions} & {\small Enable  unnamed  unions in the definitions of target language's structures.}\\
-{\ttfamily -fwide-types} & {\small Use the wide integer types (INTEGER\_t, REAL\_t) instead of machine's native data types (long, double). }\\\\
+{\ttfamily -fwide-types} & {\small Use the unbounded data types (INTEGER\_t, ENUMERATED\_t, REAL\_t) by default, instead of machine's native data types (long, double).}\\
+{\ttfamily -flong-size=\emph{<bits>}} & {\small Select the target C \texttt{long} model used by the default native INTEGER storage policy. Values are \texttt{32} and \texttt{64}; the default is the historical portable 32-bit model. Use this option when generated code is produced on one platform for a target with a different \texttt{long} size.}\\
+{\ttfamily -finteger-native-type=\emph{<mode>}} & {\small Select the fixed-width native C storage policy for constrained ASN.1 INTEGER types. Modes are \texttt{auto}, \texttt{int32}, \texttt{uint32}, \texttt{int64}, and \texttt{uint64}; the default is \texttt{auto}. The \texttt{auto} mode preserves the traditional \texttt{long}/\texttt{unsigned long}/INTEGER\_t selection. The explicit modes permit \texttt{int32\_t}, \texttt{uint32\_t}, \texttt{int64\_t}, or \texttt{uint64\_t} storage only when the INTEGER constraint fits that type. Larger or incompatible ranges are generated as INTEGER\_t, while their constraint bounds are still preserved, including unsigned 64-bit and arbitrary-precision bounds.}\\\\
 \textbf{Codecs Generation Options} & \textbf{Description}\\
 \midrule
 {\ttfamily -no-gen-BER} & {\small Do not generate the Basic Encoding Rules (BER, X.690) support code.}\\
@@ -1525,7 +1527,7 @@ xer_fprint(stdout, &asn_DEF_Rectangle, rect);
 \subsection*{See also}
 \seealso{sec:asn_fprint}{asn_fprint()}.
 
-\chapter{API usage examples}
+\chapter{CBOR API usage examples}
 
 \apisection{sec:cbor_decode}{cbor\_decode()}
 
@@ -2713,6 +2715,41 @@ SmallPositiveInt ::= INTEGER (0..127)
 -- Integer, negative
 NegativeInt ::= INTEGER (MIN..0)
 \end{asn}
+
+INTEGER constraints may use values that are larger than the traditional
+32-bit or signed \code{long} range. The compiler preserves these bounds when
+generating constraint checking code, including unsigned 64-bit limits and
+values beyond 64 bits.
+\begin{asn}
+-- Fits uint32\_t when generated with -finteger-native-type=uint32
+Unsigned32 ::= INTEGER (0..4294967295)
+
+-- Fits uint64\_t when generated with -finteger-native-type=uint64
+Unsigned64 ::= INTEGER (0..18446744073709551615)
+
+-- Larger than uint64\_t; generated as INTEGER\_t, with the
+-- arbitrary-precision bound still used for constraint checks.
+Beyond64 ::= INTEGER (0..18446744073709551616)
+\end{asn}
+
+By default, \cmd{asn1c} keeps the historical portable choice: constrained
+INTEGER values use \code{long} or \code{unsigned long} only when the range fits
+the conservative target \code{long} model, and otherwise use \code{INTEGER\_t}.
+Use \cmd{-flong-size=64} when the generated code is meant for a 64-bit
+\code{long} target and you want that default policy to use the wider native
+range.
+
+For APIs that require fixed-width integer members, use the
+\cmd{-finteger-native-type} option. Its \emph{mode} may be \cmd{int32},
+\cmd{uint32}, \cmd{int64}, \cmd{uint64}, or \cmd{auto}. The selected
+fixed-width type is used only when the ASN.1 range fits it exactly;
+otherwise \code{INTEGER\_t} is generated. For example, compiling the ASN.1
+above with \cmd{-finteger-native-type=uint64} generates native
+\code{uint64\_t} storage for \code{Unsigned64}, while \code{Beyond64} remains
+\code{INTEGER\_t} because its upper bound is larger than \code{UINT64\_MAX}.
+Unsigned modes are used only for bounded ranges whose lower bound is known to
+be non-negative; open or negative-capable ranges fall back to
+\code{INTEGER\_t}.
 
 \subsection{The ENUMERATED type}
 

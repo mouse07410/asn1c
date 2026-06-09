@@ -153,13 +153,13 @@ check_x691_constrained_range_signed(const char *label, int lineno,
 
 static void
 test_range_bits_36(void) {
-    static const uint8_t exp_0[] = {0x00, 0x00};
-    static const uint8_t exp_1[] = {0x00, 0x01};
-    static const uint8_t exp_255[] = {0x00, 0xFF};
-    static const uint8_t exp_256[] = {0x20, 0x01, 0x00};
-    static const uint8_t exp_65535[] = {0x20, 0xFF, 0xFF};
-    static const uint8_t exp_65536[] = {0x40, 0x01, 0x00, 0x00};
-    static const uint8_t exp_max[] = {0x80, 0x0F, 0xFF, 0xFF, 0xFF, 0xFF};
+    static const uint8_t exp_0[] = {0x01, 0x00};
+    static const uint8_t exp_1[] = {0x01, 0x01};
+    static const uint8_t exp_255[] = {0x01, 0xFF};
+    static const uint8_t exp_256[] = {0x02, 0x01, 0x00};
+    static const uint8_t exp_65535[] = {0x02, 0xFF, 0xFF};
+    static const uint8_t exp_65536[] = {0x03, 0x01, 0x00, 0x00};
+    static const uint8_t exp_max[] = {0x05, 0x0F, 0xFF, 0xFF, 0xFF, 0xFF};
 
     static const struct test_case cases[] = {
         {0, exp_0, sizeof(exp_0)},
@@ -188,18 +188,17 @@ test_range_bits_36(void) {
 
 /*
  * range_bits=17: smallest value that enters the >16 code path.
- * INTEGER (0..131071), max_range_bytes=3, length_bits=2.
+ * INTEGER (0..131071), max_range_bytes=3.
  */
 static void
 test_range_bits_17(void) {
-    /* 2-bit length determinant: "00"=1byte, "01"=2bytes, "10"=3bytes */
-    static const uint8_t exp_0[] = {0x00, 0x00};
-    static const uint8_t exp_1[] = {0x00, 0x01};
-    static const uint8_t exp_255[] = {0x00, 0xFF};
-    static const uint8_t exp_256[] = {0x40, 0x01, 0x00};
-    static const uint8_t exp_65535[] = {0x40, 0xFF, 0xFF};
-    /* 131071 = 0x01FFFF → 3 bytes, len det "10" */
-    static const uint8_t exp_max[] = {0x80, 0x01, 0xFF, 0xFF};
+    static const uint8_t exp_0[] = {0x01, 0x00};
+    static const uint8_t exp_1[] = {0x01, 0x01};
+    static const uint8_t exp_255[] = {0x01, 0xFF};
+    static const uint8_t exp_256[] = {0x02, 0x01, 0x00};
+    static const uint8_t exp_65535[] = {0x02, 0xFF, 0xFF};
+    /* 131071 = 0x01FFFF, 3 value bytes */
+    static const uint8_t exp_max[] = {0x03, 0x01, 0xFF, 0xFF};
 
     static const struct test_case cases[] = {
         {0, exp_0, sizeof(exp_0)},
@@ -227,21 +226,21 @@ test_range_bits_17(void) {
 
 /*
  * Non-zero lower_bound: INTEGER (1000..100000).
- * range = 99001, range_bits=17, max_range_bytes=3, length_bits=2.
+ * range = 99001, range_bits=17, max_range_bytes=3.
  * Encoded offset = value - 1000.
  */
 static void
 test_range_bits_17_offset(void) {
     /* offset 0 */
-    static const uint8_t exp_lo[] = {0x00, 0x00};
+    static const uint8_t exp_lo[] = {0x01, 0x00};
     /* offset 1 */
-    static const uint8_t exp_lo1[] = {0x00, 0x01};
+    static const uint8_t exp_lo1[] = {0x01, 0x01};
     /* offset 255 */
-    static const uint8_t exp_255[] = {0x00, 0xFF};
-    /* offset 256 → 2 bytes, len det "01" */
-    static const uint8_t exp_256[] = {0x40, 0x01, 0x00};
-    /* offset 99000 = 0x0182B8 → 3 bytes, len det "10" */
-    static const uint8_t exp_hi[] = {0x80, 0x01, 0x82, 0xB8};
+    static const uint8_t exp_255[] = {0x01, 0xFF};
+    /* offset 256: 2 value bytes */
+    static const uint8_t exp_256[] = {0x02, 0x01, 0x00};
+    /* offset 99000 = 0x0182B8: 3 value bytes */
+    static const uint8_t exp_hi[] = {0x03, 0x01, 0x82, 0xB8};
 
     static const struct test_case cases[] = {
         {1000, exp_lo, sizeof(exp_lo)},   {1001, exp_lo1, sizeof(exp_lo1)},
@@ -266,19 +265,19 @@ test_range_bits_17_offset(void) {
 
 /*
  * Signed with negative lower_bound: INTEGER (-50000..50000).
- * range = 100001, range_bits=17, max_range_bytes=3, length_bits=2.
+ * range = 100001, range_bits=17, max_range_bytes=3.
  * Encoded offset = value - (-50000) = value + 50000.
  */
 static void
 test_range_bits_17_signed(void) {
     /* offset 0 */
-    static const uint8_t exp_lo[] = {0x00, 0x00};
+    static const uint8_t exp_lo[] = {0x01, 0x00};
     /* offset 1 */
-    static const uint8_t exp_lo1[] = {0x00, 0x01};
-    /* offset 50000 = 0xC350 → 2 bytes, len det "01" */
-    static const uint8_t exp_mid[] = {0x40, 0xC3, 0x50};
-    /* offset 100000 = 0x0186A0 → 3 bytes, len det "10" */
-    static const uint8_t exp_hi[] = {0x80, 0x01, 0x86, 0xA0};
+    static const uint8_t exp_lo1[] = {0x01, 0x01};
+    /* offset 50000 = 0xC350: 2 value bytes */
+    static const uint8_t exp_mid[] = {0x02, 0xC3, 0x50};
+    /* offset 100000 = 0x0186A0: 3 value bytes */
+    static const uint8_t exp_hi[] = {0x03, 0x01, 0x86, 0xA0};
 
     static const struct test_case_signed cases[] = {
         {-50000, exp_lo, sizeof(exp_lo)},

@@ -373,8 +373,8 @@ asn1c_type_name(arg_t *arg, asn1p_expr_t *expr, enum tnfmt _format) {
         /*
          * For INTEGER the -finteger-native-type policy (via the storage
          * selector) is authoritative: it decides long / unsigned long /
-         * int64_t / uint64_t / INTEGER_t.  ENUMERATED and REAL keep their
-         * traditional decisions.
+         * int32_t / uint32_t / int64_t / uint64_t / INTEGER_t.
+         * ENUMERATED and REAL keep their traditional decisions.
          */
         int use_native;
         if(expr->expr_type == ASN_BASIC_INTEGER) {

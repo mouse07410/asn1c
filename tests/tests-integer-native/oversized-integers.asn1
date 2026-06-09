@@ -1,5 +1,5 @@
 -- Test module for oversized INTEGER constraint support and the
--- -finteger-native-type=long|int64|uint64|auto code-generation option.
+-- -finteger-native-type=int32|uint32|int64|uint64|auto code-generation option.
 --
 -- See README.md in this directory for the expected generated storage type
 -- of each definition under each mode.
