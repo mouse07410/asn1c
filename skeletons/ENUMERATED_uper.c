@@ -27,6 +27,7 @@ ENUMERATED_decode_uper(const asn_codec_ctx_t *opt_codec_ctx,
     if(rval.code == RC_OK) {
         if(asn_long2INTEGER(st, value)) {
             rval.code = RC_FAIL;
+            rval.failed_type = td->name;
         }
     }
     return rval;

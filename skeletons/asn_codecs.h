@@ -86,11 +86,13 @@ enum asn_dec_rval_code_e {
 typedef struct asn_dec_rval_s {
 	enum asn_dec_rval_code_e code;	/* Result code */
 	size_t consumed;		/* Number of bytes consumed */
+	const char *failed_type;	/* ASN.1 type name at point of failure, or NULL */
 } asn_dec_rval_t;
 #define	ASN__DECODE_FAILED do {					\
 	asn_dec_rval_t tmp_error;				\
 	tmp_error.code = RC_FAIL;				\
 	tmp_error.consumed = 0;					\
+	tmp_error.failed_type = td ? td->name : NULL;		\
 	ASN_DEBUG("Failed to decode element %s", td ? td->name : "");	\
 	return tmp_error;					\
 } while(0)
@@ -98,6 +100,7 @@ typedef struct asn_dec_rval_s {
 	asn_dec_rval_t tmp_error;				\
 	tmp_error.code = RC_WMORE;				\
 	tmp_error.consumed = 0;					\
+	tmp_error.failed_type = td ? td->name : NULL;		\
 	return tmp_error;					\
 } while(0)
 
