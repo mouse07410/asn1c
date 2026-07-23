@@ -225,9 +225,30 @@ SEQUENCE_decode_aper(const asn_codec_ctx_t *opt_codec_ctx,
             rv = aper_open_type_get(opt_codec_ctx, elm->type,
                                     elm->encoding_constraints.per_constraints,
                                     memb_ptr2, pd);
-            if(rv.code != RC_OK) {
+            if(rv.code == RC_WMORE) {
+                /* Wire truncation inside the open-type wrapper (couldn't read
+                 * length determinant or the declared number of content bytes).
+                 * That is a real wire violation, propagate it. */
                 FREEMEM(epres);
                 return rv;
+            }
+            if(rv.code != RC_OK) {
+                /* Open-type framing succeeded (length + bytes were consumed
+                 * into a temporary buffer, and pd is already positioned past
+                 * this extension), but the inner decoder either failed or
+                 * left bytes unconsumed. Per X.691 §18's extensibility
+                 * contract, an extension is a length-prefixed open type — a
+                 * receiver that cannot interpret its contents MUST still
+                 * advance past it and continue with the next extension. This
+                 * is the mouse07410 fork's forward-compat philosophy applied
+                 * to APER SEQUENCE extension additions.
+                 */
+                ASN_DEBUG("Skipping unusable extension %s in %s (well-framed but inner decode failed)",
+                          elm->name, td->name);
+                if(elm->flags & ATF_POINTER) {
+                    /* Leave field absent from the decoded tree. */
+                    *memb_ptr2 = NULL;
+                }
             }
         }
 
