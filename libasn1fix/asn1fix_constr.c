@@ -202,6 +202,16 @@ asn1f_fix_constr_tag(arg_t *arg, int fix_top_level) {
 		return r_value;
 	}
 
+	if(expr->expr_type == ASN_CONSTR_SEQUENCE_OF
+	|| expr->expr_type == ASN_CONSTR_SET_OF) {
+		TQ_FOR(v, &(expr->members), next) {
+			if(v->tag.tag_class != TC_NOCLASS
+			&& _asn1f_fix_type_tag(arg, v))
+				r_value = -1;
+		}
+		return r_value;
+	}
+
 	switch(expr->expr_type) {
 	case ASN_CONSTR_SEQUENCE:
 	case ASN_CONSTR_SET:
@@ -517,4 +527,3 @@ _asn1f_compare_tags(arg_t *arg, asn1p_expr_t *a, asn1p_expr_t *b) {
 
 	return ret;
 }
-

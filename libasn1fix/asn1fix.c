@@ -489,6 +489,9 @@ asn1f_fix_constructed(arg_t *arg) {
 	int ret;
 
 	switch(arg->expr->expr_type) {
+	case ASN_CONSTR_SEQUENCE_OF:
+	case ASN_CONSTR_SET_OF:
+		return asn1f_fix_constr_tag(arg, 0);
 	case ASN_CONSTR_SEQUENCE:
 	case ASN_CONSTR_SET:
 	case ASN_CONSTR_CHOICE:
