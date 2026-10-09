@@ -1,4 +1,8 @@
 v1.5.3: 2026-10-07
+	* Fixed default tag-mode resolution for tagged SEQUENCE OF and SET OF
+	  elements. References to already-tagged CHOICE types now use IMPLICIT
+	  tagging, as required by X.680:2021 §31.2.7. Added issue #566 regression
+	  coverage for normalized ASN.1 and generated member descriptors.
 	* Corrected IMPORTS resolution and diagnostics. Explicitly imported names
 	  resolve from the module named by FROM; -fprefer-import-source disables
 	  the legacy whole-module fallback. Duplicate module references are

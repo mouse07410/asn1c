@@ -1,6 +1,7 @@
 
 dist_check_SCRIPTS = check-parsing.sh check-version-string.sh check-options.sh \
-    check-generated-warnings.sh check-exit-status.sh
+    check-generated-warnings.sh check-exit-status.sh \
+    check-tagged-choice-sequence-of.sh
 TESTS_ENVIRONMENT= top_srcdir=${top_srcdir} top_builddir=${top_builddir}
 TESTS = $(dist_check_SCRIPTS)
 CLEANFILES = .check-parsing.*.tmp
