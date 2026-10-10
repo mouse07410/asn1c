@@ -12,6 +12,7 @@ $(ASN1C):
 	$(MAKE) -C $(top_builddir)/asn1c asn1c
 
 check-parsing.sh.log check-version-string.sh.log check-options.sh.log \
-check-generated-warnings.sh.log check-exit-status.sh.log: $(ASN1C)
+check-generated-warnings.sh.log check-exit-status.sh.log \
+check-tagged-choice-sequence-of.sh.log: $(ASN1C)
 
 EXTRA_DIST = README $(srcdir)/*asn1* $(srcdir)/exit-status/*.asn1
