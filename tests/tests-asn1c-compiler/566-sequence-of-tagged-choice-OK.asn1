@@ -1,0 +1,9 @@
+TagSequenceOf DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+Tagged ::= [65] CHOICE { ok INTEGER }
+List ::= SEQUENCE OF [3] Tagged
+SetList ::= SET OF [5] Tagged
+Holder ::= SEQUENCE { item [3] Tagged }
+BareList ::= SEQUENCE OF [4] CHOICE { ok INTEGER }
+
+END
