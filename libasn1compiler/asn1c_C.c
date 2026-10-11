@@ -48,6 +48,7 @@ static int compute_extensions_start(asn1p_expr_t *expr);
 static int expr_break_recursion(arg_t *arg, asn1p_expr_t *expr);
 static int expr_as_xmlvaluelist(arg_t *arg, asn1p_expr_t *expr);
 static int expr_elements_count(arg_t *arg, asn1p_expr_t *expr);
+static void emit_contents_type_field(arg_t *arg, asn1p_expr_t *expr);
 static int emit_single_member_OER_constraint_value(arg_t *arg, asn1cnst_range_t *range);
 static int emit_single_member_OER_constraint_size(arg_t *arg, asn1cnst_range_t *range);
 static int emit_single_member_PER_constraint(arg_t *arg, asn1cnst_range_t *range, int juscountvalues, const char *type);
@@ -1940,6 +1941,9 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 	 * Constraint checking.
 	 */
 	if(!(arg->flags & A1C_NO_CONSTRAINTS) && expr->combined_constraints) {
+		/* The contents constraint code clobbers the MKID() buffer. */
+		char *pcopy = asn1c_find_contents_type(arg, expr)
+				? strdup(MKID(expr)) : NULL;
 		p = MKID(expr);
 		if(HIDE_INNER_DEFS) OUT("static ");
 		OUT("int\n");
@@ -1951,6 +1955,7 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 		OUT("\n");
 		DEBUG("expr constraint checking code for %s", p);
 		if(asn1c_emit_constraint_checking_code(arg) == 1) {
+			if(pcopy) p = pcopy;
 			OUT("/* prevent infinite recursion */\n");
 			OUT("if(td->encoding_constraints.general_constraints != ");
 			if(HIDE_INNER_DEFS)
@@ -1967,6 +1972,7 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 			INDENT(-1);
 			OUT("}\n");
 		}
+		free(pcopy);	/* NULL-safe */
 		INDENT(-1);
 		OUT("}\n");
 		OUT("\n");
@@ -3173,6 +3179,24 @@ emit_single_member_OER_constraint_comment(arg_t *arg, asn1cnst_range_t *range, c
 		if(type) OUT(")");
 		OUT(") */");
 	}
+}
+
+/*
+ * Emit the contents_type field of the asn_encoding_constraints_t initializer
+ * for a BIT STRING (CONTAINING Type). Follows the general_constraints field.
+ */
+static void
+emit_contents_type_field(arg_t *arg, asn1p_expr_t *expr) {
+	asn1p_expr_t *contents;
+
+	if(arg->flags & A1C_NO_CONSTRAINTS) return;
+	contents = asn1c_find_contents_type(arg, expr);
+	if(!contents) return;
+
+	OUT(",\n");
+	if(C99_MODE) OUT(".contents_type = ");
+	OUT("&asn_DEF_%s", asn1c_type_name(arg, contents, TNF_SAFE));
+	GEN_POSTINCLUDE(asn1c_type_name(arg, contents, TNF_INCLUDE));
 }
 
 static int
@@ -4618,12 +4642,14 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 			const char *id = MKID(expr);
 			if(expr->_anonymous_type >= 2)
 				id = asn1c_type_name(arg, expr, TNF_SAFE);
-			OUT("memb_%s_constraint_%d\n", id,
+			OUT("memb_%s_constraint_%d", id,
 				arg->expr->_type_unique_index);
 		}
 	} else {
-		OUT("0\n");
+		OUT("0");
 	}
+	emit_contents_type_field(arg, expr);
+	OUT("\n");
     INDENT(-1);
     OUT("},\n");
 
@@ -4942,6 +4968,7 @@ emit_type_DEF(arg_t *arg, asn1p_expr_t *expr, enum tvm_compat tv_mode, int tags_
 			} else
 				FUNCREF(constraint);
 		}
+        emit_contents_type_field(arg, expr);
         OUT("\n");
         INDENT(-1);
         OUT("},\n");

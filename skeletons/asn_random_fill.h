@@ -48,4 +48,14 @@ int asn_random_fill(const struct asn_TYPE_descriptor_s *td, void **struct_ptr,
  */
 intmax_t asn_random_between(intmax_t min, intmax_t max);
 
+/*
+ * Generate a random value of the (contained_type) and return its encoding
+ * in a newly allocated buffer, for a BIT STRING (CONTAINING Type) value.
+ * The encoding rules are those used by asn_check_contents().
+ * The caller is responsible for freeing the (*buf_p).
+ */
+asn_random_fill_result_t asn_random_fill_contents(
+    const struct asn_TYPE_descriptor_s *contained_type, uint8_t **buf_p,
+    size_t *size_p, size_t max_length);
+
 #endif	/* ASN_RANDOM_FILL */

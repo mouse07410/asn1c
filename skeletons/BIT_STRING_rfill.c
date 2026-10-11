@@ -36,6 +36,35 @@ BIT_STRING_random_fill(const asn_TYPE_descriptor_t *td, void **sptr,
         break;
     }
 
+    /* BIT STRING (CONTAINING Type): the value is an encoding of a Type. */
+    {
+        const asn_TYPE_descriptor_t *ctype = td->encoding_constraints.contents_type;
+        if(constraints && constraints->contents_type)
+            ctype = constraints->contents_type;
+        if(ctype) {
+            uint8_t *cbuf = 0;
+            size_t csize = 0;
+            asn_random_fill_result_t rc =
+                asn_random_fill_contents(ctype, &cbuf, &csize, max_length);
+            if(rc.code != ARFILL_OK) return rc;
+            if(*sptr) {
+                st = *sptr;
+                FREEMEM(st->buf);
+            } else {
+                st = (BIT_STRING_t *)(*sptr = CALLOC(1, specs->struct_size));
+                if(!st) {
+                    FREEMEM(cbuf);
+                    return result_failed;
+                }
+            }
+            st->buf = cbuf;
+            st->size = csize;
+            st->bits_unused = 0;
+            result_ok.length = csize;
+            return result_ok;
+        }
+    }
+
     /* Figure out how far we should go */
     rnd_bits = lengths[asn_random_between(
         0, sizeof(lengths) / sizeof(lengths[0]) - 1)];

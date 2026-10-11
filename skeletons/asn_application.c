@@ -589,3 +589,70 @@ asn_decode(const asn_codec_ctx_t *opt_codec_ctx,
     }
 }
 
+
+static const enum asn_transfer_syntax asn__contents_syntaxes[] = {
+    ATS_UNALIGNED_BASIC_PER, ATS_ALIGNED_BASIC_PER, ATS_BASIC_OER, ATS_BER};
+#define ASN__CONTENTS_SYNTAXES_COUNT \
+    (sizeof(asn__contents_syntaxes) / sizeof(asn__contents_syntaxes[0]))
+
+int
+asn_check_contents(const asn_TYPE_descriptor_t *td, const void *buffer,
+                   size_t size) {
+    size_t i;
+
+    if(!td || (!buffer && size)) return -1;
+
+    for(i = 0; i < ASN__CONTENTS_SYNTAXES_COUNT; i++) {
+        void *st = 0;
+        asn_dec_rval_t rval =
+            asn_decode(0, asn__contents_syntaxes[i], td, &st, buffer, size);
+        int ok = (rval.code == RC_OK && rval.consumed == size);
+        if(st) ASN_STRUCT_FREE(*td, st);
+        if(ok) return 0;
+    }
+
+    return -1;
+}
+
+#if !defined(ASN_DISABLE_RFILL_SUPPORT)
+asn_random_fill_result_t
+asn_random_fill_contents(const asn_TYPE_descriptor_t *td, uint8_t **buf_p,
+                         size_t *size_p, size_t max_length) {
+    asn_random_fill_result_t result_failed = {ARFILL_FAILED, 0};
+    asn_random_fill_result_t result = result_failed;
+    int attempt;
+
+    if(!td || !td->op->random_fill) return result_failed;
+
+    /* A random value may not be encodable (constraints), so retry. */
+    for(attempt = 0; attempt < 16; attempt++) {
+        size_t i;
+        void *st = 0;
+
+        result = td->op->random_fill(td, &st, 0, max_length);
+        if(result.code != ARFILL_OK) {
+            if(st) ASN_STRUCT_FREE(*td, st);
+            if(result.code == ARFILL_FAILED) break;
+            continue;
+        }
+
+        for(i = 0; i < ASN__CONTENTS_SYNTAXES_COUNT; i++) {
+            asn_encode_to_new_buffer_result_t enc = asn_encode_to_new_buffer(
+                0, asn__contents_syntaxes[i], td, st);
+            if(enc.buffer && enc.result.encoded >= 0) {
+                ASN_STRUCT_FREE(*td, st);
+                *buf_p = (uint8_t *)enc.buffer;
+                *size_p = (size_t)enc.result.encoded;
+                result.code = ARFILL_OK;
+                result.length = *size_p;
+                return result;
+            }
+            FREEMEM(enc.buffer);
+        }
+        ASN_STRUCT_FREE(*td, st);
+        result = result_failed;
+    }
+
+    return result;
+}
+#endif  /* !defined(ASN_DISABLE_RFILL_SUPPORT) */

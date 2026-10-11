@@ -120,6 +120,19 @@ asn_encode_to_new_buffer_result_t asn_encode_to_new_buffer(
 
 
 /*
+ * Check the contents of a BIT STRING (CONTAINING Type) value, X.682 clause 11.
+ * The (size) octets at (buffer) must be a complete encoding of a value of
+ * (contained_type), using one of the compiled-in BASIC-UPER, BASIC-APER,
+ * BASIC-OER or BER transfer syntaxes (tried in this order).
+ * RETURN VALUES:
+ *   0: The buffer holds a valid encoding of the contained type.
+ *  -1: It does not.
+ */
+int asn_check_contents(const struct asn_TYPE_descriptor_s *contained_type,
+                       const void *buffer, size_t size);
+
+
+/*
  * Generic type of an application-defined callback to return various
  * types of data to the application.
  * EXPECTED RETURN VALUES:

@@ -229,6 +229,11 @@ typedef struct asn_encoding_constraints_s {
     const struct asn_jer_constraints_s *jer_constraints;
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
     asn_constr_check_f *general_constraints;
+    /*
+     * The type contained in a BIT STRING (CONTAINING Type) constraint,
+     * X.682 (02/2021) clause 11. NULL when there is no contents constraint.
+     */
+    const struct asn_TYPE_descriptor_s *contents_type;
 } asn_encoding_constraints_t;
 
 /*

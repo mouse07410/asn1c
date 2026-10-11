@@ -23,6 +23,37 @@ static abuf *emit_range_comparison_code(asn1cnst_range_t *range,
 static void emit_range_constraint_condition(arg_t *arg, const abuf *comparison);
 static int native_long_sign(arg_t *arg, asn1cnst_range_t *r);	/* -1, 0, 1 */
 
+static const asn1p_constraint_t *
+find_contents_constraint(const asn1p_constraint_t *ct) {
+	size_t i;
+
+	if(!ct) return NULL;
+	if(ct->type == ACT_CT_CTNG && ct->value
+	   && ct->value->type == ATV_TYPE && ct->value->value.v_type)
+		return ct;
+	for(i = 0; i < ct->el_count; i++) {
+		const asn1p_constraint_t *found =
+			find_contents_constraint(ct->elements[i]);
+		if(found) return found;
+	}
+	return NULL;
+}
+
+asn1p_expr_t *
+asn1c_find_contents_type(arg_t *arg, asn1p_expr_t *expr) {
+	const asn1p_constraint_t *ct;
+	asn1p_expr_t *terminal;
+
+	ct = find_contents_constraint(expr->combined_constraints);
+	if(!ct) return NULL;
+
+	terminal = asn1f_find_terminal_type_ex(arg->asn, arg->ns, expr);
+	if(!terminal || terminal->expr_type != ASN_BASIC_BIT_STRING)
+		return NULL;
+
+	return ct->value->value.v_type;
+}
+
 /*
  * True if either edge of the value range is a concrete value outside the
  * guaranteed-portable signed 32-bit window.  Such bounds cannot be enforced
@@ -229,6 +260,7 @@ asn1c_emit_constraint_checking_code(arg_t *arg) {
 	int produce_st = 0;
 	int ulong_optimize = 0;
 	int value_unsigned = 0;
+	asn1p_expr_t *contents;
 	int ret = 0;
 
 	ct = expr->combined_constraints;
@@ -236,6 +268,8 @@ asn1c_emit_constraint_checking_code(arg_t *arg) {
 		return 1;	/* No additional constraints defined */
 
 	etype = _find_terminal_type(arg);
+	contents = asn1c_find_contents_type(arg, expr);
+	if(contents) produce_st = 1;
 
 	r_value=asn1constraint_compute_constraint_range(expr->Identifier, etype, ct, ACT_EL_RANGE,0,0,0);
 	r_size =asn1constraint_compute_constraint_range(expr->Identifier, etype, ct, ACT_CT_SIZE, 0,0,0);
@@ -351,6 +385,28 @@ asn1c_emit_constraint_checking_code(arg_t *arg) {
 		INDENT(-1);
 	OUT("}\n");
 	OUT("\n");
+
+	if(contents) {
+		char *cname = strdup(asn1c_type_name(arg, contents, TNF_SAFE));
+		assert(cname);
+		GEN_POSTINCLUDE((arg->flags & A1C_INCLUDES_QUOTED)
+			? "\"asn_application.h\"" : "<asn_application.h>");
+		GEN_POSTINCLUDE(asn1c_type_name(arg, contents, TNF_INCLUDE));
+		OUT("/* CONTAINING %s: must be a complete encoding of it */\n",
+			cname);
+		OUT("if(st->bits_unused != 0\n");
+		OUT("   || asn_check_contents(&asn_DEF_%s, st->buf, st->size) != 0) {\n",
+			cname);
+		INDENT(+1);
+		OUT("ASN__CTFAIL(app_key, td, sptr,\n");
+		OUT("\t\"%%s: contents constraint failed (%%s:%%d)\",\n");
+		OUT("\ttd->name, __FILE__, __LINE__);\n");
+		OUT("return -1;\n");
+		INDENT(-1);
+		OUT("}\n");
+		OUT("\n");
+		free(cname);
+	}
 
 	if((r_value) && (!ulong_optimize))
 		emit_value_determination_code(arg, etype, r_value);
