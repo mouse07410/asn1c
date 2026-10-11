@@ -77,6 +77,33 @@
      && (unsigned)(specs)->first_extension <= (memb_idx))
 
 /*
+ * X.680 25.6 and 52.7: the first unknown extension addition must not carry
+ * a tag of the trailing OPTIONAL/DEFAULT run of the root components.
+ */
+static int
+_tag_in_trailing_optionals(const asn_SEQUENCE_specifics_t *specs,
+                           const asn_TYPE_member_t *elements,
+                           ber_tlv_tag_t tlv_tag) {
+    size_t i = (size_t)specs->first_extension;
+
+    while(i > 0 && elements[i - 1].optional) {
+        const asn_TYPE_member_t *m = &elements[--i];
+        if(m->flags & (ATF_ANY_TYPE | ATF_OPEN_TYPE)) continue;
+        if(m->tag != (ber_tlv_tag_t)-1) {
+            if(BER_TAGS_EQUAL(tlv_tag, m->tag)) return 1;
+        } else if(m->type->op->ber_decoder == CHOICE_decode_ber
+                  && m->type->specifics) {
+            const asn_CHOICE_specifics_t *cs =
+                (const asn_CHOICE_specifics_t *)m->type->specifics;
+            unsigned k;
+            for(k = 0; k < cs->tag2el_count; k++)
+                if(BER_TAGS_EQUAL(tlv_tag, cs->tag2el[k].el_tag)) return 1;
+        }
+    }
+    return 0;
+}
+
+/*
  * Tags are canonically sorted in the tag2element map.
  */
 static int
@@ -372,6 +399,17 @@ SEQUENCE_decode_ber(const asn_codec_ctx_t *opt_codec_ctx,
                     /* Skip this tag */
                     ssize_t skip;
                     edx += elements[edx].optional;
+
+                    if(!ctx->context
+                       && edx == (size_t)specs->first_extension
+                       && _tag_in_trailing_optionals(specs, elements,
+                                                     tlv_tag)) {
+                        ASN_DEBUG("Tag %s repeats a component before the "
+                                  "extension marker in %s",
+                                  ber_tlv_tag_string(tlv_tag), td->name);
+                        RETURN(RC_FAIL);
+                    }
+                    ctx->context = 1;  /* First extension addition seen */
 
                     ASN_DEBUG("Skipping unexpected %s (at %" ASN_PRI_SIZE ")",
                               ber_tlv_tag_string(tlv_tag), edx);
