@@ -238,10 +238,18 @@ find_contained_type_in_constraint(arg_t *arg, asn1p_constraint_t *ct) {
 
 asn1p_expr_t *
 asn1c_find_contained_type(arg_t *arg, asn1p_expr_t *expr) {
-	(void)arg;
-	return expr ? find_contained_type_in_constraint(arg,
-	                                                expr->combined_constraints)
-	            : 0;
+	asn1p_expr_t *contained_type;
+	asn1p_expr_t *terminal_type;
+
+	if(!expr) return 0;
+	contained_type =
+		find_contained_type_in_constraint(arg, expr->combined_constraints);
+	if(!contained_type) return 0;
+	terminal_type = asn1f_find_terminal_type_ex(arg->asn, arg->ns, expr);
+	if(!terminal_type || terminal_type->expr_type != ASN_BASIC_BIT_STRING) {
+		return 0;
+	}
+	return contained_type;
 }
 
 int

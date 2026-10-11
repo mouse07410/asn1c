@@ -1940,6 +1940,8 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 	 * Constraint checking.
 	 */
 	if(!(arg->flags & A1C_NO_CONSTRAINTS) && expr->combined_constraints) {
+		char *pcopy = asn1c_find_contained_type(arg, expr)
+				? strdup(MKID(expr)) : NULL;
 		p = MKID(expr);
 		if(HIDE_INNER_DEFS) OUT("static ");
 		OUT("int\n");
@@ -1951,6 +1953,7 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 		OUT("\n");
 		DEBUG("expr constraint checking code for %s", p);
 		if(asn1c_emit_constraint_checking_code(arg) == 1) {
+			if(pcopy) p = pcopy;
 			OUT("/* prevent infinite recursion */\n");
 			OUT("if(td->encoding_constraints.general_constraints != ");
 			if(HIDE_INNER_DEFS)
@@ -1967,6 +1970,7 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 			INDENT(-1);
 			OUT("}\n");
 		}
+		free(pcopy);	/* NULL-safe */
 		INDENT(-1);
 		OUT("}\n");
 		OUT("\n");

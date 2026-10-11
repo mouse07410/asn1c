@@ -7,10 +7,16 @@
 #include <constraints.h>
 #include <BIT_STRING.h>
 #include <errno.h>
+#if !defined(ASN_DISABLE_APER_SUPPORT)
+#include <aper_decoder.h>
+#endif
 #if !defined(ASN_DISABLE_CBOR_SUPPORT)
 #include <cbor_encoder.h>
 #include <cbor_decoder.h>
 #endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
+#if !defined(ASN_DISABLE_UPER_SUPPORT)
+#include <uper_decoder.h>
+#endif
 
 static asn_enc_rval_t asn_encode_internal(const asn_codec_ctx_t *opt_codec_ctx,
                                           enum asn_transfer_syntax syntax,
@@ -601,19 +607,48 @@ asn_check_containing_constraint(const asn_TYPE_descriptor_t *type_descriptor,
     asn_dec_rval_t rval;
     int syntax = asn_check_constraints_current_syntax();
     int failed = 0;
+    int decoded = 0;
+    size_t bit_count;
 
     if(!contained_type) return 0;
     st = (const BIT_STRING_t *)struct_ptr;
-    if(!st || !st->buf || st->size == 0
+    if(!st || !st->buf || st->size == 0 || st->bits_unused < 0
+       || st->bits_unused > 7 || st->size > SIZE_MAX / 8
        || (st->bits_unused
            && (st->buf[st->size - 1] & ((1u << st->bits_unused) - 1)))) {
         failed = 1;
     } else {
-        rval = asn_decode(0, (enum asn_transfer_syntax)syntax, contained_type,
-                          &contained_value, st->buf, st->size);
-        if(rval.code != RC_OK || rval.consumed != st->size
-           || asn_check_constraints_with_syntax(contained_type, contained_value,
-                                                syntax, 0, 0) != 0) {
+        bit_count = st->size * 8 - st->bits_unused;
+        switch(syntax) {
+#if !defined(ASN_DISABLE_UPER_SUPPORT)
+        case ATS_UNALIGNED_BASIC_PER:
+        case ATS_UNALIGNED_CANONICAL_PER:
+            rval = uper_decode(0, contained_type, &contained_value, st->buf,
+                               st->size, 0, st->bits_unused);
+            decoded = rval.code == RC_OK && rval.consumed == bit_count;
+            break;
+#endif
+#if !defined(ASN_DISABLE_APER_SUPPORT)
+        case ATS_ALIGNED_BASIC_PER:
+        case ATS_ALIGNED_CANONICAL_PER:
+            rval = aper_decode(0, contained_type, &contained_value, st->buf,
+                               st->size, 0, st->bits_unused);
+            decoded = rval.code == RC_OK && rval.consumed == bit_count;
+            break;
+#endif
+        default:
+            if(st->bits_unused == 0) {
+                rval = asn_decode(0, (enum asn_transfer_syntax)syntax,
+                                  contained_type, &contained_value, st->buf,
+                                  st->size);
+                decoded = rval.code == RC_OK && rval.consumed == st->size;
+            }
+            break;
+        }
+        if(!decoded
+           || asn_check_constraints_with_syntax(contained_type,
+                                                contained_value, syntax, 0,
+                                                0) != 0) {
             failed = 1;
         }
     }
