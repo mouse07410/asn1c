@@ -218,6 +218,40 @@ ulong_optimization(arg_t *arg, asn1p_expr_type_e etype, asn1cnst_range_t *r_size
 		&& native_long_sign(arg, r_value) == 0);
 }
 
+static asn1p_expr_t *
+find_contained_type_in_constraint(arg_t *arg, asn1p_constraint_t *ct) {
+	unsigned int i;
+
+	(void)arg;
+	if(!ct) return 0;
+	if(ct->type == ACT_CT_CTNG && ct->value && ct->value->type == ATV_TYPE) {
+		asn1p_expr_t *type = ct->value->value.v_type;
+		return type;
+	}
+	for(i = 0; i < ct->el_count; i++) {
+		asn1p_expr_t *type =
+			find_contained_type_in_constraint(arg, ct->elements[i]);
+		if(type) return type;
+	}
+	return 0;
+}
+
+asn1p_expr_t *
+asn1c_find_contained_type(arg_t *arg, asn1p_expr_t *expr) {
+	asn1p_expr_t *contained_type;
+	asn1p_expr_t *terminal_type;
+
+	if(!expr) return 0;
+	contained_type =
+		find_contained_type_in_constraint(arg, expr->combined_constraints);
+	if(!contained_type) return 0;
+	terminal_type = asn1f_find_terminal_type_ex(arg->asn, arg->ns, expr);
+	if(!terminal_type || terminal_type->expr_type != ASN_BASIC_BIT_STRING) {
+		return 0;
+	}
+	return contained_type;
+}
+
 int
 asn1c_emit_constraint_checking_code(arg_t *arg) {
 	asn1cnst_range_t *r_size;
@@ -234,6 +268,15 @@ asn1c_emit_constraint_checking_code(arg_t *arg) {
 	ct = expr->combined_constraints;
 	if(ct == NULL)
 		return 1;	/* No additional constraints defined */
+
+	asn1p_expr_t *contained_type = asn1c_find_contained_type(arg, expr);
+	if(contained_type) {
+		const char *contained_name =
+			asn1c_type_name(arg, contained_type, TNF_SAFE);
+		OUT("if(asn_check_containing_constraint(td, sptr, &asn_DEF_%s",
+		    contained_name);
+		OUT(", ctfailcb, app_key)) return -1;\n");
+	}
 
 	etype = _find_terminal_type(arg);
 

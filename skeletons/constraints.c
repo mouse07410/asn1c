@@ -77,7 +77,31 @@ _asn_i_ctfailcb(void *key, const asn_TYPE_descriptor_t *td, const void *sptr,
 int
 asn_check_constraints(const asn_TYPE_descriptor_t *type_descriptor,
                       const void *struct_ptr, char *errbuf, size_t *errlen) {
+    return asn_check_constraints_with_syntax(type_descriptor, struct_ptr,
+                                             ATS_BER, errbuf, errlen);
+}
+
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_THREADS__)
+static thread_local int constraint_check_syntax = ATS_BER;
+#elif defined(__GNUC__) || defined(__clang__)
+static __thread int constraint_check_syntax = ATS_BER;
+#elif defined(_MSC_VER)
+static __declspec(thread) int constraint_check_syntax = ATS_BER;
+#else
+static int constraint_check_syntax = ATS_BER;
+#endif
+
+int
+asn_check_constraints_current_syntax(void) {
+    return constraint_check_syntax;
+}
+
+int
+asn_check_constraints_with_syntax(
+    const asn_TYPE_descriptor_t *type_descriptor, const void *struct_ptr,
+    int syntax, char *errbuf, size_t *errlen) {
     struct errbufDesc arg;
+    int saved_syntax = constraint_check_syntax;
     int ret;
 
     arg.failed_type = 0;
@@ -85,10 +109,11 @@ asn_check_constraints(const asn_TYPE_descriptor_t *type_descriptor,
     arg.errbuf = errbuf;
     arg.errlen = errlen ? *errlen : 0;
 
+    constraint_check_syntax = syntax;
     ret = type_descriptor->encoding_constraints.general_constraints(
         type_descriptor, struct_ptr, _asn_i_ctfailcb, &arg);
+    constraint_check_syntax = saved_syntax;
     if(ret == -1 && errlen) *errlen = arg.errlen;
 
     return ret;
 }
-

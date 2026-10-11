@@ -229,6 +229,7 @@ typedef struct asn_encoding_constraints_s {
     const struct asn_jer_constraints_s *jer_constraints;
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
     asn_constr_check_f *general_constraints;
+    const struct asn_TYPE_descriptor_s *contained_type;
 } asn_encoding_constraints_t;
 
 /*
@@ -270,6 +271,7 @@ typedef struct asn_TYPE_descriptor_s {
      * functions above.
      */
     const void *specifics;
+
 } asn_TYPE_descriptor_t;
 
 /*

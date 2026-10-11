@@ -1,0 +1,7 @@
+BitStringContaining DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+Inner ::= SEQUENCE { a BIT STRING (SIZE (16)), b INTEGER (0..255) }
+Outer ::= SEQUENCE { c BIT STRING (CONTAINING Inner) }
+Wrapped ::= BIT STRING (CONTAINING Inner)
+
+END

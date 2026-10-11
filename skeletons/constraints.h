@@ -32,6 +32,15 @@ int asn_check_constraints(
     char *errbuf,           /* Returned error description */
     size_t *errlen          /* Length of the error description */
 );
+int asn_check_constraints_with_syntax(
+    const struct asn_TYPE_descriptor_s *type_descriptor,
+    const void *struct_ptr, int syntax, char *errbuf, size_t *errlen);
+int asn_check_constraints_current_syntax(void);
+int asn_check_containing_constraint(
+    const struct asn_TYPE_descriptor_s *type_descriptor,
+    const void *struct_ptr,
+    const struct asn_TYPE_descriptor_s *contained_type,
+    asn_app_constraint_failed_f *cb, void *key);
 
 
 /*

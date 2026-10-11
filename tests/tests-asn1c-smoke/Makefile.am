@@ -29,6 +29,7 @@ TESTS += check-encoding-instructions.sh
 TESTS += check-APER-inline-constrained-ioc.sh
 TESTS += check-fprefix-link.sh
 TESTS += check-fprefix-anon-typedef.sh
+TESTS += check-CONTAINING.sh
 
 CLEANFILES = Makefile.am.* *.[acho] check-*.log check-*.trs
 

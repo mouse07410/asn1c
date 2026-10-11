@@ -1940,6 +1940,8 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 	 * Constraint checking.
 	 */
 	if(!(arg->flags & A1C_NO_CONSTRAINTS) && expr->combined_constraints) {
+		char *pcopy = asn1c_find_contained_type(arg, expr)
+				? strdup(MKID(expr)) : NULL;
 		p = MKID(expr);
 		if(HIDE_INNER_DEFS) OUT("static ");
 		OUT("int\n");
@@ -1951,6 +1953,7 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 		OUT("\n");
 		DEBUG("expr constraint checking code for %s", p);
 		if(asn1c_emit_constraint_checking_code(arg) == 1) {
+			if(pcopy) p = pcopy;
 			OUT("/* prevent infinite recursion */\n");
 			OUT("if(td->encoding_constraints.general_constraints != ");
 			if(HIDE_INNER_DEFS)
@@ -1967,6 +1970,7 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 			INDENT(-1);
 			OUT("}\n");
 		}
+		free(pcopy);	/* NULL-safe */
 		INDENT(-1);
 		OUT("}\n");
 		OUT("\n");
@@ -4624,6 +4628,18 @@ emit_member_table(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *
 	} else {
 		OUT("0\n");
 	}
+	{
+		asn1p_expr_t *contained_type = asn1c_find_contained_type(arg, expr);
+		if(contained_type) {
+			OUT(",\n");
+			if(C99_MODE) OUT(".contained_type = ");
+			GEN_POS_INCLUDE_BASE(OT_INCLUDES, contained_type);
+			const char *contained_name =
+				asn1c_type_name(arg, contained_type, TNF_SAFE);
+			OUT("&asn_DEF_%s", contained_name);
+			OUT("\n");
+		}
+	}
     INDENT(-1);
     OUT("},\n");
 
@@ -4942,7 +4958,21 @@ emit_type_DEF(arg_t *arg, asn1p_expr_t *expr, enum tvm_compat tv_mode, int tags_
 			} else
 				FUNCREF(constraint);
 		}
-        OUT("\n");
+		{
+			asn1p_expr_t *contained_type =
+				asn1c_find_contained_type(arg, expr);
+			if(contained_type) {
+				OUT(",\n");
+				if(C99_MODE) OUT(".contained_type = ");
+				GEN_POS_INCLUDE_BASE(OT_INCLUDES, contained_type);
+				const char *contained_name =
+					asn1c_type_name(arg, contained_type, TNF_SAFE);
+				OUT("&asn_DEF_%s", contained_name);
+				OUT("\n");
+			} else {
+				OUT("\n");
+			}
+		}
         INDENT(-1);
         OUT("},\n");
 
