@@ -678,6 +678,11 @@ int asn_check_constraints(
     char *errbuf,           /* Returned error description */
     size_t *errlen          /* Length of the error description */
 );
+int asn_check_constraints_with_syntax(
+    const asn_TYPE_descriptor_t *type_descriptor,
+    const void *struct_ptr,
+    int syntax, char *errbuf, size_t *errlen
+);
 \end{signature}
 
 \subsection*{Description}
@@ -689,6 +694,9 @@ Alternatively, they could be passed as \code{NULL}s.
 If constraints validation fails, \code{errlen} will contain the actual
 number of bytes used in \code{errbuf} to encode an error message.
 The message is going to be properly 0-terminated.
+For \code{CONTAINING} constraints, \code{asn_check_constraints()} uses BER.
+Use \code{asn_check_constraints_with_syntax()} when the contained value uses
+the same encoding rules as another transfer syntax.
 
 \subsection*{Return values}
 
@@ -1017,12 +1025,19 @@ int asn_random_fill(
     void **struct_ptr_ptr,/* Pointer to a target structure's ptr */
     size_t approx_max_length_limit
 );
+int asn_random_fill_with_syntax(
+    const asn_TYPE_descriptor_t *type_descriptor,
+    void **struct_ptr_ptr,
+    size_t approx_max_length_limit, int syntax
+);
 \end{signature}
 
 \subsection*{Description}
 
 Create or initialize a structure with random contents, according to the type
 specification and optional member constraints.
+The \code{asn_random_fill_with_syntax()} variant encodes values of types used
+by \code{CONTAINING} constraints using the specified transfer syntax.
 
 For best results the code should be generated without \cmd{-no-gen-UPER}
 options to \cmd{asn1c}. Making PER constraints code available in runtime

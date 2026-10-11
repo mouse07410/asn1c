@@ -494,7 +494,8 @@ main(int ac, char *av[]) {
 #ifdef  JUNKTEST
             if(isyntax == ATS_RANDOM) {
                 structure = NULL;
-                if(asn_random_fill(pduType, &structure, random_max_size) != 0) {
+                if(asn_random_fill_with_syntax(pduType, &structure,
+                                               random_max_size, osyntax) != 0) {
                     fprintf(stderr, "Cannot generate a random value.\n");
                     assert(structure == NULL);
                     errno = EINVAL;
@@ -520,7 +521,8 @@ main(int ac, char *av[]) {
             if(opt_check) {
                 char errbuf[128];
                 size_t errlen = sizeof(errbuf);
-                if(asn_check_constraints(pduType, structure, errbuf, &errlen)) {
+                if(asn_check_constraints_with_syntax(pduType, structure,
+                                                     isyntax, errbuf, &errlen)) {
                     fprintf(stderr,
                             "%s: ASN.1 constraint "
                             "check failed: %s\n",
@@ -1013,4 +1015,3 @@ junk_bytes_with_probability(uint8_t *buf, size_t size, double prob) {
     }
 }
 #endif    /* JUNKTEST */
-

@@ -8,17 +8,43 @@
 #include <constr_TYPE.h>
 #include <stdlib.h>
 
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_THREADS__)
+static thread_local int random_fill_syntax = ATS_BER;
+#elif defined(__GNUC__) || defined(__clang__)
+static __thread int random_fill_syntax = ATS_BER;
+#elif defined(_MSC_VER)
+static __declspec(thread) int random_fill_syntax = ATS_BER;
+#else
+static int random_fill_syntax = ATS_BER;
+#endif
+
 int
 asn_random_fill(const struct asn_TYPE_descriptor_s *td, void **struct_ptr,
                 size_t length) {
+    return asn_random_fill_with_syntax(td, struct_ptr, length, ATS_BER);
+}
 
+int
+asn_random_fill_with_syntax(const struct asn_TYPE_descriptor_s *td,
+                            void **struct_ptr, size_t length, int syntax) {
+    int saved_syntax = random_fill_syntax;
+    int result;
+
+    random_fill_syntax = syntax;
     if(td && td->op->random_fill) {
         asn_random_fill_result_t res =
             td->op->random_fill(td, struct_ptr, 0, length);
-        return (res.code == ARFILL_OK) ? 0 : -1;
+        result = (res.code == ARFILL_OK) ? 0 : -1;
     } else {
-        return -1;
+        result = -1;
     }
+    random_fill_syntax = saved_syntax;
+    return result;
+}
+
+int
+asn_random_fill_current_syntax(void) {
+    return random_fill_syntax;
 }
 
 static uintmax_t

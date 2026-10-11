@@ -131,6 +131,12 @@ BIT_STRING_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 		return -1;
 	}
 
+	if(asn_check_containing_constraint(
+	       td, sptr, td->encoding_constraints.contained_type, ctfailcb,
+	       app_key)) {
+		return -1;
+	}
+
 	return 0;
 }
 

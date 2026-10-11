@@ -42,6 +42,10 @@ typedef asn_random_fill_result_t(asn_random_fill_f)(
  */
 int asn_random_fill(const struct asn_TYPE_descriptor_s *td, void **struct_ptr,
                     size_t approx_max_length_limit);
+int asn_random_fill_with_syntax(const struct asn_TYPE_descriptor_s *td,
+                                void **struct_ptr,
+                                size_t approx_max_length_limit, int syntax);
+int asn_random_fill_current_syntax(void);
 
 /*
  * Returns a random number between min and max.
