@@ -1,0 +1,16 @@
+-- Test for -fgen-only-pdu-deps: primitive codec helpers
+-- (asn_codecs_prim_{ber,jer,xer}.c) must be copied for primitive types
+PDUDepsPrimitive DEFINITIONS ::= BEGIN
+
+Message ::= SEQUENCE {
+    value   INTEGER,
+    flag    BOOLEAN,
+    nothing NULL,
+    real    REAL,
+    oid     OBJECT IDENTIFIER,
+    roid    RELATIVE-OID,
+    kind    ENUMERATED { a(0), b(1) },
+    bits    BIT STRING OPTIONAL
+}
+
+END
