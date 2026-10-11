@@ -90,6 +90,7 @@ TESTS += check-src/check-203.c
 TESTS += check-src/check-204.c
 TESTS += check-src/check-211.c
 TESTS += check-src/check-212.-fcompound-names.c
+TESTS += check-src/check-213.c
 
 if TEST_64BIT
 TESTS += check-src/check64-134.-gen-UPER.c

@@ -1,0 +1,13 @@
+-- BER: the first unknown extension addition must not repeat a tag of the
+-- trailing OPTIONAL components (X.680 25.6, 52.7).
+ModuleTestBerRepeatedTag
+	DEFINITIONS IMPLICIT TAGS ::=
+BEGIN
+
+V ::= SEQUENCE {
+	a [1] OCTET STRING OPTIONAL,
+	b [4] OCTET STRING OPTIONAL,
+	...
+}
+
+END
