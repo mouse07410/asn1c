@@ -69,13 +69,16 @@ der_encoder.h der_encoder.c	# DER encoder support code
 ANY.h ANY_ber.c
 BOOLEAN.h BOOLEAN_ber.c
 GeneralizedTime.h GeneralizedTime_ber.c
-INTEGER.h INTEGER_ber.c
+INTEGER.h INTEGER_ber.c asn_codecs_prim_ber.c
 NULL.h NULL_ber.c
 NativeInteger.h NativeInteger_ber.c
 NativeEnumerated.h NativeEnumerated_ber.c
-NativeReal.h NativeReal_ber.c
+NativeReal.h NativeReal_ber.c asn_codecs_prim_ber.c
 OCTET_STRING.h OCTET_STRING_ber.c
 OPEN_TYPE.h OPEN_TYPE_ber.c
+OBJECT_IDENTIFIER.h asn_codecs_prim_ber.c
+REAL.h asn_codecs_prim_ber.c
+RELATIVE-OID.h asn_codecs_prim_ber.c
 asn_codecs_prim.h asn_codecs_prim_ber.c
 constr_CHOICE.h constr_CHOICE_ber.c
 constr_SEQUENCE_OF.h constr_SEQUENCE_OF_ber.c
@@ -93,18 +96,18 @@ xer_encoder.h xer_encoder.c	# XER encoding support
 ANY.h ANY_xer.c
 BIT_STRING.h BIT_STRING_xer.c
 BMPString.h BMPString_xer.c
-BOOLEAN.h BOOLEAN_xer.c
+BOOLEAN.h BOOLEAN_xer.c asn_codecs_prim_xer.c
 GeneralizedTime.h GeneralizedTime_xer.c
 INTEGER.h INTEGER_xer.c asn_codecs_prim_xer.c
 NULL.h NULL_xer.c asn_codecs_prim_xer.c
 NativeEnumerated.h NativeEnumerated_xer.c
-NativeInteger.h NativeInteger_xer.c
+NativeInteger.h NativeInteger_xer.c asn_codecs_prim_xer.c
 NativeReal.h NativeReal_xer.c
-OBJECT_IDENTIFIER.h OBJECT_IDENTIFIER_xer.c
+OBJECT_IDENTIFIER.h OBJECT_IDENTIFIER_xer.c asn_codecs_prim_xer.c
 OCTET_STRING.h OCTET_STRING_xer.c
 OPEN_TYPE.h OPEN_TYPE_xer.c
-REAL.h REAL_xer.c
-RELATIVE-OID.h RELATIVE-OID_xer.c
+REAL.h REAL_xer.c asn_codecs_prim_xer.c
+RELATIVE-OID.h RELATIVE-OID_xer.c asn_codecs_prim_xer.c
 UTCTime.h UTCTime_xer.c
 UniversalString.h UniversalString_xer.c
 asn_codecs_prim.h asn_codecs_prim_xer.c
@@ -257,19 +260,19 @@ jer_encoder.h jer_encoder.c	# JER encoding support
 ANY.h ANY_jer.c
 BIT_STRING.h BIT_STRING_jer.c INTEGER.h
 BMPString.h BMPString_jer.c
-BOOLEAN.h BOOLEAN_jer.c
-ENUMERATED.h ENUMERATED_jer.c
+BOOLEAN.h BOOLEAN_jer.c asn_codecs_prim_jer.c
+ENUMERATED.h ENUMERATED_jer.c asn_codecs_prim_jer.c
 GeneralizedTime.h GeneralizedTime_jer.c
-INTEGER.h INTEGER_jer.c
-NULL.h NULL_jer.c
+INTEGER.h INTEGER_jer.c asn_codecs_prim_jer.c
+NULL.h NULL_jer.c asn_codecs_prim_jer.c
 NativeEnumerated.h NativeEnumerated_jer.c
 NativeInteger.h NativeInteger_jer.c
 NativeReal.h NativeReal_jer.c
-OBJECT_IDENTIFIER.h OBJECT_IDENTIFIER_jer.c
+OBJECT_IDENTIFIER.h OBJECT_IDENTIFIER_jer.c asn_codecs_prim_jer.c
 OCTET_STRING.h OCTET_STRING_jer.c
 OPEN_TYPE.h OPEN_TYPE_jer.c
-REAL.h REAL_jer.c
-RELATIVE-OID.h RELATIVE-OID_jer.c
+REAL.h REAL_jer.c asn_codecs_prim_jer.c
+RELATIVE-OID.h RELATIVE-OID_jer.c asn_codecs_prim_jer.c
 UTCTime.h UTCTime_jer.c
 UniversalString.h UniversalString_jer.c
 asn_codecs_prim.h asn_codecs_prim_jer.c
