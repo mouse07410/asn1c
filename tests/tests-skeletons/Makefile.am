@@ -43,11 +43,13 @@ check_PROGRAMS =                \
     check-APER-INTEGER-srbid    \
     check-APER-INTEGER-f1ap     \
     check-APER-INTEGER-x691-range \
+    check-APER-INTEGER-signpad \
     check-UPER-support          \
     check-UPER-UniversalString  \
     check-UPER-PrintableString  \
     check-UPER-INTEGER          \
     check-UPER-INTEGER-semiconstrained \
+    check-UPER-INTEGER-signpad \
     check-recursive-overflow     \
     check-PER-opentype          \
     check-PER-NativeEnumerated  \

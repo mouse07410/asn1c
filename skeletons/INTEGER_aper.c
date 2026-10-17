@@ -33,6 +33,36 @@ aper_log2_ceil_size(size_t v) {
     return bits;
 }
 
+/*
+ * Purpose: normalize the content octets of a SEMI-CONSTRAINED whole
+ *          number for the PER length-determinant encoding.
+ * Original source: added because X.691 11.7 requires the offset
+ *          (n - lb) to be encoded as a non-negative-binary-integer,
+ *          while asn1c stores the value in the minimal signed
+ *          two's-complement form.
+ * Version: 2026-10-17.
+ * Parameters: buf,end - the whole octet buffer of the INTEGER value.
+ * Returns: pointer to the first payload octet, skipping the leading
+ *          sign octet that a non-negative value carries in signed
+ *          two's-complement storage. A negative value in minimal
+ *          storage never starts with 0x00, so it passes through
+ *          unchanged.
+ * Errors: none.
+ * Responsible party: asn1c maintainers.
+ * Example: {0x00,0xfd,0xe8} yields a pointer at 0xfd.
+ *
+ * This MUST NOT be used for unconstrained whole numbers: X.691 11.8
+ * requires the 2's-complement-binary-integer representation there, so
+ * a leading 0x00 sign octet is significant and must be kept.
+ */
+static const uint8_t *
+aper_integer_min_contents(const uint8_t *buf, const uint8_t *end) {
+    while(end - buf > 1 && buf[0] == 0x00) {
+        buf++;
+    }
+    return buf;
+}
+
 asn_dec_rval_t
 INTEGER_decode_aper(const asn_codec_ctx_t *opt_codec_ctx,
                     const asn_TYPE_descriptor_t *td,
@@ -432,11 +462,16 @@ INTEGER_encode_aper(const asn_TYPE_descriptor_t *td,
         ASN__ENCODED_OK(er);
     }
 
-    if(ct && ct->lower_bound) {
+    /*
+     * Semi-constrained whole number (X.691 11.7). A zero lower bound is
+     * still semi-constrained, so test the constraint flags rather than
+     * the numeric value of lower_bound, which would be false for 0.
+     */
+    if(ct && (ct->lower_bound || (ct->flags & APC_SEMI_CONSTRAINED))) {
         ASN_DEBUG("Adjust lower bound to %"ASN_PRIdMAX"", (intmax_t)ct->lower_bound);
         /*
          * Encode semi-constrained integer by subtracting lower bound.
-         * Per X.691, the value is encoded as (value - lower_bound),
+         * Per X.691 11.7, the value is encoded as (value - lower_bound),
          * which is always non-negative.
          */
         INTEGER_t adjusted_int;
@@ -468,8 +503,14 @@ INTEGER_encode_aper(const asn_TYPE_descriptor_t *td,
             }
         }
 
-        /* Encode the adjusted value using unconstrained encoding */
-        buf = adjusted_int.buf;
+        /*
+         * Encode the adjusted value using unconstrained encoding.
+         * X.691 11.7: the semi-constrained offset (n - lb) is a
+         * non-negative-binary-integer, so drop the sign octet that the
+         * signed two's-complement storage would carry.
+         */
+        buf = aper_integer_min_contents(adjusted_int.buf,
+                                        adjusted_int.buf + adjusted_int.size);
         end = adjusted_int.buf + adjusted_int.size;
         while(buf < end) {
             int need_eom = 0;
@@ -493,6 +534,14 @@ INTEGER_encode_aper(const asn_TYPE_descriptor_t *td,
         ASN__ENCODED_OK(er);
     }
 
+    /*
+     * X.691 11.8: an unconstrained whole number is encoded as a
+     * 2's-complement-binary-integer in the minimum number of octets,
+     * i.e. its leading sign octet (if any) is significant and must be
+     * kept. Semi-constrained whole numbers (including those whose
+     * lower bound is zero) never reach this point; they are handled as
+     * non-negative offsets above.
+     */
     for(buf = st->buf, end = st->buf + st->size; buf < end;) {
         int need_eom = 0;
         ssize_t mayEncode = aper_put_length(po, -1, -1, end - buf, &need_eom);
