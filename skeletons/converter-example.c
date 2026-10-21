@@ -719,12 +719,14 @@ data_decode_from_file(enum asn_transfer_syntax isyntax,
      * Special handling for JER (JSON Encoding Rules):
      * JER parsing requires complete JSON tokens and doesn't handle 
      * partial tokens across read boundaries well. For large JSON files,
-     * read the entire file into memory before parsing to avoid failures
-     * when the default buffer size (8192 bytes) is smaller than the JSON.
+     * size the read buffer to hold the entire file, so the loop below
+     * reads it in one go and no token spans a read boundary. The loop
+     * decodes the first PDU and keeps the remaining bytes in
+     * DynamicBuffer, so any further PDUs in the same file are decoded
+     * by the following calls.
      */
     if((isyntax == ATS_JER || isyntax == ATS_JER_MINIFIED) && on_first_pdu) {
         long file_size;
-        size_t total_read = 0;
         
         /* Get file size */
         if(fseek(file, 0, SEEK_END) == 0) {
@@ -742,26 +744,6 @@ data_decode_from_file(enum asn_transfer_syntax isyntax,
                     exit(EX_OSERR);
                 }
                 fbuf_size = file_size + 1;
-                
-                /* Read entire file */
-                total_read = fread(fbuf, 1, file_size, file);
-                if(total_read == (size_t)file_size) {
-                    fbuf[total_read] = '\0';  /* Null terminate for safety */
-                    
-                    /* Decode the entire file at once */
-                    DEBUG("JER: Decoding entire file (%" ASN_PRI_SIZE " bytes)", total_read);
-                    rval = asn_decode(opt_codec_ctx, isyntax, pduType,
-                                      (void **)&structure, fbuf, total_read);
-                    
-                    DEBUG("JER: Decode result: code=%d, consumed=%" ASN_PRI_SIZE,
-                          rval.code, rval.consumed);
-                    
-                    /* Return the structure directly, bypassing the chunk-based loop */
-                    return structure;
-                } else {
-                    DEBUG("JER: Failed to read entire file, falling back to chunked reading");
-                    fseek(file, 0, SEEK_SET);  /* Reset file position */
-                }
             }
         }
     }
