@@ -284,10 +284,31 @@ asn1c_find_contained_type(arg_t *arg, asn1p_expr_t *expr) {
 		find_contained_type_in_constraint(arg, expr->combined_constraints);
 	if(!contained_type) return 0;
 	terminal_type = asn1f_find_terminal_type_ex(arg->asn, arg->ns, expr);
-	if(!terminal_type || terminal_type->expr_type != ASN_BASIC_BIT_STRING) {
+	if(!terminal_type || (terminal_type->expr_type != ASN_BASIC_BIT_STRING
+	    && terminal_type->expr_type != ASN_BASIC_OCTET_STRING)) {
 		return 0;
 	}
 	return contained_type;
+}
+
+/*
+ * Reject contained types without a generated descriptor preserving constraints.
+ * Source: C CONTAINING compiler. Version: 2026-10-30. Inputs: arg supplies
+ * compiler context, expr is the outer type or member. Returns zero when
+ * supported and -1 after a diagnostic otherwise. Errors: no exceptions.
+ * Author: asn1c maintainers. History: prevent unconstrained inline decoding.
+ * Example: CONTAINING INTEGER (0..2) requires a named type definition.
+ */
+int
+asn1c_check_contained_type(arg_t *arg, asn1p_expr_t *expr) {
+    asn1p_expr_t *contained = asn1c_find_contained_type(arg, expr);
+    if(contained && (contained->expr_type != A1TC_REFERENCE
+                     || contained->constraints)) {
+        FATAL("Inline or constrained CONTAINING type is unsupported in %s",
+              expr->Identifier ? expr->Identifier : "anonymous type");
+        return -1;
+    }
+    return 0;
 }
 
 int
@@ -309,11 +330,14 @@ asn1c_emit_constraint_checking_code(arg_t *arg) {
 		return 1;	/* No additional constraints defined */
 
 	asn1p_expr_t *contained_type = asn1c_find_contained_type(arg, expr);
+	if(asn1c_check_contained_type(arg, expr)) return -1;
 	if(contained_type) {
 		const char *contained_name =
 			asn1c_type_name(arg, contained_type, TNF_SAFE);
-		OUT("if(asn_check_containing_constraint(td, sptr, &asn_DEF_%s",
-		    contained_name);
+		OUT("if(%s(td, sptr, &asn_DEF_%s",
+		    _find_terminal_type(arg) == ASN_BASIC_OCTET_STRING
+		        ? "asn_check_octet_containing_constraint"
+		        : "asn_check_containing_constraint", contained_name);
 		OUT(", ctfailcb, app_key)) return -1;\n");
 	}
 

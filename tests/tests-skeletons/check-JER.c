@@ -465,12 +465,90 @@ test_jer_empty_octet_string_encoders(void) {
     assert(result.encoded == 2 && strcmp(capture.data, expected) == 0);
 }
 
+/*
+ * Reject invalid JSON escapes while decoding JER character strings.
+ * Original source: OPEN TYPE malformed-value regression. Version: 2026-10-30.
+ * Inputs: none. Returns: nothing. Errors: assertion on a codec regression.
+ * Author: asn1c maintainers. History: test JSON escape and Unicode handling.
+ * Example: an invalid escaped letter must not decode as a character string.
+ */
+static void
+test_jer_character_escapes(void) {
+    static const char *invalid[] = {
+        "\"\\lice\"", "\"\\u12xz\"", "\"\\ud800\"",
+        "\"\\udc00\"", "\"\\ud800\\u0041\"", "\"a\nb\""
+    };
+    static const struct { const char *json; const char *value; size_t size; } valid[] = {
+        {"\"\\/\\n\\\\\\\"\"", "/\n\\\"", 4},
+        {"\"\\u0041\"", "A", 1},
+        {"\"\\ud83d\\ude00\"", "\xf0\x9f\x98\x80", 4}
+    };
+    size_t i;
+    for(i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+        OCTET_STRING_t *value = NULL;
+        asn_dec_rval_t result = OCTET_STRING_decode_jer_utf8(
+            NULL, &asn_DEF_OCTET_STRING, NULL, (void **)&value,
+            invalid[i], strlen(invalid[i]));
+        assert(result.code != RC_OK);
+        ASN_STRUCT_FREE(asn_DEF_OCTET_STRING, value);
+    }
+    for(i = 0; i < sizeof(valid) / sizeof(valid[0]); i++) {
+        OCTET_STRING_t *value = NULL;
+        asn_dec_rval_t result = OCTET_STRING_decode_jer_utf8(
+            NULL, &asn_DEF_OCTET_STRING, NULL, (void **)&value,
+            valid[i].json, strlen(valid[i].json));
+        assert(result.code == RC_OK && value && value->size == valid[i].size);
+        assert(memcmp(value->buf, valid[i].value, valid[i].size) == 0);
+        ASN_STRUCT_FREE(asn_DEF_OCTET_STRING, value);
+    }
+}
+
+/*
+ * Recurse through syntax-aware validation to exercise its depth bound.
+ * Source: CONTAINING recursion guard. Version: 2026-10-30. Inputs: td is a
+ * test descriptor, sptr points to the remaining depth, cb/key are unused.
+ * Returns: zero within the bound and -1 when the guard is reached. Exceptions:
+ * none. Author: asn1c maintainers. History: recursive CONTAINING hardening.
+ * Example: a remaining depth of one enters one additional constraint check.
+ */
+static int
+test_recursive_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
+                          asn_app_constraint_failed_f *cb, void *key) {
+    unsigned remaining = *(const unsigned *)sptr;
+    (void)cb;
+    (void)key;
+    if(!remaining) return 0;
+    --remaining;
+    return asn_check_constraints_with_syntax(td, &remaining, ATS_JER, NULL, NULL);
+}
+
+/*
+ * Verify the nested constraint depth limit and restoration after failure.
+ * Source: CONTAINING recursion guard. Version: 2026-10-30. Inputs: none.
+ * Returns: nothing. Errors: assertions on regression. No exceptions.
+ * Author: asn1c maintainers. History: recursive CONTAINING hardening.
+ * Example: a later shallow check succeeds after a rejected deep check.
+ */
+static void
+test_containing_constraint_depth(void) {
+    asn_TYPE_descriptor_t descriptor = asn_DEF_BOOLEAN;
+    unsigned depth = 63;
+    descriptor.encoding_constraints.general_constraints = test_recursive_constraint;
+    assert(asn_check_constraints_with_syntax(&descriptor, &depth, ATS_JER, NULL, NULL) == 0);
+    depth = 64;
+    assert(asn_check_constraints_with_syntax(&descriptor, &depth, ATS_JER, NULL, NULL) == -1);
+    depth = 0;
+    assert(asn_check_constraints_with_syntax(&descriptor, &depth, ATS_JER, NULL, NULL) == 0);
+}
+
 int
 main(void) {
     printf("Running JER (JSON Encoding Rules) decoding tests...\n");
 
     test_jer_decode_boolean_literals();
     test_jer_decode_small_json();
+    test_jer_character_escapes();
+    test_containing_constraint_depth();
     test_jer_decode_large_json();
     test_jer_decode_with_file();
     test_jer_decode_bit_string_object();

@@ -41,6 +41,12 @@ int asn_check_containing_constraint(
     const void *struct_ptr,
     const struct asn_TYPE_descriptor_s *contained_type,
     asn_app_constraint_failed_f *cb, void *key);
+int asn_check_octet_containing_constraint(
+    const struct asn_TYPE_descriptor_s *type_descriptor,
+    const void *struct_ptr,
+    const struct asn_TYPE_descriptor_s *contained_type,
+    asn_app_constraint_failed_f *cb, void *key);
+
 
 
 /*

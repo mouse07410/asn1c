@@ -108,6 +108,7 @@ static int rust_write_bounded_octets_jer(FILE *, size_t, size_t);
 static int rust_write_bounded_bits(FILE *, const char *, size_t, size_t,
                                   uint64_t);
 static int rust_write_enumerated(FILE *, const char *, asn1p_expr_t *, uint64_t);
+static int rust_write_inline_enum(FILE *, const char *, asn1p_expr_t *);
 static int rust_write_enumerated_jer(FILE *, asn1p_expr_t *);
 static int rust_write_integer_ber(FILE *, const char *, const char *);
 static int rust_write_sequence(FILE *, const char *, asn1p_expr_t *, int);
@@ -512,7 +513,8 @@ rust_collect_nested_names(asn1p_module_t *module, asn1p_expr_t *sequence,
         char *name;
         size_t i;
         int collision = 0;
-        if(member->expr_type != ASN_CONSTR_SEQUENCE) continue;
+        if(member->expr_type != ASN_CONSTR_SEQUENCE
+           && member->expr_type != ASN_BASIC_ENUMERATED) continue;
         name = rust_nested_type_name(parent, member);
         if(!name) {
             rust_diagnostic(module, member, "nested SEQUENCE type name is too long");
@@ -537,8 +539,9 @@ rust_collect_nested_names(asn1p_module_t *module, asn1p_expr_t *sequence,
             }
         }
         names[(*name_count)++] = name;
-        if(rust_collect_nested_names(module, member, name, names, name_count,
-                                     depth + 1))
+        if(member->expr_type == ASN_CONSTR_SEQUENCE
+           && rust_collect_nested_names(module, member, name, names, name_count,
+                                        depth + 1))
             return -1;
     }
     return 0;
@@ -654,6 +657,13 @@ rust_check_sequence_member(asn1p_module_t *module, asn1p_expr_t *member) {
         rust_diagnostic(module, member,
                         "SEQUENCE field must be a direct primitive with supported shape");
         return -1;
+    }
+    if(member->expr_type == ASN_BASIC_ENUMERATED) {
+        if(member->marker.flags == EM_DEFAULT) {
+            rust_diagnostic(module, member, "ENUMERATED DEFAULT is unsupported");
+            return -1;
+        }
+        return rust_check_enumerated(module, member, RUST_CODEC_UPER);
     }
     if(member->members.tq_head) {
         rust_diagnostic(module, member,
@@ -1702,6 +1712,56 @@ rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
 }
 
 /*
+ * Emit a nested ENUMERATED and helpers that share the enclosing UPER cursor.
+ * Parameters: stream receives Rust, name identifies the type, and expr owns
+ * validated root values. Returns zero on success, -1 on output failure; no
+ * exceptions. Original source: standalone ENUMERATED UPER emitter.
+ * Version/date: 0.7.0, 2026-10-30. Responsible: asn1c maintainers.
+ * History: added inline SEQUENCE enum fields. Example: emit PacketStatus.
+ */
+static int
+rust_write_inline_enum(FILE *stream, const char *name, asn1p_expr_t *expr) {
+    asn1p_expr_t *item;
+    size_t count = 0;
+    TQ_FOR(item, &expr->members, next) count++;
+    if(rust_write_enumerated(stream, name, expr, RUST_CODEC_UPER)) return -1;
+    if(fprintf(stream, "impl %s {\n", name) < 0) return -1;
+    if(rust_write_method_doc(stream, "Encode an enum in a shared UPER cursor.",
+        "`self` supplies the value; `writer` is the enclosing cursor.",
+        "Returns success after writing the index.", "Returns a cursor error.",
+        "`value.encode_uper_fields(writer)?;")) return -1;
+    if(fputs("    fn encode_uper_fields(self, writer: &mut ::asn1c_runtime::UperWriter) ->\n"
+             "        ::core::result::Result<(), ::asn1c_runtime::Error> {\n"
+             "        let index = match self {\n", stream) == EOF) return -1;
+    TQ_FOR(item, &expr->members, next) {
+        char *variant = rust_enum_variant(item->Identifier);
+        int ret = variant ? fprintf(stream, "            Self::%s => %zu,\n",
+                                    variant, rust_enumerated_rank(expr, item)) : -1;
+        free(variant);
+        if(ret < 0) return -1;
+    }
+    if(fprintf(stream, "        };\n        writer.write_integer(index, 0, %zu)\n    }\n", count - 1) < 0)
+        return -1;
+    if(rust_write_method_doc(stream, "Decode an enum from a shared UPER cursor.",
+        "`reader` is the enclosing cursor.", "Returns a validated enum variant.",
+        "Returns an error for truncation or a spare index.",
+        "`let value = Self::decode_uper_fields(reader)?;")) return -1;
+    if(fprintf(stream, "    fn decode_uper_fields(reader: &mut ::asn1c_runtime::UperReader) ->\n"
+               "        ::core::result::Result<Self, ::asn1c_runtime::Error> {\n"
+               "        match reader.read_integer(0, %zu)? {\n", count - 1) < 0) return -1;
+    TQ_FOR(item, &expr->members, next) {
+        char *variant = rust_enum_variant(item->Identifier);
+        int ret = variant ? fprintf(stream, "            %zu => Ok(Self::%s),\n",
+                                    rust_enumerated_rank(expr, item), variant) : -1;
+        free(variant);
+        if(ret < 0) return -1;
+    }
+    return fputs("            _ => Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+                 "                reason: \"unused ENUMERATED root index\",\n"
+                 "            }),\n        }\n    }\n}\n\n", stream) == EOF ? -1 : 0;
+}
+
+/*
  * Emit one documented SEQUENCE struct with private shared-cursor helpers.
  * Parameters: stream receives Rust; name is its generated type name; expr owns
  * validated fields. Returns zero or -1. Original source: Rust UPER backend.
@@ -1802,10 +1862,13 @@ rust_write_all_sequences(FILE *stream, const char *name, asn1p_expr_t *expr,
     asn1p_expr_t *member;
     TQ_FOR(member, &expr->members, next) {
         char *nested_name;
-        if(member->expr_type != ASN_CONSTR_SEQUENCE) continue;
+        if(member->expr_type != ASN_CONSTR_SEQUENCE
+           && member->expr_type != ASN_BASIC_ENUMERATED) continue;
         nested_name = rust_nested_type_name(name, member);
         if(!nested_name) return -1;
-        if(rust_write_all_sequences(stream, nested_name, member, 0)) {
+        if((member->expr_type == ASN_CONSTR_SEQUENCE
+            ? rust_write_all_sequences(stream, nested_name, member, 0)
+            : rust_write_inline_enum(stream, nested_name, member))) {
             free(nested_name);
             return -1;
         }
@@ -1825,7 +1888,8 @@ static int
 rust_write_sequence_field(FILE *stream, const char *parent,
                          asn1p_expr_t *member) {
     char *name = rust_identifier(member->Identifier, 1);
-    char *nested_type = member->expr_type == ASN_CONSTR_SEQUENCE
+    char *nested_type = (member->expr_type == ASN_CONSTR_SEQUENCE
+                         || member->expr_type == ASN_BASIC_ENUMERATED)
         ? rust_nested_type_name(parent, member) : NULL;
     const char *type = nested_type ? nested_type
                        : member->expr_type == ASN_BASIC_BOOLEAN ? "bool"
@@ -1839,7 +1903,8 @@ rust_write_sequence_field(FILE *stream, const char *parent,
                        : "::std::vec::Vec<u8>";
     int ret = -1;
     if(name) {
-        if(member->expr_type == ASN_CONSTR_SEQUENCE && !nested_type) {
+        if((member->expr_type == ASN_CONSTR_SEQUENCE
+            || member->expr_type == ASN_BASIC_ENUMERATED) && !nested_type) {
             ret = -1;
         } else ret = member->marker.flags == EM_OPTIONAL
             ? fprintf(stream,
@@ -1867,7 +1932,7 @@ rust_write_sequence_encode_field(FILE *stream, asn1p_expr_t *member) {
     char *name = rust_identifier(member->Identifier, 1);
     int ret = -1;
     if(!name) return -1;
-    if(member->expr_type == ASN_CONSTR_SEQUENCE) {
+    if(member->expr_type == ASN_CONSTR_SEQUENCE || member->expr_type == ASN_BASIC_ENUMERATED) {
         if(member->marker.flags == EM_OPTIONAL) {
             ret = fprintf(stream,
                 "        if let Some(value) = self.%s.as_ref() {\n"
@@ -2094,10 +2159,12 @@ static int
 rust_write_sequence_decode_field(FILE *stream, const char *parent,
                                  asn1p_expr_t *member, size_t *presence_index) {
     char *name = rust_identifier(member->Identifier, 1);
-    char *nested_type = member->expr_type == ASN_CONSTR_SEQUENCE
+    char *nested_type = (member->expr_type == ASN_CONSTR_SEQUENCE
+                         || member->expr_type == ASN_BASIC_ENUMERATED)
         ? rust_nested_type_name(parent, member) : NULL;
     int ret = -1;
-    if(!name || (member->expr_type == ASN_CONSTR_SEQUENCE && !nested_type)) {
+    if(!name || ((member->expr_type == ASN_CONSTR_SEQUENCE
+                  || member->expr_type == ASN_BASIC_ENUMERATED) && !nested_type)) {
         free(name);
         free(nested_type);
         return -1;
@@ -2108,7 +2175,7 @@ rust_write_sequence_decode_field(FILE *stream, const char *parent,
         free(nested_type);
         return -1;
     }
-    if(member->expr_type == ASN_CONSTR_SEQUENCE) {
+    if(member->expr_type == ASN_CONSTR_SEQUENCE || member->expr_type == ASN_BASIC_ENUMERATED) {
         if(member->marker.flags == EM_OPTIONAL) {
             ret = fprintf(stream,
                 "if __asn1c_presence[%zu] { Some(%s::decode_uper_fields(reader)?) } "

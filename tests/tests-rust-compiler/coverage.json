@@ -186,6 +186,7 @@
         "full signed i64 INTEGER range",
         "cumulative work and whole-input/output ceilings",
         "required and OPTIONAL nested records with local presence maps",
+        "required and OPTIONAL inline nonextensible ENUMERATED fields",
         "nested primitive DEFAULT omission and substitution",
         "nested truncation, filler, and cumulative limit rejection"
       ],
@@ -194,7 +195,7 @@
         "decode"
       ],
       "status": "tested_with_live_C_comparison",
-      "evidence": "sequence_conformance.rs; nested_conformance.rs; c_sequence.c; C UPER encode/decode vectors"
+      "evidence": "sequence_conformance.rs; nested_conformance.rs; sequence_enum_conformance.rs; c_sequence.c; c_sequence_enum.c; C UPER encode/decode vectors"
     },
     {
       "asn1_type": "OCTET STRING, BIT STRING",

@@ -33,6 +33,7 @@ EXTRA_DIST = $(srcdir)/FirstSlice.asn1 \
     $(srcdir)/VariableBitsOversize.asn1 \
     $(srcdir)/NamedBitString.asn1 \
     $(srcdir)/SequenceOptional.asn1 \
+    $(srcdir)/SequenceEnum.asn1 \
     $(srcdir)/SequenceDefaults.asn1 \
     $(srcdir)/SequenceNested.asn1 \
     $(srcdir)/NestedNameCollision.asn1 \
@@ -54,6 +55,8 @@ EXTRA_DIST = $(srcdir)/FirstSlice.asn1 \
     $(srcdir)/additional_codecs.rs \
     $(srcdir)/jer_conformance.rs \
     $(srcdir)/sequence_conformance.rs \
+    $(srcdir)/sequence_enum_conformance.rs \
+    $(srcdir)/c_sequence_enum.c \
     $(srcdir)/string_conformance.rs \
     $(srcdir)/variable_string_conformance.rs \
     $(srcdir)/variable_bit_string_conformance.rs \

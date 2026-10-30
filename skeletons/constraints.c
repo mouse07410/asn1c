@@ -83,12 +83,16 @@ asn_check_constraints(const asn_TYPE_descriptor_t *type_descriptor,
 
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_THREADS__)
 static thread_local int constraint_check_syntax = ATS_BER;
+static thread_local unsigned constraint_check_depth; /* state variable. */
 #elif defined(__GNUC__) || defined(__clang__)
 static __thread int constraint_check_syntax = ATS_BER;
+static __thread unsigned constraint_check_depth; /* state variable. */
 #elif defined(_MSC_VER)
 static __declspec(thread) int constraint_check_syntax = ATS_BER;
+static __declspec(thread) unsigned constraint_check_depth; /* state variable. */
 #else
 static int constraint_check_syntax = ATS_BER;
+static unsigned constraint_check_depth; /* state variable. */
 #endif
 
 int
@@ -104,6 +108,10 @@ asn_check_constraints_with_syntax(
     int saved_syntax = constraint_check_syntax;
     int ret;
 
+    /* Nested CONTAINING checks start fresh decoders; bound their total depth. */
+    if(!type_descriptor || !type_descriptor->encoding_constraints.general_constraints
+       || constraint_check_depth >= 64) return -1;
+    ++constraint_check_depth;
     arg.failed_type = 0;
     arg.failed_struct_ptr = 0;
     arg.errbuf = errbuf;
@@ -113,6 +121,7 @@ asn_check_constraints_with_syntax(
     ret = type_descriptor->encoding_constraints.general_constraints(
         type_descriptor, struct_ptr, _asn_i_ctfailcb, &arg);
     constraint_check_syntax = saved_syntax;
+    --constraint_check_depth;
     if(ret == -1 && errlen) *errlen = arg.errlen;
 
     return ret;

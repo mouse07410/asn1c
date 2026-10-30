@@ -1,0 +1,7 @@
+SequenceEnum DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+Packet ::= SEQUENCE {
+    enabled BOOLEAN,
+    maybe ENUMERATED { high(20), low(2), middle(9) } OPTIONAL,
+    single ENUMERATED { only(5) }
+}
+END

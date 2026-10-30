@@ -151,6 +151,38 @@ rejects input that does not match them.
 
 ## Other binary families
 
+### OPTIONAL, CONTAINING, ANY, and OPEN TYPE
+
+C constructed codecs use generated presence metadata for `OPTIONAL` members.
+For `BIT STRING (CONTAINING named Type)` and
+`OCTET STRING (CONTAINING named Type)`, the
+syntax-aware constraint checker decodes the embedded value, checks its own
+constraints, and requires a complete encoding. The OCTET STRING checker
+accepts only zero padding after the last PER bit; non-PER encodings must
+consume every octet. The [CONTAINING smoke test](../tests/tests-asn1c-smoke/check-CONTAINING.sh)
+covers valid and invalid UPER and APER encodings, including spare values,
+padding, and trailing data. Random filling of OCTET STRING CONTAINING values
+does not yet construct a valid embedded value.
+Inline contained types are rejected during generation because the compiler
+does not emit a specialized descriptor for their constraints and codec
+metadata. Syntax-aware constraint checking limits nested calls to 64, so
+recursive contained values fail safely at that depth.
+
+`ANY` remains an opaque encoded-value container with codec-specific behavior;
+the BER compatibility boundary is described above. IOC-selected `OPEN TYPE`
+uses its selected concrete descriptor. The
+[JER OPEN TYPE regression](../tests/tests-c-compiler/check-src/check-602.-findirect-choice.-fcompound-names.-gen-JER.c)
+covers a selected value with an `OPTIONAL` field, truncation, and malformed
+input. C SET OER and APER still reject table-selected open types when a
+canonical SET member precedes its selector, because decoding requires
+deferred resolution.
+
+The Rust backend supports `OPTIONAL` fields only within its documented UPER
+SEQUENCE subset, now including inline nonextensible ENUMERATED values. Rust
+`CONTAINING`, `ANY`, and IOC-selected `OPEN TYPE` remain unsupported; the
+generator rejects those schemas before publishing output. See the
+[Rust implementation boundary](rust/implementation.md#implemented-boundary).
+
 ### C SET support in OER and APER
 
 The C `SET` operation table has OER and APER encoders and decoders for

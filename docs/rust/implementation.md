@@ -33,8 +33,9 @@ cargo check --offline --manifest-path generated/Cargo.toml
 
 For fixed-size OCTET STRING or BIT STRING, bounded-size OCTET STRING or
 BIT STRING, or a SEQUENCE with required and OPTIONAL direct or inline nested
-BOOLEAN, NULL, finite bounded INTEGER, fixed-size string, and bounded-size
-OCTET STRING or BIT STRING fields, plus BOOLEAN and bounded INTEGER DEFAULT
+BOOLEAN, NULL, finite bounded INTEGER, inline nonextensible ENUMERATED,
+fixed-size string, and bounded-size OCTET STRING or BIT STRING fields,
+plus BOOLEAN and bounded INTEGER DEFAULT
 fields, select UPER alone:
 
 ```sh
@@ -68,7 +69,7 @@ fresh directory after adding application code or running Cargo there.
 | Direct bounded INTEGER | Nonextensible finite signed i64 range; UPER codecs |
 | Top-level BOOLEAN, NULL, bounded INTEGER | CER encoding; INTEGER bounds are finite, nonextensible, and fit `i64` |
 | Runtime limits | Input bytes, output bytes, and cumulative field work for composed UPER values |
-| SEQUENCE | Required and OPTIONAL direct primitive or inline nested records; BOOLEAN and bounded INTEGER DEFAULT fields; UPER-only shared cursor and presence bitmap |
+| SEQUENCE | Required and OPTIONAL direct primitives, inline nonextensible ENUMERATED, or inline nested records; BOOLEAN and bounded INTEGER DEFAULT fields; UPER-only shared cursor and presence bitmap |
 | Fixed OCTET STRING and BIT STRING | Direct nonextensible SIZE(N), 0 <= N < 65536; UPER, standalone or SEQUENCE field |
 | Bounded OCTET STRING | One nonextensible SIZE(l..u), 0 <= l < u < 65536; UPER direct/SEQUENCE |
 | Bounded BIT STRING | One nonextensible SIZE(l..u), 0 <= l < u < 65536; UPER direct/SEQUENCE; NamedBitList excluded |
@@ -87,6 +88,7 @@ fresh directory after adding application code or running Cargo there.
 | XER, CBOR, and nonprimitive JER | Planned; unavailable in Rust mode |
 | SET, collections, extensible, unbounded, fragmented or disjoint strings, named-bit strings, extensible ENUMERATED, aliases, imports, top-level tagged types | Planned; rejected in this slice |
 | Encoding controls, information objects, parameterized types | Planned; rejected in this slice |
+| CONTAINING, ANY, IOC-selected OPEN TYPE | Require reference resolution and embedded or selected codec dispatch; rejected before output publication |
 
 BOOLEAN and INTEGER wrappers expose constructors, value getters, and the
 methods selected during generation. UPER methods encode and prefix-decode the
@@ -105,7 +107,9 @@ INTEGER construction checks the
 declared range. Codecs return typed errors for malformed values, invalid
 constraints, exceeded limits, or allocation failure.
 Generated SEQUENCE structs expose required and DEFAULT fields directly and
-represent OPTIONAL fields as `Option<T>`. Inline nested SEQUENCE fields use
+represent OPTIONAL fields as `Option<T>`. Inline nonextensible ENUMERATED
+fields use their declared numeric values and encode declaration-order PER
+ranks; unknown values and spare ranks are rejected. Inline nested SEQUENCE fields use
 deterministic public Rust record types. Nested record types and aggregate field
 work are bounded during generation; cycles and generated-name collisions are
 rejected. Constructed DEFAULTs, extensions, aliases, and imports remain

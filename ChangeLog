@@ -1,4 +1,19 @@
 Changes since v1.5.3:
+	* Added C OCTET STRING (CONTAINING named Type) constraint checks for complete
+	  embedded values. PER padding and spare values are validated, while
+	  non-PER syntax uses complete-byte consumption. Added UPER and APER
+	  negative cases to the CONTAINING smoke test. Inline contained types
+	  fail generation until their specialized descriptors can be emitted;
+	  syntax-aware recursive constraint checks now have a depth bound.
+	* Corrected C JER IOC-selected OPEN TYPE cleanup for incomplete and
+	  malformed selected values. Added generated present/absent OPTIONAL
+	  round trips, truncation and malformed-input regressions. JER text-string
+	  decoding now rejects invalid JSON escapes, control bytes, and isolated
+	  Unicode surrogates while accepting valid surrogate pairs.
+	* Extended Rust UPER SEQUENCE fields to required and OPTIONAL inline
+	  nonextensible ENUMERATED values, with C wire comparisons and malformed
+	  rank tests. Rust CONTAINING, ANY, and IOC OPEN TYPE schemas still fail
+	  before output publication while their type resolution remains pending.
 	* Encoded and decoded C SET extension-group leaves as flat JER object
 	  members. Added key routing across input splits, duplicate and malformed
 	  descriptor checks, DEFAULT and renamed-leaf regressions, and pretty

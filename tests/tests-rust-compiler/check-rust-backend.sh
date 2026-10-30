@@ -46,6 +46,40 @@ grep -F 'select at least one supported codec' \
     "$test_tmp/rejected-disabled-codecs.log" >/dev/null
 test ! -e "$test_tmp/rejected-disabled-codecs"
 
+# Unsupported dynamic and contained types must fail before publishing a crate.
+cat >"$test_tmp/Containing.asn1" <<'EOF'
+Containing DEFINITIONS ::= BEGIN
+Inner ::= INTEGER (0..2)
+Outer ::= BIT STRING (CONTAINING Inner)
+END
+EOF
+cat >"$test_tmp/Any.asn1" <<'EOF'
+AnyModule DEFINITIONS ::= BEGIN
+Value ::= ANY
+END
+EOF
+cat >"$test_tmp/Open.asn1" <<'EOF'
+OpenModule DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+TESTCLASS ::= CLASS { &id INTEGER UNIQUE, &Extension }
+    WITH SYNTAX { ID &id EXTENSION &Extension }
+MyExtIEs TESTCLASS ::= { { ID 1 EXTENSION OCTET STRING (SIZE(3)) }, ... }
+MyContainer ::= SEQUENCE {
+    id TESTCLASS.&id({MyExtIEs}),
+    extension TESTCLASS.&Extension({MyExtIEs}{@id})
+}
+END
+EOF
+for fixture in Containing Any Open; do
+    rejected_out="$test_tmp/rejected-$fixture"
+    if "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$rejected_out" \
+        "$test_tmp/$fixture.asn1" >"$test_tmp/$fixture.log" 2>&1; then
+        echo "FAIL: Rust backend accepted unsupported $fixture" >&2
+        exit 1
+    fi
+    grep -F 'Rust backend does not support' "$test_tmp/$fixture.log" >/dev/null
+    test ! -e "$rejected_out"
+done
+
 # An incomplete runtime beside explicit skeletons must fail before output.
 missing_skeletons="$test_tmp/missing-runtime/skeletons"
 missing_runtime="$missing_skeletons/rust/asn1c-runtime"
@@ -647,6 +681,49 @@ if ! cc $sequence_cflags -I"$sequence_c_out" "$sequence_c_out"/*.c \
     exit 1
 fi
 "$test_tmp/c-sequence"
+# Inline ENUMERATED fields use the same cursor and presence map as records.
+enum_sequence_out="$test_tmp/sequence-enum"
+"$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$enum_sequence_out" \
+    "$test_srcdir/SequenceEnum.asn1"
+mkdir "$enum_sequence_out/tests"
+cp "$test_srcdir/sequence_enum_conformance.rs" "$enum_sequence_out/tests/"
+(cd "$enum_sequence_out" && CARGO_TARGET_DIR="$test_tmp/target-sequence-enum" \
+    cargo test --offline && cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings)
+# Unsupported inline enum extensions and generated type collisions fail early.
+cat >"$test_tmp/EnumExt.asn1" <<'EOF'
+EnumExt DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { field ENUMERATED { one(1), ..., two(2) } OPTIONAL }
+END
+EOF
+cat >"$test_tmp/EnumCollision.asn1" <<'EOF'
+EnumCollision DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { field ENUMERATED { one(1) } OPTIONAL }
+PacketField ::= BOOLEAN
+END
+EOF
+for fixture in EnumExt EnumCollision; do
+    rejected_out="$test_tmp/rejected-$fixture"
+    if "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$rejected_out" \
+        "$test_tmp/$fixture.asn1" >"$test_tmp/$fixture.log" 2>&1; then
+        echo "FAIL: Rust backend accepted unsupported $fixture" >&2
+        exit 1
+    fi
+    grep -F 'Rust backend does not support' "$test_tmp/$fixture.log" >/dev/null
+    test ! -e "$rejected_out"
+done
+enum_sequence_c="$test_tmp/sequence-enum-c"
+mkdir "$enum_sequence_c"
+"$asn1c_bin" -S "$skeletons" -gen-UPER -no-gen-XER -no-gen-JER \
+    -no-gen-CBOR -no-gen-OER -no-gen-APER -no-gen-print \
+    -no-gen-random-fill -pdu=all -fgen-only-pdu-deps -no-gen-example \
+    -D "$enum_sequence_c" "$test_srcdir/SequenceEnum.asn1" \
+    >"$test_tmp/sequence-enum-c.log" 2>&1
+enum_sequence_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$enum_sequence_c/Makefile.am.libasncodec")
+cc $enum_sequence_cflags -I"$enum_sequence_c" "$enum_sequence_c"/*.c \
+    "$test_srcdir/c_sequence_enum.c" -lm -o "$test_tmp/c-sequence-enum"
+"$test_tmp/c-sequence-enum"
 cat >"$test_tmp/SequenceTopTagged.asn1" <<'EOF'
 SequenceTopTagged DEFINITIONS ::= BEGIN
 TaggedPacket ::= [0] IMPLICIT BOOLEAN

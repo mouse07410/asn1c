@@ -105,3 +105,16 @@ configured build tree with:
 ```sh
 make -C tests/tests-rust-compiler check
 ```
+
+Inline nonextensible ENUMERATED SEQUENCE members support UPER as required or
+OPTIONAL fields. Their indices follow numeric value order, and singleton values
+consume no payload bits. Tests compare presence and payload vectors with C,
+and reject truncation and spare indices.
+
+Rust does not support CONTAINING, ANY, or information-object OPEN TYPE. A
+correct CONTAINING implementation needs contained-type reference resolution,
+length and fragmentation handling for unbounded strings, transfer-syntax-aware
+inner decoding with exact consumption and constraints, and shared resource
+budgets. ANY needs a defined opaque representation and codec-specific framing;
+information-object OPEN TYPE additionally needs object-set resolution and
+selector-driven dispatch. These forms are rejected before output publication.

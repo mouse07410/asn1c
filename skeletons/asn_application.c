@@ -6,6 +6,7 @@
 #include <asn_application.h>
 #include <constraints.h>
 #include <BIT_STRING.h>
+#include <OCTET_STRING.h>
 #include <errno.h>
 #if !defined(ASN_DISABLE_BER_SUPPORT) && !defined(ASN_DISABLE_CER_SUPPORT)
 #include <cer_encoder.h>
@@ -1090,4 +1091,76 @@ asn_check_containing_constraint(const asn_TYPE_descriptor_t *type_descriptor,
         return -1;
     }
     return 0;
+}
+
+/*
+ * Validate an OCTET STRING containing a complete encoding of another value.
+ * Original source: asn1c BIT STRING CONTAINING checker. Version: 2026-10-30.
+ * Inputs: td and sptr describe the outer value, contained identifies its type,
+ * cb and key optionally receive a diagnostic. Returns zero on success, -1 on
+ * invalid content or unsupported syntax. Errors: decoder failures are reported
+ * through cb; no exceptions. Owner: asn1c maintainers. History: added OCTET
+ * STRING support. Example: validate a padded UPER encoding of BOOLEAN.
+ */
+int
+asn_check_octet_containing_constraint(const asn_TYPE_descriptor_t *td,
+                                      const void *sptr,
+                                      const asn_TYPE_descriptor_t *contained,
+                                      asn_app_constraint_failed_f *cb, void *key) {
+    const OCTET_STRING_t *st = (const OCTET_STRING_t *)sptr;
+    void *value = 0;
+    asn_dec_rval_t rval = {RC_FAIL, 0};
+    int syntax = asn_check_constraints_current_syntax();
+    int per = 0;
+    int valid = 0;
+    const uint8_t empty_buffer = 0;
+    const uint8_t *buffer;
+
+    if(!td || !contained) return -1;
+    if(!st || (!st->buf && st->size) || st->size > SIZE_MAX / 8) goto done;
+    buffer = st->buf ? st->buf : &empty_buffer;
+    /* PER decoders report bits, allowing exact trailing padding checks. */
+    switch(syntax) {
+#if !defined(ASN_DISABLE_UPER_SUPPORT)
+    case ATS_UNALIGNED_BASIC_PER:
+    case ATS_UNALIGNED_CANONICAL_PER:
+        per = 1;
+        rval = uper_decode(0, contained, &value, buffer, st->size, 0, 0);
+        break;
+#endif
+#if !defined(ASN_DISABLE_APER_SUPPORT)
+    case ATS_ALIGNED_BASIC_PER:
+    case ATS_ALIGNED_CANONICAL_PER:
+        per = 1;
+        rval = aper_decode(0, contained, &value, buffer, st->size, 0, 0);
+        break;
+#endif
+    default:
+        rval = asn_decode(0, (enum asn_transfer_syntax)syntax, contained,
+                          &value, buffer, st->size);
+        break;
+    }
+    if(rval.code != RC_OK) goto done;
+    if(per) {
+        size_t bits = rval.consumed;
+        size_t padding;
+        if(!st->size || bits > st->size * 8) goto done;
+        padding = st->size * 8 - bits;
+        if(bits == 0) {
+            if(st->size != 1 || st->buf[0] != 0) goto done;
+        } else if(padding > 7
+                  || (padding && (st->buf[st->size - 1] & ((1u << padding) - 1)))) {
+            goto done;
+        }
+    } else if(rval.consumed != st->size) {
+        goto done;
+    }
+    valid = asn_check_constraints_with_syntax(contained, value, syntax, 0, 0) == 0;
+
+done:
+    if(value) ASN_STRUCT_FREE(*contained, value);
+    if(!valid && cb)
+        cb(key, td, sptr, "%s: contents do not encode a valid value of %s (%s:%d)",
+           td->name, contained->name, __FILE__, __LINE__);
+    return valid ? 0 : -1;
 }

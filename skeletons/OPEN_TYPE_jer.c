@@ -7,6 +7,16 @@
 #include <OPEN_TYPE.h>
 #include <constr_CHOICE.h>
 
+/*
+ * Decode an IOC-selected JER value into its open-type member.
+ * Original source: asn1c OPEN TYPE JER decoder. Version: 2026-10-30.
+ * Inputs: opt_codec_ctx controls decoding; td and sptr describe the parent;
+ * elm describes the selected member; ptr and size provide the JSON input.
+ * Returns: decoder status and consumed bytes. Errors: invalid descriptors or
+ * malformed input return failure; incomplete input returns RC_WMORE. No
+ * exceptions. Owner: asn1c maintainers. History: correct partial-arm cleanup.
+ * Example: decode a selected PersonInfo value in a SEQUENCE.
+ */
 asn_dec_rval_t
 OPEN_TYPE_jer_get(const asn_codec_ctx_t *opt_codec_ctx,
                   const asn_TYPE_descriptor_t *td,
@@ -18,6 +28,7 @@ OPEN_TYPE_jer_get(const asn_codec_ctx_t *opt_codec_ctx,
     void **memb_ptr2; /* Pointer to that pointer */
     void *inner_value;
     asn_dec_rval_t rv;
+    int choice_wrapper_allocated = 0;
 
     if(!(elm->flags & ATF_OPEN_TYPE)) {
         ASN__DECODE_FAILED;
@@ -37,7 +48,9 @@ OPEN_TYPE_jer_get(const asn_codec_ctx_t *opt_codec_ctx,
     }
 
     selected = elm->type_selector(td, sptr);
-    if(!selected.presence_index || !selected.type_descriptor) {
+    if(!selected.presence_index || !selected.type_descriptor
+       || !selected.type_descriptor->op
+       || !selected.type_descriptor->op->jer_decoder) {
         ASN__DECODE_FAILED;
     }
 
@@ -63,6 +76,9 @@ OPEN_TYPE_jer_get(const asn_codec_ctx_t *opt_codec_ctx,
         }
         
         /* Ensure we can access the elements array if needed */
+        if(!elm->type->specifics) {
+            ASN__DECODE_FAILED;
+        }
         if(!elm->type->elements) {
             ASN_DEBUG("Open Type %s->%s: elements array is NULL but elements_count is %u",
                       td->name, elm->name, elm->type->elements_count);
@@ -82,6 +98,7 @@ OPEN_TYPE_jer_get(const asn_codec_ctx_t *opt_codec_ctx,
             if(*memb_ptr2 == NULL) {
                 ASN__DECODE_FAILED;
             }
+            choice_wrapper_allocated = 1;
         } else {
             /* Make sure we reset the structure first before decoding */
             if(CHOICE_variant_set_presence(elm->type, *memb_ptr2, 0)
@@ -192,14 +209,23 @@ OPEN_TYPE_jer_get(const asn_codec_ctx_t *opt_codec_ctx,
          * In case a genuine RC_WMORE, the whole Open Type decoding
          * will have to be restarted.
          */
-        if(*memb_ptr2) {
-            if(elm->flags & ATF_POINTER) {
+        /* The selected arm's ownership is independent of the wrapper's.
+         * The decoder may have allocated inner_value even when the original
+         * member slot was NULL; release that partial value on either result. */
+        if(inner_value) {
+            if(variant_elm ? (variant_elm->flags & ATF_POINTER)
+                           : (elm->flags & ATF_POINTER)) {
                 ASN_STRUCT_FREE(*selected.type_descriptor, inner_value);
-                *memb_ptr2 = NULL;
+                if(!variant_elm) *memb_ptr2 = NULL;
             } else {
-                ASN_STRUCT_RESET(*selected.type_descriptor,
-                                              inner_value);
+                ASN_STRUCT_RESET(*selected.type_descriptor, inner_value);
             }
+        }
+        /* A newly allocated wrapper has no active arm and must be freed
+         * separately; an existing wrapper remains available to its owner. */
+        if(choice_wrapper_allocated) {
+            FREEMEM(*memb_ptr2);
+            *memb_ptr2 = NULL;
         }
         return rv;
     }

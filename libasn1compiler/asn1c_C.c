@@ -2280,6 +2280,7 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 	const char *p;
 	int saved_target = arg->target->target;
 
+	if(asn1c_check_contained_type(arg, expr)) return -1;
 	if(arg->embed) {
 		enum tnfmt tnfmt = TNF_CTYPE;
 
@@ -2462,7 +2463,9 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 		OUT("\t\tasn_app_constraint_failed_f *ctfailcb, void *app_key) {");
 		OUT("\n");
 		DEBUG("expr constraint checking code for %s", p);
-		if(asn1c_emit_constraint_checking_code(arg) == 1) {
+		int constraint_result = asn1c_emit_constraint_checking_code(arg);
+		if(constraint_result < 0) return -1;
+		if(constraint_result == 1) {
 			/* Constraint emission reuses MKID's shared naming buffer while
 			 * resolving base and contained types. Recompute our own name so
 			 * the generated guard compares against this function, not a base
@@ -5422,6 +5425,7 @@ emit_member_constraint_code(arg_t *arg, asn1p_expr_t *expr,
 	arg_t tmp_arg;
 	const char *p;
 
+	if(asn1c_check_contained_type(arg, expr)) return -1;
 	if(!expr->constraints || (arg->flags & A1C_NO_CONSTRAINTS)) {
 		if(emit_member_JER_constraints(arg, expr, "memb", suffix_index))
 			return -1;
@@ -5443,7 +5447,9 @@ emit_member_constraint_code(arg_t *arg, asn1p_expr_t *expr,
 	tmp_arg = *arg;
 	tmp_arg.expr = expr;
 	DEBUG("member constraint checking code for %s", p);
-	if(asn1c_emit_constraint_checking_code(&tmp_arg) == 1) {
+	int constraint_result = asn1c_emit_constraint_checking_code(&tmp_arg);
+	if(constraint_result < 0) return -1;
+	if(constraint_result == 1) {
 		OUT("return td->encoding_constraints.general_constraints"
 			"(td, sptr, ctfailcb, app_key);\n");
 	}
@@ -5564,7 +5570,9 @@ emit_collection_constraint(arg_t *arg, asn1p_expr_t *expr) {
 
 	constraint_arg = *arg;
 	constraint_arg.expr = expr;
-	if(asn1c_emit_constraint_checking_code(&constraint_arg) == 1) {
+	int constraint_result = asn1c_emit_constraint_checking_code(&constraint_arg);
+	if(constraint_result < 0) return -1;
+	if(constraint_result == 1) {
 		const char *constraint_name =
 			expr_get_type(&constraint_arg, expr) == ASN_CONSTR_SET_OF
 				? "SET_OF_constraint"
