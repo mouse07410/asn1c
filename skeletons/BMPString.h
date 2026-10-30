@@ -17,9 +17,10 @@ extern asn_TYPE_descriptor_t asn_DEF_BMPString;
 extern asn_TYPE_operation_t asn_OP_BMPString;
 extern asn_OCTET_STRING_specifics_t asn_SPC_BMPString_specs;
 
-#if !defined(ASN_DISABLE_PRINT_SUPPORT) || !defined(ASN_DISABLE_XER_SUPPORT)
+#if !defined(ASN_DISABLE_PRINT_SUPPORT) || !defined(ASN_DISABLE_XER_SUPPORT) \
+    || !defined(ASN_DISABLE_JER_SUPPORT)
 ssize_t BMPString__dump(const BMPString_t *st, asn_app_consume_bytes_f *cb, void *app_key);
-#endif  /* !defined(ASN_DISABLE_PRINT_SUPPORT) || !defined(ASN_DISABLE_XER_SUPPORT) */
+#endif  /* BMPString__dump is used by print, XER, and JER. */
 
 #define BMPString_free OCTET_STRING_free
 

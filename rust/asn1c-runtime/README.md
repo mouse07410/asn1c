@@ -6,6 +6,16 @@ encoding and decoding for UPER, APER, and OER; CER encoding and strict CER
 decoding; and BER decoding plus DER encoding. This is a bounded primitive
 subset, not complete ASN.1 codec or type coverage.
 
+The crate also has JER encode/decode functions for BOOLEAN, NULL, and finite
+bounded signed `i64` INTEGER. These emit compact JSON primitives. JER decoding
+requires one complete input value, permits JSON whitespace around it, and
+rejects trailing values or malformed tokens. It reports consumption of the
+entire supplied input. `-0` decodes as zero; integer output uses minimal
+decimal notation. The input, output, and work limits apply to all bytes,
+including whitespace. JER does not yet provide streaming or constructed-value
+codecs. Consumers that represent JSON numbers as floating point should verify
+that their chosen parser preserves the full signed 64-bit range.
+
 The crate uses Rust 2021 and only the standard library. It forbids unsafe Rust.
 Input, output, and bit-work limits are caller-configurable through `Limits`;
 the defaults are 1 MiB for input, 1 MiB for output, and 8 MiBits of work per

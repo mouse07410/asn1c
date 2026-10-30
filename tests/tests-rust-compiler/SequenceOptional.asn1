@@ -1,5 +1,34 @@
 SequenceOptional DEFINITIONS ::= BEGIN
 
-OptionalPacket ::= SEQUENCE { maybe BOOLEAN OPTIONAL }
+OptionalPacket ::= SEQUENCE {
+    first BOOLEAN,
+    nothing NULL OPTIONAL,
+    number INTEGER (0..3) OPTIONAL,
+    octet OCTET STRING (SIZE(1)) OPTIONAL,
+    bits BIT STRING (SIZE(3)) OPTIONAL
+}
+
+OptionalBoolean ::= SEQUENCE {
+    maybe BOOLEAN OPTIONAL
+}
+
+ZeroOptional ::= SEQUENCE {
+    nothing NULL OPTIONAL,
+    single INTEGER (7..7) OPTIONAL,
+    emptyoctets OCTET STRING (SIZE(0)) OPTIONAL,
+    emptybits BIT STRING (SIZE(0)) OPTIONAL
+}
+
+BitmapAcrossOctets ::= SEQUENCE {
+    o1 BOOLEAN OPTIONAL, r1 INTEGER (0..1),
+    o2 BOOLEAN OPTIONAL, r2 INTEGER (0..1),
+    o3 BOOLEAN OPTIONAL, r3 INTEGER (0..1),
+    o4 BOOLEAN OPTIONAL, r4 INTEGER (0..1),
+    o5 BOOLEAN OPTIONAL, r5 INTEGER (0..1),
+    o6 BOOLEAN OPTIONAL, r6 INTEGER (0..1),
+    o7 BOOLEAN OPTIONAL, r7 INTEGER (0..1),
+    o8 BOOLEAN OPTIONAL, r8 INTEGER (0..1),
+    o9 BOOLEAN OPTIONAL, r9 INTEGER (0..1)
+}
 
 END

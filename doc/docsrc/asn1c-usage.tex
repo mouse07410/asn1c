@@ -1908,6 +1908,11 @@ safe Rust runtime. The compiler still parses and fixes ASN.1 in C; Cargo builds
 the generated Rust package. The current slice supports UPER encoding and
 decoding, plus CER encoding and strict decoding, for top-level BOOLEAN, NULL, and finite,
 nonextensible INTEGER ranges fitting signed 64-bit values.
+Opt-in BER/DER, APER, OER, and JER codecs cover those top-level primitives.
+UPER-only generation also supports fixed-size OCTET STRING and BIT STRING,
+direct ENUMERATED, and flat SEQUENCE values with required or OPTIONAL direct
+fields. The JER decoder consumes one complete JSON primitive and accepts
+surrounding JSON whitespace.
 
 \begin{asn}[literate={-}{{\char45}}1]
 RustDemo DEFINITIONS ::= BEGIN
@@ -1954,7 +1959,7 @@ before publishing it. It rejects unrelated existing files and symlinks in the
 destination. Use a fresh directory after adding application code or building
 with Cargo, which creates its own \texttt{target/} directory.
 
-Other ASN.1 forms and Rust codecs are not yet supported; unsupported requests
+Other ASN.1 forms and codec combinations are not yet supported; unsupported requests
 fail before output is published. Generated \texttt{decode\_cer} accepts only
 canonical short-form TLVs and leaves trailing bytes unconsumed. The Rust
 package uses the Rust 2021 edition and has no third-party runtime dependencies.

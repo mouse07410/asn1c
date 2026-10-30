@@ -180,15 +180,15 @@ for a short installation guide.
 
 `--rust` selects native Rust output as a complete compiler mode. The current
 implementation generates a standalone Cargo package with safe, dependency-free
-UPER, CER, and opt-in APER/OER primitive codecs for BOOLEAN, NULL, and finite
+UPER, CER, and opt-in APER/OER/JER primitive codecs for BOOLEAN, NULL, and finite
 nonextensible INTEGER ranges fitting `i64`. Unsupported schemas, codec requests, and C-specific
 output options fail with diagnostics. Build the generated package with Cargo
 in offline mode.
-Flat SEQUENCE assignments with required direct primitive fields are supported
+Flat SEQUENCE assignments with required and OPTIONAL direct primitive fields are supported
 when UPER is the only selected Rust codec (`-no-gen-CER`). A shared cursor
 enforces one resource budget across their fields.
 The same UPER-only selection supports direct fixed-size OCTET STRING and BIT
-STRING types, including required fields inside those flat SEQUENCEs. Variable
+STRING types, including required and OPTIONAL fields inside those flat SEQUENCEs. Variable
 sizes, named-bit lists, and other string codecs remain outside this slice.
 Direct nonextensible ENUMERATED assignments also support UPER-only generation;
 their root indexes follow numeric value order.

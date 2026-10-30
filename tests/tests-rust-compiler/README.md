@@ -23,12 +23,19 @@ each codec alone and together, runs generated Rust vectors and malformed-input
 checks, and compares selected APER/OER bytes with a separately generated C
 fixture. Runtime tests cover additional alignment and integer-width edges.
 
-The UPER-only SEQUENCE slice packs required direct BOOLEAN, NULL, and bounded
-INTEGER fields with one bit cursor and one cumulative resource budget. Tests
-cover cross-byte packing, zero-width fields and whole-value filler, full `i64`
-bounds, spare codes, truncation, and exact work/input/output ceilings. Default
-UPER/CER selection rejects SEQUENCE until CER support exists; optional and
-nested fields are also rejected before publishing output.
+The opt-in JER primitive slice checks compact BOOLEAN, NULL, and bounded
+INTEGER tokens, complete-input decoding, JSON whitespace, invalid numbers,
+truncation, and resource limits. Generated C code independently encodes fixed
+tokens and decodes Rust-generated JSON files for bidirectional comparison.
+
+The UPER-only SEQUENCE slice packs required and OPTIONAL direct BOOLEAN, NULL,
+bounded INTEGER, and fixed string fields with one bit cursor and one cumulative
+resource budget. Tests cover declaration-order presence bits, absent and present
+fields, a nine-bit bitmap crossing an octet, cross-byte packing, zero-width
+fields and whole-value filler, full
+`i64` bounds, spare codes, truncation, and exact work/input/output ceilings.
+Default UPER/CER selection rejects SEQUENCE until CER support exists; DEFAULT,
+nested, tagged, and extensible fields are rejected before publishing output.
 The fixed-size string fixture covers standalone OCTET STRING and BIT STRING,
 zero-sized values, bit packing inside a mixed SEQUENCE, malformed lengths and
 pad bits, truncation, and whole-operation budgets. It also checks that the
@@ -39,11 +46,11 @@ singleton framing, budgets, extension rejection, and live C comparisons.
 The harness covers codec selection as well as wire behavior. The default Rust
 mask contains UPER and CER; `-gen-UPER` retains both, `-no-gen-UPER` selects
 CER-only output, and `-no-gen-CER` leaves UPER enabled. `-gen-BER` adds BER/DER
-methods and `-no-gen-BER` omits them. APER/OER are opt-in and can be selected
+methods and `-no-gen-BER` omits them. APER/OER/JER are opt-in and can be selected
 independently. CER-only generation is
 also checked with explicit `-gen-CER -no-gen-UPER`; `-no-gen-BER` leaves CER
 selected. Disabling all supported codecs and requesting
-unsupported XER/JER/CBOR codecs are rejected before output publication. The generated
+unsupported XER/CBOR codecs are rejected before output publication. The generated
 dual-codec and CER-only APIs are checked to contain `decode_cer`, and the
 `-no-gen-CER` output is checked to omit it.
 

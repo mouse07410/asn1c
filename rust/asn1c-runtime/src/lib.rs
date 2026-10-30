@@ -17,6 +17,8 @@ use std::fmt;
 
 /// Primitive Aligned Packed Encoding Rules (APER) codecs.
 pub mod aper;
+/// Bounded primitive JSON Encoding Rules (JER) codecs.
+pub mod jer;
 /// Primitive Octet Encoding Rules (OER) codecs.
 pub mod oer;
 /// Composable UPER bit cursors with operation-wide resource accounting.
@@ -25,6 +27,10 @@ pub mod uper_cursor;
 pub use aper::{
     decode_boolean_aper, decode_integer_aper, decode_null_aper, encode_boolean_aper,
     encode_integer_aper, encode_null_aper,
+};
+pub use jer::{
+    decode_boolean_jer, decode_integer_jer, decode_null_jer, encode_boolean_jer,
+    encode_integer_jer, encode_null_jer,
 };
 pub use oer::{
     decode_boolean_oer, decode_integer_oer, decode_null_oer, encode_boolean_oer,

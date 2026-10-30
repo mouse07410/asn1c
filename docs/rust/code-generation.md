@@ -151,15 +151,15 @@ control only in Rust codecs that implement its behavior.
    `libasn1compiler/asn1c_rust.c` and `asn1c_rust.h`, registered in
    `libasn1compiler/Makefile.am`. It validates the fixed tree before staging
    output. The current gate accepts top-level BOOLEAN, NULL, and bounded,
-   nonextensible INTEGER whose complete range fits `i64`, plus flat required-field
-   SEQUENCE under an explicit UPER-only selection.
+   nonextensible INTEGER whose complete range fits `i64`, plus flat SEQUENCE
+   with required and OPTIONAL direct fields under UPER-only selection.
 6. Runtime sources now live under `rust/asn1c-runtime/` and are included in
    Automake distribution and package-data installation. The CLI resolves the
    runtime separately from `-S`, which still selects C skeletons and standard
    ASN.1 modules.
 7. Rust has a bounded identifier sanitizer and collision checker. Diagnostics
    retain source module/type names and line numbers. The flat SEQUENCE gate
-   validates member names, direct types, and required-field status.
+   validates member names, direct types, and required versus OPTIONAL markers.
 8. The generated-crate harness lives under
    `tests/tests-rust-compiler/`. It invokes the built compiler and checks the
    staged Cargo project. The first runtime has no third-party dependencies;
@@ -232,7 +232,7 @@ integer-width heuristics.
 | OBJECT IDENTIFIER | runtime `ObjectIdentifier` | Use checked arcs; do not assume every arc fits a machine integer. |
 | RELATIVE-OID | runtime `RelativeOid` | Same checked-arithmetic requirement as OID arcs. |
 | UTCTime, GeneralizedTime | runtime time wrapper or validated text newtype | Canonical rules need explicit APIs. |
-| SEQUENCE, SET | generated `struct` | Required fields are values; optional/defaulted fields track presence. |
+| SEQUENCE, SET | generated `struct` | Current UPER SEQUENCE slice uses values and `Option<T>` fields with a leading presence bitmap; DEFAULT and SET are unsupported. |
 | CHOICE | generated `enum` | Include an unknown extension variant when the type is extensible. |
 | SEQUENCE OF, SET OF | `Vec<T>` newtype | Retain SET OF ordering rules in codec logic. |
 | Type reference | module-qualified reference | Use public newtypes for aliases that add constraints or API identity. |
@@ -247,7 +247,8 @@ checks that range. The BOOLEAN constructor is infallible. Reject aliases,
 imports, tags, constructed types outside the flat UPER-only SEQUENCE slice,
 and unsupported constraints before creating output. An explicit UPER-only
 selection adds direct nonextensible ENUMERATED and fixed-size OCTET STRING
-and BIT STRING, including string fields inside flat required-field SEQUENCE.
+and BIT STRING, including string fields inside flat required or OPTIONAL-field
+SEQUENCE.
 Variable-size strings, named-bit lists, and extensible ENUMERATED remain
 future increments.
 
@@ -362,9 +363,11 @@ the operand of `-D` or `-S`. Existing `-gen-*` spellings remain unchanged.
 Rust defaults independently to its qualified codecs. In the current slice,
 `--rust` alone selects UPER and CER. `-gen-BER` opts into BER decoding and DER
 encoding; there is no separate `-gen-DER` flag. `-gen-APER` and `-gen-OER`
-select the corresponding primitive encode/decode pairs. `-no-gen-UPER` selects CER-only
+select the corresponding primitive encode/decode pairs. `-gen-JER` selects
+compact JSON encoding and complete-input decoding for the same top-level
+primitive subset. `-no-gen-UPER` selects CER-only
 output unless BER was explicitly selected, while `-no-gen-CER` omits CER
-methods. Explicit requests for XER, JER, or CBOR fail before output
+methods. Explicit requests for XER or CBOR fail before output
 is created. Disabling every supported codec or selecting an unsupported ASN.1
 form also fails before output is published. The CLI keeps the C defaults
 unchanged.
@@ -381,7 +384,7 @@ The current Rust option handling is:
 | Option family | Rust handling |
 | --- | --- |
 | `-D` | Selects the output directory; Rust defaults to `asn1c-rust`. |
-| `-gen-*`, `-no-gen-*` | UPER and CER are default; APER/OER/BER are opt-in for initial primitives; flat SEQUENCE, fixed strings, and ENUMERATED need UPER alone. |
+| `-gen-*`, `-no-gen-*` | UPER and CER are default; APER/OER/BER/JER are opt-in for initial primitives; flat SEQUENCE, fixed strings, and ENUMERATED need UPER alone. |
 | C storage/layout/output flags | Fail as incompatible with `--rust`. |
 | `-S` | Selects standard modules and resolves the matching runtime assets. |
 | `-P`, `-R`, C helper/example flags | Fail as incompatible with `--rust`. |

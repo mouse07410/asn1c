@@ -14,6 +14,10 @@
 #include <string.h>
 
 #include <AllZero.h>
+#include <OptionalBoolean.h>
+#include <OptionalPacket.h>
+#include <BitmapAcrossOctets.h>
+#include <ZeroOptional.h>
 #include <CrossByte.h>
 #include <Packet.h>
 #include <WideRecord.h>
@@ -78,11 +82,36 @@ main(int argc, char **argv) {
     AllZero_t all_zero = {0};
     CrossByte_t cross = {0};
     WideRecord_t wide = {0};
+    OptionalPacket_t optional_absent = {0};
+    OptionalPacket_t optional_present = {0};
+    OptionalBoolean_t boolean_absent = {0};
+    OptionalBoolean_t boolean_present = {0};
+    ZeroOptional_t zero_absent = {0};
+    ZeroOptional_t zero_present = {0};
+    BitmapAcrossOctets_t bitmap_crossing = {0};
+    NULL_t null_value = 0;
+    long optional_number = 2;
+    long optional_single = 7;
+    BOOLEAN_t optional_boolean = 1;
+    BOOLEAN_t optional_false = 0;
+    unsigned char optional_octet_data[] = {0xa5};
+    unsigned char optional_bits_data[] = {0xa0};
+    OCTET_STRING_t optional_octet = {optional_octet_data, 1};
+    BIT_STRING_t optional_bits = {optional_bits_data, 1, 5};
+    OCTET_STRING_t empty_octets = {NULL, 0};
+    BIT_STRING_t empty_bits = {NULL, 0, 0};
     const unsigned char packet_bytes[] = {0xd0};
     const unsigned char zero_bytes[] = {0x00};
     const unsigned char cross_bytes[] = {0xd5, 0x80};
     const unsigned char wide_bytes[] = {0, 0, 0, 0, 0, 0, 0, 0, 0x80};
-    sequence_case_t cases[4];
+    const unsigned char optional_absent_bytes[] = {0x08};
+    const unsigned char optional_present_bytes[] = {0xfd, 0x4b, 0x40};
+    const unsigned char boolean_absent_bytes[] = {0x00};
+    const unsigned char boolean_present_bytes[] = {0xc0};
+    const unsigned char zero_optional_absent_bytes[] = {0x00};
+    const unsigned char zero_optional_present_bytes[] = {0xf0};
+    const unsigned char bitmap_crossing_bytes[] = {0x80, 0xc0, 0x00};
+    sequence_case_t cases[11];
     size_t i, count = 3;
     int failed = 0;
     (void)argv;
@@ -104,6 +133,34 @@ main(int argc, char **argv) {
         cases[3] = (sequence_case_t){&asn_DEF_WideRecord, &wide, wide_bytes, 9, 65, "WideRecord"};
         count = 4;
     }
+    /* Compare absent and present optional fields with independent Rust vectors. */
+    optional_absent.first = 1;
+    optional_present.first = 1;
+    optional_present.nothing = &null_value;
+    optional_present.number = &optional_number;
+    optional_present.octet = &optional_octet;
+    optional_present.bits = &optional_bits;
+    boolean_present.maybe = &optional_boolean;
+    zero_present.nothing = &null_value;
+    zero_present.single = &optional_single;
+    zero_present.emptyoctets = &empty_octets;
+    zero_present.emptybits = &empty_bits;
+    bitmap_crossing.o1 = &optional_boolean;
+    bitmap_crossing.o9 = &optional_false;
+    cases[count++] = (sequence_case_t){&asn_DEF_OptionalPacket, &optional_absent,
+        optional_absent_bytes, 1, 5, "OptionalPacket absent"};
+    cases[count++] = (sequence_case_t){&asn_DEF_OptionalPacket, &optional_present,
+        optional_present_bytes, 3, 18, "OptionalPacket present"};
+    cases[count++] = (sequence_case_t){&asn_DEF_OptionalBoolean, &boolean_absent,
+        boolean_absent_bytes, 1, 1, "OptionalBoolean absent"};
+    cases[count++] = (sequence_case_t){&asn_DEF_OptionalBoolean, &boolean_present,
+        boolean_present_bytes, 1, 2, "OptionalBoolean present"};
+    cases[count++] = (sequence_case_t){&asn_DEF_ZeroOptional, &zero_absent,
+        zero_optional_absent_bytes, 1, 4, "ZeroOptional absent"};
+    cases[count++] = (sequence_case_t){&asn_DEF_ZeroOptional, &zero_present,
+        zero_optional_present_bytes, 1, 4, "ZeroOptional present"};
+    cases[count++] = (sequence_case_t){&asn_DEF_BitmapAcrossOctets, &bitmap_crossing,
+        bitmap_crossing_bytes, 3, 20, "BitmapAcrossOctets"};
     for(i = 0; i < count; i++) failed |= check_case(&cases[i]);
     free(wide.wide.buf);
     return failed;

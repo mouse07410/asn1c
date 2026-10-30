@@ -28,8 +28,10 @@ DER, CER, PER, XER, OER, JER, CBOR and other encoding rules. Its optional
 The **--rust** mode generates a standalone Cargo project with a safe runtime
 using the Rust 2021 edition. The current subset provides UPER encoding and
 decoding, and strict CER encoding and decoding, for top-level BOOLEAN, NULL,
-and finite non-extensible INTEGER ranges fitting `i64`. Other types and codec
-families produce a diagnostic until implemented.
+and finite non-extensible INTEGER ranges fitting `i64`. Opt-in BER/DER,
+APER, OER, and JER cover those primitives. UPER alone also supports fixed
+strings, ENUMERATED, and flat SEQUENCE with required or OPTIONAL direct fields.
+Other types and codec combinations produce a diagnostic until implemented.
 
 # OPTIONS
 

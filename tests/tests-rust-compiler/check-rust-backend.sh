@@ -68,7 +68,8 @@ rust_out="$test_tmp/generated-rust"
 "$asn1c_bin" --rust -S "$skeletons" -D "$rust_out" \
     "$test_srcdir/FirstSlice.asn1"
 for generated in Cargo.toml src/lib.rs src/first_slice.rs runtime/Cargo.toml \
-    runtime/LICENSE runtime/src/lib.rs runtime/src/aper.rs runtime/src/oer.rs \
+    runtime/LICENSE runtime/src/lib.rs runtime/src/jer.rs runtime/src/aper.rs \
+    runtime/src/oer.rs \
     runtime/src/uper_cursor.rs; do
     if [ ! -f "$rust_out/$generated" ]; then
         echo "FAIL: generated Rust crate lacks $generated"
@@ -237,7 +238,7 @@ if grep -F 'pub fn decode_cer' "$uper_only/src/first_slice.rs" >/dev/null; then
 fi
 
 # Unsupported codec requests must fail without publishing any Rust output.
-for codec in XER JER CBOR; do
+for codec in XER CBOR; do
     rejected_out="$test_tmp/rejected-$codec"
     if "$asn1c_bin" --rust "-gen-$codec" -S "$skeletons" \
         -D "$rejected_out" "$test_srcdir/FirstSlice.asn1" \
@@ -250,6 +251,38 @@ for codec in XER JER CBOR; do
         exit 1
     fi
 done
+
+# JER is an opt-in primitive codec; its generated methods build without PER or CER.
+jer_out="$test_tmp/primitive-jer"
+"$asn1c_bin" --rust -gen-JER -no-gen-UPER -no-gen-CER \
+    -S "$skeletons" -D "$jer_out" "$test_srcdir/FirstSlice.asn1"
+grep -F 'pub fn encode_jer' "$jer_out/src/first_slice.rs" >/dev/null
+grep -F 'pub fn decode_jer' "$jer_out/src/first_slice.rs" >/dev/null
+if grep -E 'pub fn (encode|decode)_(uper|cer)' \
+    "$jer_out/src/first_slice.rs" >/dev/null; then
+    echo "FAIL: JER-only selection generated UPER or CER methods"
+    exit 1
+fi
+mkdir "$jer_out/tests"
+cp "$test_srcdir/jer_conformance.rs" "$jer_out/tests/jer_conformance.rs"
+if ! (cd "$jer_out" && CARGO_TARGET_DIR="$test_tmp/target-jer" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-jer" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/check-jer.log" 2>&1; then
+    cat "$test_tmp/check-jer.log"
+    echo "FAIL: generated JER primitive vectors or strict Clippy"
+    exit 1
+fi
+if "$asn1c_bin" --rust -gen-JER -no-gen-UPER -no-gen-CER \
+    -S "$skeletons" -D "$test_tmp/rejected-jer-sequence" \
+    "$test_srcdir/SequenceSlice.asn1" \
+    >"$test_tmp/rejected-jer-sequence.log" 2>&1; then
+    echo "FAIL: JER-only selection accepted a SEQUENCE without a JER codec"
+    exit 1
+fi
+test ! -e "$test_tmp/rejected-jer-sequence"
 
 # Each newly available primitive family generates a standalone, offline crate.
 for codec in APER OER; do
@@ -411,7 +444,7 @@ fi
 test ! -e "$test_tmp/rejected-sequence-oer"
 sequence_out="$test_tmp/sequence-uper"
 "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$sequence_out" \
-    "$test_srcdir/SequenceSlice.asn1"
+    "$test_srcdir/SequenceSlice.asn1" "$test_srcdir/SequenceOptional.asn1"
 mkdir "$sequence_out/tests"
 cp "$test_srcdir/sequence_conformance.rs" "$sequence_out/tests/sequence_conformance.rs"
 if ! (cd "$sequence_out" && CARGO_TARGET_DIR="$test_tmp/target-sequence" \
@@ -431,6 +464,7 @@ mkdir "$sequence_c_out"
     -no-gen-CBOR -no-gen-OER -no-gen-APER -no-gen-print \
     -no-gen-random-fill -fwide-types -pdu=all -fgen-only-pdu-deps \
     -no-gen-example -D "$sequence_c_out" "$test_srcdir/SequenceSlice.asn1" \
+    "$test_srcdir/SequenceOptional.asn1" \
     >"$test_tmp/sequence-c-generate.log" 2>&1
 sequence_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
     "$sequence_c_out/Makefile.am.libasncodec")
@@ -441,20 +475,28 @@ if ! cc $sequence_cflags -I"$sequence_c_out" "$sequence_c_out"/*.c \
     exit 1
 fi
 "$test_tmp/c-sequence"
-for fixture in SequenceOptional SequenceNested SequenceExtension; do
+cat >"$test_tmp/SequenceDefault.asn1" <<'EOF'
+SequenceDefault DEFINITIONS ::= BEGIN
+DefaultPacket ::= SEQUENCE { value BOOLEAN DEFAULT FALSE }
+END
+EOF
+cat >"$test_tmp/SequenceTagged.asn1" <<'EOF'
+SequenceTagged DEFINITIONS ::= BEGIN
+TaggedPacket ::= SEQUENCE { value [0] BOOLEAN OPTIONAL }
+END
+EOF
+for fixture in SequenceNested SequenceExtension SequenceDefault SequenceTagged; do
     rejected_out="$test_tmp/rejected-$fixture"
+    fixture_path="$test_srcdir/$fixture.asn1"
+    if [ "$fixture" = SequenceDefault ] || [ "$fixture" = SequenceTagged ]; then
+        fixture_path="$test_tmp/$fixture.asn1"
+    fi
     if "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$rejected_out" \
-        "$test_srcdir/$fixture.asn1" >"$test_tmp/rejected-$fixture.log" 2>&1; then
+        "$fixture_path" >"$test_tmp/rejected-$fixture.log" 2>&1; then
         echo "FAIL: Rust backend accepted unsupported $fixture fields"
         exit 1
     fi
-    if [ "$fixture" = SequenceExtension ]; then
-        grep -F 'SEQUENCE field needs a supported direct UPER primitive' \
-            "$test_tmp/rejected-$fixture.log" >/dev/null
-    else
-        grep -F 'SEQUENCE field must be a required direct untagged primitive' \
-            "$test_tmp/rejected-$fixture.log" >/dev/null
-    fi
+    grep -F 'SEQUENCE field' "$test_tmp/rejected-$fixture.log" >/dev/null
     test ! -e "$rejected_out"
 done
 
@@ -678,7 +720,7 @@ esac
 c_out="$test_tmp/generated-c"
 mkdir "$c_out"
 if ! "$asn1c_bin" -S "$skeletons" -gen-UPER -gen-CER -gen-OER -gen-APER -no-gen-XER \
-    -no-gen-JER -no-gen-CBOR -no-gen-print \
+    -no-gen-CBOR -no-gen-print \
     -no-gen-random-fill -fwide-types -pdu=all -fgen-only-pdu-deps \
     -no-gen-example -D "$c_out" "$test_srcdir/CParity.asn1" \
     >"$test_tmp/c-generate.log" 2>&1; then
@@ -705,6 +747,20 @@ if ! cc $asn1c_module_cflags -I"$c_out" "$c_out"/*.c \
     exit 1
 fi
 "$test_tmp/c-additional"
+if ! cc $asn1c_module_cflags -I"$c_out" "$c_out"/*.c \
+    "$test_srcdir/c_jer.c" -lm \
+    -o "$test_tmp/c-jer" >"$test_tmp/c-jer-compile.log" 2>&1; then
+    cat "$test_tmp/c-jer-compile.log"
+    exit 1
+fi
+"$test_tmp/c-jer"
+
+# Exchange Rust JER primitive tokens with the independently built C decoder.
+mkdir "$test_tmp/jer-vectors"
+(cd "$jer_out" && ASN1C_RUST_JER_VECTORS="$test_tmp/jer-vectors" \
+    CARGO_TARGET_DIR="$test_tmp/target-jer" \
+    cargo test --offline --manifest-path Cargo.toml)
+"$test_tmp/c-jer" --decode-dir "$test_tmp/jer-vectors"
 
 # Both codecs exchange actual generated bytes through temporary wire fixtures.
 mkdir "$test_tmp/c-vectors" "$test_tmp/rust-vectors"

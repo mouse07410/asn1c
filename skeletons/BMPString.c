@@ -137,7 +137,8 @@ BMPString_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
     return 0;
 }
 
-#if !defined(ASN_DISABLE_PRINT_SUPPORT) || !defined(ASN_DISABLE_XER_SUPPORT)
+#if !defined(ASN_DISABLE_PRINT_SUPPORT) || !defined(ASN_DISABLE_XER_SUPPORT) \
+    || !defined(ASN_DISABLE_JER_SUPPORT)
 /*
  * BMPString specific contents printer.
  */
@@ -178,4 +179,4 @@ BMPString__dump(const BMPString_t *st,
 
 	return wrote;
 }
-#endif  /* !defined(ASN_DISABLE_PRINT_SUPPORT) || !defined(ASN_DISABLE_XER_SUPPORT) */
+#endif  /* BMPString__dump is used by print, XER, and JER. */

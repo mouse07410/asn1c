@@ -171,10 +171,12 @@
     },
     {
       "asn1_type": "SEQUENCE",
-      "feature": "flat required direct BOOLEAN, NULL, and finite bounded i64 INTEGER fields; UPER-only selection",
+      "feature": "flat required or OPTIONAL direct primitive and fixed string fields; UPER-only selection",
       "codec": "UPER",
       "variants": [
         "cross-byte field packing",
+        "declaration-order OPTIONAL presence bitmap and absent fields",
+        "nine-bit presence bitmap crossing an octet boundary",
         "zero-width member and complete-value filler",
         "full signed i64 INTEGER range",
         "cumulative work and whole-input/output ceilings"
@@ -184,11 +186,11 @@
         "decode"
       ],
       "status": "tested_flat_constructed_subset",
-      "evidence": "sequence_conformance.rs; asn1c-runtime/src/uper_cursor.rs tests"
+      "evidence": "sequence_conformance.rs; c_sequence.c; asn1c-runtime/src/uper_cursor.rs tests"
     },
     {
       "asn1_type": "OCTET STRING, BIT STRING",
-      "feature": "direct fixed nonextensible SIZE(N), N < 65536; standalone and required flat SEQUENCE field",
+      "feature": "direct fixed nonextensible SIZE(N), N < 65536; standalone and flat required or OPTIONAL field",
       "codec": "UPER",
       "variants": [
         "zero-size complete filler",
@@ -203,6 +205,22 @@
       ],
       "status": "tested_with_live_C_comparison",
       "evidence": "string_conformance.rs; c_string.c; asn1c-runtime/src/uper_cursor.rs tests; boundary_conformance.rs"
+    },
+    {
+      "asn1_type": "BOOLEAN, NULL, INTEGER",
+      "feature": "top-level direct primitive; INTEGER finite nonextensible signed i64 bounds",
+      "codec": "JER",
+      "variants": [
+        "compact JSON primitive tokens",
+        "complete-input decoding with JSON whitespace",
+        "checked integer syntax, bounds, and resource limits"
+      ],
+      "directions": [
+        "encode",
+        "decode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "jer_conformance.rs; c_jer.c; asn1c-runtime/src/jer.rs tests"
     },
     {
       "asn1_type": "ENUMERATED",
@@ -235,9 +253,9 @@
       "note": "Constructed, tagged, extensible, unconstrained, and other primitive types are not qualified."
     },
     {
-      "family": "XER/JER/CBOR",
+      "family": "XER/CBOR and JER outside the primitive slice",
       "status": "not_implemented",
-      "note": "No generated Rust encoder or decoder is qualified."
+      "note": "XER and CBOR are unavailable; JER is qualified only for the listed top-level primitives."
     },
     {
       "family": "constructed outside flat UPER SEQUENCE, variable-size or named-bit strings, CHOICE, extensible ENUMERATED, REAL, open types",
@@ -265,10 +283,10 @@
       "aliases and imports",
       "explicit tags and encoding controls",
       "unconstrained, extensible, union, and named-number INTEGER",
-      "optional, nested, extensible, tagged, and otherwise unsupported constructed types and module-name sanitization collisions",
+      "DEFAULT, nested, extensible, tagged, and otherwise unsupported constructed types and module-name sanitization collisions",
       "duplicate --rust selectors and disabling all Rust codecs",
       "an incomplete runtime asset set beside explicit skeletons",
-      "unsupported XER/JER/CBOR codecs and C-layout selectors",
+      "unsupported XER/CBOR codecs, unsupported JER type combinations, and C-layout selectors",
       "variable-size, extensible-size, and named-bit OCTET/BIT STRING forms",
       "extensible ENUMERATED root values",
       "fixed string SIZE(65536) at the fragmentation boundary"
@@ -285,12 +303,14 @@
     ]
   },
   "observed_counts": {
-    "generated_rust_test_functions": 26,
+    "generated_rust_test_functions": 37,
     "live_c_rust_vectors_each_direction": 8,
     "single_octet_mutation_inputs": 768,
+    "JER_single_octet_mutation_inputs": 256,
     "wide_prefix_inputs_including_complete_value": 9,
     "truncated_wide_prefix_inputs": 8,
     "live_C_fixed_string_encode_vectors": 5,
-    "live_C_enum_encode_vectors": 4
+    "live_C_enum_encode_vectors": 4,
+    "live_C_JER_primitive_vectors_each_direction": 8
   }
 }

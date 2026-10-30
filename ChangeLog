@@ -1,4 +1,16 @@
 Changes since v1.5.3:
+	* Added opt-in Rust JER encoding and complete-input decoding for direct
+	  BOOLEAN, NULL, and finite bounded signed i64 INTEGER assignments.
+	  The JSON primitives use compact tokens and enforce input, output, and
+	  work limits. Added malformed-input and generated C/Rust comparison
+	  tests. JER for other ASN.1 types remains pending.
+	* Added UPER presence bitmaps for OPTIONAL direct fields in flat Rust
+	  SEQUENCE assignments. Generated fields use Option<T>; present values
+	  retain the shared cursor and resource budget. Added C wire comparisons
+	  including a cross-octet presence bitmap, and negative DEFAULT,
+	  nesting, extension, and tag regressions.
+	* Kept BMPString__dump available in generated C JER-only builds where
+	  print and XER support are disabled.
 	* Added generated Rust UPER support for direct fixed-size OCTET STRING
 	  and BIT STRING, standalone and as required flat SEQUENCE fields. The
 	  runtime validates exact sizes and unused BIT STRING bits, packs fields

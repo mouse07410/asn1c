@@ -40,12 +40,14 @@ EXTRA_DIST = $(srcdir)/FirstSlice.asn1 \
     $(srcdir)/ReservedModule.asn1 \
     $(srcdir)/conformance.rs \
     $(srcdir)/additional_codecs.rs \
+    $(srcdir)/jer_conformance.rs \
     $(srcdir)/sequence_conformance.rs \
     $(srcdir)/string_conformance.rs \
     $(srcdir)/boundary_conformance.rs \
     $(srcdir)/enum_conformance.rs \
     $(srcdir)/c_reference.c \
     $(srcdir)/c_additional.c \
+    $(srcdir)/c_jer.c \
     $(srcdir)/c_sequence.c \
     $(srcdir)/c_string.c \
     $(srcdir)/c_enum.c \
