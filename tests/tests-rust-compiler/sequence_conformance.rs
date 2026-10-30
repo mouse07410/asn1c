@@ -1,5 +1,7 @@
 //! Generated UPER SEQUENCE regression tests for a shared operation budget.
 
+use asn1c_generated::sequence_defaults::DefaultPacket;
+use asn1c_generated::sequence_defaults::WideDefault;
 use asn1c_generated::sequence_optional::{
     BitmapAcrossOctets, OptionalBoolean, OptionalPacket, ZeroOptional,
 };
@@ -411,4 +413,156 @@ fn optional_fields_validate_present_values() {
         Err(Error::ValueOutOfRange { .. })));
     let invalid_octet = OptionalPacket { octet: Some(Vec::new()), ..invalid_integer };
     assert!(invalid_octet.encode_uper(&limits).is_err());
+}
+
+/// Check DEFAULT presence bits and payload suppression in declaration order.
+///
+/// Parameters: none. Returns: no value; assertions fail on wire mismatches.
+/// Errors: encoding valid values must succeed. Original source: X.691 DEFAULT
+/// omission and SEQUENCE presence ordering. Version/date: 2026-10-30.
+/// Responsible party: asn1c maintainers. History: direct DEFAULT parity.
+/// Example: default-only fields encode without payload bits.
+#[test]
+fn defaults_are_omitted_and_interleaved_with_optional_presence() {
+    let limits = Limits::default();
+    let omitted = DefaultPacket {
+        before: None,
+        enabled: false,
+        count: 1,
+        active: true,
+        after: None,
+        tail: 2,
+    };
+    let encoded = omitted.encode_uper(&limits).unwrap();
+    assert_eq!(encoded.bytes, [0x04]);
+    assert_eq!(encoded.bit_len, 7);
+    assert_eq!(DefaultPacket::decode_uper(&encoded.bytes, &limits)
+        .unwrap().value, omitted);
+
+    let mixed = DefaultPacket {
+        before: Some(false),
+        enabled: true,
+        count: 1,
+        active: false,
+        after: Some(true),
+        tail: 3,
+    };
+    let mixed_encoded = mixed.encode_uper(&limits).unwrap();
+    assert_eq!(mixed_encoded.bytes, [0xda, 0xe0]);
+    assert_eq!(mixed_encoded.bit_len, 11);
+    assert_eq!(DefaultPacket::decode_uper(&mixed_encoded.bytes, &limits)
+        .unwrap().value, mixed);
+}
+
+/// Accept a wire presence bit and payload equal to each declared DEFAULT.
+///
+/// Parameters: none. Returns: no value; assertions fail on decode mismatch.
+/// Errors: the complete noncanonical-but-basic-UPER value must decode.
+/// Original source: X.691 basic encoding rule permits a present DEFAULT.
+/// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+/// History: explicit DEFAULT payload compatibility. Example: `[0x71, 0x80]`.
+#[test]
+fn decoder_accepts_present_values_equal_to_defaults() {
+    let expected = DefaultPacket {
+        before: None,
+        enabled: false,
+        count: 1,
+        active: true,
+        after: None,
+        tail: 0,
+    };
+    let decoded = DefaultPacket::decode_uper(&[0x71, 0x80], &Limits::default())
+        .unwrap();
+    assert_eq!(decoded.value, expected);
+    assert_eq!(decoded.consumed_bits, 11);
+    assert_eq!(decoded.consumed_bytes, 2);
+}
+
+/// Preserve both signed i64 endpoints as DEFAULT values and payloads.
+///
+/// Parameters: none. Returns: no value; assertions verify full-range bits.
+/// Errors: endpoint values must encode and decode successfully.
+/// Original source: constrained UPER integer offset rule and DEFAULT omission.
+/// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+/// History: wide DEFAULT boundary coverage. Example: the maximum offset is 64 ones.
+#[test]
+fn wide_integer_default_handles_signed_endpoints() {
+    let limits = Limits::default();
+    let omitted = WideDefault { value: i64::MIN };
+    let omitted_wire = omitted.encode_uper(&limits).unwrap();
+    assert_eq!(omitted_wire.bytes, [0x00]);
+    assert_eq!(omitted_wire.bit_len, 1);
+    assert_eq!(WideDefault::decode_uper(&omitted_wire.bytes, &limits)
+        .unwrap().value, omitted);
+
+    let present = WideDefault { value: i64::MAX };
+    let present_wire = present.encode_uper(&limits).unwrap();
+    assert_eq!(
+        present_wire.bytes,
+        [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x80]
+    );
+    assert_eq!(present_wire.bit_len, 65);
+    assert_eq!(WideDefault::decode_uper(&present_wire.bytes, &limits)
+        .unwrap().value, present);
+}
+
+/// Enforce truncation, range, and shared resource limits for DEFAULT fields.
+///
+/// Parameters: none. Returns: no value; assertions verify typed errors.
+/// Errors: malformed or over-limit inputs return errors by design.
+/// Original source: UPER cursor validation and operation-wide budgets.
+/// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+/// History: DEFAULT hostile-input regression. Example: five presence bits
+/// plus one two-bit field use 55 work units.
+#[test]
+fn default_fields_validate_wire_and_operation_limits() {
+    let value = DefaultPacket {
+        before: None,
+        enabled: false,
+        count: 1,
+        active: true,
+        after: None,
+        tail: 2,
+    };
+    let exact = Limits {
+        max_work_bits: 55,
+        ..Limits::default()
+    };
+    let encoded = value.encode_uper(&exact).unwrap();
+    DefaultPacket::decode_uper(&encoded.bytes, &exact).unwrap();
+
+    let short_work = Limits { max_work_bits: 54, ..exact };
+    assert!(matches!(value.encode_uper(&short_work), Err(Error::LimitExceeded {
+        resource: Resource::WorkBits, ..
+    })));
+    assert!(matches!(DefaultPacket::decode_uper(&encoded.bytes, &short_work),
+        Err(Error::LimitExceeded { resource: Resource::WorkBits, .. })));
+    assert!(matches!(DefaultPacket::decode_uper(&[], &Limits::default()),
+        Err(Error::NeedMoreBits { .. })));
+    assert!(matches!(DefaultPacket::decode_uper(&[0xf8], &Limits::default()),
+        Err(Error::NeedMoreBits { .. })));
+
+    let invalid = DefaultPacket { count: 4, ..value };
+    assert!(matches!(invalid.encode_uper(&Limits::default()),
+        Err(Error::ValueOutOfRange { .. })));
+    let invalid_tail = DefaultPacket { tail: -1, ..value };
+    assert!(matches!(invalid_tail.encode_uper(&Limits::default()),
+        Err(Error::ValueOutOfRange { .. })));
+    for number in [0, 3] {
+        let boundary = DefaultPacket {
+            count: number,
+            tail: number,
+            ..value
+        };
+        let boundary_wire = boundary.encode_uper(&Limits::default()).unwrap();
+        assert_eq!(DefaultPacket::decode_uper(&boundary_wire.bytes, &Limits::default())
+            .unwrap().value, boundary);
+    }
+    let no_output = Limits { max_output_bytes: 0, ..exact };
+    assert!(matches!(value.encode_uper(&no_output), Err(Error::LimitExceeded {
+        resource: Resource::OutputBytes, ..
+    })));
+    let no_input = Limits { max_input_bytes: 0, ..exact };
+    assert!(matches!(DefaultPacket::decode_uper(&encoded.bytes, &no_input),
+        Err(Error::LimitExceeded { resource: Resource::InputBytes, .. })));
 }

@@ -14,39 +14,46 @@
  * X.691 (#20): the UPER encoding of a SET is the same as that of a
  * SEQUENCE, except that the root components are transmitted in the
  * canonical order of their tags (X.680 #8.6), not in the declaration
- * order. The (sorted) specs->tag2el map provides that order.
+ * order. The CXER map excludes CHOICE extension alternatives, whose tags
+ * must not affect the root component order. Generated descriptors alias it
+ * to tag2el when the two maps are identical.
  *
- * Fill corder[0 .. td->elements_count-1] with element indices in
- * canonical tag order. Returns 0, or -1 if the order cannot be
- * reconstructed from the static tag map.
+ * Purpose: fill corder with every SET member in canonical root tag order.
+ * Original source: SET UPER codec adapted from vlm/asn1c PR #543; the CXER
+ * map selection follows the generated root-only CHOICE tag map.
+ * Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+ * Inputs: td describes members; specs supplies sorted tag maps; corder has
+ * room for td->elements_count unsigned indices.
+ * Returns: zero on success, -1 on an incomplete or malformed map.
+ * Exceptions: none. History: reject CHOICE extension tags in SET ordering.
+ * Example: for tags [2], CHOICE root [3] and extension [1], returns [0, 1].
  */
 static int
 SET__canonical_order(const asn_TYPE_descriptor_t *td,
                      const asn_SET_specifics_t *specs, unsigned *corder) {
+    const asn_TYPE_tag2member_t *map = specs->tag2el_cxer;
+    unsigned count = specs->tag2el_cxer_count;
     unsigned i;
     unsigned n = 0;
 
-    if(specs->tag2el_count == td->elements_count) {
-        /* Each element appears exactly once: use the map directly. */
-        for(i = 0; i < specs->tag2el_count; i++) {
-            corder[i] = specs->tag2el[i].el_no;
-        }
-        return 0;
-    }
+    if(!map) return -1;
 
     /*
-     * An element (e.g. an untagged CHOICE) may occur several times in
-     * the tag map, once per possible tag. In canonical order such an
-     * element is sorted by its smallest tag, which is its first
-     * occurrence in the (sorted) map; skip the rest.
+     * Each generated CXER entry names one root component. Deduplicate for
+     * older descriptors with repeated CHOICE tags, then require every
+     * component exactly once. Invalid indices must not reach td->elements.
      */
-    for(i = 0; i < specs->tag2el_count && n < td->elements_count; i++) {
-        unsigned el_no = specs->tag2el[i].el_no;
+    for(i = 0; i < count; i++) {
+        unsigned el_no = map[i].el_no;
         unsigned j;
+        if(el_no >= td->elements_count) return -1;
         for(j = 0; j < n; j++) {
             if(corder[j] == el_no) break;
         }
-        if(j == n) corder[n++] = el_no;
+        if(j == n) {
+            if(n >= td->elements_count) return -1;
+            corder[n++] = el_no;
+        }
     }
 
     return (n == td->elements_count) ? 0 : -1;

@@ -54,6 +54,9 @@ static int rust_check_type_name(asn1p_module_t *, asn1p_expr_t *);
 static int rust_check_type(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_sequence(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_sequence_member(asn1p_module_t *, asn1p_expr_t *);
+static int rust_sequence_member_shape_valid(const asn1p_expr_t *);
+static int rust_sequence_default_literal(asn1p_expr_t *, char *, size_t);
+static int rust_sequence_has_presence(const asn1p_expr_t *);
 static int rust_check_sequence_name(asn1p_module_t *, asn1p_expr_t *, asn1p_expr_t *);
 static int rust_constraint_supported(const asn1p_constraint_t *, unsigned);
 static int rust_integer_bounds(asn1p_expr_t *, int64_t *, int64_t *);
@@ -61,6 +64,7 @@ static int rust_size_constraint_supported(const asn1p_constraint_t *, unsigned);
 static int rust_fixed_size(asn1p_expr_t *, size_t *);
 static int rust_check_enumerated(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_enum_item_valid(const asn1p_expr_t *);
+static int rust_enum_name_safe(const char *);
 static int rust_enum_unique(asn1p_expr_t *, asn1p_expr_t *);
 static size_t rust_enumerated_rank(asn1p_expr_t *, asn1p_expr_t *);
 static int rust_stage_project(asn1p_t *, const char *, rust_output_t *, uint64_t);
@@ -85,13 +89,16 @@ static int rust_write_null(FILE *, const char *, uint64_t);
 static int rust_write_null_ber(FILE *);
 static int rust_write_integer(FILE *, const char *, int64_t, int64_t, uint64_t);
 static int rust_write_string(FILE *, const char *, asn1p_expr_t *);
-static int rust_write_enumerated(FILE *, const char *, asn1p_expr_t *);
+static int rust_write_enumerated(FILE *, const char *, asn1p_expr_t *, uint64_t);
+static int rust_write_enumerated_jer(FILE *, asn1p_expr_t *);
 static int rust_write_integer_ber(FILE *, const char *, const char *);
 static int rust_write_sequence(FILE *, const char *, asn1p_expr_t *);
 static int rust_write_sequence_field(FILE *, asn1p_expr_t *);
 static int rust_write_sequence_encode_field(FILE *, asn1p_expr_t *);
+static int rust_write_sequence_encode_default(FILE *, asn1p_expr_t *, const char *);
 static int rust_write_sequence_encode_optional(FILE *, asn1p_expr_t *, const char *);
 static int rust_write_sequence_decode_field(FILE *, asn1p_expr_t *, size_t *);
+static int rust_write_sequence_decode_default(FILE *, asn1p_expr_t *, size_t);
 static int rust_write_sequence_encode_presence(FILE *, asn1p_expr_t *);
 static int rust_write_sequence_decode_presence(FILE *, asn1p_expr_t *);
 static int rust_write_per_oer(FILE *, const char *, const char *,
@@ -420,7 +427,7 @@ rust_check_sequence(asn1p_module_t *module, asn1p_expr_t *expr,
 }
 
 /*
- * Validate one required or OPTIONAL direct primitive SEQUENCE field.
+ * Validate one required, OPTIONAL, or supported DEFAULT direct SEQUENCE field.
  * Parameters: module supplies diagnostics; member is the fixed field.
  * Returns zero when supported or -1 with a diagnostic. No exception is
  * thrown. Original source: Rust backend. Version/date: 0.2.0, 2026-10-30.
@@ -429,34 +436,112 @@ rust_check_sequence(asn1p_module_t *module, asn1p_expr_t *expr,
  */
 static int
 rust_check_sequence_member(asn1p_module_t *module, asn1p_expr_t *member) {
-    if(!member->Identifier || !*member->Identifier
-       || member->meta_type != AMT_TYPE
-       || (member->marker.flags != EM_NOMARK
-           && member->marker.flags != EM_OPTIONAL)
-       || member->tag.tag_class != TC_NOCLASS
-       || member->encoding_control.encoding_type != EC_NONE
-       || member->lhs_params || member->rhs_pspecs || member->ioc_table
-       || member->members.tq_head) {
+    char default_literal[64];
+    int supported = 0;
+    if(!rust_sequence_member_shape_valid(member)) {
         rust_diagnostic(module, member,
-                        "SEQUENCE field must be a direct untagged primitive with no DEFAULT");
+                        "SEQUENCE field must be a direct primitive with supported shape");
         return -1;
     }
     if(member->expr_type == ASN_BASIC_BOOLEAN
        || member->expr_type == ASN_BASIC_NULL) {
-        if(!member->constraints && !member->combined_constraints) return 0;
+        supported = !member->constraints && !member->combined_constraints;
     } else if(member->expr_type == ASN_BASIC_INTEGER) {
-        if(member->combined_constraints
-           && rust_constraint_supported(member->combined_constraints, 0)
-           && !rust_integer_bounds(member, &(int64_t){0}, &(int64_t){0})) return 0;
+        supported = member->combined_constraints
+            && rust_constraint_supported(member->combined_constraints, 0)
+            && !rust_integer_bounds(member, &(int64_t){0}, &(int64_t){0});
     } else if(member->expr_type == ASN_BASIC_OCTET_STRING
               || member->expr_type == ASN_BASIC_BIT_STRING) {
-        if(member->combined_constraints
-           && rust_size_constraint_supported(member->combined_constraints, 0)
-           && !rust_fixed_size(member, &(size_t){0})) return 0;
+        supported = member->combined_constraints
+            && rust_size_constraint_supported(member->combined_constraints, 0)
+            && !rust_fixed_size(member, &(size_t){0});
     }
+    if(supported && member->marker.flags == EM_DEFAULT
+       && rust_sequence_default_literal(member, default_literal,
+                                        sizeof(default_literal))) {
+        rust_diagnostic(module, member,
+                        "DEFAULT needs a literal BOOLEAN or in-range bounded INTEGER");
+        return -1;
+    }
+    if(supported) return 0;
     rust_diagnostic(module, member,
                     "SEQUENCE field needs a supported direct UPER primitive");
     return -1;
+}
+
+/*
+ * Check structural properties shared by every supported flat SEQUENCE field.
+ * Parameters: member is an ASN.1 component. Returns one for a direct
+ * primitive with a supported presence marker, otherwise zero. No exception.
+ * Original source: fixed Rust UPER SEQUENCE gate.
+ * Version/date: 0.3.0, 2026-10-30. Responsible party: asn1c maintainers.
+ * History: separated structural validation to keep gate complexity bounded.
+ * Example: rust_sequence_member_shape_valid(field).
+ */
+static int
+rust_sequence_member_shape_valid(const asn1p_expr_t *member) {
+    return member && member->Identifier && *member->Identifier
+        && member->meta_type == AMT_TYPE
+        && (member->marker.flags == EM_NOMARK
+            || member->marker.flags == EM_OPTIONAL
+            || member->marker.flags == EM_DEFAULT)
+        && member->encoding_control.encoding_type == EC_NONE
+        && !member->lhs_params && !member->rhs_pspecs && !member->ioc_table
+        && !member->members.tq_head;
+}
+
+/*
+ * Format one supported SEQUENCE DEFAULT literal as a Rust expression.
+ * Parameters: member is a validated direct field; literal receives a bounded
+ * Rust literal. Returns zero on success or -1 for unsupported values.
+ * Original source: ASN.1 DEFAULT value AST and Rust field representation.
+ * Version/date: 0.3.0, 2026-10-30. Responsible party: asn1c maintainers.
+ * History: added UPER BOOLEAN and bounded INTEGER DEFAULT support.
+ * Example: rust_sequence_default_literal(field, text, sizeof(text)).
+ */
+static int
+rust_sequence_default_literal(asn1p_expr_t *member, char *literal,
+                              size_t literal_size) {
+    asn1p_value_t *value;
+    if(!member || member->marker.flags != EM_DEFAULT || !literal
+       || !literal_size) return -1;
+    value = member->marker.default_value;
+    if(!value) return -1;
+    if(member->expr_type == ASN_BASIC_BOOLEAN) {
+        const char *text = value->type == ATV_TRUE ? "true"
+                           : value->type == ATV_FALSE ? "false" : NULL;
+        size_t length;
+        if(!text) return -1;
+        length = strlen(text);
+        if(length >= literal_size) return -1;
+        memcpy(literal, text, length + 1);
+        return 0;
+    }
+    if(member->expr_type == ASN_BASIC_INTEGER && value->type == ATV_INTEGER) {
+        int64_t lower, upper;
+        int64_t number;
+        if(rust_integer_bounds(member, &lower, &upper)
+           || value->value.v_integer < (asn1c_integer_t)lower
+           || value->value.v_integer > (asn1c_integer_t)upper) return -1;
+        number = (int64_t)value->value.v_integer;
+        return rust_format_bound(literal, literal_size, number);
+    }
+    return -1;
+}
+
+/*
+ * Return whether a field contributes one entry to the UPER presence bitmap.
+ * Parameters: member is a SEQUENCE component. Returns one for OPTIONAL or
+ * DEFAULT, otherwise zero. No exception is thrown.
+ * Original source: X.691 optional/default presence preamble.
+ * Version/date: 0.3.0, 2026-10-30. Responsible party: asn1c maintainers.
+ * History: shared OPTIONAL and DEFAULT bitmap support. Example:
+ * rust_sequence_has_presence(field).
+ */
+static int
+rust_sequence_has_presence(const asn1p_expr_t *member) {
+    return member && (member->marker.flags == EM_OPTIONAL
+        || member->marker.flags == EM_DEFAULT);
 }
 
 /*
@@ -631,11 +716,12 @@ rust_check_enumerated(asn1p_module_t *module, asn1p_expr_t *expr,
                       uint64_t codecs) {
     asn1p_expr_t *item;
     size_t count = 0;
-    if(codecs != RUST_CODEC_UPER || expr->constraints
+    if(!(codecs & (RUST_CODEC_UPER | RUST_CODEC_JER))
+       || (codecs & ~(RUST_CODEC_UPER | RUST_CODEC_JER)) || expr->constraints
        || expr->combined_constraints || expr->lhs_params || expr->ioc_table
        || expr->rhs_pspecs) {
         rust_diagnostic(module, expr,
-            "ENUMERATED needs UPER-only direct nonextensible values");
+            "ENUMERATED needs direct nonextensible values and UPER or JER");
         return -1;
     }
     TQ_FOR(item, &expr->members, next) {
@@ -666,10 +752,37 @@ static int
 rust_enum_item_valid(const asn1p_expr_t *item) {
     const asn1c_integer_t min_i64 = -(asn1c_integer_t)INT64_MAX - 1;
     const asn1c_integer_t max_i64 = (asn1c_integer_t)INT64_MAX;
-    return item && item->expr_type == A1TC_UNIVERVAL && item->Identifier
+    return item && item->expr_type == A1TC_UNIVERVAL
+        && rust_enum_name_safe(item->Identifier)
         && item->value && item->value->type == ATV_INTEGER
         && item->value->value.v_integer >= min_i64
         && item->value->value.v_integer <= max_i64;
+}
+
+/*
+ * Check that an ENUMERATED identifier can be emitted as a literal JSON name.
+ * Parameters: name is an untrusted parser identifier. Returns true only for
+ * ASCII letters, digits, and interior single hyphens; no exception is thrown.
+ * Original source: ASN.1 identifier lexical shape and Rust JER generation.
+ * Version/date: 0.3.0, 2026-10-30. Responsible party: asn1c maintainers.
+ * History: added to avoid raw-string injection in generated enum JER tables.
+ * Example: rust_enum_name_safe("red-blue") is true.
+ */
+static int
+rust_enum_name_safe(const char *name) {
+    const unsigned char *cursor = (const unsigned char *)name;
+    if(!cursor || !(('A' <= *cursor && *cursor <= 'Z')
+                    || ('a' <= *cursor && *cursor <= 'z'))) return 0;
+    for(cursor++; *cursor; cursor++) {
+        if(*cursor == '-') {
+            if(!cursor[1] || cursor[1] == '-') return 0;
+        } else if(!(('A' <= *cursor && *cursor <= 'Z')
+                 || ('a' <= *cursor && *cursor <= 'z')
+                 || ('0' <= *cursor && *cursor <= '9'))) {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 /*
@@ -1291,7 +1404,7 @@ rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
               || expr->expr_type == ASN_BASIC_BIT_STRING) {
         ret = rust_write_string(stream, name, expr);
     } else if(expr->expr_type == ASN_BASIC_ENUMERATED) {
-        ret = rust_write_enumerated(stream, name, expr);
+        ret = rust_write_enumerated(stream, name, expr, codecs);
     } else {
         int64_t lower, upper;
         if(rust_integer_bounds(expr, &lower, &upper)) ret = -1;
@@ -1302,7 +1415,7 @@ rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
 }
 
 /*
- * Emit one flat SEQUENCE with required and OPTIONAL fields using one cursor.
+ * Emit one flat SEQUENCE with required, OPTIONAL, and DEFAULT fields.
  * Parameters: stream receives Rust, name is the sanitized type name, and
  * expr owns validated fields. Returns zero or -1 on output failure. No
  * exception is thrown. Original source: Rust backend. Version/date: 0.2.0,
@@ -1313,7 +1426,7 @@ static int
 rust_write_sequence(FILE *stream, const char *name, asn1p_expr_t *expr) {
     asn1p_expr_t *member;
     if(fprintf(stream,
-        "/// Flat ASN.1 SEQUENCE with required and OPTIONAL direct fields.\n"
+        "/// Flat ASN.1 SEQUENCE with direct required, OPTIONAL, and DEFAULT fields.\n"
         "#[derive(Clone, Debug, Eq, PartialEq)]\n"
         "pub struct %s {\n", name) < 0) return -1;
     TQ_FOR(member, &expr->members, next) {
@@ -1352,10 +1465,10 @@ rust_write_sequence(FILE *stream, const char *name, asn1p_expr_t *expr) {
     if(rust_write_sequence_decode_presence(stream, expr)) return -1;
     if(fputs("        let value = Self {\n", stream) == EOF) return -1;
     {
-        size_t optional_index = 0;
+        size_t presence_index = 0;
         TQ_FOR(member, &expr->members, next) {
             if(rust_write_sequence_decode_field(stream, member,
-                                                &optional_index)) return -1;
+                                                &presence_index)) return -1;
         }
     }
     if(fputs("        };\n"
@@ -1411,6 +1524,8 @@ rust_write_sequence_encode_field(FILE *stream, asn1p_expr_t *member) {
     if(!name) return -1;
     if(member->marker.flags == EM_OPTIONAL) {
         ret = rust_write_sequence_encode_optional(stream, member, name);
+    } else if(member->marker.flags == EM_DEFAULT) {
+        ret = rust_write_sequence_encode_default(stream, member, name);
     } else if(member->expr_type == ASN_BASIC_BOOLEAN)
         ret = fprintf(stream, "        writer.write_boolean(self.%s)?;\n", name);
     else if(member->expr_type == ASN_BASIC_NULL)
@@ -1435,6 +1550,39 @@ rust_write_sequence_encode_field(FILE *stream, asn1p_expr_t *member) {
     }
     free(name);
     return ret < 0 ? -1 : 0;
+}
+
+/*
+ * Emit a DEFAULT payload only when its concrete field differs from the ASN.1
+ * default. Parameters: stream receives Rust; member is a supported DEFAULT;
+ * name is its sanitized field identifier. Returns zero or -1 on failure.
+ * Original source: X.691 DEFAULT omission rule and Rust field representation.
+ * Version/date: 0.3.0, 2026-10-30. Responsible party: asn1c maintainers.
+ * History: added direct BOOLEAN and bounded INTEGER DEFAULT fields.
+ * Example: rust_write_sequence_encode_default(out, field, "enabled").
+ */
+static int
+rust_write_sequence_encode_default(FILE *stream, asn1p_expr_t *member,
+                                   const char *name) {
+    char literal[64];
+    if(rust_sequence_default_literal(member, literal, sizeof(literal))) return -1;
+    if(member->expr_type == ASN_BASIC_BOOLEAN) {
+        const char *negate = !strcmp(literal, "true") ? "!" : "";
+        return fprintf(stream,
+            "        if %sself.%s { writer.write_boolean(self.%s)?; }\n",
+            negate, name, name) < 0 ? -1 : 0;
+    }
+    {
+        int64_t lower, upper;
+        char low[64], high[64];
+        if(rust_integer_bounds(member, &lower, &upper)
+           || rust_format_bound(low, sizeof(low), lower)
+           || rust_format_bound(high, sizeof(high), upper)) return -1;
+        return fprintf(stream,
+            "        if self.%s != %s {\n"
+            "            writer.write_integer(self.%s, %s, %s)?;\n"
+            "        }\n", name, literal, name, low, high) < 0 ? -1 : 0;
+    }
 }
 
 /*
@@ -1483,28 +1631,46 @@ rust_write_sequence_encode_optional(FILE *stream, asn1p_expr_t *member,
 }
 
 /*
- * Emit one OPTIONAL presence bit before payload fields.
+ * Emit one OPTIONAL or DEFAULT presence bit before payload fields.
  * Parameters: stream receives Rust; member supplies the validated field name.
  * Returns zero or -1 on output failure. No exception is thrown. Original
  * source: Rust backend. Version/date: 0.3.0, 2026-10-30. Responsible party:
- * asn1c maintainers. History: OPTIONAL UPER bitmap emission. Example:
+ * asn1c maintainers. History: OPTIONAL/DEFAULT UPER bitmap emission. Example:
  * rust_write_sequence_encode_presence(stream, member).
  */
 static int
 rust_write_sequence_encode_presence(FILE *stream, asn1p_expr_t *member) {
     char *name;
     int ret;
-    if(member->marker.flags != EM_OPTIONAL) return 0;
+    if(!rust_sequence_has_presence(member)) return 0;
     name = rust_identifier(member->Identifier, 1);
     if(!name) return -1;
-    ret = fprintf(stream,
-        "        writer.write_boolean(self.%s.is_some())?;\n", name);
+    if(member->marker.flags == EM_OPTIONAL) {
+        ret = fprintf(stream,
+            "        writer.write_boolean(self.%s.is_some())?;\n", name);
+    } else {
+        char literal[64];
+        const char *negate;
+        if(rust_sequence_default_literal(member, literal, sizeof(literal))) {
+            free(name);
+            return -1;
+        }
+        if(member->expr_type == ASN_BASIC_BOOLEAN) {
+            negate = !strcmp(literal, "true") ? "!" : "";
+            ret = fprintf(stream,
+                "        writer.write_boolean(%sself.%s)?;\n", negate, name);
+            free(name);
+            return ret < 0 ? -1 : 0;
+        }
+        ret = fprintf(stream,
+            "        writer.write_boolean(self.%s != %s)?;\n", name, literal);
+    }
     free(name);
     return ret < 0 ? -1 : 0;
 }
 
 /*
- * Read all OPTIONAL bits before decoding any payload field.
+ * Read all OPTIONAL and DEFAULT bits before decoding any payload field.
  * Parameters: stream receives Rust; expr owns validated SEQUENCE members.
  * Returns zero or -1 on output failure. No exception is thrown. Original
  * source: Rust backend. Version/date: 0.3.0, 2026-10-30. Responsible party:
@@ -1516,12 +1682,12 @@ rust_write_sequence_decode_presence(FILE *stream, asn1p_expr_t *expr) {
     asn1p_expr_t *member;
     int any = 0;
     TQ_FOR(member, &expr->members, next) {
-        if(member->marker.flags == EM_OPTIONAL) any = 1;
+        if(rust_sequence_has_presence(member)) any = 1;
     }
     if(!any) return 0;
     if(fputs("        let __asn1c_presence = [\n", stream) == EOF) return -1;
     TQ_FOR(member, &expr->members, next) {
-        if(member->marker.flags == EM_OPTIONAL
+        if(rust_sequence_has_presence(member)
            && fputs("            reader.read_boolean()?,\n", stream) == EOF)
             return -1;
     }
@@ -1529,16 +1695,16 @@ rust_write_sequence_decode_presence(FILE *stream, asn1p_expr_t *expr) {
 }
 
 /*
- * Emit a decoded field initializer and its optional bitmap condition.
- * Parameters: stream receives Rust; member supplies the field; optional_index
- * tracks bitmap positions. Returns zero or -1; no exception is thrown.
+ * Emit a decoded field initializer and its presence bitmap condition.
+ * Parameters: stream receives Rust; member supplies the field; presence_index
+ * tracks OPTIONAL and DEFAULT positions. Returns zero or -1; no exception.
  * Original source: Rust backend. Version/date: 0.3.0, 2026-10-30. Responsible
  * party: asn1c maintainers. History: flat UPER field decoding. Example:
  * rust_write_sequence_decode_field(stream, member, &index).
  */
 static int
 rust_write_sequence_decode_field(FILE *stream, asn1p_expr_t *member,
-                                 size_t *optional_index) {
+                                 size_t *presence_index) {
     char *name = rust_identifier(member->Identifier, 1);
     int ret = -1;
     if(!name) return -1;
@@ -1551,18 +1717,24 @@ rust_write_sequence_decode_field(FILE *stream, asn1p_expr_t *member,
         if(member->marker.flags == EM_OPTIONAL) {
             ret = fprintf(stream,
                 "if __asn1c_presence[%zu] { reader.read_null()?; Some(()) } "
-                "else { None },\n", *optional_index);
-            (*optional_index)++;
+                "else { None },\n", *presence_index);
+            (*presence_index)++;
         } else {
             ret = fputs("{ reader.read_null()?; },\n", stream);
         }
         free(name);
         return ret < 0 ? -1 : 0;
     }
+    if(member->marker.flags == EM_DEFAULT) {
+        ret = rust_write_sequence_decode_default(stream, member, *presence_index);
+        (*presence_index)++;
+        free(name);
+        return ret < 0 ? -1 : 0;
+    }
     if(member->marker.flags == EM_OPTIONAL) {
         ret = fprintf(stream,
-            "if __asn1c_presence[%zu] { Some(", *optional_index);
-        (*optional_index)++;
+            "if __asn1c_presence[%zu] { Some(", *presence_index);
+        (*presence_index)++;
         if(ret < 0) {
             free(name);
             return -1;
@@ -1591,6 +1763,37 @@ rust_write_sequence_decode_field(FILE *stream, asn1p_expr_t *member,
         ret = fputs(",\n", stream);
     free(name);
     return ret < 0 ? -1 : 0;
+}
+
+/*
+ * Emit a DEFAULT value read, substituting its literal when the bit is absent.
+ * Parameters: stream receives Rust; member is a supported DEFAULT field;
+ * presence_index identifies its preamble bit. Returns zero or -1 on failure.
+ * Original source: X.691 DEFAULT decoding and bounded Rust value types.
+ * Version/date: 0.3.0, 2026-10-30. Responsible party: asn1c maintainers.
+ * History: added direct BOOLEAN and bounded INTEGER DEFAULT decoding.
+ * Example: rust_write_sequence_decode_default(out, field, 0).
+ */
+static int
+rust_write_sequence_decode_default(FILE *stream, asn1p_expr_t *member,
+                                   size_t presence_index) {
+    char literal[64];
+    if(rust_sequence_default_literal(member, literal, sizeof(literal))) return -1;
+    if(member->expr_type == ASN_BASIC_BOOLEAN) {
+        return fprintf(stream,
+            "if __asn1c_presence[%zu] { reader.read_boolean()? } else { %s },\n",
+            presence_index, literal) < 0 ? -1 : 0;
+    }
+    {
+        int64_t lower, upper;
+        char low[64], high[64];
+        if(rust_integer_bounds(member, &lower, &upper)
+           || rust_format_bound(low, sizeof(low), lower)
+           || rust_format_bound(high, sizeof(high), upper)) return -1;
+        return fprintf(stream,
+            "if __asn1c_presence[%zu] { reader.read_integer(%s, %s)? } "
+            "else { %s },\n", presence_index, low, high, literal) < 0 ? -1 : 0;
+    }
 }
 
 /*
@@ -1682,15 +1885,18 @@ rust_write_string(FILE *stream, const char *name, asn1p_expr_t *expr) {
 }
 
 /*
- * Emit one nonextensible ENUMERATED with numeric-order UPER indexes.
+ * Emit one nonextensible ENUMERATED with numeric-order UPER indexes and
+ * optional JER name mapping.
  * Parameters: stream receives Rust; name is the sanitized type name; expr
  * owns validated members. Returns zero or -1 on output failure; no exception.
  * Original source: X.691 root enumeration rule and asn1c_C.c value2enum.
  * Version/date: 0.3.0, 2026-10-30. Responsible party: asn1c maintainers.
- * History: first ENUMERATED slice. Example: rust_write_enumerated(out, name, e).
+ * History: UPER and JER enum slice. Example:
+ * rust_write_enumerated(out, name, e, RUST_CODEC_JER).
  */
 static int
-rust_write_enumerated(FILE *stream, const char *name, asn1p_expr_t *expr) {
+rust_write_enumerated(FILE *stream, const char *name, asn1p_expr_t *expr,
+                      uint64_t codecs) {
     asn1p_expr_t *item;
     size_t count = 0;
     TQ_FOR(item, &expr->members, next) count++;
@@ -1706,58 +1912,147 @@ rust_write_enumerated(FILE *stream, const char *name, asn1p_expr_t *expr) {
         if(ret < 0) return -1;
     }
     if(fprintf(stream, "}\n\nimpl %s {\n", name) < 0) return -1;
+    if(codecs & RUST_CODEC_UPER) {
+        if(rust_write_method_doc(stream,
+                "Encode a root ENUMERATED value with UPER.",
+                "`self` is a root variant; `limits` bounds output and work.",
+                "Returns packed bytes and meaningful bit length.",
+                "Returns an error when a resource limit is exceeded.",
+                "`let encoded = value.encode_uper(&Default::default())?;")) return -1;
+        if(fputs(
+            "    pub fn encode_uper(&self, limits: &::asn1c_runtime::Limits) ->\n"
+            "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+            "        let index = match self {\n", stream) == EOF) return -1;
+        TQ_FOR(item, &expr->members, next) {
+            char *variant = rust_enum_variant(item->Identifier);
+            int ret = variant ? fprintf(stream, "            Self::%s => %zu,\n",
+                variant, rust_enumerated_rank(expr, item)) : -1;
+            free(variant);
+            if(ret < 0) return -1;
+        }
+        if(fprintf(stream,
+            "        };\n"
+            "        let mut writer = ::asn1c_runtime::UperWriter::new(limits)?;\n"
+            "        writer.write_integer(index, 0, %zu)?;\n"
+            "        writer.finish()\n    }\n", count - 1) < 0) return -1;
+        if(rust_write_method_doc(stream,
+                "Decode one root ENUMERATED UPER value.",
+                "`input` is the encoded prefix; `limits` bounds input and work.",
+                "Returns a variant and consumed prefix lengths.",
+                "Returns an error for truncation, unused indexes, or exhausted resources.",
+                "`let decoded = Type::decode_uper(input, &Default::default())?;")) return -1;
+        if(fprintf(stream,
+            "    pub fn decode_uper(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+            "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+            "        let mut reader = ::asn1c_runtime::UperReader::new(input, limits)?;\n"
+            "        let index = reader.read_integer(0, %zu)?;\n"
+            "        let value = match index {\n", count - 1) < 0) return -1;
+        TQ_FOR(item, &expr->members, next) {
+            char *variant = rust_enum_variant(item->Identifier);
+            int ret = variant ? fprintf(stream, "            %zu => Self::%s,\n",
+                rust_enumerated_rank(expr, item), variant) : -1;
+            free(variant);
+            if(ret < 0) return -1;
+        }
+        if(fputs(
+            "            _ => return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+            "                reason: \"unused ENUMERATED root index\",\n"
+            "            }),\n"
+            "        };\n"
+            "        let consumed = reader.finish()?;\n"
+            "        Ok(::asn1c_runtime::Decoded {\n"
+            "            value,\n"
+            "            consumed_bits: consumed.consumed_bits,\n"
+            "            consumed_bytes: consumed.consumed_bytes,\n"
+            "        })\n    }\n", stream) == EOF) return -1;
+    }
+    if((codecs & RUST_CODEC_JER) && rust_write_enumerated_jer(stream, expr))
+        return -1;
+    if(fputs("}\n\n", stream) == EOF) return -1;
+    return 0;
+}
+
+/*
+ * Emit complete-input JER methods for one direct nonextensible ENUMERATED.
+ * Parameters: stream receives Rust source; expr owns validated root values.
+ * Returns zero or -1 on output failure; no exception is thrown.
+ * Original source: ENUMERATED_jer.c string mapping and the Rust JER runtime.
+ * Version/date: 0.3.0, 2026-10-30. Responsible party: asn1c maintainers.
+ * History: added opt-in ENUMERATED JER parity. Example:
+ * rust_write_enumerated_jer(stream, expr).
+ */
+static int
+rust_write_enumerated_jer(FILE *stream, asn1p_expr_t *expr) {
+    asn1p_expr_t *item;
+    size_t index = 0;
+
     if(rust_write_method_doc(stream,
-            "Encode a root ENUMERATED value with UPER.",
-            "`self` is a root variant; `limits` bounds output and work.",
-            "Returns packed bytes and meaningful bit length.",
-            "Returns an error when a resource limit is exceeded.",
-            "`let encoded = value.encode_uper(&Default::default())?;")) return -1;
+            "Encode this ENUMERATED root value as a JER JSON string.",
+            "self is a root variant; limits bounds output and work.",
+            "Returns the complete quoted name and its bit length.",
+            "Returns an error for invalid values or exhausted resources.",
+            "`let encoded = value.encode_jer(&Default::default())?;")) return -1;
     if(fputs(
-        "    pub fn encode_uper(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "    pub fn encode_jer(&self, limits: &::asn1c_runtime::Limits) ->\n"
         "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
         "        let index = match self {\n", stream) == EOF) return -1;
     TQ_FOR(item, &expr->members, next) {
         char *variant = rust_enum_variant(item->Identifier);
         int ret = variant ? fprintf(stream, "            Self::%s => %zu,\n",
-            variant, rust_enumerated_rank(expr, item)) : -1;
+                                     variant, index) : -1;
         free(variant);
         if(ret < 0) return -1;
+        index++;
     }
-    if(fprintf(stream,
-        "        };\n"
-        "        let mut writer = ::asn1c_runtime::UperWriter::new(limits)?;\n"
-        "        writer.write_integer(index, 0, %zu)?;\n"
-        "        writer.finish()\n    }\n", count - 1) < 0) return -1;
+    if(fputs("        };\n        ::asn1c_runtime::encode_enumerated_jer(index, &[",
+             stream) == EOF) return -1;
+    index = 0;
+    TQ_FOR(item, &expr->members, next) {
+        if(fprintf(stream, "%s\"%s\"", index ? ", " : "", item->Identifier) < 0)
+            return -1;
+        index++;
+    }
+    if(fputs("], limits)\n    }\n", stream) == EOF) return -1;
+
     if(rust_write_method_doc(stream,
-            "Decode one root ENUMERATED UPER value.",
-            "`input` is the encoded prefix; `limits` bounds input and work.",
-            "Returns a variant and consumed prefix lengths.",
-            "Returns an error for truncation, unused indexes, or exhausted resources.",
-            "`let decoded = Type::decode_uper(input, &Default::default())?;")) return -1;
-    if(fprintf(stream,
-        "    pub fn decode_uper(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+            "Decode one complete JER ENUMERATED JSON string.",
+            "input is the entire JSON primitive; limits bounds input and work.",
+            "Returns the variant and full-input bit and byte counts.",
+            "Returns an error for truncation, unknown names, trailing data, or limits.",
+            "`let decoded = Type::decode_jer(input, &Default::default())?;")) return -1;
+    if(fputs(
+        "    pub fn decode_jer(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
         "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
-        "        let mut reader = ::asn1c_runtime::UperReader::new(input, limits)?;\n"
-        "        let index = reader.read_integer(0, %zu)?;\n"
-        "        let value = match index {\n", count - 1) < 0) return -1;
+        "        let decoded = ::asn1c_runtime::decode_enumerated_jer(input, &[",
+        stream) == EOF) return -1;
+    index = 0;
+    TQ_FOR(item, &expr->members, next) {
+        if(fprintf(stream, "%s\"%s\"", index ? ", " : "", item->Identifier) < 0)
+            return -1;
+        index++;
+    }
+    if(fputs("], limits)?;\n        let value = match decoded.value {\n", stream) == EOF)
+        return -1;
+    index = 0;
     TQ_FOR(item, &expr->members, next) {
         char *variant = rust_enum_variant(item->Identifier);
         int ret = variant ? fprintf(stream, "            %zu => Self::%s,\n",
-            rust_enumerated_rank(expr, item), variant) : -1;
+                                     index, variant) : -1;
         free(variant);
         if(ret < 0) return -1;
+        index++;
     }
     if(fputs(
         "            _ => return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
-        "                reason: \"unused ENUMERATED root index\",\n"
+        "                reason: \"unknown ENUMERATED JER root index\",\n"
         "            }),\n"
         "        };\n"
-        "        let consumed = reader.finish()?;\n"
         "        Ok(::asn1c_runtime::Decoded {\n"
         "            value,\n"
-        "            consumed_bits: consumed.consumed_bits,\n"
-        "            consumed_bytes: consumed.consumed_bytes,\n"
-        "        })\n    }\n}\n\n", stream) == EOF) return -1;
+        "            consumed_bits: decoded.consumed_bits,\n"
+        "            consumed_bytes: decoded.consumed_bytes,\n"
+        "        })\n"
+        "    }\n", stream) == EOF) return -1;
     return 0;
 }
 

@@ -6,6 +6,239 @@
 #include <OPEN_TYPE.h>
 #include <constr_CHOICE.h>
 
+/*
+ * Release a CHOICE wrapper after its open type did not decode completely.
+ * Original source: OPEN_TYPE_oer_get() cleanup logic.
+ * Version: 2026-10-30.
+ * Parameters:
+ *   elm: The open-type member, including its pointer representation flag.
+ *   memb_ptr2: Address of the member slot containing the CHOICE wrapper.
+ *   type: CHOICE wrapper descriptor used for member-aware cleanup.
+ * Returns: Nothing; pointer wrappers are released and cleared, inline ones reset.
+ * Exceptions: None.
+ * Author: asn1c runtime maintainers.
+ * History: Added to avoid freeing a variant's inline address as a wrapper.
+ * Example: Called after an incomplete length-delimited OER open type.
+ */
+static void
+open_type_oer_cleanup_choice(asn_TYPE_member_t *elm,
+                             const asn_TYPE_descriptor_t *type,
+                             void **memb_ptr2) {
+    if(!elm || !memb_ptr2 || !*memb_ptr2 || !type || !type->op
+       || !type->op->free_struct) {
+        return;
+    }
+
+    if(elm->flags & ATF_POINTER) {
+        type->op->free_struct(type, *memb_ptr2, ASFM_FREE_EVERYTHING);
+        *memb_ptr2 = NULL;
+    } else {
+        type->op->free_struct(type, *memb_ptr2,
+                              ASFM_FREE_UNDERLYING_AND_RESET);
+    }
+}
+
+/*
+ * Validate and prepare the wrapper used by a CHOICE open type.
+ * Original source: CHOICE setup formerly embedded in OPEN_TYPE_oer_get().
+ * Version: 2026-10-30.
+ * Parameters:
+ *   td: Parent descriptor used for diagnostics.
+ *   elm: Open-type member whose type describes the CHOICE wrapper.
+ *   selected: Selector result containing the chosen 1-based variant index.
+ *   memb_ptr2: Address of the destination slot for the wrapper.
+ * Returns: Zero when the wrapper is ready, or -1 for invalid metadata/allocation.
+ * Exceptions: None.
+ * Author: asn1c runtime maintainers.
+ * History: Extracted to keep decoder cleanup logic small and bounded.
+ * Example: Called before selecting the variant storage address.
+ */
+static int
+open_type_oer_prepare_choice(const asn_TYPE_descriptor_t *td,
+                             asn_TYPE_member_t *elm,
+                             asn_type_selector_result_t selected,
+                             void **memb_ptr2) {
+    const asn_TYPE_descriptor_t *type = elm->type;
+    const asn_CHOICE_specifics_t *specs;
+
+    if(selected.presence_index > type->elements_count || !type->elements) {
+        ASN_DEBUG("Open Type %s->%s: invalid CHOICE variant metadata",
+                  td->name, elm->name);
+        return -1;
+    }
+
+    specs = (const asn_CHOICE_specifics_t *)type->specifics;
+    if(!specs || !specs->struct_size || !type->op || !type->op->free_struct) {
+        ASN_DEBUG("Open Type %s->%s: invalid CHOICE specifics or free operation",
+                  td->name, elm->name);
+        return -1;
+    }
+    if((specs->pres_size != sizeof(char)
+        && specs->pres_size != sizeof(short)
+        && specs->pres_size != sizeof(int))
+       || specs->pres_offset > specs->struct_size
+       || specs->pres_size > specs->struct_size - specs->pres_offset) {
+        ASN_DEBUG("Open Type %s->%s: invalid CHOICE presence storage",
+                  td->name, elm->name);
+        return -1;
+    }
+    if(!*memb_ptr2) {
+        *memb_ptr2 = CALLOC(1, specs->struct_size);
+        if(!*memb_ptr2) return -1;
+    } else {
+        unsigned old_presence = _fetch_present_idx(
+            *memb_ptr2, specs->pres_offset, specs->pres_size);
+        if(old_presence > type->elements_count) {
+            open_type_oer_cleanup_choice(elm, type, memb_ptr2);
+            return -1;
+        }
+        if(CHOICE_variant_set_presence(type, *memb_ptr2, 0) != 0) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+/*
+ * Validate the call and resolve its dynamically selected open-type variant.
+ * Original source: OPEN_TYPE_oer_get() validation and selector logic.
+ * Version: 2026-10-30.
+ * Parameters:
+ *   td: Parent descriptor passed to the type selector.
+ *   sptr: Parent structure containing the selector's input fields.
+ *   elm: Open-type member and its type selector.
+ *   ptr: Encoded input buffer, which may be NULL only when size is zero.
+ *   size: Number of bytes available in ptr.
+ *   selected_out: Receives the validated descriptor and CHOICE index.
+ * Returns: Zero when valid, or -1 when arguments or selected metadata are invalid.
+ * Exceptions: None.
+ * Author: asn1c runtime maintainers.
+ * History: Extracted from OPEN_TYPE_oer_get() to bound its decision count.
+ * Example: Called before reading the open-type member's destination slot.
+ */
+static int
+open_type_oer_select(const asn_TYPE_descriptor_t *td, void *sptr,
+                     asn_TYPE_member_t *elm, const void *ptr, size_t size,
+                     asn_type_selector_result_t *selected_out) {
+    asn_type_selector_result_t selected;
+
+    if(!td || !sptr || !elm || (size && !ptr)) return -1;
+    if(!(elm->flags & ATF_OPEN_TYPE) || !elm->type || !elm->type_selector) {
+        return -1;
+    }
+
+    selected = elm->type_selector(td, sptr);
+    if(!selected.presence_index || !selected.type_descriptor
+       || !selected.type_descriptor->op
+       || !selected.type_descriptor->op->free_struct) {
+        return -1;
+    }
+
+    *selected_out = selected;
+    return 0;
+}
+
+/*
+ * Apply a decoded open-type result and release values on incomplete/failure.
+ * Original source: Result handling formerly embedded in OPEN_TYPE_oer_get().
+ * Version: 2026-10-30.
+ * Parameters:
+ *   elm: Open-type member being decoded.
+ *   selected: Selected descriptor and CHOICE presence index.
+ *   choice_wrapper: Nonzero when elm->type represents a CHOICE wrapper.
+ *   memb_ptr2: Address of the destination member slot.
+ *   variant_elm: Selected wrapper arm, or NULL for a direct type.
+ *   memb_offset: Selected arm's offset inside the wrapper.
+ *   inner_value: Value pointer passed to oer_open_type_get().
+ *   direct_original_value: Pre-decode direct pointer value, if any.
+ *   ot_ret: Open-type decoder result, negative on error, zero if incomplete.
+ * Returns: Decoder status, with failure and incomplete results consuming zero.
+ * Exceptions: None.
+ * Author: asn1c runtime maintainers.
+ * History: Extracted to keep OPEN_TYPE_oer_get() complexity bounded.
+ * Example: Called after oer_open_type_get() returns its byte count or status.
+ */
+static asn_dec_rval_t
+open_type_oer_finish(asn_TYPE_member_t *elm,
+                     asn_type_selector_result_t selected,
+                     int choice_wrapper, void **memb_ptr2,
+                     const asn_TYPE_member_t *variant_elm,
+                     unsigned int memb_offset, void *inner_value,
+                     void *direct_original_value, ssize_t ot_ret) {
+    asn_dec_rval_t rv;
+
+    switch(ot_ret) {
+    default:
+        if(choice_wrapper) {
+            if(CHOICE_variant_set_presence(elm->type, *memb_ptr2,
+                                           selected.presence_index) == 0) {
+                if(variant_elm && (variant_elm->flags & ATF_POINTER)) {
+                    void **variant_ptr =
+                        (void **)((char *)*memb_ptr2 + memb_offset);
+                    *variant_ptr = inner_value;
+                }
+                rv.code = RC_OK;
+                rv.consumed = (size_t)ot_ret;
+                return rv;
+            }
+            if(variant_elm && (variant_elm->flags & ATF_POINTER)) {
+                ASN_STRUCT_FREE(*selected.type_descriptor, inner_value);
+            } else {
+                ASN_STRUCT_RESET(*selected.type_descriptor, inner_value);
+            }
+        } else {
+            if(elm->flags & ATF_POINTER) {
+                *memb_ptr2 = inner_value;
+            }
+            rv.code = RC_OK;
+            rv.consumed = (size_t)ot_ret;
+            return rv;
+        }
+        /* Fall through */
+    case -1:
+        rv.code = RC_FAIL;
+        rv.consumed = 0;
+        break;
+    case 0:
+        rv.code = RC_WMORE;
+        rv.consumed = 0;
+        break;
+    }
+
+    if(choice_wrapper) {
+        open_type_oer_cleanup_choice(elm, elm->type, memb_ptr2);
+    } else if(*memb_ptr2) {
+        if(elm->flags & ATF_POINTER) {
+            if(direct_original_value) {
+                ASN_STRUCT_FREE(*selected.type_descriptor,
+                                direct_original_value);
+            }
+            *memb_ptr2 = NULL;
+        } else {
+            ASN_STRUCT_RESET(*selected.type_descriptor, inner_value);
+        }
+    }
+    return rv;
+}
+
+/*
+ * Decode a selected OER open type into a direct value or CHOICE wrapper.
+ * Original source: OPEN_TYPE_oer_get() in this file.
+ * Version: 2026-10-30.
+ * Parameters:
+ *   opt_codec_ctx: Optional decoder context with stack and resource limits.
+ *   td: Parent type descriptor used by the selector and diagnostics.
+ *   sptr: Parent value containing the open-type member.
+ *   elm: Open-type member metadata and dynamic type selector.
+ *   ptr: Encoded OER open-type bytes.
+ *   size: Number of available bytes in ptr.
+ * Returns: Decoder status and bytes consumed; incomplete input returns RC_WMORE.
+ * Exceptions: None; malformed descriptors and input return RC_FAIL.
+ * Author: asn1c runtime maintainers.
+ * History: Cleanup now releases the wrapper without freeing embedded variants.
+ * Example: Used by generated OER decoders for table-constrained open types.
+ */
 asn_dec_rval_t
 OPEN_TYPE_oer_get(const asn_codec_ctx_t *opt_codec_ctx,
                   const asn_TYPE_descriptor_t *td, void *sptr,
@@ -14,31 +247,17 @@ OPEN_TYPE_oer_get(const asn_codec_ctx_t *opt_codec_ctx,
     void *memb_ptr;   /* Pointer to the member */
     void **memb_ptr2; /* Pointer to that pointer */
     void *inner_value;
-    asn_dec_rval_t rv;
-    size_t ot_ret;
+    ssize_t ot_ret;
+    int choice_wrapper;
+    void *direct_original_value;
 
 
-    if(!(elm->flags & ATF_OPEN_TYPE)) {
+    if(open_type_oer_select(td, sptr, elm, ptr, size, &selected) != 0) {
         ASN__DECODE_FAILED;
     }
 
-    /* Validate elm->type before accessing its members */
-    if(!elm->type) {
-        ASN_DEBUG("Open Type %s->%s: type descriptor is NULL",
-                  td->name, elm->name);
-        ASN__DECODE_FAILED;
-    }
-
-    if(!elm->type_selector) {
-        ASN_DEBUG("Type selector is not defined for Open Type %s->%s->%s",
-                  td->name, elm->name, elm->type->name);
-        ASN__DECODE_FAILED;
-    }
-
-    selected = elm->type_selector(td, sptr);
-    if(!selected.presence_index || !selected.type_descriptor) {
-        ASN__DECODE_FAILED;
-    }
+    choice_wrapper = elm->type->elements_count > 0;
+    direct_original_value = NULL;
 
     /* Fetch the pointer to this member */
     if(elm->flags & ATF_POINTER) {
@@ -49,42 +268,9 @@ OPEN_TYPE_oer_get(const asn_codec_ctx_t *opt_codec_ctx,
     }
 
     /* Check if this OPEN_TYPE uses CHOICE wrapper (elements_count > 0) or direct type */
-    if(elm->type->elements_count > 0) {
-        /* CHOICE wrapper mode: validate and allocate CHOICE structure */
-        
-        /* Validate the selected variant */
-        if(selected.presence_index > elm->type->elements_count) {
-            ASN_DEBUG("Open Type %s->%s: presence index %u out of bounds (max %u)",
-                      td->name, elm->name, selected.presence_index,
-                      elm->type->elements_count);
+    if(choice_wrapper) {
+        if(open_type_oer_prepare_choice(td, elm, selected, memb_ptr2) != 0) {
             ASN__DECODE_FAILED;
-        }
-        
-        /* Ensure we can access the elements array if needed */
-        if(!elm->type->elements) {
-            ASN_DEBUG("Open Type %s->%s: elements array is NULL but elements_count is %u",
-                      td->name, elm->name, elm->type->elements_count);
-            ASN__DECODE_FAILED;
-        }
-
-        /* Allocate the CHOICE structure if not already present */
-        if(*memb_ptr2 == NULL) {
-            const asn_CHOICE_specifics_t *specs = 
-                (const asn_CHOICE_specifics_t *)elm->type->specifics;
-            if(!specs) {
-                ASN_DEBUG("Open Type %s->%s: type specifics is NULL",
-                          td->name, elm->name);
-                ASN__DECODE_FAILED;
-            }
-            *memb_ptr2 = CALLOC(1, specs->struct_size);
-            if(*memb_ptr2 == NULL) {
-                ASN__DECODE_FAILED;
-            }
-        } else {
-            /* Make sure we reset the structure first before decoding */
-            if(CHOICE_variant_set_presence(elm->type, *memb_ptr2, 0) != 0) {
-                ASN__DECODE_FAILED;
-            }
         }
     } else {
         /* Direct type mode: no CHOICE wrapper, decode directly into member */
@@ -95,15 +281,23 @@ OPEN_TYPE_oer_get(const asn_codec_ctx_t *opt_codec_ctx,
     /* Compute inner_value based on CHOICE wrapper mode or direct type mode */
     unsigned int memb_offset = 0;
     const asn_TYPE_member_t *variant_elm = NULL;
-    
-    if(elm->type->elements_count > 0) {
-        /* CHOICE wrapper mode: get variant element info */
-        if(elm->type->elements && selected.presence_index > 0 
-           && selected.presence_index <= elm->type->elements_count) {
-            variant_elm = &elm->type->elements[selected.presence_index - 1];
-            memb_offset = variant_elm->memb_offset;
+
+    if(choice_wrapper) {
+        size_t variant_span;
+        const asn_CHOICE_specifics_t *specs =
+            (const asn_CHOICE_specifics_t *)elm->type->specifics;
+
+        variant_elm = &elm->type->elements[selected.presence_index - 1];
+        memb_offset = variant_elm->memb_offset;
+        variant_span = (variant_elm->flags & ATF_POINTER) ? sizeof(void *) : 1;
+        if(memb_offset > specs->struct_size
+           || variant_span > specs->struct_size - memb_offset) {
+            ASN_DEBUG("Open Type %s->%s: selected CHOICE member is out of bounds",
+                      td->name, elm->name);
+            open_type_oer_cleanup_choice(elm, elm->type, memb_ptr2);
+            ASN__DECODE_FAILED;
         }
-        
+
         /*
          * For ATF_POINTER variants (e.g., "PersonInfo *PersonInfo" in CHOICE):
          *   - The field is a pointer itself, freshly CALLOC'd to NULL
@@ -116,7 +310,7 @@ OPEN_TYPE_oer_get(const asn_codec_ctx_t *opt_codec_ctx,
          *   - We pass the address of the field to the decoder
          *   - Decoder writes directly into the field
          */
-        if(variant_elm && (variant_elm->flags & ATF_POINTER)) {
+        if(variant_elm->flags & ATF_POINTER) {
             /* Read the current pointer value from the field */
             inner_value = *(void **)((char *)*memb_ptr2 + memb_offset);
         } else {
@@ -125,69 +319,15 @@ OPEN_TYPE_oer_get(const asn_codec_ctx_t *opt_codec_ctx,
         }
     } else {
         /* Direct type mode: decode directly into the member pointer */
+        direct_original_value = *memb_ptr2;
         inner_value = *memb_ptr2;
     }
 
     ot_ret = oer_open_type_get(opt_codec_ctx, selected.type_descriptor, NULL,
                                &inner_value, ptr, size);
-    switch(ot_ret) {
-    default:
-        if(elm->type->elements_count > 0) {
-            /* Set presence indicator FIRST, before copying pointer */
-            if(CHOICE_variant_set_presence(elm->type, *memb_ptr2,
-                                           selected.presence_index)
-               == 0) {
-                /* CHOICE wrapper mode: for pointer variants, copy decoded pointer back to field */
-                if(variant_elm && (variant_elm->flags & ATF_POINTER)) {
-                    /*
-                     * The decoder allocated a structure and stored pointer in inner_value.
-                     * Copy it back to the actual field in the CHOICE structure.
-                     */
-                    void **variant_ptr = (void **)((char *)*memb_ptr2 + memb_offset);
-                    *variant_ptr = inner_value;
-                }
-                rv.code = RC_OK;
-                rv.consumed = ot_ret;
-                return rv;
-            } else {
-                /* Oh, now a full-blown failure failure */
-            }
-        } else {
-            /* Direct type mode: update member pointer with decoded value if pointer type */
-            if(elm->flags & ATF_POINTER) {
-                *memb_ptr2 = inner_value;
-            }
-            rv.code = RC_OK;
-            rv.consumed = ot_ret;
-            return rv;
-        }
-        /* Fall through */
-    case -1:
-        rv.code = RC_FAIL;
-        rv.consumed = ot_ret;
-        break;
-    case 0:
-        rv.code = RC_WMORE;
-        rv.consumed = 0;
-        break;
-    }
-
-    if(*memb_ptr2) {
-        const asn_CHOICE_specifics_t *specs =
-            (const asn_CHOICE_specifics_t *)elm->type->specifics;
-        if(elm->flags & ATF_POINTER) {
-            ASN_STRUCT_FREE(*selected.type_descriptor, inner_value);
-            *memb_ptr2 = NULL;
-        } else {
-            if(!specs) {
-                ASN__DECODE_FAILED;
-            }
-            ASN_STRUCT_FREE_CONTENTS_ONLY(*selected.type_descriptor,
-                                          inner_value);
-            memset(*memb_ptr2, 0, specs->struct_size);
-        }
-    }
-    return rv;
+    return open_type_oer_finish(elm, selected, choice_wrapper, memb_ptr2,
+                                variant_elm, memb_offset, inner_value,
+                                direct_original_value, ot_ret);
 }
 
 asn_enc_rval_t
@@ -298,9 +438,11 @@ OPEN_TYPE_oer_put(const asn_TYPE_descriptor_t *td, const void *sptr,
         ASN__ENCODE_FAILED;
     }
 
-    ASN_DEBUG("OPEN_TYPE_oer_put: elm->type=%s, elements=%p, elements_count=%u, selected.presence_index=%u, selected.type=%s",
-              elm->type->name, (void*)elm->type->elements, elm->type->elements_count,
-              selected.presence_index, selected.type_descriptor->name);
+    ASN_DEBUG("OPEN_TYPE_oer_put: elm->type=%s, elements=%p, elements_count=%u, "
+              "selected.presence_index=%u, selected.type=%s",
+              elm->type->name, (void *)elm->type->elements,
+              elm->type->elements_count, selected.presence_index,
+              selected.type_descriptor->name);
 
     /* Fetch the pointer to this member */
     assert(elm->flags & ATF_OPEN_TYPE);
@@ -336,7 +478,10 @@ OPEN_TYPE_oer_put(const asn_TYPE_descriptor_t *td, const void *sptr,
          * open type length determinant wrapper.
          */
         ASN_DEBUG("Direct type mode: encoding using %s wrapped in OPEN TYPE", selected.type_descriptor->name);
-        if((encoded = oer_open_type_put(selected.type_descriptor, elm->encoding_constraints.oer_constraints, memb_ptr, cb, app_key)) < 0) {
+        if((encoded = oer_open_type_put(
+                selected.type_descriptor,
+                elm->encoding_constraints.oer_constraints, memb_ptr, cb,
+                app_key)) < 0) {
             ASN__ENCODE_FAILED;
         }
         er.encoded = encoded;

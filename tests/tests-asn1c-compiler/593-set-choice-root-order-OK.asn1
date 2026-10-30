@@ -1,0 +1,15 @@
+-- OK: A CHOICE extension tag does not sort the enclosing SET root.
+SetChoiceRootOrder DEFINITIONS EXPLICIT TAGS ::= BEGIN
+
+S ::= SET {
+    n [2] INTEGER (0..255),
+    c CH
+}
+
+CH ::= CHOICE {
+    root [3] BOOLEAN,
+    ...,
+    extension [1] BOOLEAN
+}
+
+END

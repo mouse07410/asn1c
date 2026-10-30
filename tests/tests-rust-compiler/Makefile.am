@@ -23,6 +23,7 @@ EXTRA_DIST = $(srcdir)/FirstSlice.asn1 \
     $(srcdir)/ExtensibleString.asn1 \
     $(srcdir)/NamedBitString.asn1 \
     $(srcdir)/SequenceOptional.asn1 \
+    $(srcdir)/SequenceDefaults.asn1 \
     $(srcdir)/SequenceNested.asn1 \
     $(srcdir)/SequenceExtension.asn1 \
     $(srcdir)/CParity.asn1 \
@@ -45,6 +46,7 @@ EXTRA_DIST = $(srcdir)/FirstSlice.asn1 \
     $(srcdir)/string_conformance.rs \
     $(srcdir)/boundary_conformance.rs \
     $(srcdir)/enum_conformance.rs \
+    $(srcdir)/enum_jer_conformance.rs \
     $(srcdir)/c_reference.c \
     $(srcdir)/c_additional.c \
     $(srcdir)/c_jer.c \

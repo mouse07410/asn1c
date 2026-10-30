@@ -98,6 +98,19 @@ per_type_decoder_f SET_decode_uper;
 per_type_encoder_f SET_encode_uper;
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) */
 
+/* The streaming OER member phase owns the allocated preamble in ctx->ptr. */
+#define ASN_SET_OER_PHASE_MEMBERS 1001
+
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+oer_type_decoder_f SET_decode_oer;
+oer_type_encoder_f SET_encode_oer;
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+
+#if !defined(ASN_DISABLE_APER_SUPPORT)
+per_type_decoder_f SET_decode_aper;
+per_type_encoder_f SET_encode_aper;
+#endif  /* !defined(ASN_DISABLE_APER_SUPPORT) */
+
 #if !defined(ASN_DISABLE_RFILL_SUPPORT)
 asn_random_fill_f  SET_random_fill;
 #endif  /* !defined(ASN_DISABLE_RFILL_SUPPORT) */

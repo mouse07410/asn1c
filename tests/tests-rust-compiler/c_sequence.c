@@ -5,6 +5,7 @@
  * Example: compile beside SequenceSlice C sources and run with no arguments.
  */
 #include <asn_application.h>
+#include <uper_decoder.h>
 #include <uper_encoder.h>
 #include <INTEGER.h>
 
@@ -21,6 +22,7 @@
 #include <CrossByte.h>
 #include <Packet.h>
 #include <WideRecord.h>
+#include <DefaultPacket.h>
 
 /*
  * Description of one expected complete UPER encoding.
@@ -89,11 +91,19 @@ main(int argc, char **argv) {
     ZeroOptional_t zero_absent = {0};
     ZeroOptional_t zero_present = {0};
     BitmapAcrossOctets_t bitmap_crossing = {0};
+    DefaultPacket_t defaults_omitted = {0};
+    DefaultPacket_t defaults_mixed = {0};
     NULL_t null_value = 0;
     long optional_number = 2;
     long optional_single = 7;
     BOOLEAN_t optional_boolean = 1;
     BOOLEAN_t optional_false = 0;
+    BOOLEAN_t default_before = 0;
+    BOOLEAN_t default_after = 1;
+    BOOLEAN_t default_active = 0;
+    BOOLEAN_t default_enabled = 1;
+    long default_count = 1;
+    long default_tail = 2;
     unsigned char optional_octet_data[] = {0xa5};
     unsigned char optional_bits_data[] = {0xa0};
     OCTET_STRING_t optional_octet = {optional_octet_data, 1};
@@ -111,7 +121,10 @@ main(int argc, char **argv) {
     const unsigned char zero_optional_absent_bytes[] = {0x00};
     const unsigned char zero_optional_present_bytes[] = {0xf0};
     const unsigned char bitmap_crossing_bytes[] = {0x80, 0xc0, 0x00};
-    sequence_case_t cases[11];
+    const unsigned char default_omitted_bytes[] = {0x04};
+    const unsigned char default_mixed_bytes[] = {0xda, 0xe0};
+    const unsigned char default_present_bytes[] = {0x71, 0x80};
+    sequence_case_t cases[13];
     size_t i, count = 3;
     int failed = 0;
     (void)argv;
@@ -147,6 +160,16 @@ main(int argc, char **argv) {
     zero_present.emptybits = &empty_bits;
     bitmap_crossing.o1 = &optional_boolean;
     bitmap_crossing.o9 = &optional_false;
+    defaults_omitted.enabled = 0;
+    defaults_omitted.count = NULL;
+    defaults_omitted.active = NULL;
+    defaults_omitted.tail = default_tail;
+    defaults_mixed.before = &default_before;
+    defaults_mixed.enabled = default_enabled;
+    defaults_mixed.count = &default_count;
+    defaults_mixed.active = &default_active;
+    defaults_mixed.after = &default_after;
+    defaults_mixed.tail = 3;
     cases[count++] = (sequence_case_t){&asn_DEF_OptionalPacket, &optional_absent,
         optional_absent_bytes, 1, 5, "OptionalPacket absent"};
     cases[count++] = (sequence_case_t){&asn_DEF_OptionalPacket, &optional_present,
@@ -161,7 +184,26 @@ main(int argc, char **argv) {
         zero_optional_present_bytes, 1, 4, "ZeroOptional present"};
     cases[count++] = (sequence_case_t){&asn_DEF_BitmapAcrossOctets, &bitmap_crossing,
         bitmap_crossing_bytes, 3, 20, "BitmapAcrossOctets"};
+    cases[count++] = (sequence_case_t){&asn_DEF_DefaultPacket, &defaults_omitted,
+        default_omitted_bytes, 1, 7, "DefaultPacket omitted"};
+    cases[count++] = (sequence_case_t){&asn_DEF_DefaultPacket, &defaults_mixed,
+        default_mixed_bytes, 2, 11, "DefaultPacket mixed"};
     for(i = 0; i < count; i++) failed |= check_case(&cases[i]);
+    {
+        void *decoded = NULL;
+        asn_dec_rval_t result = uper_decode_complete(
+            NULL, &asn_DEF_DefaultPacket, &decoded,
+            default_present_bytes, sizeof(default_present_bytes));
+        DefaultPacket_t *value = (DefaultPacket_t *)decoded;
+        if(result.code != RC_OK || !value || value->before || value->after
+           || value->enabled != 0 || !value->count || *value->count != 1
+           || !value->active || *value->active != 1
+           || value->tail != 0) {
+            fprintf(stderr, "C UPER DEFAULT decoder mismatch: DefaultPacket\n");
+            failed = 1;
+        }
+        if(decoded) ASN_STRUCT_FREE(asn_DEF_DefaultPacket, decoded);
+    }
     free(wide.wide.buf);
     return failed;
 }

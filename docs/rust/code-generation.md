@@ -152,14 +152,16 @@ control only in Rust codecs that implement its behavior.
    `libasn1compiler/Makefile.am`. It validates the fixed tree before staging
    output. The current gate accepts top-level BOOLEAN, NULL, and bounded,
    nonextensible INTEGER whose complete range fits `i64`, plus flat SEQUENCE
-   with required and OPTIONAL direct fields under UPER-only selection.
+   with required and OPTIONAL direct fields and literal BOOLEAN or bounded
+   INTEGER DEFAULT fields under UPER-only selection.
 6. Runtime sources now live under `rust/asn1c-runtime/` and are included in
    Automake distribution and package-data installation. The CLI resolves the
    runtime separately from `-S`, which still selects C skeletons and standard
    ASN.1 modules.
 7. Rust has a bounded identifier sanitizer and collision checker. Diagnostics
    retain source module/type names and line numbers. The flat SEQUENCE gate
-   validates member names, direct types, and required versus OPTIONAL markers.
+   validates member names, direct types, presence markers, and DEFAULT literal
+   types and ranges.
 8. The generated-crate harness lives under
    `tests/tests-rust-compiler/`. It invokes the built compiler and checks the
    staged Cargo project. The first runtime has no third-party dependencies;
@@ -232,7 +234,7 @@ integer-width heuristics.
 | OBJECT IDENTIFIER | runtime `ObjectIdentifier` | Use checked arcs; do not assume every arc fits a machine integer. |
 | RELATIVE-OID | runtime `RelativeOid` | Same checked-arithmetic requirement as OID arcs. |
 | UTCTime, GeneralizedTime | runtime time wrapper or validated text newtype | Canonical rules need explicit APIs. |
-| SEQUENCE, SET | generated `struct` | Current UPER SEQUENCE slice uses values and `Option<T>` fields with a leading presence bitmap; DEFAULT and SET are unsupported. |
+| SEQUENCE, SET | generated `struct` | Current UPER SEQUENCE slice uses values and `Option<T>` fields with a leading presence bitmap; direct component tags are ignored by PER, BOOLEAN and bounded INTEGER DEFAULT are supported, SET is unsupported. |
 | CHOICE | generated `enum` | Include an unknown extension variant when the type is extensible. |
 | SEQUENCE OF, SET OF | `Vec<T>` newtype | Retain SET OF ordering rules in codec logic. |
 | Type reference | module-qualified reference | Use public newtypes for aliases that add constraints or API identity. |

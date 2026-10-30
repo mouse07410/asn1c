@@ -1,8 +1,8 @@
 //! Safe, bounded primitive codecs for the compact JSON Encoding Rules (JER).
 //!
-//! This module encodes BOOLEAN, NULL, and finite bounded signed `i64` INTEGER
-//! values as compact C-compatible JSON primitive tokens. Decoders accept one
-//! complete primitive with optional JSON whitespace (space, tab, LF, or CR)
+//! This module encodes BOOLEAN, NULL, finite bounded signed `i64` INTEGER,
+//! and direct ENUMERATED values as compact C-compatible JSON tokens. Decoders
+//! accept one complete primitive with optional JSON whitespace (space, tab, LF, or CR)
 //! around it. They reject any non-whitespace suffix and consume the complete
 //! supplied input, including surrounding whitespace. This is a complete-input
 //! API; it does not provide incremental or streaming token decoding.
@@ -10,7 +10,7 @@
 //! Specification: ITU-T X.697 (02/2021),
 //! <https://www.itu.int/rec/T-REC-X.697-202102-I/en>. C implementation
 //! references: `skeletons/BOOLEAN_jer.c`, `NULL_jer.c`, `NativeInteger_jer.c`,
-//! and `INTEGER_jer.c`. The INTEGER lexical tests also reflect vectors in
+//! `INTEGER_jer.c`, and `ENUMERATED_jer.c`. The INTEGER lexical tests reflect vectors in
 //! `tests/tests-skeletons/check-INTEGER.c`. Version/date: 2026-10-30.
 //! Responsible party: asn1c maintainers. History: initial bounded JER
 //! primitive slice. Example: `encode_boolean_jer(true, &Limits::default())?`
@@ -20,6 +20,9 @@ use super::{
     allocate_zeroed, check_input_limit, check_work_limit, validate_integer, Decoded, Encoded,
     Error, Limits,
 };
+
+/// Maximum number of root alternatives accepted by the generated ENUMERATED JER API.
+const MAX_JER_ENUMERATED_VARIANTS: usize = 64;
 
 /// Encode a BOOLEAN as the compact JSON literal `true` or `false`.
 ///
@@ -210,6 +213,204 @@ pub fn decode_integer_jer(
     };
     validate_integer(value, lower, upper)?;
     Ok(decoded_complete(value, input.len(), consumed_bits))
+}
+
+/// Encode one ENUMERATED root name as a compact JSON string.
+///
+/// # Parameters
+/// index selects a name in declaration order; names contains one to 64 unique
+/// valid root identifiers; limits bounds output and mapping validation.
+///
+/// # Returns
+/// A quoted JSON string such as "red" and its complete-octet bit length.
+///
+/// # Errors
+/// Returns an invalid mapping, an out-of-range index, a resource limit,
+/// allocation, or size error. It raises no exception.
+///
+/// # Source, version, history, and example
+/// Original source: `ENUMERATED_encode_jer` in `skeletons/ENUMERATED_jer.c`.
+/// Version/date: 2026-10-30. Responsible party: asn1c maintainers. History:
+/// initial bounded ENUMERATED JER slice. Example: index 1 emits the quoted
+/// JSON string `"red"`.
+pub fn encode_enumerated_jer(
+    index: usize,
+    names: &[&str],
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    if names.is_empty() || names.len() > MAX_JER_ENUMERATED_VARIANTS {
+        return Err(invalid_enumerated_mapping());
+    }
+    let name = names
+        .get(index)
+        .copied()
+        .ok_or_else(invalid_enumerated_mapping)?;
+    let table_bytes = names.iter().try_fold(0_usize, |total, name| {
+        total.checked_add(name.len()).ok_or(Error::SizeOverflow)
+    })?;
+    let output_len = name.len().checked_add(2).ok_or(Error::SizeOverflow)?;
+    let bit_len = output_len.checked_mul(8).ok_or(Error::SizeOverflow)?;
+    let validation_bytes = table_bytes
+        .checked_mul(names.len() + 1)
+        .ok_or(Error::SizeOverflow)?;
+    let validation_bits = validation_bytes.checked_mul(8).ok_or(Error::SizeOverflow)?;
+    let total_work = bit_len
+        .checked_add(validation_bits)
+        .ok_or(Error::SizeOverflow)?;
+    check_work_limit(total_work, limits)?;
+
+    // Reject malformed or ambiguous root-name tables before selecting a name.
+    for (name_index, candidate) in names.iter().enumerate() {
+        if !is_enumerated_name(candidate)
+            || names[..name_index]
+                .iter()
+                .any(|previous| previous == candidate)
+        {
+            return Err(invalid_enumerated_mapping());
+        }
+    }
+    let mut bytes = allocate_zeroed(output_len, limits)?;
+    bytes[0] = b'"';
+    bytes[1..output_len - 1].copy_from_slice(name.as_bytes());
+    bytes[output_len - 1] = b'"';
+    Ok(Encoded { bytes, bit_len })
+}
+
+/// Decode one complete JSON string naming an ENUMERATED root alternative.
+///
+/// The accepted spelling is the exact C-compatible token "name" with
+/// optional JSON whitespace around it. JSON escapes are not accepted because
+/// ASN.1 identifiers cannot contain characters requiring JSON escaping and
+/// the C JER decoder compares the identifier spelling directly.
+///
+/// # Parameters
+/// input is the complete primitive input; names contains one to 64 unique root
+/// identifiers in declaration order; limits bounds input and lookup work.
+///
+/// # Returns
+/// The selected declaration-order index and consumption of the complete input.
+///
+/// # Errors
+/// Returns invalid mapping, truncation, malformed or unknown names, invalid
+/// UTF-8, or a resource limit error. It raises no exception.
+///
+/// # Source, version, history, and example
+/// Original source: `ENUMERATED_decode_jer` in `skeletons/ENUMERATED_jer.c`;
+/// this API additionally rejects trailing input. Version/date: 2026-10-30.
+/// Responsible party: asn1c maintainers. History: initial bounded
+/// ENUMERATED JER slice. Example: decode a complete quoted red token.
+pub fn decode_enumerated_jer(
+    input: &[u8],
+    names: &[&str],
+    limits: &Limits,
+) -> Result<Decoded<usize>, Error> {
+    if names.is_empty() || names.len() > MAX_JER_ENUMERATED_VARIANTS {
+        return Err(invalid_enumerated_mapping());
+    }
+    let (token, consumed_bits) = complete_token(input, limits)?;
+    let token_len = token.len();
+    let table_bytes = names.iter().try_fold(0_usize, |total, name| {
+        total.checked_add(name.len()).ok_or(Error::SizeOverflow)
+    })?;
+    let scan_bytes = table_bytes
+        .checked_add(token_len)
+        .and_then(|bytes| bytes.checked_mul(names.len() + 1))
+        .ok_or(Error::SizeOverflow)?;
+    let scan_bits = scan_bytes.checked_mul(8).ok_or(Error::SizeOverflow)?;
+    let total_work = consumed_bits
+        .checked_add(scan_bits)
+        .ok_or(Error::SizeOverflow)?;
+    check_work_limit(total_work, limits)?;
+
+    // Validate the supplied root-name table before comparing any token.
+    for (index, name) in names.iter().enumerate() {
+        if !is_enumerated_name(name) || names[..index].iter().any(|previous| previous == name) {
+            return Err(invalid_enumerated_mapping());
+        }
+    }
+
+    let Some(name_bytes) = token
+        .strip_prefix(b"\"")
+        .and_then(|bytes| bytes.strip_suffix(b"\""))
+    else {
+        return Err(invalid_enumerated_token());
+    };
+    let index = names
+        .iter()
+        .position(|name| name.as_bytes() == name_bytes)
+        .ok_or_else(invalid_enumerated_token)?;
+    Ok(decoded_complete(index, input.len(), consumed_bits))
+}
+
+/// Check that a root identifier is safe as a literal JSON string body.
+///
+/// # Parameters and returns
+/// name is the candidate ASN.1 identifier. Returns true for ASCII ASN.1
+/// identifier characters that need no JSON escaping.
+///
+/// # Errors
+/// This helper cannot fail, raises no exception, and allocates no memory.
+///
+/// # Source, version, history, and example
+/// Original source: ASN.1 identifier lexical restrictions and JER string
+/// mapping. Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+/// History: added with ENUMERATED JER support. Example:
+/// `is_enumerated_name("sELF")` returns true.
+fn is_enumerated_name(name: &str) -> bool {
+    let mut bytes = name.bytes();
+    if !bytes.next().is_some_and(|byte| byte.is_ascii_alphabetic()) {
+        return false;
+    }
+    let mut previous_hyphen = false;
+    for byte in bytes {
+        if byte == b'-' {
+            if previous_hyphen {
+                return false;
+            }
+            previous_hyphen = true;
+        } else if byte.is_ascii_alphanumeric() {
+            previous_hyphen = false;
+        } else {
+            return false;
+        }
+    }
+    !previous_hyphen
+}
+
+/// Create the static error for an invalid ENUMERATED root-name table.
+///
+/// # Parameters and returns
+/// No parameters. Returns an `InvalidEncoding` error for a malformed mapping.
+///
+/// # Errors
+/// This helper constructs an error and cannot itself fail or raise an exception.
+///
+/// # Source, version, history, and example
+/// Original source: new bounded ENUMERATED JER helper. Version/date:
+/// 2026-10-30. Responsible party: asn1c maintainers. History: added with
+/// ENUMERATED JER support. Example: return `Err(invalid_enumerated_mapping())`.
+const fn invalid_enumerated_mapping() -> Error {
+    Error::InvalidEncoding {
+        reason: "ENUMERATED JER root-name mapping is invalid",
+    }
+}
+
+/// Create the static error for a malformed or unknown ENUMERATED JSON string.
+///
+/// # Parameters and returns
+/// No parameters. Returns an `InvalidEncoding` error for an invalid token.
+///
+/// # Errors
+/// This helper constructs an error and cannot itself fail or raise an exception.
+///
+/// # Source, version, history, and example
+/// Original source: new strict complete-input JER helper. Version/date:
+/// 2026-10-30. Responsible party: asn1c maintainers. History: added with
+/// ENUMERATED JER support. Example: return `Err(invalid_enumerated_token())`.
+const fn invalid_enumerated_token() -> Error {
+    Error::InvalidEncoding {
+        reason: "expected one complete known ENUMERATED JSON string",
+    }
 }
 
 /// Allocate and populate an encoded ASCII JSON token under output/work limits.
@@ -849,6 +1050,119 @@ mod tests {
         };
         assert!(matches!(
             encode_null_jer(&encode_work_limited),
+            Err(Error::LimitExceeded {
+                resource: Resource::WorkBits,
+                ..
+            })
+        ));
+    }
+
+    /// Verify ENUMERATED names use compact C-compatible JSON string tokens.
+    ///
+    /// # Parameters and returns
+    /// No parameters or return value; checks declaration-order mapping and
+    /// complete-input consumption.
+    ///
+    /// # Errors and panics
+    /// Panics only when an assertion fails.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: ENUMERATED JER mapping in `skeletons/ENUMERATED_jer.c`.
+    /// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+    /// History: added with bounded ENUMERATED JER support. Example: run cargo test.
+    #[test]
+    fn enumerated_names_encode_and_decode() {
+        let names = ["blue", "red", "sELF"];
+        let encoded = encode_enumerated_jer(1, &names, &limits()).unwrap();
+        assert_eq!(encoded.bytes, b"\"red\"");
+        assert_eq!(encoded.bit_len, 40);
+
+        let decoded = decode_enumerated_jer(b" \n\"sELF\"\t", &names, &limits()).unwrap();
+        assert_eq!(decoded.value, 2);
+        assert_eq!(decoded.consumed_bytes, 9);
+        assert_eq!(decoded.consumed_bits, 72);
+    }
+
+    /// Reject malformed ENUMERATED strings, duplicate tables, and exhausted budgets.
+    ///
+    /// # Parameters and returns
+    /// No parameters or return value; exercises hostile complete-input cases.
+    ///
+    /// # Errors and panics
+    /// Panics only when an invalid token is unexpectedly accepted.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: strict complete-input JER requirements. Version/date:
+    /// 2026-10-30. Responsible party: asn1c maintainers. History: added with
+    /// ENUMERATED JER support. Example: run cargo test.
+    #[test]
+    fn enumerated_rejects_invalid_tokens_mappings_and_limits() {
+        let names = ["blue", "red"];
+        for token in [
+            b"".as_slice(),
+            b"\"red",
+            b"red\"",
+            b"\"unknown\"",
+            b"\"red\"x",
+            b"\"red\" \"blue\"",
+            b"\"r\\u0065d\"",
+            b"\"\xff\"",
+        ] {
+            assert!(
+                decode_enumerated_jer(token, &names, &limits()).is_err(),
+                "accepted {token:?}"
+            );
+        }
+        assert!(encode_enumerated_jer(2, &names, &limits()).is_err());
+        assert!(encode_enumerated_jer(0, &["bad\"name"], &limits()).is_err());
+        assert!(encode_enumerated_jer(0, &["red-"], &limits()).is_err());
+        assert!(encode_enumerated_jer(0, &["red--blue"], &limits()).is_err());
+        assert!(encode_enumerated_jer(0, &["blue", "bad\"name"], &limits()).is_err());
+        assert!(encode_enumerated_jer(0, &["red", "red"], &limits()).is_err());
+        assert!(decode_enumerated_jer(b"\"red\"", &["red", "red"], &limits()).is_err());
+        let too_many_names = vec!["red"; MAX_JER_ENUMERATED_VARIANTS + 1];
+        assert!(encode_enumerated_jer(0, &too_many_names, &limits()).is_err());
+        assert!(decode_enumerated_jer(b"\"red\"", &too_many_names, &limits()).is_err());
+
+        let input_limited = Limits {
+            max_input_bytes: 4,
+            ..limits()
+        };
+        assert!(matches!(
+            decode_enumerated_jer(b"\"red\"", &names, &input_limited),
+            Err(Error::LimitExceeded {
+                resource: Resource::InputBytes,
+                ..
+            })
+        ));
+        let work_limited = Limits {
+            max_work_bits: 327,
+            ..limits()
+        };
+        assert!(matches!(
+            decode_enumerated_jer(b"\"red\"", &names, &work_limited),
+            Err(Error::LimitExceeded {
+                resource: Resource::WorkBits,
+                ..
+            })
+        ));
+        let output_limited = Limits {
+            max_output_bytes: 4,
+            ..limits()
+        };
+        assert!(matches!(
+            encode_enumerated_jer(1, &names, &output_limited),
+            Err(Error::LimitExceeded {
+                resource: Resource::OutputBytes,
+                ..
+            })
+        ));
+        let encode_work_limited = Limits {
+            max_work_bits: 215,
+            ..limits()
+        };
+        assert!(matches!(
+            encode_enumerated_jer(0, &names, &encode_work_limited),
             Err(Error::LimitExceeded {
                 resource: Resource::WorkBits,
                 ..

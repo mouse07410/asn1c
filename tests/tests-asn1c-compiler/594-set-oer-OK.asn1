@@ -1,0 +1,28 @@
+-- OK: Non-extensible SET values use canonical OER tag order.
+
+ModuleSetOER
+DEFINITIONS IMPLICIT TAGS ::= BEGIN
+
+OerSet ::= SET {
+    later       [2] INTEGER (0..255) OPTIONAL,
+    defaulted   [1] INTEGER (0..255) DEFAULT 7,
+    first       [0] INTEGER (0..255)
+}
+
+Pick ::= CHOICE {
+    pickHigh [3] INTEGER (0..255),
+    pickLow  [1] INTEGER (0..255)
+}
+
+ChoiceSet ::= SET {
+    high   [2] INTEGER (0..255),
+    picked Pick,
+    low    [0] BOOLEAN
+}
+
+ExtensibleSet ::= SET {
+    first [0] INTEGER (0..255),
+    ...
+}
+
+END

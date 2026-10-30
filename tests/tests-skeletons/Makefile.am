@@ -36,9 +36,11 @@ check_PROGRAMS =                \
     check-CER-work              \
     check-CER-scratch           \
     check-OER-support           \
+    check-OER-OPEN-TYPE         \
     check-OER-INTEGER           \
     check-OER-NativeEnumerated  \
     check-APER-support          \
+    check-APER-SET              \
     check-APER-OCTET_STRING     \
     check-APER-INTEGER		\
     check-APER-INTEGER-constraint \
@@ -213,6 +215,8 @@ check_CER_scratch_CPPFLAGS = \
 check_CER_scratch_LDADD = $(LDADD)
 check_runtime_encoding_failures_SOURCES = check-runtime-encoding-failures.c
 check_runtime_encoding_failures_LDADD = $(LDADD)
+check_OER_OPEN_TYPE_SOURCES = check-OER-OPEN-TYPE.c
+check_OER_OPEN_TYPE_LDADD = $(LDADD)
 
 #Filter out the coverage options from CFLAGS as we don't need
 #code coverage data for the tests executables

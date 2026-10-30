@@ -48,8 +48,8 @@ asn_TYPE_operation_t asn_OP_SET = {
     0,
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 #if !defined(ASN_DISABLE_OER_SUPPORT)
-    0,  /* SET_decode_oer */
-    0,  /* SET_encode_oer */
+    SET_decode_oer,
+    SET_encode_oer,
 #else
     0,
     0,
@@ -67,8 +67,8 @@ asn_TYPE_operation_t asn_OP_SET = {
     0,
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) */
 #if !defined(ASN_DISABLE_APER_SUPPORT)
-    0,  /* SET_decode_aper */
-    0,  /* SET_encode_aper */
+    SET_decode_aper,
+    SET_encode_aper,
 #else
     0,
     0,
@@ -579,11 +579,24 @@ void
 SET_free(const asn_TYPE_descriptor_t *td, void *ptr,
          enum asn_struct_free_method method) {
     size_t edx;
+    const asn_SET_specifics_t *specs;
 
 	if(!td || !ptr)
 		return;
 
 	ASN_DEBUG("Freeing %s as SET", td->name);
+
+    /* Only the OER member phase owns ctx->ptr; XER may store a borrowed
+     * descriptor there in other phases. Release interrupted OER preambles. */
+    specs = (const asn_SET_specifics_t *)td->specifics;
+    if(specs && specs->ctx_offset <= specs->struct_size
+    && sizeof(asn_struct_ctx_t) <= specs->struct_size - specs->ctx_offset) {
+        asn_struct_ctx_t *ctx = (asn_struct_ctx_t *)((char *)ptr + specs->ctx_offset);
+        if(ctx->phase == ASN_SET_OER_PHASE_MEMBERS) {
+            FREEMEM(ctx->ptr);
+            ctx->ptr = 0;
+        }
+    }
 
 	for(edx = 0; edx < td->elements_count; edx++) {
 		asn_TYPE_member_t *elm = &td->elements[edx];

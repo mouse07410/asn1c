@@ -90,6 +90,8 @@ libasn1cskeletons_la_SOURCES =                  \
     constr_SEQUENCE_oer.c                       \
     constr_SEQUENCE_OF.c constr_SEQUENCE_OF.h   \
     constr_SET.c constr_SET.h                   \
+    constr_SET_aper.c                            \
+    constr_SET_oer.c                             \
     constr_SET_OF.c constr_SET_OF.h             \
     constr_SET_OF_oer.c                         \
     constr_TYPE.c constr_TYPE.h                 \

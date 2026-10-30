@@ -411,6 +411,30 @@ if ! (cd "$enum_out" && CARGO_TARGET_DIR="$test_tmp/target-enum" \
     echo "FAIL: generated ENUMERATED tests or strict Clippy"
     exit 1
 fi
+
+# ENUMERATED JER is opt-in and maps each root name to a complete JSON string.
+enum_jer_out="$test_tmp/enum-jer"
+"$asn1c_bin" --rust -gen-JER -no-gen-UPER -no-gen-CER \
+    -S "$skeletons" -D "$enum_jer_out" "$test_srcdir/EnumSlice.asn1"
+grep -F 'pub fn encode_jer' "$enum_jer_out/src/enum_slice.rs" >/dev/null
+grep -F 'pub fn decode_jer' "$enum_jer_out/src/enum_slice.rs" >/dev/null
+if grep -E 'pub fn (encode|decode)_(uper|cer)' \
+    "$enum_jer_out/src/enum_slice.rs" >/dev/null; then
+    echo "FAIL: ENUMERATED JER-only selection generated UPER or CER methods"
+    exit 1
+fi
+mkdir "$enum_jer_out/tests"
+cp "$test_srcdir/enum_jer_conformance.rs" "$enum_jer_out/tests/enum_jer_conformance.rs"
+if ! (cd "$enum_jer_out" && CARGO_TARGET_DIR="$test_tmp/target-enum-jer" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-enum-jer" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/check-enum-jer.log" 2>&1; then
+    cat "$test_tmp/check-enum-jer.log"
+    echo "FAIL: generated ENUMERATED JER tests or strict Clippy"
+    exit 1
+fi
 enum_c_out="$test_tmp/enum-c"
 mkdir "$enum_c_out"
 "$asn1c_bin" -S "$skeletons" -gen-UPER -no-gen-XER -no-gen-JER \
@@ -444,7 +468,8 @@ fi
 test ! -e "$test_tmp/rejected-sequence-oer"
 sequence_out="$test_tmp/sequence-uper"
 "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$sequence_out" \
-    "$test_srcdir/SequenceSlice.asn1" "$test_srcdir/SequenceOptional.asn1"
+    "$test_srcdir/SequenceSlice.asn1" "$test_srcdir/SequenceOptional.asn1" \
+    "$test_srcdir/SequenceDefaults.asn1"
 mkdir "$sequence_out/tests"
 cp "$test_srcdir/sequence_conformance.rs" "$sequence_out/tests/sequence_conformance.rs"
 if ! (cd "$sequence_out" && CARGO_TARGET_DIR="$test_tmp/target-sequence" \
@@ -464,7 +489,7 @@ mkdir "$sequence_c_out"
     -no-gen-CBOR -no-gen-OER -no-gen-APER -no-gen-print \
     -no-gen-random-fill -fwide-types -pdu=all -fgen-only-pdu-deps \
     -no-gen-example -D "$sequence_c_out" "$test_srcdir/SequenceSlice.asn1" \
-    "$test_srcdir/SequenceOptional.asn1" \
+    "$test_srcdir/SequenceOptional.asn1" "$test_srcdir/SequenceDefaults.asn1" \
     >"$test_tmp/sequence-c-generate.log" 2>&1
 sequence_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
     "$sequence_c_out/Makefile.am.libasncodec")
@@ -475,28 +500,56 @@ if ! cc $sequence_cflags -I"$sequence_c_out" "$sequence_c_out"/*.c \
     exit 1
 fi
 "$test_tmp/c-sequence"
-cat >"$test_tmp/SequenceDefault.asn1" <<'EOF'
-SequenceDefault DEFINITIONS ::= BEGIN
-DefaultPacket ::= SEQUENCE { value BOOLEAN DEFAULT FALSE }
+cat >"$test_tmp/SequenceTopTagged.asn1" <<'EOF'
+SequenceTopTagged DEFINITIONS ::= BEGIN
+TaggedPacket ::= [0] IMPLICIT BOOLEAN
 END
 EOF
-cat >"$test_tmp/SequenceTagged.asn1" <<'EOF'
-SequenceTagged DEFINITIONS ::= BEGIN
-TaggedPacket ::= SEQUENCE { value [0] BOOLEAN OPTIONAL }
-END
-EOF
-for fixture in SequenceNested SequenceExtension SequenceDefault SequenceTagged; do
+for fixture in SequenceNested SequenceExtension; do
     rejected_out="$test_tmp/rejected-$fixture"
     fixture_path="$test_srcdir/$fixture.asn1"
-    if [ "$fixture" = SequenceDefault ] || [ "$fixture" = SequenceTagged ]; then
-        fixture_path="$test_tmp/$fixture.asn1"
-    fi
     if "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$rejected_out" \
         "$fixture_path" >"$test_tmp/rejected-$fixture.log" 2>&1; then
         echo "FAIL: Rust backend accepted unsupported $fixture fields"
         exit 1
     fi
     grep -F 'SEQUENCE field' "$test_tmp/rejected-$fixture.log" >/dev/null
+    test ! -e "$rejected_out"
+done
+
+# Direct AUTOMATIC TAGS on SEQUENCE members are ignored by PER; top-level tags
+# remain outside the Rust subset and are rejected before output publication.
+if "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/rejected-top-level-tag" "$test_tmp/SequenceTopTagged.asn1" \
+    >"$test_tmp/rejected-top-level-tag.log" 2>&1; then
+    echo "FAIL: Rust backend accepted a top-level tagged type"
+    exit 1
+fi
+grep -F 'explicit type tags are not supported' \
+    "$test_tmp/rejected-top-level-tag.log" >/dev/null
+test ! -e "$test_tmp/rejected-top-level-tag"
+
+# Unsupported DEFAULT value types and out-of-range integer literals fail closed.
+cat >"$test_tmp/SequenceDefaultBadType.asn1" <<'EOF'
+SequenceDefaultBadType DEFINITIONS ::= BEGIN
+BadType ::= SEQUENCE { value BOOLEAN DEFAULT 1 }
+END
+EOF
+cat >"$test_tmp/SequenceDefaultOutOfRange.asn1" <<'EOF'
+SequenceDefaultOutOfRange DEFINITIONS ::= BEGIN
+OutOfRange ::= SEQUENCE { value INTEGER (0..3) DEFAULT 4 }
+END
+EOF
+for fixture in SequenceDefaultBadType SequenceDefaultOutOfRange; do
+    rejected_out="$test_tmp/rejected-$fixture"
+    if "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" \
+        -D "$rejected_out" "$test_tmp/$fixture.asn1" \
+        >"$test_tmp/rejected-$fixture.log" 2>&1; then
+        echo "FAIL: Rust backend accepted invalid $fixture"
+        exit 1
+    fi
+    grep -F 'DEFAULT needs a literal BOOLEAN or in-range bounded INTEGER' \
+        "$test_tmp/rejected-$fixture.log" >/dev/null
     test ! -e "$rejected_out"
 done
 

@@ -189,6 +189,7 @@ NativeInteger.h NativeInteger_oer.c
 NativeEnumerated.h NativeEnumerated_oer.c
 constr_CHOICE.h constr_CHOICE_oer.c
 constr_SEQUENCE.h constr_SEQUENCE_oer.c asn_bit_data.h
+constr_SET.h constr_SET_oer.c asn_bit_data.h OPEN_TYPE.h
 constr_SET_OF.h constr_SET_OF_oer.c
 BOOLEAN.h BOOLEAN_oer.c
 ENUMERATED.h ENUMERATED_oer.c
@@ -263,6 +264,7 @@ constr_CHOICE.h constr_CHOICE_aper.c
 constr_SEQUENCE_OF.h constr_SEQUENCE_OF_aper.c
 constr_SEQUENCE.h constr_SEQUENCE_aper.c
 constr_SET_OF.h constr_SET_OF_aper.c
+constr_SET.h constr_SET_aper.c OPEN_TYPE.h aper_opentype.h
 
 PRINT:			# THIS IS A SPECIAL SECTION
 BIT_STRING.h BIT_STRING_print.c

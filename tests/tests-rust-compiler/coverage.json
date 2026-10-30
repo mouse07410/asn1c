@@ -171,11 +171,16 @@
     },
     {
       "asn1_type": "SEQUENCE",
-      "feature": "flat required or OPTIONAL direct primitive and fixed string fields; UPER-only selection",
+      "feature": "flat required or OPTIONAL direct fields plus literal BOOLEAN and bounded INTEGER DEFAULT; UPER-only selection",
       "codec": "UPER",
       "variants": [
         "cross-byte field packing",
         "declaration-order OPTIONAL presence bitmap and absent fields",
+        "declaration-order DEFAULT presence bits interleaved with OPTIONAL fields",
+        "AUTOMATIC TAGS on direct SEQUENCE components ignored by UPER",
+        "DEFAULT payload omission and literal substitution",
+        "present values equal to DEFAULT accepted by the decoder",
+        "literal DEFAULT range/type rejection before publication",
         "nine-bit presence bitmap crossing an octet boundary",
         "zero-width member and complete-value filler",
         "full signed i64 INTEGER range",
@@ -186,7 +191,7 @@
         "decode"
       ],
       "status": "tested_flat_constructed_subset",
-      "evidence": "sequence_conformance.rs; c_sequence.c; asn1c-runtime/src/uper_cursor.rs tests"
+      "evidence": "sequence_conformance.rs; c_sequence.c; asn1c-runtime/src/uper_cursor.rs tests; C UPER encode/decode vectors"
     },
     {
       "asn1_type": "OCTET STRING, BIT STRING",
@@ -239,6 +244,22 @@
       ],
       "status": "tested_with_live_C_comparison",
       "evidence": "enum_conformance.rs; c_enum.c; EnumSlice.asn1"
+    },
+    {
+      "asn1_type": "ENUMERATED",
+      "feature": "direct nonextensible root values, at most 64 members; JER uses the declared ASN.1 identifier",
+      "codec": "JER",
+      "variants": [
+        "compact quoted-name tokens matching the C mapping",
+        "complete-input decode with JSON whitespace",
+        "unknown-name, escape, trailing-data, and resource-limit rejection"
+      ],
+      "directions": [
+        "encode",
+        "decode"
+      ],
+      "status": "tested",
+      "evidence": "enum_jer_conformance.rs; asn1c-runtime/src/jer.rs tests; EnumSlice.asn1"
     }
   ],
   "not_yet_implemented_by_this_Rust_slice": [
@@ -255,7 +276,7 @@
     {
       "family": "XER/CBOR and JER outside the primitive slice",
       "status": "not_implemented",
-      "note": "XER and CBOR are unavailable; JER is qualified only for the listed top-level primitives."
+      "note": "XER and CBOR are unavailable; JER is qualified for listed primitive and direct ENUMERATED types."
     },
     {
       "family": "constructed outside flat UPER SEQUENCE, variable-size or named-bit strings, CHOICE, extensible ENUMERATED, REAL, open types",
@@ -281,9 +302,9 @@
   "compiler_boundary_checks": {
     "rejected_before_output": [
       "aliases and imports",
-      "explicit tags and encoding controls",
+      "top-level explicit tags and encoding controls",
       "unconstrained, extensible, union, and named-number INTEGER",
-      "DEFAULT, nested, extensible, tagged, and otherwise unsupported constructed types and module-name sanitization collisions",
+      "unsupported DEFAULT forms, nested, extensible, and otherwise unsupported constructed types and module-name sanitization collisions",
       "duplicate --rust selectors and disabling all Rust codecs",
       "an incomplete runtime asset set beside explicit skeletons",
       "unsupported XER/CBOR codecs, unsupported JER type combinations, and C-layout selectors",
@@ -303,7 +324,7 @@
     ]
   },
   "observed_counts": {
-    "generated_rust_test_functions": 37,
+    "generated_rust_test_functions": 43,
     "live_c_rust_vectors_each_direction": 8,
     "single_octet_mutation_inputs": 768,
     "JER_single_octet_mutation_inputs": 256,

@@ -1,4 +1,23 @@
 Changes since v1.5.3:
+	* Corrected C OER table-selected open-type cleanup for incomplete and
+	  failed CHOICE-wrapper decoding. Added ownership and malformed-input
+	  regressions, including truncated length determinants.
+	* Added literal BOOLEAN and bounded INTEGER DEFAULT fields to the
+	  generated Rust flat SEQUENCE UPER slice. Presence bits share the
+	  OPTIONAL bitmap, absent defaults are restored, and C wire interop
+	  covers omitted and explicit-present default values. Direct component
+	  tags, including AUTOMATIC TAGS, are accepted for UPER-only SEQUENCE.
+	* Added C OER and APER encode/decode operations for nonextensible SET,
+	  with canonical root tag order, optional/default presence handling,
+	  streaming OER decode, APER member alignment, and generated-code
+	  regressions. Extensible SET and table-selected open-type members
+	  remain unsupported by these codecs.
+	* Fixed C UPER SET ordering when an untagged CHOICE extension
+	  alternative has a lower tag than its root alternatives. The
+	  canonical root map now determines order; added a wire regression.
+	* Added opt-in Rust JER encoding and strict complete-input decoding
+	  for direct nonextensible ENUMERATED names, with generated-code and
+	  malformed-input tests.
 	* Added opt-in Rust JER encoding and complete-input decoding for direct
 	  BOOLEAN, NULL, and finite bounded signed i64 INTEGER assignments.
 	  The JSON primitives use compact tokens and enforce input, output, and

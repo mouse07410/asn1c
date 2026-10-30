@@ -23,19 +23,25 @@ each codec alone and together, runs generated Rust vectors and malformed-input
 checks, and compares selected APER/OER bytes with a separately generated C
 fixture. Runtime tests cover additional alignment and integer-width edges.
 
-The opt-in JER primitive slice checks compact BOOLEAN, NULL, and bounded
-INTEGER tokens, complete-input decoding, JSON whitespace, invalid numbers,
-truncation, and resource limits. Generated C code independently encodes fixed
-tokens and decodes Rust-generated JSON files for bidirectional comparison.
+The opt-in JER slice checks compact BOOLEAN, NULL, bounded INTEGER, and
+nonextensible ENUMERATED tokens. ENUMERATED values map to their ASN.1 names as
+JSON strings; decoding accepts JSON whitespace and requires one complete,
+known string. Tests reject unknown names, escapes, trailing JSON values, and
+input/output/work limit violations. Generated C code independently encodes
+fixed primitive tokens and decodes Rust-generated JSON files for comparison.
 
 The UPER-only SEQUENCE slice packs required and OPTIONAL direct BOOLEAN, NULL,
-bounded INTEGER, and fixed string fields with one bit cursor and one cumulative
-resource budget. Tests cover declaration-order presence bits, absent and present
-fields, a nine-bit bitmap crossing an octet, cross-byte packing, zero-width
-fields and whole-value filler, full
-`i64` bounds, spare codes, truncation, and exact work/input/output ceilings.
-Default UPER/CER selection rejects SEQUENCE until CER support exists; DEFAULT,
-nested, tagged, and extensible fields are rejected before publishing output.
+bounded INTEGER, and fixed string fields, plus literal BOOLEAN and bounded
+INTEGER DEFAULT fields, with one bit cursor and one cumulative resource budget.
+Tests cover declaration-order OPTIONAL/DEFAULT presence bits, omitted and
+present defaults, an OPTIONAL interleaved bitmap crossing an octet, cross-byte
+packing, zero-width fields and whole-value filler, full `i64` bounds, truncation,
+and exact work/input/output ceilings. The C fixture checks both C encoding of
+Rust vectors and C decoding of a Rust-compatible present-default vector.
+Default UPER/CER selection rejects SEQUENCE until CER support exists; unsupported
+DEFAULT forms, nested, extensible fields, and top-level tagged types fail before
+publication. The automatic component tags in `SequenceDefaults.asn1` are covered
+by live C encode/decode parity vectors.
 The fixed-size string fixture covers standalone OCTET STRING and BIT STRING,
 zero-sized values, bit packing inside a mixed SEQUENCE, malformed lengths and
 pad bits, truncation, and whole-operation budgets. It also checks that the

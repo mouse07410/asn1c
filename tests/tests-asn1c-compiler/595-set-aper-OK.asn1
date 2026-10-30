@@ -1,0 +1,16 @@
+-- OK: Generated non-extensible SET descriptors expose APER operations and maps.
+
+ModuleSetAPER DEFINITIONS IMPLICIT TAGS ::= BEGIN
+
+APerSet ::= SET {
+    flag   [3] BOOLEAN DEFAULT TRUE,
+    number [1] INTEGER (0..255)
+}
+
+-- Class order puts UNIVERSAL before CONTEXT even though its packed tag is larger.
+CrossClass ::= SET {
+    context [0] BOOLEAN,
+    universal INTEGER (0..255)
+}
+
+END

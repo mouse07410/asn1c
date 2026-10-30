@@ -150,8 +150,36 @@ rejects input that does not match them.
 
 ## Other binary families
 
-No additional mismatch was found between the generic binary selectors and their
-implemented codec families. Basic/canonical OER and PER decode selectors share
+### C SET support in OER and APER
+
+The C `SET` operation table now has OER and APER encoders and decoders for
+nonextensible `SET` types. Root members and their optionality bits follow
+canonical tag order. An untagged `CHOICE` is placed by its lowest root
+alternative tag, even when another alternative is selected or an extension
+alternative has a lower tag. The OER decoder supports input split across
+calls and frees its retained presence map when an incomplete value is freed.
+The APER codec uses child APER operations, including aligned member
+encodings. Both reject extensible `SET` descriptors and table-selected open
+types cleanly. An open component can precede its selector in canonical SET
+order; decoding that form requires deferred component resolution.
+The shared OER open-type decoder now releases incomplete or failed CHOICE
+wrappers through their descriptor, with a focused malformed-input regression.
+Generated schemas with extension additions, including trailing roots after a
+second extension marker, need additional root/addition metadata and remain
+outside SET OER, APER, and UPER support.
+
+The focused generated C regressions are
+[check-593](../tests/tests-c-compiler/check-src/check-593.-gen-UPER.c),
+[check-594](../tests/tests-c-compiler/check-src/check-594.-gen-OER.c), and
+[check-595](../tests/tests-asn1c-compiler/595-set-aper-OK.asn1).
+They exercise canonical ordering, presence/default handling, streaming OER,
+single-flavor generated dependencies, malformed input and metadata, and
+unsupported extensions. The runtime APER tests also cover alignment and
+truncated input. The root ordering follows [X.691 section 21][x691], while
+OER SET ordering follows [X.696 section 18][x696].
+
+The generic binary selectors map to their implemented codec families.
+Basic/canonical OER and PER decode selectors share
 the same family entrypoint. The DER decode selector shares the permissive BER
 decoder and is not a strict canonicality check; the CER selector is strict.
 
@@ -251,3 +279,5 @@ disabled-build cases in
 [check-CER.sh](../tests/tests-asn1c-smoke/check-CER.sh).
 
 [x690]: https://www.itu.int/rec/dologin_pub.asp?id=T-REC-X.690-201508-S%21%21PDF-E&lang=e&type=items
+[x691]: https://www.itu.int/rec/dologin_pub.asp?id=T-REC-X.691-202102-I%21%21PDF-E&lang=e&type=items
+[x696]: https://www.itu.int/rec/dologin_pub.asp?id=T-REC-X.696-202102-I%21%21PDF-E&lang=e&type=items
