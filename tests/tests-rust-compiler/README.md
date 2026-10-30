@@ -23,6 +23,13 @@ each codec alone and together, runs generated Rust vectors and malformed-input
 checks, and compares selected APER/OER bytes with a separately generated C
 fixture. Runtime tests cover additional alignment and integer-width edges.
 
+The UPER-only SEQUENCE slice packs required direct BOOLEAN, NULL, and bounded
+INTEGER fields with one bit cursor and one cumulative resource budget. Tests
+cover cross-byte packing, zero-width fields and whole-value filler, full `i64`
+bounds, spare codes, truncation, and exact work/input/output ceilings. Default
+UPER/CER selection rejects SEQUENCE until CER support exists; optional and
+nested fields are also rejected before publishing output.
+
 The harness covers codec selection as well as wire behavior. The default Rust
 mask contains UPER and CER; `-gen-UPER` retains both, `-no-gen-UPER` selects
 CER-only output, and `-no-gen-CER` leaves UPER enabled. `-gen-BER` adds BER/DER

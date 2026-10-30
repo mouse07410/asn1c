@@ -1,0 +1,5 @@
+SequenceExtension DEFINITIONS ::= BEGIN
+
+ExtendedPacket ::= SEQUENCE { flag BOOLEAN, ... }
+
+END

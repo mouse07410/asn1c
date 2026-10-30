@@ -68,7 +68,8 @@ rust_out="$test_tmp/generated-rust"
 "$asn1c_bin" --rust -S "$skeletons" -D "$rust_out" \
     "$test_srcdir/FirstSlice.asn1"
 for generated in Cargo.toml src/lib.rs src/first_slice.rs runtime/Cargo.toml \
-    runtime/LICENSE runtime/src/lib.rs runtime/src/aper.rs runtime/src/oer.rs; do
+    runtime/LICENSE runtime/src/lib.rs runtime/src/aper.rs runtime/src/oer.rs \
+    runtime/src/uper_cursor.rs; do
     if [ ! -f "$rust_out/$generated" ]; then
         echo "FAIL: generated Rust crate lacks $generated"
         exit 1
@@ -289,6 +290,69 @@ if ! (cd "$additional_out" && CARGO_TARGET_DIR="$test_tmp/target-aper-oer" \
     exit 1
 fi
 
+# Flat required-field SEQUENCE is qualified only for an explicit UPER-only mask.
+if "$asn1c_bin" --rust -S "$skeletons" -D "$test_tmp/rejected-sequence-default" \
+    "$test_srcdir/SequenceSlice.asn1" >"$test_tmp/rejected-sequence-default.log" 2>&1; then
+    echo "FAIL: default Rust codecs accepted a SEQUENCE without CER support"
+    exit 1
+fi
+test ! -e "$test_tmp/rejected-sequence-default"
+if "$asn1c_bin" --rust -gen-OER -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/rejected-sequence-oer" "$test_srcdir/SequenceSlice.asn1" \
+    >"$test_tmp/rejected-sequence-oer.log" 2>&1; then
+    echo "FAIL: Rust OER selection accepted a SEQUENCE without OER support"
+    exit 1
+fi
+test ! -e "$test_tmp/rejected-sequence-oer"
+sequence_out="$test_tmp/sequence-uper"
+"$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$sequence_out" \
+    "$test_srcdir/SequenceSlice.asn1"
+mkdir "$sequence_out/tests"
+cp "$test_srcdir/sequence_conformance.rs" "$sequence_out/tests/sequence_conformance.rs"
+if ! (cd "$sequence_out" && CARGO_TARGET_DIR="$test_tmp/target-sequence" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-sequence" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/check-sequence.log" 2>&1; then
+    cat "$test_tmp/check-sequence.log"
+    echo "FAIL: generated UPER SEQUENCE or strict Clippy"
+    exit 1
+fi
+# Compare the same complete vectors with separately generated C UPER code.
+sequence_c_out="$test_tmp/sequence-c"
+mkdir "$sequence_c_out"
+"$asn1c_bin" -S "$skeletons" -gen-UPER -no-gen-XER -no-gen-JER \
+    -no-gen-CBOR -no-gen-OER -no-gen-APER -no-gen-print \
+    -no-gen-random-fill -fwide-types -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$sequence_c_out" "$test_srcdir/SequenceSlice.asn1" \
+    >"$test_tmp/sequence-c-generate.log" 2>&1
+sequence_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$sequence_c_out/Makefile.am.libasncodec")
+if ! cc $sequence_cflags -I"$sequence_c_out" "$sequence_c_out"/*.c \
+    "$test_srcdir/c_sequence.c" -lm -o "$test_tmp/c-sequence" \
+    >"$test_tmp/c-sequence-compile.log" 2>&1; then
+    cat "$test_tmp/c-sequence-compile.log"
+    exit 1
+fi
+"$test_tmp/c-sequence"
+for fixture in SequenceOptional SequenceNested SequenceExtension; do
+    rejected_out="$test_tmp/rejected-$fixture"
+    if "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$rejected_out" \
+        "$test_srcdir/$fixture.asn1" >"$test_tmp/rejected-$fixture.log" 2>&1; then
+        echo "FAIL: Rust backend accepted unsupported $fixture fields"
+        exit 1
+    fi
+    if [ "$fixture" = SequenceExtension ]; then
+        grep -F 'SEQUENCE field needs BOOLEAN, NULL, or finite i64 INTEGER' \
+            "$test_tmp/rejected-$fixture.log" >/dev/null
+    else
+        grep -F 'SEQUENCE field must be a required direct untagged primitive' \
+            "$test_tmp/rejected-$fixture.log" >/dev/null
+    fi
+    test ! -e "$rejected_out"
+done
+
 # Unsupported C layout and inspection options must also reject before output.
 for option in -fnative-types -fwide-types -E; do
     option_name=$(printf '%s' "$option" | tr -cd '[:alnum:]')
@@ -305,12 +369,12 @@ for option in -fnative-types -fwide-types -E; do
 done
 
 # Unsupported ASN.1 types and ranges outside Rust i64 must fail before output.
-if "$asn1c_bin" --rust -S "$skeletons" -D "$test_tmp/rejected-sequence" \
+if "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$test_tmp/rejected-sequence" \
     "$test_srcdir/Unsupported.asn1" >"$test_tmp/rejected-sequence.log" 2>&1; then
     echo "FAIL: Rust backend accepted an unsupported SEQUENCE"
     exit 1
 fi
-grep -F 'parameterized, constructed, or object types are unsupported' \
+grep -F 'SEQUENCE field needs BOOLEAN, NULL, or finite i64 INTEGER' \
     "$test_tmp/rejected-sequence.log" >/dev/null
 if [ -e "$test_tmp/rejected-sequence" ]; then
     echo "FAIL: unsupported SEQUENCE created output before rejection"

@@ -184,6 +184,9 @@ UPER, CER, and opt-in APER/OER primitive codecs for BOOLEAN, NULL, and finite
 nonextensible INTEGER ranges fitting `i64`. Unsupported schemas, codec requests, and C-specific
 output options fail with diagnostics. Build the generated package with Cargo
 in offline mode.
+Flat SEQUENCE assignments with required direct primitive fields are supported
+when UPER is the only selected Rust codec (`-no-gen-CER`). A shared cursor
+enforces one resource budget across their fields.
 
 See [the initial implementation](docs/rust/implementation.md) for usage and
 limits, and [the conversion plan](docs/rust/README.md) for incremental delivery

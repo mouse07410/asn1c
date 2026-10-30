@@ -1,0 +1,5 @@
+SequenceNested DEFINITIONS ::= BEGIN
+
+NestedPacket ::= SEQUENCE { inner SEQUENCE { flag BOOLEAN } }
+
+END

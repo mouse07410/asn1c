@@ -1,0 +1,27 @@
+SequenceSlice DEFINITIONS ::= BEGIN
+
+Packet ::= SEQUENCE {
+    first BOOLEAN,
+    empty NULL,
+    count INTEGER (0..5),
+    fixed INTEGER (7..7),
+    last BOOLEAN
+}
+
+AllZero ::= SEQUENCE {
+    empty NULL,
+    fixed INTEGER (7..7)
+}
+
+CrossByte ::= SEQUENCE {
+    first BOOLEAN,
+    octet INTEGER (0..255),
+    last BOOLEAN
+}
+
+WideRecord ::= SEQUENCE {
+    wide INTEGER (-9223372036854775808..9223372036854775807),
+    tail BOOLEAN
+}
+
+END

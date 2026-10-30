@@ -12,6 +12,8 @@ The user authorized backend implementation on 2026-10-11. The selected mode is
 current generated-code slice supports UPER encode/decode, CER encode/strict
 decode, and opt-in APER/OER encode/decode or BER decode/DER encode for BOOLEAN, NULL, and bounded
 nonextensible INTEGER. Other types and codecs remain conversion targets.
+An explicit UPER-only selection also supports flat SEQUENCE assignments with
+required direct primitive fields and one cumulative resource budget.
 
 Start with the [architecture decision](architecture.md) and
 [implementation plan](stage-one-plan.md). Supporting designs describe the

@@ -1,4 +1,9 @@
 Changes since v1.5.3:
+	* Added operation-wide UPER reader/writer budgets for composed fields and
+	  generated Rust support for flat SEQUENCE assignments with required direct
+	  BOOLEAN, NULL, and finite i64 INTEGER fields under UPER-only selection.
+	  Each field charges its wire bits plus eight work units, including zero-bit
+	  fields. Added packing, boundary, malformed-input, and budget regressions.
 	* Added opt-in generated Rust APER and OER encoding/decoding for direct
 	  BOOLEAN, NULL, and finite nonextensible signed i64 INTEGER assignments.
 	  Added bounded runtime primitives, malformed-input and range-boundary

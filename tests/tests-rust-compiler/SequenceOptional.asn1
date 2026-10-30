@@ -1,0 +1,5 @@
+SequenceOptional DEFINITIONS ::= BEGIN
+
+OptionalPacket ::= SEQUENCE { maybe BOOLEAN OPTIONAL }
+
+END

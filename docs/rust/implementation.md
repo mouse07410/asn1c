@@ -27,6 +27,14 @@ asn1c --rust -no-gen-UPER -D generated schema.asn1
 cargo check --offline --manifest-path generated/Cargo.toml
 ```
 
+For a flat SEQUENCE of required direct BOOLEAN, NULL, and finite bounded
+INTEGER fields, select UPER alone:
+
+```sh
+asn1c --rust -no-gen-CER -D generated schema.asn1
+cargo check --offline --manifest-path generated/Cargo.toml
+```
+
 For a source checkout, select its matching assets explicitly when necessary:
 
 ```sh
@@ -52,12 +60,13 @@ fresh directory after adding application code or running Cargo there.
 | Top-level NULL | UPER complete zero-width encoding and prefix decoding |
 | Direct bounded INTEGER | Nonextensible finite signed i64 range; UPER codecs |
 | Top-level BOOLEAN, NULL, bounded INTEGER | CER encoding; INTEGER bounds are finite, nonextensible, and fit `i64` |
-| Runtime limits | Input bytes, output bytes, and meaningful bit work |
+| Runtime limits | Input bytes, output bytes, and cumulative field work for composed UPER values |
+| Flat SEQUENCE | Required direct primitive fields; UPER-only encode/decode with shared cursor |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Strict CER decoding; canonical short-form TLV only |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in BER prefix decoding and DER encoding with `-gen-BER` |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in APER and OER encode/decode; each call begins at an octet boundary |
 | XER, JER, CBOR | Planned; unavailable in Rust mode |
-| Collections, strings, ENUMERATED, aliases, imports, tagged types | Planned; rejected in this slice |
+| SET, collections, strings, ENUMERATED, aliases, imports, tagged types | Planned; rejected in this slice |
 | Encoding controls, information objects, parameterized types | Planned; rejected in this slice |
 
 BOOLEAN and INTEGER wrappers expose constructors, value getters, and the
@@ -68,6 +77,12 @@ methods for the same subset when explicitly selected. NULL is a unit struct.
 INTEGER construction checks the
 declared range. Codecs return typed errors for malformed values, invalid
 constraints, exceeded limits, or allocation failure.
+Generated flat SEQUENCE structs expose their required fields directly. Their
+UPER methods pack fields without per-field padding and check one budget for the
+whole operation. Each field charges its wire bits plus eight work units, so
+NULL and singleton INTEGER fields still consume work budget. The entire decode
+slice counts toward the input-byte limit. Only a complete zero-width SEQUENCE
+uses one zero filler byte; a zero-width field inside a nonzero value adds none.
 
 CER and DER methods emit complete TLV byte strings. `Encoded.bit_len` is the encoded
 byte length multiplied by eight. `decode_cer` accepts only the exact universal
@@ -107,19 +122,19 @@ packages offline and checks CLI failures, schema gates, output ownership,
 repeat generation. Rust CI checks runtime formatting,
 unit tests, Clippy, generated codecs, and installed runtime packaging.
 
-The Rust runtime suite passes 27 tests, including APER/OER range transitions,
+The Rust runtime suite passes 35 tests, including composable UPER cursors and APER/OER range transitions,
 malformed-input, and limit cases. The generated Rust harness includes 12
-earlier conformance tests and two APER/OER wrapper tests,
+earlier conformance tests, two APER/OER wrapper tests, and five SEQUENCE tests,
 including C comparisons for UPER/CER/APER/OER and the matching primitive DER bytes,
 C decoding of Rust output, codec selection, and negative-schema checks.
 Runtime and generated crates pass pedantic and nursery Clippy with warnings
-denied. `make dist` includes both new runtime modules and test fixtures;
-`make install-data` installs the runtime modules. Hosted Rust CI has not yet run
+denied. `make dist` includes the APER, OER, and UPER cursor modules and their
+test fixtures; `make install-data` installs the runtime modules. Hosted Rust CI has not yet run
 for this extension. No minimum Rust compiler version is claimed.
 
 These are first-slice gates. The [test migration plan](testing.md) remains the
-stage-wide target; a composable cursor and budget model is needed before
-constructed types and open types. XER and JER remain unimplemented in the
+stage-wide target; optional/defaulted fields, nested constructed types, SET,
+and open types still need schema and codec support. XER and JER remain unimplemented in the
 Rust backend. The CER encoder is also only a
 first slice and does not establish whole-runtime parity. No minimum Rust
 compiler version is claimed.

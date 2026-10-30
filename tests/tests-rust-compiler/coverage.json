@@ -1,5 +1,5 @@
 {
-  "suite": "generated Rust primitive UPER, APER, OER, CER, and BER/DER slices",
+  "suite": "generated Rust primitive codecs and flat UPER SEQUENCE slice",
   "scope": "Only the listed nonextensible primitive subset is qualified.",
   "cases": [
     {
@@ -168,6 +168,23 @@
       ],
       "status": "tested_primitive_subset",
       "evidence": "additional_codecs.rs; asn1c-runtime/src/oer.rs tests; c_additional.c"
+    },
+    {
+      "asn1_type": "SEQUENCE",
+      "feature": "flat required direct BOOLEAN, NULL, and finite bounded i64 INTEGER fields; UPER-only selection",
+      "codec": "UPER",
+      "variants": [
+        "cross-byte field packing",
+        "zero-width member and complete-value filler",
+        "full signed i64 INTEGER range",
+        "cumulative work and whole-input/output ceilings"
+      ],
+      "directions": [
+        "encode",
+        "decode"
+      ],
+      "status": "tested_flat_constructed_subset",
+      "evidence": "sequence_conformance.rs; asn1c-runtime/src/uper_cursor.rs tests"
     }
   ],
   "not_yet_implemented_by_this_Rust_slice": [
@@ -187,9 +204,9 @@
       "note": "No generated Rust encoder or decoder is qualified."
     },
     {
-      "family": "constructed, string, CHOICE, ENUMERATED, REAL, open types",
+      "family": "constructed outside flat UPER SEQUENCE, string, CHOICE, ENUMERATED, REAL, open types",
       "status": "outside_first_slice",
-      "note": "No Rust correctness or interoperability claim is made for these types."
+      "note": "No Rust correctness or interoperability claim is made beyond the listed flat SEQUENCE subset."
     },
     {
       "family": "extensible constraints and cross-codec conversion",
@@ -212,7 +229,7 @@
       "aliases and imports",
       "explicit tags and encoding controls",
       "unconstrained, extensible, union, and named-number INTEGER",
-      "unsupported constructed types and module-name sanitization collisions",
+      "optional, nested, extensible, tagged, and otherwise unsupported constructed types and module-name sanitization collisions",
       "duplicate --rust selectors and disabling all Rust codecs",
       "an incomplete runtime asset set beside explicit skeletons",
       "unsupported XER/JER/CBOR codecs and C-layout selectors"
@@ -229,7 +246,7 @@
     ]
   },
   "observed_counts": {
-    "generated_rust_test_functions": 14,
+    "generated_rust_test_functions": 19,
     "live_c_rust_vectors_each_direction": 8,
     "unsupported_target_or_schema_cases": 23,
     "single_octet_mutation_inputs": 768,

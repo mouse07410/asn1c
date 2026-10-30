@@ -151,14 +151,15 @@ control only in Rust codecs that implement its behavior.
    `libasn1compiler/asn1c_rust.c` and `asn1c_rust.h`, registered in
    `libasn1compiler/Makefile.am`. It validates the fixed tree before staging
    output. The current gate accepts top-level BOOLEAN, NULL, and bounded,
-   nonextensible INTEGER whose complete range fits `i64`.
+   nonextensible INTEGER whose complete range fits `i64`, plus flat required-field
+   SEQUENCE under an explicit UPER-only selection.
 6. Runtime sources now live under `rust/asn1c-runtime/` and are included in
    Automake distribution and package-data installation. The CLI resolves the
    runtime separately from `-S`, which still selects C skeletons and standard
    ASN.1 modules.
 7. Rust has a bounded identifier sanitizer and collision checker. Diagnostics
-   retain source module/type names and line numbers. The initial slice has no
-   member paths because it rejects constructed types.
+   retain source module/type names and line numbers. The flat SEQUENCE gate
+   validates member names, direct types, and required-field status.
 8. The generated-crate harness lives under
    `tests/tests-rust-compiler/`. It invokes the built compiler and checks the
    staged Cargo project. The first runtime has no third-party dependencies;
@@ -243,8 +244,9 @@ nonextensible INTEGER as a public newtype over `i64`. These types have UPER
 encode/decode methods and CER encode and strict decode methods. INTEGER must have one
 effective finite PER range that fits `i64`; `new(value)` returns `Result` and
 checks that range. The BOOLEAN constructor is infallible. Reject aliases,
-imports, tags, constructed types, unsupported constraints, and all other types
-before creating output. ENUMERATED, OCTET STRING, and BIT STRING remain future
+imports, tags, constructed types outside the flat UPER-only SEQUENCE slice,
+unsupported constraints, and all other types before creating output.
+ENUMERATED, OCTET STRING, and BIT STRING remain future
 increments.
 
 Use a safe, `std`-only runtime crate at `rust/asn1c-runtime/`, package name
@@ -377,7 +379,7 @@ The current Rust option handling is:
 | Option family | Rust handling |
 | --- | --- |
 | `-D` | Selects the output directory; Rust defaults to `asn1c-rust`. |
-| `-gen-*`, `-no-gen-*` | UPER and CER are default; BER/DER is opt-in for the primitive slice; other explicit requests fail. |
+| `-gen-*`, `-no-gen-*` | UPER and CER are default; APER/OER/BER are opt-in for primitives; flat SEQUENCE needs UPER alone. |
 | C storage/layout/output flags | Fail as incompatible with `--rust`. |
 | `-S` | Selects standard modules and resolves the matching runtime assets. |
 | `-P`, `-R`, C helper/example flags | Fail as incompatible with `--rust`. |

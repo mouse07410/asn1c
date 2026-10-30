@@ -19,6 +19,8 @@ use std::fmt;
 pub mod aper;
 /// Primitive Octet Encoding Rules (OER) codecs.
 pub mod oer;
+/// Composable UPER bit cursors with operation-wide resource accounting.
+pub mod uper_cursor;
 
 pub use aper::{
     decode_boolean_aper, decode_integer_aper, decode_null_aper, encode_boolean_aper,
@@ -28,6 +30,7 @@ pub use oer::{
     decode_boolean_oer, decode_integer_oer, decode_null_oer, encode_boolean_oer,
     encode_integer_oer, encode_null_oer,
 };
+pub use uper_cursor::{UperReader, UperWriter};
 
 /// Default maximum number of input bytes accepted by one operation (1 MiB).
 pub const DEFAULT_MAX_INPUT_BYTES: usize = 1024 * 1024;
@@ -41,16 +44,17 @@ pub const DEFAULT_MAX_WORK_BITS: usize = 8 * 1024 * 1024;
 /// Resource ceilings applied by each primitive operation.
 ///
 /// The byte limits apply to the complete provided input slice and the complete
-/// encoded output buffer. `max_work_bits` bounds meaningful UPER bits or total
-/// CER output bits processed by one operation. These finite defaults are
-/// configurable by each caller. APER and OER operations use the same ceilings.
+/// encoded output buffer. `max_work_bits` bounds primitive wire bits. For a
+/// composed UPER value, it bounds cumulative wire bits plus eight work units
+/// per field, including zero-width fields. These finite defaults are
+/// configurable by each caller. APER and OER use the same ceilings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Limits {
     /// Maximum size of the entire input slice accepted by a decode operation.
     pub max_input_bytes: usize,
     /// Maximum size of an encoded output buffer, including padding bytes.
     pub max_output_bytes: usize,
-    /// Maximum wire bits processed by one primitive operation.
+    /// Maximum primitive wire bits or composed UPER field work units.
     pub max_work_bits: usize,
 }
 

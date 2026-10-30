@@ -17,7 +17,7 @@
 #define rust_getpid() getpid()
 #endif
 
-/* The Rust primitive slice supports Boolean, NULL, and bounded INTEGER. */
+/* Direct primitives and flat required-field UPER SEQUENCE use this backend. */
 #define RUST_CODEC_UPER ((uint64_t)A1C_GEN_UPER)
 #define RUST_CODEC_BER ((uint64_t)A1C_GEN_BER)
 #define RUST_CODEC_CER ((uint64_t)A1C_GEN_CER)
@@ -29,6 +29,7 @@
 #define RUST_IDENTIFIER_LIMIT 80
 #define RUST_MANIFEST_LIMIT (1024 * 1024)
 #define RUST_MANIFEST_ENTRY_LIMIT 4096
+#define RUST_SEQUENCE_FIELD_LIMIT 64
 
 /*
  * Paths used while staging and validating a generated crate.
@@ -43,12 +44,15 @@ typedef struct rust_output_s {
 } rust_output_t;
 
 static char *rust_identifier(const char *, int);
-static int rust_check_tree(asn1p_t *);
-static int rust_check_module(asn1p_t *, asn1p_module_t *, int *);
+static int rust_check_tree(asn1p_t *, uint64_t);
+static int rust_check_module(asn1p_t *, asn1p_module_t *, int *, uint64_t);
 static int rust_check_module_name(asn1p_t *, asn1p_module_t *);
-static int rust_check_module_types(asn1p_module_t *, int *);
+static int rust_check_module_types(asn1p_module_t *, int *, uint64_t);
 static int rust_check_type_name(asn1p_module_t *, asn1p_expr_t *);
-static int rust_check_type(asn1p_module_t *, asn1p_expr_t *);
+static int rust_check_type(asn1p_module_t *, asn1p_expr_t *, uint64_t);
+static int rust_check_sequence(asn1p_module_t *, asn1p_expr_t *, uint64_t);
+static int rust_check_sequence_member(asn1p_module_t *, asn1p_expr_t *);
+static int rust_check_sequence_name(asn1p_module_t *, asn1p_expr_t *, asn1p_expr_t *);
 static int rust_constraint_supported(const asn1p_constraint_t *, unsigned);
 static int rust_integer_bounds(asn1p_expr_t *, int64_t *, int64_t *);
 static int rust_stage_project(asn1p_t *, const char *, rust_output_t *, uint64_t);
@@ -73,6 +77,10 @@ static int rust_write_null(FILE *, const char *, uint64_t);
 static int rust_write_null_ber(FILE *);
 static int rust_write_integer(FILE *, const char *, int64_t, int64_t, uint64_t);
 static int rust_write_integer_ber(FILE *, const char *, const char *);
+static int rust_write_sequence(FILE *, const char *, asn1p_expr_t *);
+static int rust_write_sequence_field(FILE *, asn1p_expr_t *);
+static int rust_write_sequence_encode_field(FILE *, asn1p_expr_t *);
+static int rust_write_sequence_decode_field(FILE *, asn1p_expr_t *);
 static int rust_write_per_oer(FILE *, const char *, const char *,
                               const char *, const char *);
 static int rust_write_method_doc(FILE *, const char *, const char *,
@@ -115,7 +123,7 @@ asn1c_rust_compile(asn1p_t *asn, const char *runtime_dir,
         fprintf(stderr, "asn1c: Rust backend supports UPER, APER, OER, BER, and CER only\n");
         return -1;
     }
-    if(rust_check_tree(asn)) return -1;
+    if(rust_check_tree(asn, codecs)) return -1;
     if(destdir && *destdir) {
         if(strlen(destdir) >= sizeof(output.target)) return -1;
         strcpy(output.target, destdir);
@@ -136,19 +144,20 @@ asn1c_rust_compile(asn1p_t *asn, const char *runtime_dir,
 
 /*
  * Validate module, type, constraint, and naming support before creating files.
- * Parameters: asn is the complete fixed tree. Returns zero or -1. Diagnostics
+ * Parameters: asn is the complete fixed tree; codecs is the requested mask.
+ * Returns zero or -1. Diagnostics
  * retain ASN.1 source names and line numbers. No exception is raised. Original
  * source: new Rust backend. Version/date: 0.1.0, 2026-10-11. Responsible
  * party: asn1c maintainers. History: initial UPER type gate. Example:
  * rust_check_tree(fixed_tree).
  */
 static int
-rust_check_tree(asn1p_t *asn) {
+rust_check_tree(asn1p_t *asn, uint64_t codecs) {
     asn1p_module_t *module;
     int emitted = 0;
     TQ_FOR(module, &asn->modules, mod_next) {
         if(module->_tags & MT_STANDARD_MODULE) continue;
-        if(rust_check_module(asn, module, &emitted)) return -1;
+        if(rust_check_module(asn, module, &emitted, codecs)) return -1;
     }
     if(!emitted) {
         fprintf(stderr, "asn1c: Rust backend found no supported type assignments\n");
@@ -160,13 +169,15 @@ rust_check_tree(asn1p_t *asn) {
 /*
  * Validate one module's name, declarations, and supported top-level types.
  * Parameters: asn is the fixed tree; module is the module to inspect; emitted
- * counts accepted assignments. Returns zero or -1 with a diagnostic. Original
+ * counts accepted assignments; codecs is the requested mask. Returns zero or
+ * -1 with a diagnostic. Original
  * source: new Rust backend. Version/date: 0.1.0, 2026-10-11. Responsible party:
  * asn1c maintainers. History: split from tree preflight. Example:
  * rust_check_module(tree, module, &emitted).
  */
 static int
-rust_check_module(asn1p_t *asn, asn1p_module_t *module, int *emitted) {
+rust_check_module(asn1p_t *asn, asn1p_module_t *module, int *emitted,
+                  uint64_t codecs) {
     if(!module->ModuleName || !*module->ModuleName) {
         rust_diagnostic(module, NULL, "module has no usable name");
         return -1;
@@ -182,7 +193,7 @@ rust_check_module(asn1p_t *asn, asn1p_module_t *module, int *emitted) {
                         "module encoding instructions are not supported");
         return -1;
     }
-    return rust_check_module_types(module, emitted);
+    return rust_check_module_types(module, emitted, codecs);
 }
 
 /*
@@ -230,13 +241,14 @@ rust_check_module_name(asn1p_t *asn, asn1p_module_t *module) {
 
 /*
  * Validate assignment kinds and ensure each emitted type name is unique.
- * Parameters: module is one source module; emitted counts accepted types.
+ * Parameters: module is one source module; emitted counts accepted types;
+ * codecs is the requested mask.
  * Returns zero or -1. Original source: new Rust backend. Version/date: 0.1.0,
  * 2026-10-11. Responsible party: asn1c maintainers. History: split from tree
  * preflight. Example: rust_check_module_types(module, &emitted).
  */
 static int
-rust_check_module_types(asn1p_module_t *module, int *emitted) {
+rust_check_module_types(asn1p_module_t *module, int *emitted, uint64_t codecs) {
     asn1p_expr_t *expr;
     TQ_FOR(expr, &module->members, next) {
         if(expr->meta_type != AMT_TYPE) {
@@ -244,7 +256,7 @@ rust_check_module_types(asn1p_module_t *module, int *emitted) {
                             "only top-level type assignments are supported");
             return -1;
         }
-        if(rust_check_type(module, expr) || rust_check_type_name(module, expr))
+        if(rust_check_type(module, expr, codecs) || rust_check_type_name(module, expr))
             return -1;
         (*emitted)++;
     }
@@ -290,14 +302,16 @@ rust_check_type_name(asn1p_module_t *module, asn1p_expr_t *expr) {
 
 /*
  * Reject one unsupported type before output publication.
- * Parameters: module and expr identify the fixed assignment. Returns zero
+ * Parameters: module and expr identify the fixed assignment; codecs is the
+ * selected mask. Returns zero
  * when supported, otherwise -1 after a source-location diagnostic. Original
  * source: new Rust backend. Version/date: 0.1.0, 2026-10-11. Responsible
  * party: asn1c maintainers. History: initial primitive gate. Example:
  * rust_check_type(module, integer_type).
  */
 static int
-rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr) {
+rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
+                uint64_t codecs) {
     if(!expr->Identifier || !*expr->Identifier) {
         rust_diagnostic(module, expr, "type has no usable name");
         return -1;
@@ -317,6 +331,8 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr) {
                         "explicit type tags are not supported by the initial Rust slice");
         return -1;
     }
+    if(expr->expr_type == ASN_CONSTR_SEQUENCE)
+        return rust_check_sequence(module, expr, codecs);
     if(expr->lhs_params || expr->ioc_table || expr->members.tq_head) {
         rust_diagnostic(module, expr,
                         "parameterized, constructed, or object types are unsupported");
@@ -341,8 +357,105 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr) {
         return 0;
     }
     rust_diagnostic(module, expr,
-                    "only BOOLEAN, NULL, and bounded INTEGER are supported");
+                    "only direct primitives and flat UPER SEQUENCE are supported");
     return -1;
+}
+
+/*
+ * Accept a flat SEQUENCE only when every selected codec has an implementation.
+ * Parameters: module and expr identify the fixed type; codecs is the selected
+ * mask. Returns zero or -1 with a diagnostic; no exception is thrown.
+ * Original source: Rust backend. Version/date: 0.2.0, 2026-10-30.
+ * Responsible party: asn1c maintainers. History: first composable UPER slice.
+ * Example: rust_check_sequence(module, record, RUST_CODEC_UPER).
+ */
+static int
+rust_check_sequence(asn1p_module_t *module, asn1p_expr_t *expr,
+                    uint64_t codecs) {
+    asn1p_expr_t *member;
+    size_t count = 0;
+    if(codecs != RUST_CODEC_UPER || expr->constraints
+       || expr->combined_constraints || expr->lhs_params || expr->ioc_table
+       || expr->marker.flags || expr->rhs_pspecs) {
+        rust_diagnostic(module, expr,
+                        "SEQUENCE needs UPER-only selection and direct required fields");
+        return -1;
+    }
+    TQ_FOR(member, &expr->members, next) {
+        if(++count > RUST_SEQUENCE_FIELD_LIMIT) {
+            rust_diagnostic(module, member, "SEQUENCE has too many fields");
+            return -1;
+        }
+        if(rust_check_sequence_member(module, member)
+           || rust_check_sequence_name(module, expr, member)) return -1;
+    }
+    return 0;
+}
+
+/*
+ * Validate one mandatory direct primitive SEQUENCE field.
+ * Parameters: module supplies diagnostics; member is the fixed field.
+ * Returns zero when supported or -1 with a diagnostic. No exception is
+ * thrown. Original source: Rust backend. Version/date: 0.2.0, 2026-10-30.
+ * Responsible party: asn1c maintainers. History: first flat UPER field gate.
+ * Example: rust_check_sequence_member(module, field).
+ */
+static int
+rust_check_sequence_member(asn1p_module_t *module, asn1p_expr_t *member) {
+    if(!member->Identifier || !*member->Identifier
+       || member->meta_type != AMT_TYPE || member->marker.flags
+       || member->tag.tag_class != TC_NOCLASS
+       || member->encoding_control.encoding_type != EC_NONE
+       || member->lhs_params || member->rhs_pspecs || member->ioc_table
+       || member->members.tq_head) {
+        rust_diagnostic(module, member,
+                        "SEQUENCE field must be a required direct untagged primitive");
+        return -1;
+    }
+    if(member->expr_type == ASN_BASIC_BOOLEAN
+       || member->expr_type == ASN_BASIC_NULL) {
+        if(!member->constraints && !member->combined_constraints) return 0;
+    } else if(member->expr_type == ASN_BASIC_INTEGER) {
+        if(member->combined_constraints
+           && rust_constraint_supported(member->combined_constraints, 0)
+           && !rust_integer_bounds(member, &(int64_t){0}, &(int64_t){0})) return 0;
+    }
+    rust_diagnostic(module, member,
+                    "SEQUENCE field needs BOOLEAN, NULL, or finite i64 INTEGER");
+    return -1;
+}
+
+/*
+ * Check a field's Rust name against every preceding field in its SEQUENCE.
+ * Parameters: module supplies diagnostics; sequence owns the fields; member
+ * is the current field. Returns zero or -1; allocation failures are errors.
+ * Original source: Rust backend. Version/date: 0.2.0, 2026-10-30.
+ * Responsible party: asn1c maintainers. History: SEQUENCE name preflight.
+ * Example: rust_check_sequence_name(module, record, member).
+ */
+static int
+rust_check_sequence_name(asn1p_module_t *module, asn1p_expr_t *sequence,
+                         asn1p_expr_t *member) {
+    asn1p_expr_t *prior;
+    char *name = rust_identifier(member->Identifier, 1);
+    if(!name) {
+        rust_diagnostic(module, member, "SEQUENCE field name cannot be sanitized");
+        return -1;
+    }
+    TQ_FOR(prior, &sequence->members, next) {
+        char *previous;
+        if(prior == member) break;
+        previous = rust_identifier(prior->Identifier, 1);
+        if(!previous || !strcmp(name, previous)) {
+            rust_diagnostic(module, member, "SEQUENCE field names collide");
+            free(previous);
+            free(name);
+            return -1;
+        }
+        free(previous);
+    }
+    free(name);
+    return 0;
 }
 
 /*
@@ -745,7 +858,8 @@ rust_manifest_path_allowed(const char *path) {
        || !strcmp(path, "runtime/LICENSE")
        || !strcmp(path, "runtime/src/lib.rs")
        || !strcmp(path, "runtime/src/aper.rs")
-       || !strcmp(path, "runtime/src/oer.rs")) return 1;
+       || !strcmp(path, "runtime/src/oer.rs")
+       || !strcmp(path, "runtime/src/uper_cursor.rs")) return 1;
     if(strncmp(path, "src/", 4)) return 0;
     module_name = path + 4;
     suffix = strrchr(module_name, '.');
@@ -802,7 +916,7 @@ static int
 rust_copy_runtime(const char *source, const char *destination) {
     static const char *const files[] = {
         "Cargo.toml", "README.md", "LICENSE", "src/lib.rs",
-        "src/aper.rs", "src/oer.rs"
+        "src/aper.rs", "src/oer.rs", "src/uper_cursor.rs"
     };
     struct stat status;
     char source_src[PATH_MAX];
@@ -908,7 +1022,7 @@ rust_write_module(FILE *stream, asn1p_module_t *module, uint64_t codecs) {
 }
 
 /*
- * Emit one supported primitive wrapper and methods for selected codecs.
+ * Emit one supported primitive wrapper or flat SEQUENCE and its methods.
  * Parameters: stream receives Rust; module and expr identify the assignment;
  * codecs selects emitted methods.
  * Returns zero or -1. Original source: new Rust backend. Version/date: 0.1.0,
@@ -926,7 +1040,9 @@ rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
         free(name);
         return -1;
     }
-    if(expr->expr_type == ASN_BASIC_BOOLEAN) {
+    if(expr->expr_type == ASN_CONSTR_SEQUENCE) {
+        ret = rust_write_sequence(stream, name, expr);
+    } else if(expr->expr_type == ASN_BASIC_BOOLEAN) {
         ret = rust_write_boolean(stream, name, codecs);
     } else if(expr->expr_type == ASN_BASIC_NULL) {
         ret = rust_write_null(stream, name, codecs);
@@ -937,6 +1053,152 @@ rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
     }
     free(name);
     return ret || ferror(stream) ? -1 : 0;
+}
+
+/*
+ * Emit one flat, mandatory-field SEQUENCE using a shared UPER cursor.
+ * Parameters: stream receives Rust, name is the sanitized type name, and
+ * expr owns validated fields. Returns zero or -1 on output failure. No
+ * exception is thrown. Original source: Rust backend. Version/date: 0.2.0,
+ * 2026-10-30. Responsible party: asn1c maintainers. History: first
+ * constructed UPER type. Example: rust_write_sequence(out, "Packet", expr).
+ */
+static int
+rust_write_sequence(FILE *stream, const char *name, asn1p_expr_t *expr) {
+    asn1p_expr_t *member;
+    if(fprintf(stream,
+        "/// Flat ASN.1 SEQUENCE with required direct primitive fields.\n"
+        "#[derive(Clone, Copy, Debug, Eq, PartialEq)]\n"
+        "pub struct %s {\n", name) < 0) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        if(rust_write_sequence_field(stream, member)) return -1;
+    }
+    if(fprintf(stream, "}\n\nimpl %s {\n", name) < 0) return -1;
+    if(rust_write_method_doc(stream,
+            "Encode the complete SEQUENCE with one shared UPER budget.",
+            "`self` supplies required fields; `limits` bounds the whole operation.",
+            "Returns packed bytes and meaningful bit length.",
+            "Returns an error for invalid fields or exhausted resources.",
+            "`let encoded = value.encode_uper(&Default::default())?;")) return -1;
+    if(fputs("    pub fn encode_uper(&self, limits: &::asn1c_runtime::Limits) ->\n"
+             "        ::core::result::Result<::asn1c_runtime::Encoded, "
+             "::asn1c_runtime::Error> {\n"
+             "        let mut writer = ::asn1c_runtime::UperWriter::new(limits)?;\n",
+             stream) == EOF) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        if(rust_write_sequence_encode_field(stream, member)) return -1;
+    }
+    if(fputs("        writer.finish()\n    }\n", stream) == EOF) return -1;
+    if(rust_write_method_doc(stream,
+            "Decode a complete SEQUENCE with one shared UPER budget.",
+            "`input` is the encoded prefix; `limits` bounds the whole operation.",
+            "Returns validated fields and bit/byte prefix consumption.",
+            "Returns an error for truncation, malformed fields, or exhausted resources.",
+            "`let decoded = Type::decode_uper(input, &Default::default())?;")) return -1;
+    if(fputs("    pub fn decode_uper(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+             "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, "
+             "::asn1c_runtime::Error> {\n"
+             "        let mut reader = ::asn1c_runtime::UperReader::new(input, limits)?;\n",
+             stream) == EOF) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        if(rust_write_sequence_decode_field(stream, member)) return -1;
+    }
+    if(fputs("        let consumed = reader.finish()?;\n"
+             "        Ok(::asn1c_runtime::Decoded {\n"
+             "            value: Self {\n", stream) == EOF) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        char *field = rust_identifier(member->Identifier, 1);
+        int ret = -1;
+        if(field) ret = member->expr_type == ASN_BASIC_NULL
+                           ? fprintf(stream, "                %s: (),\n", field)
+                           : fprintf(stream, "                %s,\n", field);
+        free(field);
+        if(ret < 0) return -1;
+    }
+    if(fputs("            },\n"
+             "            consumed_bits: consumed.consumed_bits,\n"
+             "            consumed_bytes: consumed.consumed_bytes,\n"
+             "        })\n    }\n}\n\n", stream) == EOF) return -1;
+    return 0;
+}
+
+/*
+ * Emit one documented public Rust SEQUENCE field.
+ * Parameters: stream receives Rust; member is a validated direct primitive.
+ * Returns zero or -1 on output failure. Original source: Rust backend.
+ * Version/date: 0.2.0, 2026-10-30. Responsible party: asn1c maintainers.
+ * History: flat UPER SEQUENCE generation. Example: emit a BOOLEAN field.
+ */
+static int
+rust_write_sequence_field(FILE *stream, asn1p_expr_t *member) {
+    char *name = rust_identifier(member->Identifier, 1);
+    const char *type = member->expr_type == ASN_BASIC_BOOLEAN ? "bool"
+                       : member->expr_type == ASN_BASIC_NULL ? "()" : "i64";
+    int ret = name ? fprintf(stream,
+        "    /// ASN.1 %s field state variable.\n    pub %s: %s,\n",
+        member->Identifier, name, type) : -1;
+    free(name);
+    return ret < 0 ? -1 : 0;
+}
+
+/*
+ * Emit one cursor write call for a validated SEQUENCE field.
+ * Parameters: stream receives Rust; member supplies type and field name.
+ * Returns zero or -1 on output failure. Original source: Rust backend.
+ * Version/date: 0.2.0, 2026-10-30. Responsible party: asn1c maintainers.
+ * History: flat UPER SEQUENCE generation. Example: writer.write_boolean(bit).
+ */
+static int
+rust_write_sequence_encode_field(FILE *stream, asn1p_expr_t *member) {
+    char *name = rust_identifier(member->Identifier, 1);
+    int ret = -1;
+    if(!name) return -1;
+    if(member->expr_type == ASN_BASIC_BOOLEAN)
+        ret = fprintf(stream, "        writer.write_boolean(self.%s)?;\n", name);
+    else if(member->expr_type == ASN_BASIC_NULL)
+        ret = fputs("        writer.write_null()?;\n", stream);
+    else {
+        int64_t lower, upper;
+        char low[64], high[64];
+        if(!rust_integer_bounds(member, &lower, &upper)
+           && !rust_format_bound(low, sizeof(low), lower)
+           && !rust_format_bound(high, sizeof(high), upper))
+            ret = fprintf(stream,
+                "        writer.write_integer(self.%s, %s, %s)?;\n",
+                name, low, high);
+    }
+    free(name);
+    return ret < 0 ? -1 : 0;
+}
+
+/*
+ * Emit one cursor read call for a validated SEQUENCE field.
+ * Parameters: stream receives Rust; member supplies type and field name.
+ * Returns zero or -1 on output failure. Original source: Rust backend.
+ * Version/date: 0.2.0, 2026-10-30. Responsible party: asn1c maintainers.
+ * History: flat UPER SEQUENCE generation. Example: reader.read_boolean().
+ */
+static int
+rust_write_sequence_decode_field(FILE *stream, asn1p_expr_t *member) {
+    char *name = rust_identifier(member->Identifier, 1);
+    int ret = -1;
+    if(!name) return -1;
+    if(member->expr_type == ASN_BASIC_BOOLEAN)
+        ret = fprintf(stream, "        let %s = reader.read_boolean()?;\n", name);
+    else if(member->expr_type == ASN_BASIC_NULL)
+        ret = fputs("        reader.read_null()?;\n", stream);
+    else {
+        int64_t lower, upper;
+        char low[64], high[64];
+        if(!rust_integer_bounds(member, &lower, &upper)
+           && !rust_format_bound(low, sizeof(low), lower)
+           && !rust_format_bound(high, sizeof(high), upper))
+            ret = fprintf(stream,
+                "        let %s = reader.read_integer(%s, %s)?;\n",
+                name, low, high);
+    }
+    free(name);
+    return ret < 0 ? -1 : 0;
 }
 
 /*
@@ -1511,7 +1773,7 @@ rust_write_manifest(asn1p_t *asn, const char *stage) {
     static const char *const fixed[] = {
         "Cargo.toml", "src/lib.rs", "runtime/Cargo.toml", "runtime/README.md",
         "runtime/LICENSE", "runtime/src/lib.rs", "runtime/src/aper.rs",
-        "runtime/src/oer.rs"
+        "runtime/src/oer.rs", "runtime/src/uper_cursor.rs"
     };
     char path[PATH_MAX];
     FILE *stream;

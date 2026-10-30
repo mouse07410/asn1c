@@ -19,7 +19,8 @@
  * Responsible party: asn1c maintainers. History: initial BOOLEAN, NULL, and
  * bounded INTEGER UPER and CER implementations. BER selection emits DER
  * encoding and BER decoding methods. APER and OER selection emits both
- * primitive directions. Example: called through
+ * primitive directions. UPER-only selection also supports flat SEQUENCE
+ * assignments of required direct primitive fields. Example: called through
  * asn1_compile_with_target() for a Rust compilation request.
  */
 int asn1c_rust_compile(asn1p_t *asn, const char *runtime_dir,

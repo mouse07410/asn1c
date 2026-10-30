@@ -64,6 +64,17 @@ the corresponding `-gen-*` option is selected.
 The aligned integer thresholds follow [ITU-T X.691 (2021)](https://www.itu.int/rec/T-REC-X.691/en),
 and the fixed OER integer widths follow [ITU-T X.696 (2021)](https://www.itu.int/rec/T-REC-X.696/en).
 
+`UperWriter` and `UperReader` compose direct BOOLEAN, NULL, and finite bounded
+`i64` INTEGER fields into one continuous UPER value. They enforce the input
+size once for the complete supplied slice, check output growth against the
+complete output limit, and charge `max_work_bits` cumulatively: each field
+costs its meaningful wire bits plus eight work units. NULL and singleton
+INTEGER fields therefore still consume budget despite using zero wire bits.
+The cursors add or check the one-byte zero-width filler only when finishing
+the complete value. A failed field operation leaves the logical cursor
+position and work count unchanged. Generated Rust uses these cursors for
+flat SEQUENCE types when UPER is the only selected codec.
+
 `encode_boolean_der`, `encode_null_der`, and `encode_integer_der` emit canonical
 primitive TLVs. Their bytes match CER for this subset. `decode_boolean_ber`,
 `decode_null_ber`, and `decode_integer_ber` read one definite-length universal
