@@ -1897,12 +1897,14 @@ asn_SET_specifics_t asn_SPC_OneTwo_specs_52 = {
 	1,	/* Count of tags in the CXER map */
 	0,	/* Whether extensible */
 	(const unsigned int *)asn_MAP_OneTwo_mmap_52,	/* Mandatory elements map */
-	sizeof(asn_SET_specifics_t),	/* Metadata size */
+	offsetof(asn_SET_specifics_t, extension_groups),	/* Metadata size */
 	ASN_SET_SPECIFICS_VERSION,	/* Metadata version */
 	asn_MAP_OneTwo_root_52,	/* Root members in declaration order */
 	1,	/* Root member count */
 	0,	/* No extension additions */
-	0	/* Extension addition count */
+	0,	/* Extension addition count */
+	0,	/* No extension group adapters */
+	0	/* Extension group count */
 };
 asn_TYPE_descriptor_t asn_DEF_OneTwo = {
 	"OneTwo",
@@ -2017,12 +2019,14 @@ asn_SET_specifics_t asn_SPC_TwoThree_specs_54 = {
 	1,	/* Count of tags in the CXER map */
 	0,	/* Whether extensible */
 	(const unsigned int *)asn_MAP_TwoThree_mmap_54,	/* Mandatory elements map */
-	sizeof(asn_SET_specifics_t),	/* Metadata size */
+	offsetof(asn_SET_specifics_t, extension_groups),	/* Metadata size */
 	ASN_SET_SPECIFICS_VERSION,	/* Metadata version */
 	asn_MAP_TwoThree_root_54,	/* Root members in declaration order */
 	1,	/* Root member count */
 	0,	/* No extension additions */
-	0	/* Extension addition count */
+	0,	/* Extension addition count */
+	0,	/* No extension group adapters */
+	0	/* Extension group count */
 };
 asn_TYPE_descriptor_t asn_DEF_TwoThree = {
 	"TwoThree",
@@ -2162,12 +2166,14 @@ asn_SET_specifics_t asn_SPC_ThreeOne_specs_56 = {
 	2,	/* Count of tags in the CXER map */
 	0,	/* Whether extensible */
 	(const unsigned int *)asn_MAP_ThreeOne_mmap_56,	/* Mandatory elements map */
-	sizeof(asn_SET_specifics_t),	/* Metadata size */
+	offsetof(asn_SET_specifics_t, extension_groups),	/* Metadata size */
 	ASN_SET_SPECIFICS_VERSION,	/* Metadata version */
 	asn_MAP_ThreeOne_root_56,	/* Root members in declaration order */
 	2,	/* Root member count */
 	0,	/* No extension additions */
-	0	/* Extension addition count */
+	0,	/* Extension addition count */
+	0,	/* No extension group adapters */
+	0	/* Extension group count */
 };
 asn_TYPE_descriptor_t asn_DEF_ThreeOne = {
 	"ThreeOne",

@@ -1,8 +1,8 @@
 //! Stateful bit cursors for composing one bounded UPER value.
 //!
 //! `UperWriter` and `UperReader` append or consume primitive BOOLEAN, NULL,
-//! finite bounded signed INTEGER, fixed-size OCTET STRING, and fixed-size BIT
-//! STRING fields in one continuous bit stream.
+//! finite bounded signed INTEGER, fixed and bounded-size OCTET STRING, and
+//! fixed and bounded-size BIT STRING fields in one continuous bit stream.
 //! The configured input ceiling applies once to the complete supplied slice;
 //! output bytes and work are accumulated over every field in the operation.
 //! A complete zero-width value is represented by one zero filler byte at
@@ -20,6 +20,95 @@ use crate::{
 };
 
 const FIELD_WORK_OVERHEAD: usize = 8;
+
+/// Packed BIT STRING octets together with their exact meaningful bit count.
+///
+/// Unlike a byte vector alone, this value preserves a non-octet-aligned
+/// ASN.1 bit length. The final octet's unused low bits are always zero.
+///
+/// # Source, version, history, and example
+/// Original source: X.691 BIT STRING value representation.
+/// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+/// History: added for bounded-size BIT STRING UPER. Example:
+/// `BitStringValue::new(vec![0xA0], 3)?`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BitStringValue {
+    /// Packed value octets; this is a state variable.
+    bytes: Vec<u8>,
+    /// Number of meaningful bits; this is a state variable.
+    bit_len: usize,
+}
+
+impl BitStringValue {
+    /// Create a packed BIT STRING after validating its length and unused bits.
+    ///
+    /// # Parameters
+    /// `bytes` stores bits most-significant first; `bit_len` gives the exact
+    /// number of meaningful bits represented by those bytes.
+    ///
+    /// # Returns
+    /// A value with exactly `ceil(bit_len / 8)` bytes and zero unused low bits.
+    ///
+    /// # Errors
+    /// Returns `InvalidEncoding` for a byte-count mismatch or nonzero padding,
+    /// or `SizeOverflow` when storage-size arithmetic cannot be represented.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: canonical packed BIT STRING representation.
+    /// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+    /// History: added for bounded-size BIT STRING UPER. Example:
+    /// `BitStringValue::new(vec![0xA0], 3)?`.
+    pub fn new(bytes: Vec<u8>, bit_len: usize) -> Result<Self, Error> {
+        if bytes.len() != bit_storage_len(bit_len)? {
+            return Err(Error::InvalidEncoding {
+                reason: "BIT STRING storage length does not match its bit length",
+            });
+        }
+        if let Some(unused_mask) = unused_low_bit_mask(bit_len) {
+            let last = bytes.last().copied().ok_or(Error::SizeOverflow)?;
+            if last & unused_mask != 0 {
+                return Err(Error::InvalidEncoding {
+                    reason: "BIT STRING has nonzero unused trailing bits",
+                });
+            }
+        }
+        Ok(Self { bytes, bit_len })
+    }
+
+    /// Return the packed BIT STRING contents without copying.
+    ///
+    /// # Parameters and returns
+    /// `self` is the validated bit string. Returns its packed octets.
+    ///
+    /// # Errors
+    /// This accessor cannot fail.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: new asn1c Rust runtime API. Version/date: 2026-10-30.
+    /// Responsible party: asn1c maintainers. History: added for variable bits.
+    /// Example: `let packed = bits.as_bytes();`.
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// Return the exact number of meaningful bits.
+    ///
+    /// # Parameters and returns
+    /// `self` is the validated bit string. Returns its logical bit length.
+    ///
+    /// # Errors
+    /// This accessor cannot fail.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: new asn1c Rust runtime API. Version/date: 2026-10-30.
+    /// Responsible party: asn1c maintainers. History: added for variable bits.
+    /// Example: `let width = bits.bit_len();`.
+    #[must_use]
+    pub const fn bit_len(&self) -> usize {
+        self.bit_len
+    }
+}
 
 /// Incrementally compose a single UPER value from primitive fields.
 ///
@@ -186,6 +275,63 @@ impl UperWriter {
         Ok(())
     }
 
+    /// Append a bounded-size OCTET STRING without aligning the shared bit stream.
+    ///
+    /// # Parameters
+    /// `value` supplies the octets; `lower` and `upper` are inclusive size bounds.
+    /// The supported bounds satisfy `0 <= lower < upper < 65536`.
+    ///
+    /// # Returns
+    /// `Ok(())` after writing the constrained length offset and octet payload.
+    ///
+    /// # Errors
+    /// Returns invalid bounds, out-of-range length, cumulative work/output
+    /// limit, checked-size, or allocation errors. Validation and limit errors
+    /// leave cursor, work, and output state unchanged.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: X.691 bounded OCTET STRING UPER encoding.
+    /// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+    /// History: added for variable-size bounded strings. Example:
+    /// `writer.write_bounded_octets(&[0xA5], 1, 3)?;`.
+    pub fn write_bounded_octets(
+        &mut self,
+        value: &[u8],
+        lower: usize,
+        upper: usize,
+    ) -> Result<(), Error> {
+        let (span, length_bits) = bounded_string_shape(lower, upper)?;
+        if value.len() < lower || value.len() > upper {
+            return Err(Error::InvalidEncoding {
+                reason: "OCTET STRING length is outside its constrained size",
+            });
+        }
+        let length_offset = value.len().checked_sub(lower).ok_or(Error::SizeOverflow)?;
+        if u128::try_from(length_offset).map_err(|_| Error::SizeOverflow)? > span {
+            return Err(Error::SizeOverflow);
+        }
+        let payload_bits = value.len().checked_mul(8).ok_or(Error::SizeOverflow)?;
+        let field_bits = length_bits
+            .checked_add(payload_bits)
+            .ok_or(Error::SizeOverflow)?;
+        let work = self.next_work(field_bits)?;
+        let next_bits = self.next_bit_len(field_bits)?;
+        let payload_start = self
+            .bit_len
+            .checked_add(length_bits)
+            .ok_or(Error::SizeOverflow)?;
+        let length_offset = u64::try_from(length_offset).map_err(|_| Error::SizeOverflow)?;
+
+        // The calculated endpoints and lengths make both bit-copy operations
+        // fit the output prepared below; they cannot fail for valid internals.
+        self.prepare_output(next_bits)?;
+        write_bits_at(&mut self.bytes, self.bit_len, length_offset, length_bits)?;
+        write_slice_bits_at(&mut self.bytes, payload_start, value, payload_bits)?;
+        self.bit_len = next_bits;
+        self.work_used = work;
+        Ok(())
+    }
+
     /// Append a fixed-size BIT STRING without aligning the shared bit stream.
     ///
     /// # Parameters
@@ -226,6 +372,64 @@ impl UperWriter {
         let next_bits = self.next_bit_len(bit_len)?;
         self.prepare_output(next_bits)?;
         write_slice_bits_at(&mut self.bytes, self.bit_len, value, bit_len)?;
+        self.bit_len = next_bits;
+        self.work_used = work;
+        Ok(())
+    }
+
+    /// Append a bounded-size BIT STRING without aligning the shared bit stream.
+    ///
+    /// # Parameters
+    /// `value` carries packed octets and an exact bit length; `lower` and
+    /// `upper` are inclusive bounds satisfying `0 <= lower < upper < 65536`.
+    ///
+    /// # Returns
+    /// `Ok(())` after writing the constrained bit length and its payload bits.
+    ///
+    /// # Errors
+    /// Returns invalid bounds, out-of-range length, cumulative work/output
+    /// limit, checked-size, or allocation errors. Validation and limit failures
+    /// leave cursor, work, and output state unchanged.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: X.691 bounded BIT STRING UPER encoding.
+    /// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+    /// History: added for variable-size bounded bit strings. Example:
+    /// `writer.write_bounded_bit_string(&bits, 1, 3)?;`.
+    pub fn write_bounded_bit_string(
+        &mut self,
+        value: &BitStringValue,
+        lower: usize,
+        upper: usize,
+    ) -> Result<(), Error> {
+        let (span, length_bits) = bounded_string_shape(lower, upper)?;
+        if value.bit_len < lower || value.bit_len > upper {
+            return Err(Error::InvalidEncoding {
+                reason: "BIT STRING length is outside its constrained size",
+            });
+        }
+        let length_offset = value
+            .bit_len
+            .checked_sub(lower)
+            .ok_or(Error::SizeOverflow)?;
+        if u128::try_from(length_offset).map_err(|_| Error::SizeOverflow)? > span {
+            return Err(Error::SizeOverflow);
+        }
+        let field_bits = length_bits
+            .checked_add(value.bit_len)
+            .ok_or(Error::SizeOverflow)?;
+        let work = self.next_work(field_bits)?;
+        let next_bits = self.next_bit_len(field_bits)?;
+        let payload_start = self
+            .bit_len
+            .checked_add(length_bits)
+            .ok_or(Error::SizeOverflow)?;
+        let length_offset = u64::try_from(length_offset).map_err(|_| Error::SizeOverflow)?;
+
+        // Checked endpoint arithmetic guarantees both writes fit after reserve.
+        self.prepare_output(next_bits)?;
+        write_bits_at(&mut self.bytes, self.bit_len, length_offset, length_bits)?;
+        write_slice_bits_at(&mut self.bytes, payload_start, &value.bytes, value.bit_len)?;
         self.bit_len = next_bits;
         self.work_used = work;
         Ok(())
@@ -514,6 +718,52 @@ impl<'a> UperReader<'a> {
         Ok(value)
     }
 
+    /// Read a bounded-size OCTET STRING from the shared bit stream.
+    ///
+    /// # Parameters
+    /// `lower` and `upper` are inclusive size bounds satisfying
+    /// `0 <= lower < upper < 65536`.
+    ///
+    /// # Returns
+    /// A newly allocated vector containing the decoded octets.
+    ///
+    /// # Errors
+    /// Returns invalid bounds, a spare length code, truncation, cumulative
+    /// work-limit, checked-size, or fallible allocation errors. On error,
+    /// reader cursor and work state are unchanged.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: X.691 bounded OCTET STRING UPER decoding.
+    /// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+    /// History: added for variable-size bounded strings. Example:
+    /// `let value = reader.read_bounded_octets(1, 3)?;`.
+    pub fn read_bounded_octets(&mut self, lower: usize, upper: usize) -> Result<Vec<u8>, Error> {
+        let (span, length_bits) = bounded_string_shape(lower, upper)?;
+        let length_offset = self.peek_field_bits(length_bits)?;
+        if u128::from(length_offset) > span {
+            return Err(Error::InvalidEncoding {
+                reason: "spare constrained OCTET STRING length code",
+            });
+        }
+        let length = lower
+            .checked_add(usize::try_from(length_offset).map_err(|_| Error::SizeOverflow)?)
+            .ok_or(Error::SizeOverflow)?;
+        let payload_bits = length.checked_mul(8).ok_or(Error::SizeOverflow)?;
+        let field_bits = length_bits
+            .checked_add(payload_bits)
+            .ok_or(Error::SizeOverflow)?;
+        let work = self.next_work(field_bits)?;
+        self.ensure_available(field_bits)?;
+        let mut value = allocate_zeroed_bytes(length)?;
+        let payload_start = self
+            .bit_offset
+            .checked_add(length_bits)
+            .ok_or(Error::SizeOverflow)?;
+        read_slice_bits_at(self.input, payload_start, &mut value, payload_bits)?;
+        self.commit_field(field_bits, work)?;
+        Ok(value)
+    }
+
     /// Read a fixed-size BIT STRING from the shared bit stream.
     ///
     /// # Parameters
@@ -540,6 +790,57 @@ impl<'a> UperReader<'a> {
         read_slice_bits_at(self.input, self.bit_offset, &mut value, bit_len)?;
         self.commit_field(bit_len, work)?;
         Ok(value)
+    }
+
+    /// Read a bounded-size BIT STRING from the shared bit stream.
+    ///
+    /// # Parameters
+    /// `lower` and `upper` are inclusive size bounds satisfying
+    /// `0 <= lower < upper < 65536`.
+    ///
+    /// # Returns
+    /// A validated packed value that preserves its exact meaningful bit count.
+    ///
+    /// # Errors
+    /// Returns invalid bounds, a spare length code, truncation, cumulative
+    /// work-limit, checked-size, or allocation errors. On error, reader cursor
+    /// and work state are unchanged.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: X.691 bounded BIT STRING UPER decoding.
+    /// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+    /// History: added for variable-size bounded bit strings. Example:
+    /// `let bits = reader.read_bounded_bit_string(1, 3)?;`.
+    pub fn read_bounded_bit_string(
+        &mut self,
+        lower: usize,
+        upper: usize,
+    ) -> Result<BitStringValue, Error> {
+        let (span, length_bits) = bounded_string_shape(lower, upper)?;
+        let length_offset = self.peek_field_bits(length_bits)?;
+        if u128::from(length_offset) > span {
+            return Err(Error::InvalidEncoding {
+                reason: "spare constrained BIT STRING length code",
+            });
+        }
+        let bit_len = lower
+            .checked_add(usize::try_from(length_offset).map_err(|_| Error::SizeOverflow)?)
+            .ok_or(Error::SizeOverflow)?;
+        let field_bits = length_bits
+            .checked_add(bit_len)
+            .ok_or(Error::SizeOverflow)?;
+        let work = self.next_work(field_bits)?;
+        self.ensure_available(field_bits)?;
+        let output_len = bit_storage_len(bit_len)?;
+        let mut bytes = allocate_zeroed_bytes(output_len)?;
+        let payload_start = self
+            .bit_offset
+            .checked_add(length_bits)
+            .ok_or(Error::SizeOverflow)?;
+        read_slice_bits_at(self.input, payload_start, &mut bytes, bit_len)?;
+        self.commit_field(field_bits, work)?;
+        // Zeroed storage plus copying only meaningful bits preserves canonical padding.
+        Ok(BitStringValue { bytes, bit_len })
     }
 
     /// Finish decoding and report the consumed prefix.
@@ -867,14 +1168,46 @@ fn read_slice_bits_at(
     Ok(())
 }
 
-/// Allocate a zero-initialized byte vector using fallible reservation.
+/// Validate a bounded string range and calculate its constrained length width.
 ///
 /// # Parameters and returns
-/// `byte_len` is the exact required byte count. Returns a vector of that size.
+/// `lower` and `upper` are inclusive size bounds. Returns the offset span and
+/// `ceil(log2(span + 1))` bits needed to represent every permitted size.
 ///
 /// # Errors
-/// Returns `AllocationFailed` with the requested byte count; allocation is
-/// attempted only after caller-side input and work validation.
+/// Returns `InvalidEncoding` unless `0 <= lower < upper < 65536`.
+///
+/// # Source, version, history, and example
+/// Original source: X.691 constrained length determinant rules.
+/// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+/// History: added for bounded string cursor methods.
+/// Example: `bounded_string_shape(1, 3)?` returns `(2, 2)`.
+fn bounded_string_shape(lower: usize, upper: usize) -> Result<(u128, usize), Error> {
+    if lower >= upper || upper >= 65_536 {
+        return Err(Error::InvalidEncoding {
+            reason: "unsupported bounded string size range",
+        });
+    }
+    let span = upper.checked_sub(lower).ok_or(Error::SizeOverflow)?;
+    let cardinality = span.checked_add(1).ok_or(Error::SizeOverflow)?;
+    let maximum_offset = cardinality.checked_sub(1).ok_or(Error::SizeOverflow)?;
+    let width = usize::BITS
+        .checked_sub(maximum_offset.leading_zeros())
+        .ok_or(Error::SizeOverflow)?;
+    let width = usize::try_from(width).map_err(|_| Error::SizeOverflow)?;
+    Ok((
+        u128::try_from(span).map_err(|_| Error::SizeOverflow)?,
+        width,
+    ))
+}
+
+/// Allocate and zero an output vector without allowing allocation panics.
+///
+/// # Parameters and returns
+/// `byte_len` is the caller-validated output size. Returns a zero-filled vector.
+///
+/// # Errors
+/// Returns `AllocationFailed` if the requested allocation cannot be reserved.
 ///
 /// # Source, version, history, and example
 /// Original source: bounded allocation policy in the asn1c runtime.
@@ -1453,6 +1786,268 @@ mod tests {
         ));
         assert_eq!(writer.bit_len, 0);
         assert_eq!(reader.bit_offset, 0);
+    }
+
+    /// Check the UPER reference vectors for SIZE(1..3) OCTET STRING values.
+    ///
+    /// Original source: X.691 constrained length determinant rules.
+    /// Version/date: 2026-10-30. Inputs: A5 and A5 5A. Returns no value;
+    /// assertions verify packed wire bytes, bit counts, and decode results.
+    /// Errors: test setup failures panic through `expect`. Responsible party:
+    /// asn1c maintainers. History: bounded octet cursor conformance.
+    /// Example: A5 encodes as `29 40` over ten meaningful bits.
+    #[test]
+    fn bounded_octets_match_constrained_length_vectors() {
+        let limits = Limits::default();
+        let mut writer = UperWriter::new(&limits).expect("writer");
+        writer
+            .write_bounded_octets(&[0xA5], 1, 3)
+            .expect("one octet");
+        let one = writer.finish().expect("encoding");
+        assert_eq!(one.bytes, [0x29, 0x40]);
+        assert_eq!(one.bit_len, 10);
+        let mut reader = UperReader::new(&one.bytes, &limits).expect("reader");
+        assert_eq!(reader.read_bounded_octets(1, 3).expect("decode"), [0xA5]);
+
+        let mut writer = UperWriter::new(&limits).expect("writer");
+        writer
+            .write_bounded_octets(&[0xA5, 0x5A], 1, 3)
+            .expect("two octets");
+        let two = writer.finish().expect("encoding");
+        assert_eq!(two.bytes, [0x69, 0x56, 0x80]);
+        assert_eq!(two.bit_len, 18);
+        let mut reader = UperReader::new(&two.bytes, &limits).expect("reader");
+        assert_eq!(
+            reader.read_bounded_octets(1, 3).expect("decode"),
+            [0xA5, 0x5A]
+        );
+    }
+
+    /// Check malformed bounded OCTET STRING input leaves cursor state intact.
+    ///
+    /// Original source: X.691 constrained length determinant validation.
+    /// Version/date: 2026-10-30. Inputs: invalid bounds, spare length code,
+    /// and truncated payload. Returns no value; assertions inspect errors and
+    /// unchanged state variables. Errors: malformed inputs are expected.
+    /// Responsible party: asn1c maintainers. History: bounded octet regression.
+    /// Example: code `11` is spare when the size range is 1..3.
+    #[test]
+    fn bounded_octets_reject_malformed_values_atomically() {
+        let limits = Limits::default();
+        let mut writer = UperWriter::new(&limits).expect("writer");
+        assert!(writer.write_bounded_octets(&[], 1, 3).is_err());
+        assert!(writer.write_bounded_octets(&[0], 1, 65_536).is_err());
+        assert_eq!(writer.bit_len, 0);
+        assert_eq!(writer.work_used, 0);
+
+        let mut spare = UperReader::new(&[0xC0, 0x00], &limits).expect("reader");
+        assert!(spare.read_bounded_octets(1, 3).is_err());
+        assert_eq!(spare.bit_offset, 0);
+        assert_eq!(spare.work_used, 0);
+
+        let mut truncated = UperReader::new(&[0x29], &limits).expect("reader");
+        assert!(truncated.read_bounded_octets(1, 3).is_err());
+        assert_eq!(truncated.bit_offset, 0);
+        assert_eq!(truncated.work_used, 0);
+    }
+
+    /// Check bounded OCTET STRING output and work limits before state changes.
+    ///
+    /// Original source: operation-wide UPER resource accounting.
+    /// Version/date: 2026-10-30. Inputs: SIZE(1..3), one octet, and ceilings
+    /// below required output/work. Returns no value; assertions inspect errors.
+    /// Errors: configured limit failures are expected. Responsible party:
+    /// asn1c maintainers. History: bounded-octet limit regression.
+    /// Example: one octet plus its 2-bit length costs 18 work units.
+    #[test]
+    fn bounded_octets_enforce_operation_limits() {
+        let work_limited = Limits {
+            max_work_bits: 17,
+            ..Limits::default()
+        };
+        let mut writer = UperWriter::new(&work_limited).expect("writer");
+        assert!(writer.write_bounded_octets(&[0xA5], 1, 3).is_err());
+        assert_eq!(writer.bit_len, 0);
+        assert_eq!(writer.work_used, 0);
+        let mut reader = UperReader::new(&[0x29, 0x40], &work_limited).expect("reader");
+        assert!(reader.read_bounded_octets(1, 3).is_err());
+        assert_eq!(reader.bit_offset, 0);
+        assert_eq!(reader.work_used, 0);
+
+        let output_limited = Limits {
+            max_output_bytes: 1,
+            ..Limits::default()
+        };
+        let mut writer = UperWriter::new(&output_limited).expect("writer");
+        assert!(writer.write_bounded_octets(&[0xA5], 1, 3).is_err());
+        assert_eq!(writer.bit_len, 0);
+
+        let input_limited = Limits {
+            max_input_bytes: 1,
+            ..Limits::default()
+        };
+        assert!(UperReader::new(&[0x29, 0x40], &input_limited).is_err());
+    }
+
+    /// Exercise deterministic one-bit mutations of complete bounded vectors.
+    ///
+    /// Original source: bounded OCTET STRING malformed-input audit.
+    /// Version/date: 2026-10-30. Inputs: every meaningful bit flipped in the
+    /// one- and two-octet SIZE(1..3) golden vectors. Returns no value; successful
+    /// decodes must remain within bounds. Errors: mutations may be rejected.
+    /// Responsible party: asn1c maintainers. History: deterministic fuzz-like
+    /// bounded-size test. Example: mutate each bit in `29 40`.
+    #[test]
+    fn bounded_octet_single_bit_mutations_stay_bounded() {
+        for (wire, bit_len) in [(&[0x29, 0x40][..], 10), (&[0x69, 0x56, 0x80][..], 18)] {
+            for bit in 0..bit_len {
+                let mut mutated = wire.to_vec();
+                mutated[bit / 8] ^= 1 << (7 - (bit % 8));
+                let mut reader = UperReader::new(&mutated, &Limits::default()).expect("reader");
+                if let Ok(value) = reader.read_bounded_octets(1, 3) {
+                    assert!((1..=3).contains(&value.len()));
+                }
+            }
+        }
+    }
+
+    /// Verify bounded BIT STRING values retain non-octet bit lengths on wire.
+    ///
+    /// Original source: X.691 constrained BIT STRING length and payload rules.
+    /// Version/date: 2026-10-30. Inputs: one- and three-bit SIZE(1..3) values
+    /// plus a three-bit SIZE(2..4) value. Returns no value; assertions inspect
+    /// bytes, bit counts, and decoded values. Errors: setup failures use `expect`.
+    /// Responsible party: asn1c maintainers. History: bounded-bit cursor vectors.
+    /// Example: 3 bits `101` encode as `A8` over five meaningful bits.
+    #[test]
+    fn bounded_bit_strings_match_constrained_length_vectors() {
+        let limits = Limits::default();
+        let one_bit = BitStringValue::new(vec![0x80], 1).expect("one bit");
+        let mut writer = UperWriter::new(&limits).expect("writer");
+        writer
+            .write_bounded_bit_string(&one_bit, 1, 3)
+            .expect("encode one bit");
+        let encoded = writer.finish().expect("encoding");
+        assert_eq!(encoded.bytes, [0x20]);
+        assert_eq!(encoded.bit_len, 3);
+        let mut reader = UperReader::new(&encoded.bytes, &limits).expect("reader");
+        assert_eq!(
+            reader.read_bounded_bit_string(1, 3).expect("decode"),
+            one_bit
+        );
+
+        let three_bits = BitStringValue::new(vec![0xA0], 3).expect("three bits");
+        let mut writer = UperWriter::new(&limits).expect("writer");
+        writer
+            .write_bounded_bit_string(&three_bits, 1, 3)
+            .expect("encode three bits");
+        let encoded = writer.finish().expect("encoding");
+        assert_eq!(encoded.bytes, [0xA8]);
+        assert_eq!(encoded.bit_len, 5);
+        let mut reader = UperReader::new(&encoded.bytes, &limits).expect("reader");
+        assert_eq!(
+            reader.read_bounded_bit_string(1, 3).expect("decode"),
+            three_bits
+        );
+    }
+
+    /// Verify bounded BIT STRING rejects malformed lengths and input atomically.
+    ///
+    /// Original source: X.691 constrained length validation.
+    /// Version/date: 2026-10-30. Inputs: spare code, truncated payload,
+    /// malformed value storage, and invalid bounds. Returns no value;
+    /// assertions inspect errors and unchanged cursor/work state.
+    /// Errors: all malformed inputs are expected. Responsible party: asn1c
+    /// maintainers. History: bounded-bit rejection coverage. Example: `11` is
+    /// spare for SIZE(1..3).
+    #[test]
+    fn bounded_bit_strings_reject_malformed_values_atomically() {
+        assert!(BitStringValue::new(vec![0xA1], 3).is_err());
+        assert!(BitStringValue::new(vec![0x80], 9).is_err());
+        assert!(BitStringValue::new(vec![], usize::MAX).is_err());
+        let empty = BitStringValue::new(vec![], 0).expect("empty");
+        let mut writer = UperWriter::new(&Limits::default()).expect("writer");
+        assert!(writer.write_bounded_bit_string(&empty, 1, 3).is_err());
+        assert!(writer.write_bounded_bit_string(&empty, 1, 65_536).is_err());
+        assert_eq!(writer.bit_len, 0);
+        assert_eq!(writer.work_used, 0);
+
+        let mut spare = UperReader::new(&[0xC0], &Limits::default()).expect("reader");
+        assert!(spare.read_bounded_bit_string(1, 3).is_err());
+        assert_eq!(spare.bit_offset, 0);
+        assert_eq!(spare.work_used, 0);
+
+        let mut truncated = UperReader::new(&[0x2B], &Limits::default()).expect("reader");
+        for _ in 0..4 {
+            truncated.read_boolean().expect("prefix boolean");
+        }
+        let prior_work = truncated.work_used;
+        assert!(truncated.read_bounded_bit_string(1, 3).is_err());
+        assert_eq!(truncated.bit_offset, 4);
+        assert_eq!(truncated.work_used, prior_work);
+    }
+
+    /// Verify bounded BIT STRING operations enforce work and input ceilings.
+    ///
+    /// Original source: operation-wide UPER resource accounting.
+    /// Version/date: 2026-10-30. Inputs: a three-bit value plus tight work and
+    /// input budgets. Returns no value; assertions inspect resource errors and
+    /// unchanged state. Errors: configured limits are expected. Responsible
+    /// party: asn1c maintainers. History: bounded-bit limit coverage.
+    /// Example: a five-bit field including its length costs thirteen units.
+    #[test]
+    fn bounded_bit_strings_enforce_operation_limits() {
+        let value = BitStringValue::new(vec![0xA0], 3).expect("three bits");
+        let work_limited = Limits {
+            max_work_bits: 12,
+            ..Limits::default()
+        };
+        let mut writer = UperWriter::new(&work_limited).expect("writer");
+        assert!(writer.write_bounded_bit_string(&value, 1, 3).is_err());
+        assert_eq!(writer.bit_len, 0);
+        let mut reader = UperReader::new(&[0xA8], &work_limited).expect("reader");
+        assert!(reader.read_bounded_bit_string(1, 3).is_err());
+        assert_eq!(reader.bit_offset, 0);
+
+        let output_limited = Limits {
+            max_output_bytes: 0,
+            ..Limits::default()
+        };
+        let mut writer = UperWriter::new(&output_limited).expect("writer");
+        assert!(writer.write_bounded_bit_string(&value, 1, 3).is_err());
+        assert_eq!(writer.bit_len, 0);
+
+        let input_limited = Limits {
+            max_input_bytes: 0,
+            ..Limits::default()
+        };
+        assert!(UperReader::new(&[0xA8], &input_limited).is_err());
+    }
+
+    /// Exercise deterministic one-bit mutations of bounded BIT STRING vectors.
+    ///
+    /// Original source: bounded BIT STRING malformed-input audit.
+    /// Version/date: 2026-10-30. Inputs: every meaningful bit flipped in two
+    /// SIZE(1..3) golden encodings. Returns no value; accepted values must stay
+    /// inside the declared bit range. Errors: mutations may be rejected.
+    /// Responsible party: asn1c maintainers. History: deterministic fuzz-like
+    /// bounded-bit test. Example: mutate each bit in `A8`.
+    #[test]
+    fn bounded_bit_single_bit_mutations_stay_bounded() {
+        for (wire, wire_bits) in [(&[0x20][..], 3), (&[0xA8][..], 5)] {
+            for bit in 0..wire_bits {
+                let mut mutated = wire.to_vec();
+                mutated[bit / 8] ^= 1 << (7 - (bit % 8));
+                let mut reader = UperReader::new(&mutated, &Limits::default()).expect("reader");
+                if let Ok(value) = reader.read_bounded_bit_string(1, 3) {
+                    assert!((1..=3).contains(&value.bit_len()));
+                    assert_eq!(
+                        BitStringValue::new(value.as_bytes().to_vec(), value.bit_len()),
+                        Ok(value)
+                    );
+                }
+            }
+        }
     }
 
     /// Exhaust every one-octet pattern at every short BIT STRING width.

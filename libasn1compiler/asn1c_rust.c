@@ -71,6 +71,9 @@ static int rust_constraint_supported(const asn1p_constraint_t *, unsigned);
 static int rust_integer_bounds(asn1p_expr_t *, int64_t *, int64_t *);
 static int rust_size_constraint_supported(const asn1p_constraint_t *, unsigned);
 static int rust_fixed_size(asn1p_expr_t *, size_t *);
+static int rust_bounded_size(asn1p_expr_t *, size_t *, size_t *);
+static int rust_size_single_range_supported(const asn1p_constraint_t *,
+                                            unsigned, int *);
 static int rust_check_enumerated(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_enum_item_valid(const asn1p_expr_t *);
 static int rust_enum_name_safe(const char *);
@@ -98,6 +101,12 @@ static int rust_write_null(FILE *, const char *, uint64_t);
 static int rust_write_null_ber(FILE *);
 static int rust_write_integer(FILE *, const char *, int64_t, int64_t, uint64_t);
 static int rust_write_string(FILE *, const char *, asn1p_expr_t *, uint64_t);
+static int rust_write_bounded_octets(FILE *, const char *, size_t, size_t,
+                                    uint64_t);
+static int rust_write_bounded_octets_uper(FILE *, size_t, size_t);
+static int rust_write_bounded_octets_jer(FILE *, size_t, size_t);
+static int rust_write_bounded_bits(FILE *, const char *, size_t, size_t,
+                                  uint64_t);
 static int rust_write_enumerated(FILE *, const char *, asn1p_expr_t *, uint64_t);
 static int rust_write_enumerated_jer(FILE *, asn1p_expr_t *);
 static int rust_write_integer_ber(FILE *, const char *, const char *);
@@ -105,10 +114,13 @@ static int rust_write_sequence(FILE *, const char *, asn1p_expr_t *, int);
 static int rust_write_all_sequences(FILE *, const char *, asn1p_expr_t *, int);
 static int rust_write_sequence_field(FILE *, const char *, asn1p_expr_t *);
 static int rust_write_sequence_encode_field(FILE *, asn1p_expr_t *);
+static int rust_write_sequence_encode_string_field(FILE *, asn1p_expr_t *,
+                                                   const char *);
 static int rust_write_sequence_encode_default(FILE *, asn1p_expr_t *, const char *);
 static int rust_write_sequence_encode_optional(FILE *, asn1p_expr_t *, const char *);
 static int rust_write_sequence_decode_field(FILE *, const char *, asn1p_expr_t *,
                                             size_t *);
+static int rust_write_sequence_decode_string_field(FILE *, asn1p_expr_t *);
 static int rust_write_sequence_decode_default(FILE *, asn1p_expr_t *, size_t);
 static int rust_write_sequence_encode_presence(FILE *, asn1p_expr_t *);
 static int rust_write_sequence_decode_presence(FILE *, asn1p_expr_t *);
@@ -393,25 +405,35 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
         return 0;
     }
     if(expr->expr_type == ASN_BASIC_OCTET_STRING) {
-        if(!codecs || (codecs & ~(RUST_CODEC_UPER | RUST_CODEC_JER))
+        size_t lower, upper;
+        if((!codecs || (codecs & ~(RUST_CODEC_UPER | RUST_CODEC_JER)))
            || !expr->combined_constraints
-           || !rust_size_constraint_supported(expr->combined_constraints, 0)
-           || rust_fixed_size(expr, &(size_t){0})) {
+           || !rust_size_constraint_supported(expr->combined_constraints, 0)) {
             rust_diagnostic(module, expr,
-                "OCTET STRING needs UPER and/or JER with fixed, nonextensible SIZE below 65536");
+                "OCTET STRING needs UPER and/or JER with finite SIZE constraints");
             return -1;
         }
-        return 0;
+        if(!rust_fixed_size(expr, &(size_t){0})) return 0;
+        if(!(codecs & ~(RUST_CODEC_UPER | RUST_CODEC_JER))
+           && !rust_bounded_size(expr, &lower, &upper)) return 0;
+        rust_diagnostic(module, expr,
+            "OCTET STRING needs fixed UPER/JER or bounded UPER/JER SIZE below 65536");
+        return -1;
     }
     if(expr->expr_type == ASN_BASIC_BIT_STRING) {
-        if(codecs != RUST_CODEC_UPER || !expr->combined_constraints
-           || !rust_size_constraint_supported(expr->combined_constraints, 0)
-           || rust_fixed_size(expr, &(size_t){0})) {
+        size_t lower, upper;
+        if(!codecs || (codecs & ~(RUST_CODEC_UPER | RUST_CODEC_JER))
+           || !expr->combined_constraints
+           || !rust_size_constraint_supported(expr->combined_constraints, 0)) {
             rust_diagnostic(module, expr,
-                "BIT STRING needs UPER-only fixed, nonextensible SIZE below 65536");
+                "BIT STRING needs UPER and/or JER with finite SIZE constraints");
             return -1;
         }
-        return 0;
+        if(!rust_fixed_size(expr, &(size_t){0})) return 0;
+        if(!rust_bounded_size(expr, &lower, &upper)) return 0;
+        rust_diagnostic(module, expr,
+            "BIT STRING needs fixed or bounded nonextensible SIZE below 65536");
+        return -1;
     }
     rust_diagnostic(module, expr,
                     "only direct primitives and flat UPER SEQUENCE are supported");
@@ -645,11 +667,16 @@ rust_check_sequence_member(asn1p_module_t *module, asn1p_expr_t *member) {
         supported = member->combined_constraints
             && rust_constraint_supported(member->combined_constraints, 0)
             && !rust_integer_bounds(member, &(int64_t){0}, &(int64_t){0});
-    } else if(member->expr_type == ASN_BASIC_OCTET_STRING
-              || member->expr_type == ASN_BASIC_BIT_STRING) {
+    } else if(member->expr_type == ASN_BASIC_OCTET_STRING) {
         supported = member->combined_constraints
             && rust_size_constraint_supported(member->combined_constraints, 0)
-            && !rust_fixed_size(member, &(size_t){0});
+            && (!rust_fixed_size(member, &(size_t){0})
+                || !rust_bounded_size(member, &(size_t){0}, &(size_t){0}));
+    } else if(member->expr_type == ASN_BASIC_BIT_STRING) {
+        supported = member->combined_constraints
+            && rust_size_constraint_supported(member->combined_constraints, 0)
+            && (!rust_fixed_size(member, &(size_t){0})
+                || !rust_bounded_size(member, &(size_t){0}, &(size_t){0}));
     }
     if(supported && member->marker.flags == EM_DEFAULT
        && rust_sequence_default_literal(member, default_literal,
@@ -869,6 +896,38 @@ rust_size_constraint_supported(const asn1p_constraint_t *constraint,
 }
 
 /*
+ * Accept only one SIZE range rather than an interval union or fixed value.
+ * Parameters: constraint is a fixed parser node; depth bounds recursion;
+ * range_seen tracks the sole inclusive range leaf. Returns one when the
+ * expression has exactly one integer range. No exception is thrown.
+ * Original source: Rust UPER bounded-string gate. Version/date: 0.5.0,
+ * 2026-10-30. Responsible party: asn1c maintainers. History: variable octets.
+ * Example: rust_size_single_range_supported(node, 0, &seen).
+ */
+static int
+rust_size_single_range_supported(const asn1p_constraint_t *constraint,
+                                 unsigned depth, int *range_seen) {
+    unsigned i;
+    if(!constraint || !range_seen || depth > RUST_CONSTRAINT_DEPTH_LIMIT)
+        return 0;
+    if(constraint->type == ACT_EL_RANGE) {
+        if(*range_seen || !constraint->range_start || !constraint->range_stop
+           || constraint->range_start->type != ATV_INTEGER
+           || constraint->range_stop->type != ATV_INTEGER) return 0;
+        *range_seen = 1;
+        return 1;
+    }
+    if(constraint->type != ACT_CT_SIZE && constraint->type != ACT_CA_SET
+       && constraint->type != ACT_CA_INT) return 0;
+    if(constraint->el_count != 1) return 0;
+    for(i = 0; i < constraint->el_count; i++) {
+        if(!rust_size_single_range_supported(constraint->elements[i], depth + 1,
+                                             range_seen)) return 0;
+    }
+    return 1;
+}
+
+/*
  * Extract a fixed, nonextensible PER SIZE below the fragmentation threshold.
  * Parameters: expr is a direct string type; length receives the unit count.
  * Returns zero on success and -1 otherwise; frees every computed range.
@@ -893,6 +952,40 @@ rust_fixed_size(asn1p_expr_t *expr, size_t *length) {
         return -1;
     }
     *length = (size_t)range->left.value;
+    asn1constraint_range_free(range);
+    return 0;
+}
+
+/*
+ * Extract one bounded nonextensible OCTET STRING size interval.
+ * Parameters: expr is a direct string type; lower and upper receive inclusive
+ * bounds. Returns zero for one contiguous nonempty range below 65536, else -1.
+ * The computed PER range is released on every path; no exception is thrown.
+ * Original source: X.691 constrained length selection. Version/date: 0.5.0,
+ * 2026-10-30. Responsible party: asn1c maintainers. History: variable octets.
+ * Example: rust_bounded_size(expr, &minimum, &maximum).
+ */
+static int
+rust_bounded_size(asn1p_expr_t *expr, size_t *lower, size_t *upper) {
+    asn1cnst_range_t *range;
+    int range_seen = 0;
+    if(!expr || !expr->combined_constraints || !lower || !upper
+       || !rust_size_single_range_supported(expr->combined_constraints, 0,
+                                            &range_seen)
+       || !range_seen) return -1;
+    range = asn1constraint_compute_PER_range(expr->Identifier, expr->expr_type,
+        expr->combined_constraints, ACT_CT_SIZE, 0, 0, CPR_noflags);
+    if(!range) return -1;
+    if(range->incompatible || range->empty_constraint || range->not_PER_visible
+       || range->extensible || range->left.type != ARE_VALUE
+       || range->right.type != ARE_VALUE || range->left.value < 0
+       || range->left.value >= range->right.value
+       || range->right.value >= 65536) {
+        asn1constraint_range_free(range);
+        return -1;
+    }
+    *lower = (size_t)range->left.value;
+    *upper = (size_t)range->right.value;
     asn1constraint_range_free(range);
     return 0;
 }
@@ -1738,6 +1831,11 @@ rust_write_sequence_field(FILE *stream, const char *parent,
                        : member->expr_type == ASN_BASIC_BOOLEAN ? "bool"
                        : member->expr_type == ASN_BASIC_NULL ? "()"
                        : member->expr_type == ASN_BASIC_INTEGER ? "i64"
+                       : member->expr_type == ASN_BASIC_BIT_STRING
+                         && rust_fixed_size(member, &(size_t){0}) == 0
+                         ? "::std::vec::Vec<u8>"
+                       : member->expr_type == ASN_BASIC_BIT_STRING
+                         ? "::asn1c_runtime::BitStringValue"
                        : "::std::vec::Vec<u8>";
     int ret = -1;
     if(name) {
@@ -1788,13 +1886,8 @@ rust_write_sequence_encode_field(FILE *stream, asn1p_expr_t *member) {
     else if(member->expr_type == ASN_BASIC_NULL)
         ret = fputs("        writer.write_null()?;\n", stream);
     else if(member->expr_type == ASN_BASIC_OCTET_STRING
-            || member->expr_type == ASN_BASIC_BIT_STRING) {
-        size_t length;
-        if(!rust_fixed_size(member, &length))
-            ret = fprintf(stream, "        writer.write_%s(&self.%s, %zu)?;\n",
-                member->expr_type == ASN_BASIC_OCTET_STRING ? "octets" : "bit_string",
-                name, length);
-    }
+            || member->expr_type == ASN_BASIC_BIT_STRING)
+        ret = rust_write_sequence_encode_string_field(stream, member, name);
     else {
         int64_t lower, upper;
         char low[64], high[64];
@@ -1807,6 +1900,28 @@ rust_write_sequence_encode_field(FILE *stream, asn1p_expr_t *member) {
     }
     free(name);
     return ret < 0 ? -1 : 0;
+}
+
+/*
+ * Emit the fixed or bounded string cursor call for one required field.
+ * Parameters: stream receives Rust; member supplies validated constraints;
+ * name is the sanitized field name. Returns zero or -1; no exception.
+ * Original source: Rust UPER SEQUENCE string generation. Version/date: 0.6.0,
+ * 2026-10-30. Responsible party: asn1c maintainers. History: shared string
+ * emitter. Example: rust_write_sequence_encode_string_field(out, field, "bits").
+ */
+static int
+rust_write_sequence_encode_string_field(FILE *stream, asn1p_expr_t *member,
+                                        const char *name) {
+    size_t length, lower, upper;
+    const int octets = member->expr_type == ASN_BASIC_OCTET_STRING;
+    if(!rust_fixed_size(member, &length))
+        return fprintf(stream, "        writer.write_%s(&self.%s, %zu)?;\n",
+                       octets ? "octets" : "bit_string", name, length) < 0 ? -1 : 0;
+    if(rust_bounded_size(member, &lower, &upper)) return -1;
+    return fprintf(stream,
+        "        writer.write_bounded_%s(&self.%s, %zu, %zu)?;\n",
+        octets ? "octets" : "bit_string", name, lower, upper) < 0 ? -1 : 0;
 }
 
 /*
@@ -1875,15 +1990,31 @@ rust_write_sequence_encode_optional(FILE *stream, asn1p_expr_t *member,
             "            writer.write_integer(*value, %s, %s)?;\n"
             "        }\n", name, low, high) < 0 ? -1 : 0;
     }
-    {
-        size_t length;
-        if(rust_fixed_size(member, &length)) return -1;
+    if(member->expr_type == ASN_BASIC_OCTET_STRING) {
+        size_t length, lower, upper;
+        if(!rust_fixed_size(member, &length))
+            return fprintf(stream,
+                "        if let Some(value) = self.%s.as_ref() {\n"
+                "            writer.write_octets(value, %zu)?;\n"
+                "        }\n", name, length) < 0 ? -1 : 0;
+        if(rust_bounded_size(member, &lower, &upper)) return -1;
         return fprintf(stream,
             "        if let Some(value) = self.%s.as_ref() {\n"
-            "            writer.write_%s(value, %zu)?;\n"
-            "        }\n", name,
-            member->expr_type == ASN_BASIC_OCTET_STRING ? "octets" : "bit_string",
-            length) < 0 ? -1 : 0;
+            "            writer.write_bounded_octets(value, %zu, %zu)?;\n"
+            "        }\n", name, lower, upper) < 0 ? -1 : 0;
+    }
+    {
+        size_t length, lower, upper;
+        if(!rust_fixed_size(member, &length))
+            return fprintf(stream,
+                "        if let Some(value) = self.%s.as_ref() {\n"
+                "            writer.write_bit_string(value, %zu)?;\n"
+                "        }\n", name, length) < 0 ? -1 : 0;
+        if(rust_bounded_size(member, &lower, &upper)) return -1;
+        return fprintf(stream,
+            "        if let Some(value) = self.%s.as_ref() {\n"
+            "            writer.write_bounded_bit_string(value, %zu, %zu)?;\n"
+            "        }\n", name, lower, upper) < 0 ? -1 : 0;
     }
 }
 
@@ -2023,13 +2154,9 @@ rust_write_sequence_decode_field(FILE *stream, const char *parent,
     if(member->expr_type == ASN_BASIC_BOOLEAN)
         ret = fputs("reader.read_boolean()?", stream);
     else if(member->expr_type == ASN_BASIC_OCTET_STRING
-            || member->expr_type == ASN_BASIC_BIT_STRING) {
-        size_t length;
-        if(!rust_fixed_size(member, &length))
-            ret = fprintf(stream, "reader.read_%s(%zu)?",
-                member->expr_type == ASN_BASIC_OCTET_STRING
-                    ? "octets" : "bit_string", length);
-    } else {
+            || member->expr_type == ASN_BASIC_BIT_STRING)
+        ret = rust_write_sequence_decode_string_field(stream, member);
+    else {
         int64_t lower, upper;
         char low[64], high[64];
         if(!rust_integer_bounds(member, &lower, &upper)
@@ -2044,6 +2171,26 @@ rust_write_sequence_decode_field(FILE *stream, const char *parent,
     free(name);
     free(nested_type);
     return ret < 0 ? -1 : 0;
+}
+
+/*
+ * Emit a fixed or bounded string cursor expression in one field initializer.
+ * Parameters: stream receives Rust; member supplies type and size constraints.
+ * Returns zero or -1; no exception. Original source: Rust UPER SEQUENCE string
+ * decoding. Version/date: 0.6.0, 2026-10-30. Responsible party: asn1c
+ * maintainers. History: shared OCTET/BIT STRING path. Example:
+ * rust_write_sequence_decode_string_field(out, field).
+ */
+static int
+rust_write_sequence_decode_string_field(FILE *stream, asn1p_expr_t *member) {
+    size_t length, lower, upper;
+    const int octets = member->expr_type == ASN_BASIC_OCTET_STRING;
+    if(!rust_fixed_size(member, &length))
+        return fprintf(stream, "reader.read_%s(%zu)?",
+                       octets ? "octets" : "bit_string", length) < 0 ? -1 : 0;
+    if(rust_bounded_size(member, &lower, &upper)) return -1;
+    return fprintf(stream, "reader.read_bounded_%s(%zu, %zu)?",
+                   octets ? "octets" : "bit_string", lower, upper) < 0 ? -1 : 0;
 }
 
 /*
@@ -2172,34 +2319,43 @@ rust_write_string_uper(FILE *stream, size_t length, int octets) {
 }
 
 /*
- * Emit selected JER methods for one fixed-size OCTET STRING wrapper.
- * Parameters: stream receives Rust; length is the declared octet count.
+ * Emit selected JER methods for a fixed-size OCTET STRING or BIT STRING.
+ * Parameters: stream receives Rust; length is the declared unit count;
+ * octets selects OCTET STRING over BIT STRING.
  * Returns zero or -1 on output failure; it throws no exception.
- * Original source: OCTET_STRING JER
- * helpers in the Rust runtime. Version/date: 0.4.0, 2026-10-30. Responsible
- * party: asn1c maintainers. History: direct fixed-size JER support. Example:
- * rust_write_string_jer(out, 3).
+ * Original source: OCTET_STRING/BIT_STRING JER helpers in the Rust runtime.
+ * Version/date: 0.7.0, 2026-10-30. Responsible party: asn1c maintainers.
+ * History: direct fixed-size string JER support. Example:
+ * rust_write_string_jer(out, 3, 0).
  */
 static int
-rust_write_string_jer(FILE *stream, size_t length) {
+rust_write_string_jer(FILE *stream, size_t length, int octets) {
     if(rust_write_method_doc(stream,
-            "Encode this fixed-size OCTET STRING as a JER hexadecimal string.",
+            octets ? "Encode this fixed-size OCTET STRING as JER hexadecimal."
+                   : "Encode this fixed-size BIT STRING as JER hexadecimal.",
             "`self` is the validated value; `limits` bounds output and work.",
-            "Returns compact uppercase hexadecimal JSON and full byte counts.",
+            "Returns compact uppercase hexadecimal JSON and complete counts.",
             "Returns an error for invalid content or exhausted resources.",
             "`let encoded = value.encode_jer(&Default::default())?;")) return -1;
-    if(fprintf(stream,
+    if(octets) {
+        if(fprintf(stream,
+            "    pub fn encode_jer(&self, limits: &::asn1c_runtime::Limits) ->\n"
+            "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+            "        ::asn1c_runtime::encode_octet_string_jer(&self.0, %zu, limits)\n"
+            "    }\n", length) < 0) return -1;
+    } else if(fprintf(stream,
         "    pub fn encode_jer(&self, limits: &::asn1c_runtime::Limits) ->\n"
         "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
-        "        ::asn1c_runtime::encode_octet_string_jer(&self.0, %zu, limits)\n"
+        "        ::asn1c_runtime::encode_bit_string_jer(&self.0, %zu, limits)\n"
         "    }\n", length) < 0) return -1;
     if(rust_write_method_doc(stream,
-            "Decode one complete fixed-size OCTET STRING JER value.",
+            octets ? "Decode one complete fixed-size OCTET STRING JER value."
+                   : "Decode one complete fixed-size BIT STRING JER value.",
             "`input` is the entire JSON string; `limits` bounds input and work.",
             "Returns the validated value and full-input byte and bit counts.",
             "Returns an error for malformed hex, wrong size, trailing input, or limits.",
             "`let decoded = Type::decode_jer(input, &Default::default())?;")) return -1;
-    return fprintf(stream,
+    if(octets) return fprintf(stream,
         "    pub fn decode_jer(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
         "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
         "        let decoded = ::asn1c_runtime::decode_octet_string_jer(input, %zu, limits)?;\n"
@@ -2209,6 +2365,275 @@ rust_write_string_jer(FILE *stream, size_t length) {
         "            consumed_bytes: decoded.consumed_bytes,\n"
         "        })\n"
         "    }\n", length) < 0 ? -1 : 0;
+    return fprintf(stream,
+        "    pub fn decode_jer(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+        "        let decoded = ::asn1c_runtime::decode_bit_string_jer(input, %zu, limits)?;\n"
+        "        Ok(::asn1c_runtime::Decoded {\n"
+        "            value: Self(decoded.value),\n"
+        "            consumed_bits: decoded.consumed_bits,\n"
+        "            consumed_bytes: decoded.consumed_bytes,\n"
+        "        })\n"
+        "    }\n", length) < 0 ? -1 : 0;
+}
+
+/*
+ * Emit a bounded OCTET STRING wrapper with selected UPER and JER methods.
+ * Parameters: stream receives Rust; name is the generated type; lower and
+ * upper are validated inclusive bounds; codecs selects emitted methods.
+ * Returns zero or -1; it throws no exception. Original source: Rust bounded
+ * UPER and JER APIs.
+ * Version/date: 0.5.0, 2026-10-30. Responsible party: asn1c maintainers.
+ * History: bounded octet slice. Example:
+ * rust_write_bounded_octets(out, "Data", 1, 3, RUST_CODEC_JER).
+ */
+static int
+rust_write_bounded_octets(FILE *stream, const char *name,
+                          size_t lower, size_t upper, uint64_t codecs) {
+    if(fprintf(stream,
+        "/// Bounded nonextensible ASN.1 OCTET STRING payload.\n"
+        "#[derive(Clone, Debug, Eq, PartialEq)]\n"
+        "pub struct %s(\n    /// ASN.1 OCTET STRING payload state variable.\n"
+        "    ::std::vec::Vec<u8>\n);\n\nimpl %s {\n", name, name) < 0)
+        return -1;
+    if(rust_write_method_doc(stream,
+            "Construct an OCTET STRING within its declared size range.",
+            "`value` contains the octets to validate.",
+            "Returns the validated value.",
+            "Returns an error when the octet count is outside the ASN.1 SIZE range.",
+            "`let value = Type::new(vec![0xA5])?;")) return -1;
+    if(fputs(
+        "    pub fn new(value: ::std::vec::Vec<u8>) ->\n"
+        "        ::core::result::Result<Self, ::asn1c_runtime::Error> {\n",
+        stream) == EOF) return -1;
+    if(lower == 0) {
+        if(fprintf(stream, "        if value.len() > %zu {\n", upper) < 0) return -1;
+    } else if(lower == 1) {
+        if(fprintf(stream,
+            "        if value.is_empty() || value.len() > %zu {\n", upper) < 0)
+            return -1;
+    } else if(fprintf(stream,
+        "        if value.len() < %zu || value.len() > %zu {\n", lower, upper) < 0) {
+        return -1;
+    }
+    if(fputs(
+        "            return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+        "                reason: \"OCTET STRING length is outside its SIZE range\",\n"
+        "            });\n        }\n        Ok(Self(value))\n    }\n", stream) == EOF)
+        return -1;
+    if(rust_write_method_doc(stream,
+            "Return the OCTET STRING contents.",
+            "`self` is a validated bounded OCTET STRING.",
+            "Returns its octets without copying.",
+            "This accessor cannot fail.",
+            "`let bytes = value.as_bytes();")) return -1;
+    if(fputs("    #[must_use]\n    pub fn as_bytes(&self) -> &[u8] { &self.0 }\n",
+             stream) == EOF) return -1;
+    if((codecs & RUST_CODEC_UPER)
+       && rust_write_bounded_octets_uper(stream, lower, upper)) return -1;
+    if((codecs & RUST_CODEC_JER)
+       && rust_write_bounded_octets_jer(stream, lower, upper)) return -1;
+    if(fputs("}\n\n", stream) == EOF) return -1;
+    return 0;
+}
+
+/*
+ * Emit UPER methods for one bounded OCTET STRING wrapper.
+ * Parameters: stream receives Rust source; lower and upper are inclusive
+ * declared bounds. Returns zero or -1; it throws no exception. Original
+ * source: bounded Rust UPER cursor API. Version/date: 0.5.0, 2026-10-30.
+ * Responsible party: asn1c
+ * maintainers. History: extracted bounded octet emitter. Example:
+ * rust_write_bounded_octets_uper(stream, 1, 7).
+ */
+static int
+rust_write_bounded_octets_uper(FILE *stream, size_t lower, size_t upper) {
+    if(rust_write_method_doc(stream,
+            "Encode this bounded OCTET STRING with UPER.",
+            "`self` is the value; `limits` bounds output and work.",
+            "Returns packed bytes and meaningful bit length.",
+            "Returns an error when a resource limit is exceeded.",
+            "`let encoded = value.encode_uper(&Default::default())?;")) return -1;
+    if(fprintf(stream,
+        "    pub fn encode_uper(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+        "        let mut writer = ::asn1c_runtime::UperWriter::new(limits)?;\n"
+        "        writer.write_bounded_octets(&self.0, %zu, %zu)?;\n"
+        "        writer.finish()\n    }\n", lower, upper) < 0) return -1;
+    if(rust_write_method_doc(stream,
+            "Decode one complete bounded OCTET STRING UPER value.",
+            "`input` is the encoded prefix; `limits` bounds input and work.",
+            "Returns the validated string and consumed prefix lengths.",
+            "Returns an error for truncation, spare size codes, or exhausted resources.",
+            "`let decoded = Type::decode_uper(input, &Default::default())?;")) return -1;
+    return fprintf(stream,
+        "    pub fn decode_uper(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+        "        let mut reader = ::asn1c_runtime::UperReader::new(input, limits)?;\n"
+        "        let value = reader.read_bounded_octets(%zu, %zu)?;\n"
+        "        let consumed = reader.finish()?;\n"
+        "        Ok(::asn1c_runtime::Decoded {\n"
+        "            value: Self(value),\n"
+        "            consumed_bits: consumed.consumed_bits,\n"
+        "            consumed_bytes: consumed.consumed_bytes,\n"
+        "        })\n    }\n", lower, upper) < 0 ? -1 : 0;
+}
+
+/*
+ * Emit strict complete-input JER methods for one bounded OCTET STRING.
+ * Parameters: stream receives Rust source; lower and upper are inclusive
+ * declared bounds. Returns zero or -1; it throws no exception. Original
+ * source: bounded Rust JER runtime API. Version/date: 0.5.0, 2026-10-30.
+ * Responsible party: asn1c
+ * maintainers. History: extracted bounded octet emitter. Example:
+ * rust_write_bounded_octets_jer(stream, 1, 7).
+ */
+static int
+rust_write_bounded_octets_jer(FILE *stream, size_t lower, size_t upper) {
+    if(rust_write_method_doc(stream,
+            "Encode this bounded OCTET STRING as uppercase hexadecimal JER.",
+            "`self` is validated; `limits` bounds output and work.",
+            "Returns one quoted hexadecimal JSON string.",
+            "Returns an error when a resource limit is exceeded.",
+            "`let encoded = value.encode_jer(&Default::default())?;")) return -1;
+    if(fputs(
+        "    pub fn encode_jer(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::encode_bounded_octet_string_jer(\n"
+        "            &self.0, ", stream) == EOF
+       || fprintf(stream, "%zu, %zu, limits)\n    }\n", lower, upper) < 0) return -1;
+    if(rust_write_method_doc(stream,
+            "Decode one complete bounded OCTET STRING JER value.",
+            "`input` is the full JSON value; `limits` bounds input and work.",
+            "Returns validated octets and full-input consumption.",
+            "Returns an error for malformed JSON, hex, length, or limits.",
+            "`let decoded = Type::decode_jer(input, &Default::default())?;")) return -1;
+    if(fputs(
+        "    pub fn decode_jer(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+        "        let decoded = ::asn1c_runtime::decode_bounded_octet_string_jer(\n"
+        "            input, ", stream) == EOF) return -1;
+    return fprintf(stream,
+        "%zu, %zu, limits)?;\n"
+        "        Ok(::asn1c_runtime::Decoded {\n"
+        "            value: Self(decoded.value),\n"
+        "            consumed_bits: decoded.consumed_bits,\n"
+        "            consumed_bytes: decoded.consumed_bytes,\n"
+        "        })\n    }\n", lower, upper) < 0 ? -1 : 0;
+}
+
+/*
+ * Emit a bounded-size BIT STRING wrapper with explicit meaningful bit length.
+ * Parameters: stream receives Rust; name is the generated type; lower and
+ * upper are validated inclusive bounds; codecs selects UPER and/or JER.
+ * Returns zero or -1. Original source: X.691 and bounded BIT STRING JER.
+ * Version/date: 0.7.0, 2026-10-30. Responsible party: asn1c maintainers.
+ * History: bounded BIT STRING codec slice. Example:
+ * rust_write_bounded_bits(out, "Bits", 1, 3, RUST_CODEC_JER).
+ */
+static int
+rust_write_bounded_bits(FILE *stream, const char *name,
+                        size_t lower, size_t upper, uint64_t codecs) {
+    if(fprintf(stream,
+        "/// Bounded nonextensible ASN.1 BIT STRING with its meaningful width.\n"
+        "#[derive(Clone, Debug, Eq, PartialEq)]\n"
+        "pub struct %s(\n    /// ASN.1 BIT STRING payload state variable.\n"
+        "    ::asn1c_runtime::BitStringValue\n);\n\nimpl %s {\n",
+        name, name) < 0) return -1;
+    if(rust_write_method_doc(stream,
+            "Construct a BIT STRING within its declared size range.",
+            "`value` carries packed octets and its exact meaningful bit length.",
+            "Returns the validated value.",
+            "Returns an error when its bit length is outside the ASN.1 SIZE range.",
+            "`let bits = BitStringValue::new(vec![0xA0], 3)?;")) return -1;
+    if(fprintf(stream,
+        "    pub fn new(value: ::asn1c_runtime::BitStringValue) ->\n"
+        "        ::core::result::Result<Self, ::asn1c_runtime::Error> {\n"
+        "        if value.bit_len() < %zu || value.bit_len() > %zu {\n"
+        "            return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+        "                reason: \"BIT STRING length is outside its SIZE range\",\n"
+        "            });\n        }\n        Ok(Self(value))\n    }\n",
+        lower, upper) < 0) return -1;
+    if(rust_write_method_doc(stream,
+            "Return the packed BIT STRING contents.",
+            "`self` is a validated bounded BIT STRING.",
+            "Returns its packed octets without copying.",
+            "This accessor cannot fail.",
+            "`let packed = bits.as_bytes();")) return -1;
+    if(fputs(
+        "    #[must_use]\n    pub fn as_bytes(&self) -> &[u8] { self.0.as_bytes() }\n",
+        stream) == EOF) return -1;
+    if(rust_write_method_doc(stream,
+            "Return the exact number of meaningful BIT STRING bits.",
+            "`self` is a validated bounded BIT STRING.",
+            "Returns its logical bit length.",
+            "This accessor cannot fail.",
+            "`let width = bits.bit_len();")) return -1;
+    if(fputs("    #[must_use]\n    pub const fn bit_len(&self) -> usize { self.0.bit_len() }\n",
+             stream) == EOF) return -1;
+    if(codecs & RUST_CODEC_UPER) {
+    if(rust_write_method_doc(stream,
+            "Encode this bounded BIT STRING with UPER.",
+            "`self` is the value; `limits` bounds output and work.",
+            "Returns packed bytes and meaningful bit length.",
+            "Returns an error when a resource limit is exceeded.",
+            "`let encoded = bits.encode_uper(&Default::default())?;")) return -1;
+    if(fprintf(stream,
+        "    pub fn encode_uper(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+        "        let mut writer = ::asn1c_runtime::UperWriter::new(limits)?;\n"
+        "        writer.write_bounded_bit_string(&self.0, %zu, %zu)?;\n"
+        "        writer.finish()\n    }\n", lower, upper) < 0) return -1;
+    if(rust_write_method_doc(stream,
+            "Decode one complete bounded BIT STRING UPER value.",
+            "`input` is the encoded prefix; `limits` bounds input and work.",
+            "Returns the validated bit string and consumed prefix lengths.",
+            "Returns an error for truncation, spare size codes, or exhausted resources.",
+            "`let decoded = Bits::decode_uper(input, &Default::default())?;")) return -1;
+    if(fprintf(stream,
+        "    pub fn decode_uper(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+        "        let mut reader = ::asn1c_runtime::UperReader::new(input, limits)?;\n"
+        "        let value = reader.read_bounded_bit_string(%zu, %zu)?;\n"
+        "        let consumed = reader.finish()?;\n"
+        "        Ok(::asn1c_runtime::Decoded {\n"
+        "            value: Self(value),\n"
+        "            consumed_bits: consumed.consumed_bits,\n"
+        "            consumed_bytes: consumed.consumed_bytes,\n"
+        "        })\n    }\n", lower, upper) < 0) return -1;
+    }
+    if(codecs & RUST_CODEC_JER) {
+        if(rust_write_method_doc(stream,
+                "Encode this bounded BIT STRING as a minified JER object.",
+                "`self` is validated; `limits` bounds output and work.",
+                "Returns uppercase hexadecimal plus the exact logical bit length.",
+                "Returns an error for invalid content or exhausted resources.",
+                "`let encoded = bits.encode_jer(&Default::default())?;")) return -1;
+        if(fprintf(stream,
+            "    pub fn encode_jer(&self, limits: &::asn1c_runtime::Limits) ->\n"
+            "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+            "        ::asn1c_runtime::encode_bounded_bit_string_jer(\n"
+            "            &self.0, %zu, %zu, limits)\n"
+            "    }\n", lower, upper) < 0) return -1;
+        if(rust_write_method_doc(stream,
+                "Decode one complete bounded BIT STRING JER object.",
+                "`input` is the full JSON value; `limits` bounds input and work.",
+                "Returns validated packed bits and full-input consumption.",
+                "Returns an error for malformed JSON, hex, length, padding, or limits.",
+                "`let decoded = Bits::decode_jer(input, &Default::default())?;")) return -1;
+        if(fprintf(stream,
+            "    pub fn decode_jer(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+            "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+            "        let decoded = ::asn1c_runtime::decode_bounded_bit_string_jer(\n"
+            "            input, %zu, %zu, limits)?;\n"
+            "        Ok(::asn1c_runtime::Decoded {\n"
+            "            value: Self(decoded.value),\n"
+            "            consumed_bits: decoded.consumed_bits,\n"
+            "            consumed_bytes: decoded.consumed_bytes,\n"
+            "        })\n    }\n", lower, upper) < 0) return -1;
+    }
+    if(fputs("}\n\n", stream) == EOF) return -1;
+    return 0;
 }
 
 /*
@@ -2223,9 +2648,13 @@ rust_write_string_jer(FILE *stream, size_t length) {
 static int
 rust_write_string(FILE *stream, const char *name, asn1p_expr_t *expr,
                   uint64_t codecs) {
-    size_t length;
+    size_t length, lower, upper;
     const int octets = expr->expr_type == ASN_BASIC_OCTET_STRING;
-    if(rust_fixed_size(expr, &length)) return -1;
+    if(rust_fixed_size(expr, &length)) {
+        if(rust_bounded_size(expr, &lower, &upper)) return -1;
+        return octets ? rust_write_bounded_octets(stream, name, lower, upper, codecs)
+                      : rust_write_bounded_bits(stream, name, lower, upper, codecs);
+    }
     if(fprintf(stream,
         "#[derive(Clone, Debug, Eq, PartialEq)]\n"
         "pub struct %s(\n    /// ASN.1 string payload state variable.\n"
@@ -2234,8 +2663,8 @@ rust_write_string(FILE *stream, const char *name, asn1p_expr_t *expr,
     if(rust_write_string_constructor(stream, length, octets)) return -1;
     if((codecs & RUST_CODEC_UPER)
        && rust_write_string_uper(stream, length, octets)) return -1;
-    if(octets && (codecs & RUST_CODEC_JER)
-       && rust_write_string_jer(stream, length)) return -1;
+    if((codecs & RUST_CODEC_JER)
+       && rust_write_string_jer(stream, length, octets)) return -1;
     return fputs("}\n\n", stream) == EOF ? -1 : 0;
 }
 

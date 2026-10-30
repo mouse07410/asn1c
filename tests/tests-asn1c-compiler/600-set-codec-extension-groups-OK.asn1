@@ -1,0 +1,23 @@
+SetCodecExtensionGroups DEFINITIONS IMPLICIT TAGS ::= BEGIN
+
+GroupSet ::= SET {
+    root [0] INTEGER (0..255),
+    ...,
+    [[ first [1] INTEGER (0..255),
+       flag [2] BOOLEAN OPTIONAL,
+       defaulted [3] INTEGER (0..255) DEFAULT 3 ]],
+    [[ onlyFlag [4] BOOLEAN OPTIONAL,
+       onlyValue [5] INTEGER (0..255) DEFAULT 3 ]],
+    extra [6] INTEGER (0..255) OPTIONAL,
+    ...,
+    trailing [9] INTEGER (0..255) OPTIONAL
+}
+
+OlderGroupSet ::= SET {
+    root [0] INTEGER (0..255),
+    ...,
+    ...,
+    trailing [9] INTEGER (0..255) OPTIONAL
+}
+
+END

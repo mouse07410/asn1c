@@ -1,5 +1,5 @@
 {
-  "suite": "generated Rust primitive codecs, fixed UPER strings, ENUMERATED, and flat UPER SEQUENCE slice",
+  "suite": "generated Rust primitive codecs, fixed and bounded-size UPER strings, ENUMERATED, and nested UPER SEQUENCE slice",
   "scope": "Only the listed nonextensible primitive subset is qualified.",
   "cases": [
     {
@@ -184,10 +184,10 @@
         "nine-bit presence bitmap crossing an octet boundary",
         "zero-width member and complete-value filler",
         "full signed i64 INTEGER range",
-        "cumulative work and whole-input/output ceilings"
-        ,"required and OPTIONAL nested records with local presence maps"
-        ,"nested primitive DEFAULT omission and substitution"
-        ,"nested truncation, filler, and cumulative limit rejection"
+        "cumulative work and whole-input/output ceilings",
+        "required and OPTIONAL nested records with local presence maps",
+        "nested primitive DEFAULT omission and substitution",
+        "nested truncation, filler, and cumulative limit rejection"
       ],
       "directions": [
         "encode",
@@ -198,21 +198,26 @@
     },
     {
       "asn1_type": "OCTET STRING, BIT STRING",
-      "feature": "direct fixed nonextensible SIZE(N), N < 65536; standalone and flat required or OPTIONAL field",
+      "feature": "direct fixed SIZE(N), bounded OCTET SIZE(l..u), and bounded BIT SIZE(l..u), all below 65536; standalone and required or OPTIONAL SEQUENCE field",
       "codec": "UPER",
       "variants": [
         "zero-size complete filler",
         "continuous cross-byte packing",
         "BIT STRING unused-bit validation",
         "whole-value resource budgets",
-        "SIZE(65535) accepted; SIZE(65536) rejected"
+        "SIZE(65535) accepted; SIZE(65536) rejected",
+        "bounded OCTET STRING SIZE(1..3), standalone and required or OPTIONAL SEQUENCE field",
+        "bounded BIT STRING SIZE(1..3), exact non-octet bit lengths and required or OPTIONAL SEQUENCE field",
+        "bounded BIT STRING SIZE(2..4), non-octet payload after OPTIONAL presence bits",
+        "spare constrained-length codes, truncation, padding, input/work/output limits",
+        "deterministic mutation of every meaningful bit in bounded BIT STRING golden vectors"
       ],
       "directions": [
         "encode",
         "decode"
       ],
       "status": "tested_with_live_C_comparison",
-      "evidence": "string_conformance.rs; c_string.c; asn1c-runtime/src/uper_cursor.rs tests; boundary_conformance.rs"
+      "evidence": "string_conformance.rs; c_string.c; asn1c-runtime/src/uper_cursor.rs tests; boundary_conformance.rs; variable_string_conformance.rs; c_variable_string.c; variable_bit_string_conformance.rs; c_variable_bit_string.c"
     },
     {
       "asn1_type": "OCTET STRING",
@@ -231,6 +236,58 @@
       ],
       "status": "tested_with_live_C_comparison",
       "evidence": "octet_jer_conformance.rs; c_jer.c; OctetJER.asn1; asn1c-runtime/src/jer.rs tests"
+    },
+    {
+      "asn1_type": "OCTET STRING",
+      "feature": "direct bounded nonextensible SIZE(l..u), 0 <= l < u < 65536; JER alone or with UPER",
+      "codec": "JER",
+      "variants": [
+        "C-compatible quoted uppercase hexadecimal output",
+        "case-insensitive decoding with surrounding JSON whitespace",
+        "inclusive range, malformed hex, and complete-input validation",
+        "input, output, and work limit enforcement",
+        "generated C encode/decode interoperability"
+      ],
+      "directions": [
+        "encode",
+        "decode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "octet_jer_conformance.rs; c_jer.c; OctetJER.asn1; asn1c-runtime/src/jer.rs tests"
+    },
+    {
+      "asn1_type": "BIT STRING",
+      "feature": "direct fixed nonextensible SIZE(N); JER alone or with UPER",
+      "codec": "JER",
+      "variants": [
+        "C-compatible packed uppercase hexadecimal string",
+        "case-insensitive decoding with surrounding JSON whitespace",
+        "exact storage length, zero-padding, and complete-input validation",
+        "generated C encode/decode interoperability"
+      ],
+      "directions": [
+        "encode",
+        "decode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "bit_jer_conformance.rs; c_jer.c; OctetJER.asn1; asn1c-runtime/src/jer.rs tests"
+    },
+    {
+      "asn1_type": "BIT STRING",
+      "feature": "direct bounded nonextensible SIZE(l..u), 0 <= l < u < 65536; JER alone or with UPER",
+      "codec": "JER",
+      "variants": [
+        "C-compatible minified object with value before length",
+        "exact logical bit length and packed hexadecimal payload",
+        "range, hexadecimal, zero-padding, and complete-input validation",
+        "generated C encode/decode interoperability"
+      ],
+      "directions": [
+        "encode",
+        "decode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "bit_jer_conformance.rs; c_jer.c; OctetJER.asn1; asn1c-runtime/src/jer.rs tests"
     },
     {
       "asn1_type": "BOOLEAN, NULL, INTEGER",
@@ -297,12 +354,12 @@
     {
       "family": "XER/CBOR and JER outside the primitive slice",
       "status": "not_implemented",
-      "note": "XER and CBOR are unavailable; JER is qualified for listed primitive, ENUMERATED, and fixed OCTET STRING types."
+      "note": "XER and CBOR are unavailable; JER is qualified for listed primitive, ENUMERATED, direct fixed or bounded OCTET STRING, and direct fixed or bounded BIT STRING types."
     },
     {
-      "family": "constructed outside flat UPER SEQUENCE, variable-size or named-bit strings, CHOICE, extensible ENUMERATED, REAL, open types",
+      "family": "constructed outside nested UPER SEQUENCE, extensible, unbounded, fragmented or disjoint strings, named-bit strings, CHOICE, extensible ENUMERATED, REAL, open types",
       "status": "outside_first_slice",
-      "note": "No Rust correctness or interoperability claim is made beyond the listed SEQUENCE and fixed string subsets."
+      "note": "No Rust correctness or interoperability claim is made beyond the listed SEQUENCE and bounded string subsets."
     },
     {
       "family": "extensible constraints and cross-codec conversion",
@@ -329,9 +386,12 @@
       "duplicate --rust selectors and disabling all Rust codecs",
       "an incomplete runtime asset set beside explicit skeletons",
       "unsupported XER/CBOR codecs, unsupported JER type combinations, and C-layout selectors",
-      "variable-size, extensible-size, and named-bit OCTET/BIT STRING forms",
       "extensible ENUMERATED root values",
-      "fixed string SIZE(65536) at the fragmentation boundary"
+      "fixed string SIZE(65536) at the fragmentation boundary",
+      "extensible-size, size unions, and named-bit OCTET/BIT STRING forms",
+      "bounded BIT STRING upper bound 65536",
+      "bounded BIT STRING with codecs other than UPER or JER",
+      "bounded OCTET STRING with extensible, disjoint, oversized, or unsupported codec constraints"
     ],
     "output_safety": [
       "unowned destination preservation",
@@ -345,14 +405,18 @@
     ]
   },
   "observed_counts": {
-    "generated_rust_test_functions": 43,
+    "generated_rust_test_functions": 57,
     "live_c_rust_vectors_each_direction": 8,
-    "single_octet_mutation_inputs": 768,
+    "single_octet_mutation_inputs": 796,
     "JER_single_octet_mutation_inputs": 256,
     "wide_prefix_inputs_including_complete_value": 9,
     "truncated_wide_prefix_inputs": 8,
     "live_C_fixed_string_encode_vectors": 5,
     "live_C_enum_encode_vectors": 4,
-    "live_C_JER_primitive_vectors_each_direction": 8
+    "live_C_JER_primitive_vectors_each_direction": 8,
+    "live_C_bounded_octet_JER_encode_vectors": 1,
+    "live_C_bounded_string_encode_vectors": 3,
+    "live_C_bounded_bit_string_encode_vectors": 4,
+    "bounded_BIT_single_bit_mutation_inputs": 8
   }
 }

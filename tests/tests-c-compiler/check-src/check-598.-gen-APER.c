@@ -304,7 +304,7 @@ check_invalid_metadata_cases(void) {
     {
         unsigned saved_size = specs->specifics_size;
         unsigned saved_version = specs->specifics_version;
-        specs->specifics_size = (unsigned)(sizeof(*specs) - 1);
+        specs->specifics_size = (unsigned)(offsetof(asn_SET_specifics_t, extension_groups) - 1);
         er = aper_encode_to_buffer(&asn_DEF_AperIndividualSet, 0, &source,
                                    encoded, sizeof(encoded));
         assert(er.encoded == -1);
@@ -404,7 +404,7 @@ main(void) {
 
     specs = (asn_SET_specifics_t *)asn_DEF_AperIndividualSet.specifics;
     assert(specs && specs->extensible == 2);
-    assert(specs->specifics_size >= sizeof(*specs));
+    assert(specs->specifics_size >= offsetof(asn_SET_specifics_t, extension_groups));
     assert(specs->specifics_version == ASN_SET_SPECIFICS_VERSION);
     assert(specs->root_count == 3 && specs->extension_count == 3);
     assert(memcmp(specs->root_map, expected_roots, sizeof(expected_roots)) == 0);

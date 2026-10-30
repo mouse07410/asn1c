@@ -211,7 +211,7 @@ static int
 SET_aper_order_from_cxer(const asn_TYPE_descriptor_t *td,
                          const asn_SET_specifics_t *specs,
                          unsigned root_count, unsigned *order) {
-    if(specs->extensible != 2) return SET_aper_legacy_order(td, specs, order);
+    if(specs->extensible < 2) return SET_aper_legacy_order(td, specs, order);
     if(root_count != specs->root_count) return -1;
     return SET_aper_v2_root_order(td, specs, order);
 }
@@ -305,9 +305,7 @@ SET_aper_layout_valid(const asn_TYPE_descriptor_t *td,
 static int
 SET_aper_v2_metadata_valid(const asn_TYPE_descriptor_t *td,
                            const asn_SET_specifics_t *specs) {
-    return specs->extensible == 2
-        && specs->specifics_size >= sizeof(*specs)
-        && specs->specifics_version == ASN_SET_SPECIFICS_VERSION
+    return SET_version_valid(specs)
         && specs->root_count <= td->elements_count
         && specs->extension_count <= td->elements_count
         && specs->root_count == td->elements_count - specs->extension_count
@@ -328,13 +326,13 @@ SET_aper_v2_metadata_valid(const asn_TYPE_descriptor_t *td,
 static int
 SET_aper_partition_index_valid(const asn_TYPE_descriptor_t *td,
                                unsigned index, int is_addition,
-                               uint8_t *seen) {
+                               int group_allowed, uint8_t *seen) {
     const asn_TYPE_member_t *member;
 
     if(index >= td->elements_count || seen[index]) return -1;
     member = &td->elements[index];
     if(!member->type || !member->type->op
-    || (member->flags & ATF_EXTENSION_GROUP)
+    || ((member->flags & ATF_EXTENSION_GROUP) && (!is_addition || !group_allowed))
     || (is_addition && !(member->flags & ATF_POINTER))) return -1;
     seen[index] = 1;
     return 0;
@@ -366,13 +364,13 @@ SET_aper_partition_valid(const asn_TYPE_descriptor_t *td,
         int is_addition = i >= specs->root_count;
         unsigned index = is_addition
             ? specs->extension_map[i - specs->root_count] : specs->root_map[i];
-        if(SET_aper_partition_index_valid(td, index, is_addition, seen)) {
+        if(SET_aper_partition_index_valid(td, index, is_addition, specs->extensible == 3, seen)) {
             FREEMEM(seen);
             return -1;
         }
     }
     FREEMEM(seen);
-    return 0;
+    return SET_group_metadata_valid(td);
 }
 
 /*
@@ -415,7 +413,12 @@ SET_aper_member_valid(const asn_TYPE_descriptor_t *td, const void *st,
     if(index >= td->elements_count) return -1;
     member = &td->elements[index];
     if(!member->type || !member->type->op || !member->type->op->free_struct
-    || (member->flags & (ATF_EXTENSION_GROUP | ATF_OPEN_TYPE))) return -1;
+    || (member->flags & ATF_OPEN_TYPE)) return -1;
+    if(member->flags & ATF_EXTENSION_GROUP) {
+        asn_TYPE_descriptor_t adapter;
+        if(SET_group_adapter(td, index, &adapter)) return -1;
+        return SET_member_view(td, st, index, 0, &view);
+    }
     return SET_member_view(td, st, index, ASN_SET_DIRECT_MEMBER, &view);
 }
 
@@ -472,7 +475,7 @@ SET_aper_decode_members_valid(const asn_TYPE_descriptor_t *td, const void *st,
             && !member->type->op->aper_decoder)) return -1;
         if(member->optional) (*optional_count)++;
     }
-    if(specs->extensible == 2) {
+    if(specs->extensible >= 2) {
         for(i = 0; i < specs->extension_count; i++) {
             unsigned index = specs->extension_map[i];
             const asn_TYPE_member_t *member = &td->elements[index];
@@ -503,7 +506,7 @@ SET_aper_decode_prepare(const asn_codec_ctx_t *ctx,
     *order_out = 0;
     if(!SET_aper_layout_valid(td, specs)
     || SET_aper_partition_valid(td, specs)) return -1;
-    *root_count = specs->extensible == 2 ? specs->root_count : td->elements_count;
+    *root_count = specs->extensible >= 2 ? specs->root_count : td->elements_count;
     if(SET_aper_canonical_order(td, specs, *root_count, order_out)) return -1;
     if(ASN__STACK_OVERFLOW_CHECK(ctx)) goto failed;
     if(!*sptr) {
@@ -662,7 +665,7 @@ SET_aper_extension_defaults(const asn_TYPE_descriptor_t *td, void *st,
                             const asn_SET_specifics_t *specs) {
     unsigned i;
 
-    if(specs->extensible != 2) return 0;
+    if(specs->extensible < 2) return 0;
     for(i = 0; i < specs->extension_count; i++) {
         unsigned index = specs->extension_map[i];
         asn_TYPE_member_t *member = &td->elements[index];
@@ -751,8 +754,27 @@ SET_aper_decode_addition(const asn_codec_ctx_t *ctx,
         rv.consumed = 0;
         return rv;
     }
-    rv = aper_open_type_get(ctx, member->type,
-        member->encoding_constraints.per_constraints, slot, pd);
+    if(member->flags & ATF_EXTENSION_GROUP) {
+        asn_TYPE_descriptor_t adapter;
+        void *temporary = 0;
+        if(SET_group_adapter(td, index, &adapter)) {
+            rv.code = RC_FAIL;
+            rv.consumed = 0;
+            return rv;
+        }
+        rv = aper_open_type_get(ctx, &adapter, 0, &temporary, pd);
+        if(temporary && SET_group_clear_wire_context(member->type, temporary)) rv.code = RC_FAIL;
+        if(rv.code == RC_OK && SET_group_mark_present(member->type, temporary)) rv.code = RC_FAIL;
+        if(rv.code != RC_OK) {
+            if(temporary) member->type->op->free_struct(member->type, temporary, ASFM_FREE_EVERYTHING);
+            return rv;
+        }
+        if(*slot) member->type->op->free_struct(member->type, *slot, ASFM_FREE_EVERYTHING);
+        *slot = temporary;
+    } else {
+        rv = aper_open_type_get(ctx, member->type,
+            member->encoding_constraints.per_constraints, slot, pd);
+    }
     if(rv.code == RC_OK)
         ASN_SET_MKPRESENT((char *)st + specs->pres_offset, index);
     return rv;
@@ -842,7 +864,7 @@ SET_decode_aper(const asn_codec_ctx_t *opt_codec_ctx,
         ASN__DECODE_FAILED;
     if(SET_aper_decode_prepare(opt_codec_ctx, td, specs, sptr, &st, &order,
                                &root_count, &optional_count)) ASN__DECODE_FAILED;
-    if(specs->extensible == 2) {
+    if(specs->extensible >= 2) {
         extpresent = per_get_few_bits(pd, 1);
         if(extpresent < 0) goto starved;
     }
@@ -1000,6 +1022,7 @@ SET_aper_extension_present(const asn_TYPE_descriptor_t *td, const void *sptr,
     const asn_TYPE_member_t *member = &td->elements[index];
     asn_SET_member_view_t view;
 
+    if(member->flags & ATF_EXTENSION_GROUP) return SET_group_wire_present(td, sptr, index);
     if(SET_aper_member_valid(td, sptr, index)
     || SET_member_view(td, sptr, index, ASN_SET_DIRECT_MEMBER, &view)) return -1;
     if(!view.present) return 0;
@@ -1024,7 +1047,7 @@ SET_aper_encode_extensions_valid(const asn_TYPE_descriptor_t *td,
                                  const asn_SET_specifics_t *specs) {
     unsigned i;
 
-    if(specs->extensible != 2) return 0;
+    if(specs->extensible < 2) return 0;
     for(i = 0; i < specs->extension_count; i++) {
         unsigned index = specs->extension_map[i];
         const asn_TYPE_member_t *member = &td->elements[index];
@@ -1052,7 +1075,7 @@ SET_aper_encode_extensions(const asn_TYPE_descriptor_t *td, const void *sptr,
     unsigned i;
     int any_present = 0;
 
-    if(specs->extensible != 2) return 0;
+    if(specs->extensible < 2) return 0;
     for(i = 0; i < specs->extension_count; i++) {
         int present = SET_aper_extension_present(td, sptr,
                                                 specs->extension_map[i]);
@@ -1075,9 +1098,15 @@ SET_aper_encode_extensions(const asn_TYPE_descriptor_t *td, const void *sptr,
                                                     + member->memb_offset);
         int present = SET_aper_extension_present(td, sptr, index);
         if(present < 0) return -1;
-        if(present && aper_open_type_put(member->type,
-                member->encoding_constraints.per_constraints, value, po))
-            return -1;
+        if(present) {
+            asn_TYPE_descriptor_t adapter;
+            const asn_TYPE_descriptor_t *wire_type = member->type;
+            if(member->flags & ATF_EXTENSION_GROUP) {
+                if(SET_group_adapter(td, index, &adapter)) return -1;
+                wire_type = &adapter;
+            }
+            if(aper_open_type_put(wire_type, member->encoding_constraints.per_constraints, value, po)) return -1;
+        }
     }
     return 0;
 }
@@ -1110,13 +1139,13 @@ SET_encode_aper(const asn_TYPE_descriptor_t *td,
     APER_ENCODER_RECURSION_DEPTH_INC();
     if(!SET_aper_layout_valid(td, specs)
     || SET_aper_partition_valid(td, specs)) goto failed_recursive;
-    root_count = specs->extensible == 2 ? specs->root_count : td->elements_count;
+    root_count = specs->extensible >= 2 ? specs->root_count : td->elements_count;
     if(SET_aper_canonical_order(td, specs, root_count, &order))
         goto failed_recursive;
     if(SET_aper_encode_members_valid(td, sptr, order, root_count)
     || SET_aper_encode_extensions_valid(td, sptr, specs))
         goto failed_recursive;
-    if(specs->extensible == 2) {
+    if(specs->extensible >= 2) {
         unsigned i;
         int extpresent = 0; /* state variable: tracks present additions */
         for(i = 0; i < specs->extension_count; i++) {

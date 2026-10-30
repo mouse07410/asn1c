@@ -8,11 +8,14 @@ subset, not complete ASN.1 codec or type coverage.
 
 The crate also has JER encode/decode functions for BOOLEAN, NULL, finite
 bounded signed `i64` INTEGER, direct nonextensible ENUMERATED, and fixed-size
-OCTET STRING. ENUMERATED root names encode as compact quoted JSON strings;
-OCTET STRING values encode as quoted uppercase hexadecimal. Their decoders
+OCTET STRING and BIT STRING plus bounded-size OCTET and BIT STRING.
+ENUMERATED root names encode as compact quoted JSON strings; OCTET STRING
+values encode as quoted uppercase hexadecimal, and bounded BIT STRING values
+include their exact logical length in the C-compatible object form. Their decoders
 accept one complete token with JSON whitespace around it and reject unknown
 names, escapes, malformed hex, incorrect fixed sizes, trailing values, and
-exhausted input, output, or work limits. The primitive decoders report
+out-of-range bounded sizes or exhausted input, output, or work limits. The
+primitive decoders report
 consumption of the entire supplied input.
 `-0` decodes as zero; integer output uses minimal decimal notation. JER does
 not yet provide streaming or constructed-value codecs. Consumers that

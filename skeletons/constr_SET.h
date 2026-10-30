@@ -12,6 +12,9 @@
 extern "C" {
 #endif
 
+struct asn_SEQUENCE_specifics_s;
+struct asn_SET_extension_group_s;
+
 
 typedef struct asn_SET_specifics_s {
 	/*
@@ -39,7 +42,7 @@ typedef struct asn_SET_specifics_s {
 	/*
 	 * Extensions-related stuff.
 	 */
-	int extensible;                             /* Whether SET is extensible */
+	int extensible;             /* 0: nonextensible; 1: legacy; 2: v2; 3: v3. */
 	const unsigned int *_mandatory_elements;    /* Bitmask of mandatory ones */
 
 	/* Versioned metadata appended to preserve the legacy field offsets. */
@@ -49,10 +52,25 @@ typedef struct asn_SET_specifics_s {
 	unsigned root_count;                        /* Number of root members. */
 	const unsigned *extension_map;              /* Addition indexes in declaration order. */
 	unsigned extension_count;                   /* Number of extension additions. */
+
+	/* Version 3 metadata for extension groups encoded as SEQUENCE values. */
+	const struct asn_SET_extension_group_s *extension_groups; /* Group wire views. */
+	unsigned extension_group_count;              /* Number of group wire views. */
 } asn_SET_specifics_t;
 
 /* Version 2 adds explicit root and extension membership maps. */
 #define ASN_SET_SPECIFICS_VERSION 2u
+/* Version 3 adds per-group SEQUENCE wire-layout metadata. */
+#define ASN_SET_SPECIFICS_VERSION_3 3u
+
+/*
+ * SEQUENCE wire-layout metadata for one synthetic SET extension group.
+ * The original group descriptor and its storage layout remain unchanged.
+ */
+typedef struct asn_SET_extension_group_s {
+	unsigned member_index; /* Outer SET element that owns this group. */
+	const struct asn_SEQUENCE_specifics_s *sequence_specifics; /* SEQUENCE layout. */
+} asn_SET_extension_group_t;
 
 /*
  * A read-only view of a SET member and the SET presence map that owns it.
@@ -98,6 +116,7 @@ xer_type_encoder_f SET_encode_xer;
 #if !defined(ASN_DISABLE_JER_SUPPORT)
 jer_type_decoder_f SET_decode_jer;
 jer_type_encoder_f SEQUENCE_encode_jer; /* X.697 29. (2021) */
+jer_type_encoder_f SET_encode_jer;
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 #if !defined(ASN_DISABLE_CBOR_SUPPORT)
 cbor_type_decoder_f SET_decode_cbor;
@@ -109,8 +128,10 @@ per_type_decoder_f SET_decode_uper;
 per_type_encoder_f SET_encode_uper;
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) */
 
-/* The streaming OER member phase owns the allocated preamble in ctx->ptr. */
+/* OER member and extension phases own their saved bit maps in ctx->ptr. */
 #define ASN_SET_OER_PHASE_MEMBERS 1001
+#define ASN_SET_OER_PHASE_EXTENSION_MAP 1003
+#define ASN_SET_OER_PHASE_EXTENSIONS 1004
 
 #if !defined(ASN_DISABLE_OER_SUPPORT)
 oer_type_decoder_f SET_decode_oer;
@@ -142,7 +163,16 @@ int SET_member_view(const asn_TYPE_descriptor_t *td, const void *st,
                     asn_SET_member_view_t *view);
 
 /* Check mandatory values in a synthetic extension-group SET by storage. */
+int SET_descriptor_valid(const asn_TYPE_descriptor_t *td);
 int SET_group_is_populated(const asn_TYPE_descriptor_t *td, const void *st);
+
+/* Versioned metadata and SEQUENCE wire views for SET extension groups. */
+int SET_version_valid(const asn_SET_specifics_t *specs);
+int SET_group_metadata_valid(const asn_TYPE_descriptor_t *td);
+int SET_group_adapter(const asn_TYPE_descriptor_t *td, unsigned index, asn_TYPE_descriptor_t *adapter);
+int SET_group_wire_present(const asn_TYPE_descriptor_t *td, const void *st, unsigned index);
+int SET_group_mark_present(const asn_TYPE_descriptor_t *td, void *st);
+int SET_group_clear_wire_context(const asn_TYPE_descriptor_t *td, void *st);
 
 /***********************
  * Some handy helpers. *

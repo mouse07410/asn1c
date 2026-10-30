@@ -2,5 +2,8 @@ OctetJER DEFINITIONS ::= BEGIN
 
 EmptyHexOctets ::= OCTET STRING (SIZE(0))
 MixedHexOctets ::= OCTET STRING (SIZE(3))
+BoundedHexOctets ::= OCTET STRING (SIZE(1..7))
+ThreeBits ::= BIT STRING (SIZE(3))
+BoundedBits ::= BIT STRING (SIZE(1..7))
 
 END

@@ -42,7 +42,7 @@ asn_TYPE_operation_t asn_OP_SET = {
 #endif  /* !defined(ASN_DISABLE_XER_SUPPORT) */
 #if !defined(ASN_DISABLE_JER_SUPPORT)
     SET_decode_jer,
-    SEQUENCE_encode_jer,
+    SET_encode_jer,
 #else
 	0,
     0,
@@ -372,6 +372,35 @@ _SET_member_offset_valid(const asn_SET_specifics_t *specs,
 }
 
 /*
+ * Purpose: validate a SET descriptor's complete direct and group storage.
+ * Source: SET layout, group metadata, and member-offset validation helpers.
+ * Version/date: 1.0, 2026-10-30. Input: td describes the SET.
+ * Returns: zero or -1 for malformed metadata. Exceptions: none.
+ * Author: asn1c maintainers. History: added for decoder preallocation checks.
+ * Example: an invalid group child offset is rejected before allocation.
+ */
+int
+SET_descriptor_valid(const asn_TYPE_descriptor_t *td) {
+    const asn_SET_specifics_t *specs;
+    size_t i, j;
+    if(!td || !td->op || td->op->kind != ASN_KIND_SET || !td->specifics) return -1;
+    specs = td->specifics;
+    if(!_SET_layout_valid(td, specs)) return -1;
+    for(i = 0; i < td->elements_count; i++) {
+        const asn_TYPE_member_t *member = &td->elements[i];
+        const asn_SET_specifics_t *child;
+        if(!_SET_member_offset_valid(specs, member)) return -1;
+        if(!(member->flags & ATF_EXTENSION_GROUP)) continue;
+        child = _SET_group_specifics(member);
+        if(!child || !member->type->elements_count) return -1;
+        for(j = 0; j < member->type->elements_count; j++) {
+            if(!_SET_member_offset_valid(child, &member->type->elements[j])) return -1;
+        }
+    }
+    return 0;
+}
+
+/*
  * Purpose: resolve ordinary or one-level grouped SET member storage.
  * Source: Compiler-emitted SET member offsets and extension-group flags.
  * Version: 2026-10-22.
@@ -507,6 +536,243 @@ SET_group_is_populated(const asn_TYPE_descriptor_t *td, const void *st) {
 }
 
 /*
+ * Purpose: validate the versioned SET partition metadata prefix safely.
+ * Source: SET v2/v3 layout and legacy ABI boundary.
+ * Version/date: 1.0, 2026-10-30. Input: specs identifies SET metadata.
+ * Returns: 1 for a valid v2 or v3 prefix, 0 for unsupported metadata.
+ * Errors: unsupported sentinels and short metadata fail without reading v3.
+ * Author: asn1c maintainers. History: added for versioned group adapters.
+ * Example: a v2 object need only cover the fields preceding v3 extensions.
+ */
+int
+SET_version_valid(const asn_SET_specifics_t *specs) {
+    if(!specs) return 0;
+    if(specs->extensible == 2)
+        return specs->specifics_size >= offsetof(asn_SET_specifics_t, extension_groups)
+            && specs->specifics_version == ASN_SET_SPECIFICS_VERSION;
+    if(specs->extensible == 3)
+        return specs->specifics_size >= sizeof(*specs)
+            && specs->specifics_version == ASN_SET_SPECIFICS_VERSION_3;
+    return 0;
+}
+
+/*
+ * Purpose: locate the unique SEQUENCE layout assigned to a SET group.
+ * Source: Generated SET v3 extension-group table.
+ * Version/date: 1.0, 2026-10-30. Inputs: parent and member index.
+ * Returns: matching layout, or NULL when absent or duplicated.
+ * Errors: missing and duplicate entries fail closed.
+ * Author: asn1c maintainers. History: split from adapter validation.
+ * Example: a duplicated member index never selects an arbitrary layout.
+ */
+static const asn_SEQUENCE_specifics_t *
+_SET_group_find_sequence(const asn_SET_specifics_t *parent, unsigned index) {
+    const asn_SEQUENCE_specifics_t *sequence = 0;
+    unsigned i, count = 0;
+    for(i = 0; i < parent->extension_group_count; i++) {
+        if(parent->extension_groups[i].member_index == index) {
+            sequence = parent->extension_groups[i].sequence_specifics;
+            count++;
+        }
+    }
+    return count == 1 ? sequence : 0;
+}
+
+/*
+ * Purpose: validate the group SEQUENCE layout and declaration-order map.
+ * Source: Generated group child and SEQUENCE optional-member metadata.
+ * Version/date: 1.0, 2026-10-30. Inputs: member/child/sequence describe a group.
+ * Returns: zero for a compatible layout or -1 for invalid metadata.
+ * Errors: unsupported children, offsets, and optional indexes are rejected.
+ * Author: asn1c maintainers. History: split from adapter validation.
+ * Example: the optional map must enumerate optional children in order.
+ */
+static int
+_SET_group_sequence_valid(const asn_TYPE_member_t *member, const asn_SET_specifics_t *child,
+                          const asn_SEQUENCE_specifics_t *sequence) {
+    unsigned i, optional = 0;
+    if(!sequence || sequence->struct_size != child->struct_size
+    || sequence->ctx_offset != child->ctx_offset || sequence->first_extension != -1
+    || sequence->aoms_count || sequence->roms_count > member->type->elements_count
+    || (sequence->roms_count && !sequence->oms)) return -1;
+    for(i = 0; i < member->type->elements_count; i++) {
+        if(!_SET_member_offset_valid(child, &member->type->elements[i])
+        || (member->type->elements[i].flags & ATF_OPEN_TYPE)) return -1;
+        if(member->type->elements[i].optional) {
+            if(optional >= sequence->roms_count || sequence->oms[optional] != (int)i) return -1;
+            optional++;
+        }
+    }
+    return optional == sequence->roms_count ? 0 : -1;
+}
+
+/*
+ * Purpose: locate and validate a generated SEQUENCE view of one SET group.
+ * Source: SET v3 group metadata and the SEQUENCE descriptor contract.
+ * Version/date: 1.0, 2026-10-30. Inputs: td/index identify an addition;
+ * adapter receives the temporary descriptor. Returns: 0 or -1.
+ * Errors: inconsistent group layout or optional maps are rejected.
+ * Author: asn1c maintainers. History: added for SET extension-group codecs.
+ * Example: a group adapter shares the child elements and storage offsets.
+ */
+int
+SET_group_adapter(const asn_TYPE_descriptor_t *td, unsigned index,
+                  asn_TYPE_descriptor_t *adapter) {
+    const asn_SET_specifics_t *parent, *child;
+    const asn_SEQUENCE_specifics_t *sequence;
+    const asn_TYPE_member_t *member;
+
+    if(!td || !td->specifics || !td->elements || !adapter || index >= td->elements_count) return -1;
+    parent = (const asn_SET_specifics_t *)td->specifics;
+    if(parent->extensible != 3 || !SET_version_valid(parent)
+    || !parent->extension_groups || !parent->extension_group_count
+    || parent->extension_group_count > parent->extension_count) return -1;
+    member = &td->elements[index];
+    if(!_SET_layout_valid(td, parent) || !_SET_member_offset_valid(parent, member)) return -1;
+    child = _SET_group_specifics(member);
+    if(!child || !member->type->op->free_struct) return -1;
+    sequence = _SET_group_find_sequence(parent, index);
+    if(_SET_group_sequence_valid(member, child, sequence)) return -1;
+    *adapter = *member->type;
+    adapter->op = &asn_OP_SEQUENCE;
+    adapter->specifics = sequence;
+    return 0;
+}
+
+/*
+ * Purpose: validate the bounds and pointers of a v3 SET group partition.
+ * Source: Compiler-emitted SET v3 metadata fields.
+ * Version/date: 1.0, 2026-10-30. Inputs: td and specs identify the descriptor.
+ * Returns: zero for usable partition bounds, otherwise -1.
+ * Errors: incomplete or inconsistent metadata is rejected.
+ * Author: asn1c maintainers. History: split from group table validation.
+ * Example: a nonzero root count requires a root map.
+ */
+static int
+_SET_group_partition_bounds(const asn_TYPE_descriptor_t *td, const asn_SET_specifics_t *specs) {
+    if(!SET_version_valid(specs) || !specs->extension_groups || !specs->extension_group_count
+    || specs->root_count > td->elements_count
+    || specs->extension_count != td->elements_count - specs->root_count
+    || (specs->root_count && !specs->root_map)
+    || (specs->extension_count && !specs->extension_map)) return -1;
+    return 0;
+}
+
+/*
+ * Purpose: verify the v3 adapter table exactly covers extension groups.
+ * Source: SET v3 metadata and the generated extension partition.
+ * Version/date: 1.0, 2026-10-30. Input: td identifies a SET descriptor.
+ * Returns: 0 for valid metadata, -1 for missing or misplaced groups.
+ * Errors: malformed metadata fails before codec dispatch.
+ * Author: asn1c maintainers. History: added for SET extension-group codecs.
+ * Example: a group in the root partition is rejected.
+ */
+int
+SET_group_metadata_valid(const asn_TYPE_descriptor_t *td) {
+    const asn_SET_specifics_t *specs;
+    unsigned i, groups = 0;
+    asn_TYPE_descriptor_t adapter;
+
+    if(!td || !td->specifics || (td->elements_count && !td->elements)) return -1;
+    specs = (const asn_SET_specifics_t *)td->specifics;
+    if(specs->extensible != 3) return 0;
+    if(_SET_group_partition_bounds(td, specs)) return -1;
+    for(i = 0; i < specs->root_count; i++) {
+        if(specs->root_map[i] >= td->elements_count
+        || (td->elements[specs->root_map[i]].flags & ATF_EXTENSION_GROUP)) return -1;
+    }
+    for(i = 0; i < specs->extension_count; i++) {
+        unsigned index = specs->extension_map[i];
+        if(index >= td->elements_count) return -1;
+        if(td->elements[index].flags & ATF_EXTENSION_GROUP) {
+            if(SET_group_adapter(td, index, &adapter)) return -1;
+            groups++;
+        }
+    }
+    return groups == specs->extension_group_count ? 0 : -1;
+}
+
+/*
+ * Purpose: determine whether an extension group contributes a wire addition.
+ * Source: X.691 19.9, X.696 16.5.3 and SET group storage conventions.
+ * Version/date: 1.0, 2026-10-30. Inputs: td/st/index identify a group.
+ * Returns: 1 if encoded, 0 if absent, or -1 for invalid or incomplete data.
+ * Errors: invalid storage or missing mandatory pointer leaves fail.
+ * Author: asn1c maintainers. History: added for grouped SET codec support.
+ * Example: an allocated all-optional group with no values is omitted.
+ */
+int
+SET_group_wire_present(const asn_TYPE_descriptor_t *td, const void *st, unsigned index) {
+    const asn_TYPE_member_t *group;
+    const void *value;
+    asn_TYPE_descriptor_t adapter;
+    unsigned i;
+    int any = 0;
+
+    if(!td || !td->elements || index >= td->elements_count || !st
+    || SET_group_adapter(td, index, &adapter)) return -1;
+    group = &td->elements[index];
+    value = *(const void *const *)((const char *)st + group->memb_offset);
+    if(!value) return 0;
+    if(SET_group_is_populated(group->type, value) != 1) return -1;
+    for(i = 0; i < group->type->elements_count; i++) {
+        asn_SET_member_view_t view;
+        if(SET_member_view(td, st, index, i, &view)) return -1;
+        if(view.present && (!view.member->default_value_cmp
+           || view.member->default_value_cmp(view.value))) any = 1;
+    }
+    return any;
+}
+
+/*
+ * Purpose: discard SEQUENCE decoder state before returning to SET ownership.
+ * Source: SEQUENCE OER context ownership and synthetic SET group layout.
+ * Version/date: 1.0, 2026-10-30. Inputs: td/st identify temporary group data.
+ * Returns: 0 on success, -1 on invalid group layout.
+ * Errors: invalid context offsets are rejected before accessing storage.
+ * Author: asn1c maintainers. History: prevents retained preamble leaks.
+ * Example: OER group decoding releases its SEQUENCE phase-10 bitmap.
+ */
+int
+SET_group_clear_wire_context(const asn_TYPE_descriptor_t *td, void *st) {
+    const asn_SET_specifics_t *specs;
+    asn_struct_ctx_t *ctx;
+
+    if(!td || !td->specifics || !st) return -1;
+    specs = (const asn_SET_specifics_t *)td->specifics;
+    if(!_SET_group_layout_valid(td, specs)) return -1;
+    ctx = (asn_struct_ctx_t *)((char *)st + specs->ctx_offset);
+    FREEMEM(ctx->ptr);
+    memset(ctx, 0, sizeof(*ctx));
+    return 0;
+}
+
+/*
+ * Purpose: rebuild SET presence bits after decoding the SEQUENCE wire view.
+ * Source: SET child descriptor and generated presence bitmap convention.
+ * Version/date: 1.0, 2026-10-30. Inputs: td/st identify a decoded group.
+ * Returns: 0 on success or -1 if its layout is invalid or incomplete.
+ * Errors: malformed storage or missing required pointer leaves fail.
+ * Author: asn1c maintainers. History: maintains BER/XER compatibility.
+ * Example: a decoded mandatory inline member gets its presence bit set.
+ */
+int
+SET_group_mark_present(const asn_TYPE_descriptor_t *td, void *st) {
+    const asn_SET_specifics_t *specs;
+    unsigned i;
+
+    if(SET_group_is_populated(td, st) != 1) return -1;
+    specs = (const asn_SET_specifics_t *)td->specifics;
+    for(i = 0; i < td->elements_count; i++) {
+        const asn_TYPE_member_t *member = &td->elements[i];
+        if(!(member->flags & ATF_POINTER)
+        || *(void **)((char *)st + member->memb_offset))
+            ASN_SET_MKPRESENT((char *)st + specs->pres_offset, i);
+    }
+    return 0;
+}
+
+/*
  * Purpose: test whether a SET presence bitmap includes mandatory members.
  * Source: The SET descriptor's network-order mandatory bit mask.
  * Version: 2026-10-22.
@@ -586,13 +852,13 @@ SET_free(const asn_TYPE_descriptor_t *td, void *ptr,
 
 	ASN_DEBUG("Freeing %s as SET", td->name);
 
-    /* Only the OER member phase owns ctx->ptr; XER may store a borrowed
-     * descriptor there in other phases. Release interrupted OER preambles. */
+    /* OER member and extension phases own ctx->ptr; other codecs may borrow it. */
     specs = (const asn_SET_specifics_t *)td->specifics;
     if(specs && specs->ctx_offset <= specs->struct_size
     && sizeof(asn_struct_ctx_t) <= specs->struct_size - specs->ctx_offset) {
         asn_struct_ctx_t *ctx = (asn_struct_ctx_t *)((char *)ptr + specs->ctx_offset);
-        if(ctx->phase == ASN_SET_OER_PHASE_MEMBERS) {
+        if(ctx->phase == ASN_SET_OER_PHASE_MEMBERS
+        || ctx->phase == ASN_SET_OER_PHASE_EXTENSIONS) {
             FREEMEM(ctx->ptr);
             ctx->ptr = 0;
         }

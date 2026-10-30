@@ -1,8 +1,8 @@
 //! Safe, bounded primitive codecs for generated ASN.1 Rust code.
 //!
 //! In addition to a limited PER/OER/CER/DER/BER codec slice, this crate covers
-//! BOOLEAN, NULL, bounded signed INTEGER, direct ENUMERATED, and fixed-size
-//! OCTET STRING JER.
+//! BOOLEAN, NULL, bounded signed INTEGER, direct ENUMERATED, fixed and
+//! bounded-size UPER strings, and fixed or bounded JER strings.
 //! It uses only the Rust standard library and applies caller-configurable input,
 //! output, and work limits before reading bits or allocating output storage.
 //!
@@ -30,15 +30,17 @@ pub use aper::{
     encode_integer_aper, encode_null_aper,
 };
 pub use jer::{
-    decode_boolean_jer, decode_enumerated_jer, decode_integer_jer, decode_null_jer,
-    decode_octet_string_jer, encode_boolean_jer, encode_enumerated_jer, encode_integer_jer,
-    encode_null_jer, encode_octet_string_jer,
+    decode_bit_string_jer, decode_boolean_jer, decode_bounded_bit_string_jer,
+    decode_bounded_octet_string_jer, decode_enumerated_jer, decode_integer_jer, decode_null_jer,
+    decode_octet_string_jer, encode_bit_string_jer, encode_boolean_jer,
+    encode_bounded_bit_string_jer, encode_bounded_octet_string_jer, encode_enumerated_jer,
+    encode_integer_jer, encode_null_jer, encode_octet_string_jer,
 };
 pub use oer::{
     decode_boolean_oer, decode_integer_oer, decode_null_oer, encode_boolean_oer,
     encode_integer_oer, encode_null_oer,
 };
-pub use uper_cursor::{UperReader, UperWriter};
+pub use uper_cursor::{BitStringValue, UperReader, UperWriter};
 
 /// Default maximum number of input bytes accepted by one operation (1 MiB).
 pub const DEFAULT_MAX_INPUT_BYTES: usize = 1024 * 1024;

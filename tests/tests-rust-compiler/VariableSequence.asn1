@@ -1,0 +1,7 @@
+VariableSequence DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+Packet ::= SEQUENCE {
+    flag BOOLEAN,
+    maybe OCTET STRING (SIZE(1..3)) OPTIONAL,
+    tail OCTET STRING (SIZE(2..4))
+}
+END

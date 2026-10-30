@@ -1,0 +1,3 @@
+VariableBitsUnion DEFINITIONS ::= BEGIN
+Bits ::= BIT STRING (SIZE(1..2 | 4..5))
+END

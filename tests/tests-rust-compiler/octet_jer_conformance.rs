@@ -1,6 +1,6 @@
 //! Generated fixed-size OCTET STRING JER tests and C interoperability vectors.
 
-use asn1c_generated::octet_jer::{EmptyHexOctets, MixedHexOctets};
+use asn1c_generated::octet_jer::{BoundedHexOctets, EmptyHexOctets, MixedHexOctets};
 use asn1c_runtime::{Error, Limits, Resource};
 use std::fs;
 use std::path::Path;
@@ -151,6 +151,77 @@ fn malformed_values_and_limits_are_rejected() {
         value.encode_jer(&work_limited),
         Err(Error::LimitExceeded {
             resource: Resource::WorkBits,
+            ..
+        })
+    ));
+}
+
+/// Compare direct bounded OCTET STRING JER with a generated C vector.
+///
+/// Parameters: none. Returns no value; assertions check the C token, typed
+/// bounds, malformed complete input, and configured resource ceilings.
+/// Errors: expected decode failures are checked; filesystem errors panic.
+/// Original source: `OCTET_STRING_encode_jer` hexadecimal mapping.
+/// Version/date: 2026-10-30. Responsible party: asn1c maintainers. History:
+/// added direct bounded OCTET STRING JER. Example: SIZE(1..7) `[00, AF, FF]`
+/// emits `"00AFFF"`.
+#[test]
+fn bounded_octets_match_c_and_reject_invalid_values() {
+    let limits = Limits::default();
+    let value = BoundedHexOctets::new(vec![0x00, 0xaf, 0xff]).expect("valid bounded octets");
+    let encoded = value.encode_jer(&limits).expect("encode bounded JER");
+    assert_token(&encoded, b"\"00AFFF\"");
+
+    let directory =
+        std::env::var_os("ASN1C_C_JER_VECTORS").expect("C JER vector directory is configured");
+    let c_token = fs::read(Path::new(&directory).join("jer_bounded_octets.json"))
+        .expect("read C bounded JER vector");
+    assert_eq!(c_token, b"\"00AFFF\"");
+    let decoded = BoundedHexOctets::decode_jer(&c_token, &limits).expect("decode C JER token");
+    assert_eq!(decoded.value, value);
+    let whitespace = BoundedHexOctets::decode_jer(b" \t\"00aFfF\"\r\n", &limits)
+        .expect("decode lowercase hex with JSON whitespace");
+    assert_eq!(whitespace.value, value);
+
+    let rust_vectors = std::env::var_os("ASN1C_RUST_JER_VECTORS")
+        .expect("Rust JER vector directory is configured");
+    store_vector(
+        Path::new(&rust_vectors),
+        "jer_bounded_octets.json",
+        &encoded.bytes,
+    );
+
+    for malformed in [
+        b"\"\"".as_slice(),
+        b"\"00AFFFx\"",
+        b"\"00AFFFG1\"",
+        b"\"0000000000000000\"",
+        b"\"00AFFF\" false",
+    ] {
+        assert!(BoundedHexOctets::decode_jer(malformed, &limits).is_err());
+    }
+    assert!(BoundedHexOctets::new(Vec::new()).is_err());
+    assert!(BoundedHexOctets::new(vec![0; 8]).is_err());
+
+    let output_limited = Limits {
+        max_output_bytes: 7,
+        ..limits
+    };
+    assert!(matches!(
+        value.encode_jer(&output_limited),
+        Err(Error::LimitExceeded {
+            resource: Resource::OutputBytes,
+            ..
+        })
+    ));
+    let input_limited = Limits {
+        max_input_bytes: 7,
+        ..limits
+    };
+    assert!(matches!(
+        BoundedHexOctets::decode_jer(b"\"00AFFF\"", &input_limited),
+        Err(Error::LimitExceeded {
+            resource: Resource::InputBytes,
             ..
         })
     ));

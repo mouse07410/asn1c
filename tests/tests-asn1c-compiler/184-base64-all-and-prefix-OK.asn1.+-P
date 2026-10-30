@@ -752,12 +752,14 @@ asn_SET_specifics_t asn_SPC_NestedSet_specs_5 = {
 	1,	/* Count of tags in the CXER map */
 	0,	/* Whether extensible */
 	(const unsigned int *)asn_MAP_NestedSet_mmap_5,	/* Mandatory elements map */
-	sizeof(asn_SET_specifics_t),	/* Metadata size */
+	offsetof(asn_SET_specifics_t, extension_groups),	/* Metadata size */
 	ASN_SET_SPECIFICS_VERSION,	/* Metadata version */
 	asn_MAP_NestedSet_root_5,	/* Root members in declaration order */
 	1,	/* Root member count */
 	0,	/* No extension additions */
-	0	/* Extension addition count */
+	0,	/* Extension addition count */
+	0,	/* No extension group adapters */
+	0	/* Extension group count */
 };
 asn_TYPE_descriptor_t asn_DEF_NestedSet = {
 	"NestedSet",

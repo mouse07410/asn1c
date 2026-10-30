@@ -6,22 +6,18 @@
 #include <asn_application.h>
 #include <asn_internal.h>
 #include <BIT_STRING.h>
-#include <INTEGER.h>
 #include <string.h>
+#include <stdint.h>
+#include <limits.h>
 
 /*
- * Skip JSON whitespace while parsing the variable-length BIT STRING object.
+ * Skip JSON whitespace while parsing a BIT STRING value.
  *
- * Original source: local JER decoder helper.
- * Version: 2026-09-24.
- * Input parameters: cursor points at the next byte to inspect; end is one
- * past the last available input byte.
- * Return value: none; cursor is advanced over JSON whitespace.
- * Exceptions: none; malformed input is reported by the caller's expectation
- * helper when the next non-whitespace byte is checked.
- * Responsible party: asn1c maintainers.
- * History: added to prevent positional parsing from skipping object members.
- * Example: input " \n{\"value\"" leaves cursor at the opening brace.
+ * Original source: local JER decoder helper. Version/date: 2026-10-30.
+ * Parameters: cursor is the current input pointer; end is one past input.
+ * Returns: no value; cursor advances over JSON whitespace. Throws: nothing.
+ * Responsible party: asn1c maintainers. History: strict BIT STRING JER parse.
+ * Example: spaces before '{' are skipped before the caller checks the brace.
  */
 static void
 BIT_STRING__jer_skip_whitespace(const char **cursor, const char *end) {
@@ -37,21 +33,17 @@ BIT_STRING__jer_skip_whitespace(const char **cursor, const char *end) {
 }
 
 /*
- * Require one JSON structural character at the current parser position.
+ * Match a required JSON punctuation byte after optional whitespace.
  *
- * Original source: local JER decoder helper.
- * Version: 2026-09-24.
- * Input parameters: cursor points at the next byte; end is one past the
- * available input; expected is the required JSON structural character.
- * Return values: 1 when matched, 0 when more input is required, and -1 when
- * a different byte is present.
- * Exceptions: none; callers convert the result into RC_WMORE or RC_FAIL.
- * Responsible party: asn1c maintainers.
- * History: added for strict BIT STRING object framing.
- * Example: expecting ',' accepts optional whitespace followed by a comma.
+ * Original source: local JER decoder helper. Version/date: 2026-10-30.
+ * Parameters: cursor/end bound the input; expected is the required byte.
+ * Returns: 1 for match, 0 for incomplete input, -1 for invalid input.
+ * Throws: nothing. Responsible party: asn1c maintainers.
+ * History: strict BIT STRING JER parse. Example: match the object's '{'.
  */
 static int
-BIT_STRING__jer_expect_char(const char **cursor, const char *end, int expected) {
+BIT_STRING__jer_expect_char(const char **cursor, const char *end,
+                            int expected) {
     BIT_STRING__jer_skip_whitespace(cursor, end);
     if(*cursor == end) return 0;
     if(**cursor != expected) return -1;
@@ -60,19 +52,14 @@ BIT_STRING__jer_expect_char(const char **cursor, const char *end, int expected) 
 }
 
 /*
- * Require an exact, unescaped JSON object member name.
+ * Match an exact, unescaped JSON object member name.
  *
- * Original source: local JER decoder helper.
- * Version: 2026-09-24.
- * Input parameters: cursor points at the next member name; end is one past
- * the available input; expected is the exact ASCII member name.
- * Return values: 1 when matched, 0 when more input is required, and -1 when
- * the member is not exactly expected.
- * Exceptions: none; callers convert the result into RC_WMORE or RC_FAIL.
- * Responsible party: asn1c maintainers.
- * History: added to reject duplicate and unknown BIT STRING object members.
- * Example: expecting "value" rejects both "value" followed by extra text and
- * any other member name.
+ * Original source: local JER decoder helper. Version/date: 2026-10-30.
+ * Parameters: cursor/end bound input; expected is the required ASCII name.
+ * Returns: 1 for match, 0 for incomplete input, -1 for invalid input.
+ * Throws: nothing. Responsible party: asn1c maintainers.
+ * History: reject unknown, escaped, and duplicate members. Example: match
+ * `value` while rejecting `valueExtra`.
  */
 static int
 BIT_STRING__jer_expect_key(const char **cursor, const char *end,
@@ -84,20 +71,183 @@ BIT_STRING__jer_expect_key(const char **cursor, const char *end,
     if(*cursor == end || **cursor != '"') {
         return *cursor == end ? 0 : -1;
     }
-
     key_start = ++*cursor;
     while(*cursor < end && **cursor != '"') ++*cursor;
     if(*cursor == end) return 0;
-
     if((size_t)(*cursor - key_start) != key_length
        || memcmp(key_start, expected, key_length) != 0) {
         return -1;
     }
-
     ++*cursor;
     return 1;
 }
 
+/*
+ * Decode one quoted hexadecimal string into a newly allocated octet buffer.
+ *
+ * Original source: local JER decoder helper. Version/date: 2026-10-30.
+ * Parameters: cursor/end bound input; bytes and byte_count receive output.
+ * Returns: 1 for success, 0 for incomplete input, -1 for malformed input or
+ * allocation failure. Throws: nothing. Responsible party: asn1c maintainers.
+ * History: validates complete even-length hex before allocating. Example:
+ * `"A0"` produces one byte with value 0xA0.
+ */
+static int
+BIT_STRING__jer_parse_hex(const char **cursor, const char *end,
+                          uint8_t **bytes, size_t *byte_count) {
+    const char *start;
+    const char *stop;
+    uint8_t *decoded;
+    size_t length;
+    size_t i;
+
+    BIT_STRING__jer_skip_whitespace(cursor, end);
+    if(*cursor == end) return 0;
+    if(**cursor != '"') return -1;
+    start = ++*cursor;
+    for(stop = start; stop < end && *stop != '"'; ++stop) {
+        unsigned char ch = (unsigned char)*stop;
+        if(!((ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'F')
+             || (ch >= 'a' && ch <= 'f'))) return -1;
+    }
+    if(stop == end) return 0;
+    length = (size_t)(stop - start);
+    if(length & 1) return -1;
+    if(length / 2 == SIZE_MAX) return -1;
+    decoded = (uint8_t *)MALLOC(length / 2 + 1);
+    if(!decoded) return -1;
+
+    /* Convert each validated pair, retaining a terminator for legacy users. */
+    for(i = 0; i < length / 2; ++i) {
+        unsigned char high = (unsigned char)start[i * 2];
+        unsigned char low = (unsigned char)start[i * 2 + 1];
+        unsigned int high_value = high <= '9' ? high - '0'
+            : (high <= 'F' ? high - 'A' + 10 : high - 'a' + 10);
+        unsigned int low_value = low <= '9' ? low - '0'
+            : (low <= 'F' ? low - 'A' + 10 : low - 'a' + 10);
+        decoded[i] = (uint8_t)((high_value << 4) | low_value);
+    }
+    decoded[length / 2] = 0;
+    *bytes = decoded;
+    *byte_count = length / 2;
+    *cursor = stop + 1;
+    return 1;
+}
+
+/*
+ * Parse the unsigned `length` member and close its containing JSON object.
+ *
+ * Original source: local JER decoder helper. Version/date: 2026-10-30.
+ * Parameters: cursor/end bound input; bit_count receives the parsed value.
+ * Returns: 1 for success, 0 for incomplete input, -1 for invalid syntax or
+ * overflow. Throws: nothing. Responsible party: asn1c maintainers.
+ * History: rejects negative, fractional, exponent, and overflowing lengths.
+ * Example: `8}` sets bit_count to 8 and consumes the closing brace.
+ */
+static int
+BIT_STRING__jer_parse_length(const char **cursor, const char *end,
+                             size_t *bit_count) {
+    size_t value = 0;
+    size_t digits = 0;
+
+    BIT_STRING__jer_skip_whitespace(cursor, end);
+    while(*cursor < end && **cursor >= '0' && **cursor <= '9') {
+        unsigned int digit = (unsigned int)(**cursor - '0');
+        if(value > (SIZE_MAX - digit) / 10) return -1;
+        value = value * 10 + digit;
+        ++digits;
+        ++*cursor;
+    }
+    if(!digits) return *cursor == end ? 0 : -1;
+    if(digits > 1 && (*cursor - digits)[0] == '0') return -1;
+
+    BIT_STRING__jer_skip_whitespace(cursor, end);
+    if(*cursor == end) return 0;
+    if(**cursor != '}') return -1;
+    ++*cursor;
+    *bit_count = value;
+    return 1;
+}
+
+/*
+ * Validate BIT STRING storage, padding, overflow, and an optional fixed size.
+ *
+ * Original source: local JER encoder helper. Version/date: 2026-10-30.
+ * Parameters: value is the source BIT STRING; fixed_bits is -1 or exact size;
+ * bit_count receives the logical width. Returns: zero for valid, -1 otherwise.
+ * Throws: nothing. Responsible party: asn1c maintainers.
+ * History: protect JER hex output from invalid storage and padding. Example:
+ * a one-byte value with `bits_unused == 3` has five meaningful bits.
+ */
+static int
+BIT_STRING__jer_validate_value(const BIT_STRING_t *value, ssize_t fixed_bits,
+                               size_t *bit_count) {
+    size_t capacity;
+    size_t unused;
+    size_t expected_bytes;
+
+    if(!value || (value->size && !value->buf) || fixed_bits < -1
+       || value->bits_unused < 0 || value->bits_unused > 7
+       || value->size > SIZE_MAX / 8) return -1;
+    if(value->size == 0 && value->bits_unused != 0) return -1;
+    capacity = value->size * 8;
+    unused = (size_t)value->bits_unused;
+    if(unused > capacity) return -1;
+    if(value->size && unused
+       && (value->buf[value->size - 1] & ((1u << unused) - 1u))) return -1;
+    *bit_count = capacity - unused;
+    if(fixed_bits >= 0) {
+        if((size_t)fixed_bits != *bit_count) return -1;
+        expected_bytes = ((size_t)fixed_bits + 7) / 8;
+        if(value->size != expected_bytes) return -1;
+    }
+    return 0;
+}
+
+/*
+ * Emit BIT STRING bytes as uppercase hexadecimal in bounded callback chunks.
+ *
+ * Original source: local JER encoder helper. Version/date: 2026-10-30.
+ * Parameters: value supplies bytes; cb/key are the output callback pair;
+ * encoded tracks successful output bytes. Returns: zero on success, -1 on
+ * callback or count overflow. Throws: nothing. Responsible party: maintainers.
+ * History: shares fixed and variable wire output. Example: 0xAB emits `AB`.
+ */
+static int
+BIT_STRING__jer_emit_hex(const BIT_STRING_t *value,
+                         asn_app_consume_bytes_f *cb, void *key,
+                         asn_enc_rval_t *encoded) {
+    static const char hex[] = "0123456789ABCDEF";
+    char chunk[32];
+    size_t offset;
+
+    for(offset = 0; offset < value->size; offset += sizeof(chunk) / 2) {
+        size_t count = value->size - offset;
+        size_t i;
+        if(count > sizeof(chunk) / 2) count = sizeof(chunk) / 2;
+        for(i = 0; i < count; ++i) {
+            uint8_t byte = value->buf[offset + i];
+            chunk[i * 2] = hex[byte >> 4];
+            chunk[i * 2 + 1] = hex[byte & 0x0f];
+        }
+        if(encoded->encoded > SSIZE_MAX - (ssize_t)(count * 2)
+           || cb(chunk, count * 2, key) < 0) return -1;
+        encoded->encoded += (ssize_t)(count * 2);
+    }
+    return 0;
+}
+
+/*
+ * Encode a BIT STRING using fixed quoted hex or the variable JER object form.
+ *
+ * Original source: asn1c BIT STRING JER encoder, hardened locally.
+ * Version/date: 2026-10-30. Parameters: td supplies descriptor constraints;
+ * constraints optionally overrides them; sptr is the BIT STRING; ilevel and
+ * flags select formatting; cb/app_key receive output. Returns: encoded byte
+ * count or -1 with failure metadata. Throws: nothing. Responsible party:
+ * asn1c maintainers. History: validates bounds/padding and permits empty data.
+ * Example: empty variable value encodes as {"value":"","length":0}.
+ */
 asn_enc_rval_t
 BIT_STRING_encode_jer(const asn_TYPE_descriptor_t *td,
                       const asn_jer_constraints_t *constraints,
@@ -105,109 +255,44 @@ BIT_STRING_encode_jer(const asn_TYPE_descriptor_t *td,
                       enum jer_encoder_flags_e flags,
                       asn_app_consume_bytes_f *cb, void *app_key) {
     asn_enc_rval_t er = {0, 0, 0};
-    const char * const h2c = "0123456789ABCDEF";
-    char scratch[16 * 3 + 4];
-    char *p = scratch;
     const BIT_STRING_t *st = (const BIT_STRING_t *)sptr;
-    const asn_jer_constraints_t* cts = constraints ?
-        constraints : td->encoding_constraints.jer_constraints;
-    uint8_t *buf;
-    uint8_t *end;
+    const asn_jer_constraints_t *cts = constraints;
+    size_t bit_count;
+    ssize_t fixed_bits = -1;
+    int minified = (flags & JER_F_MINIFIED) != 0;
+    char scratch[64];
+    int written;
 
-    (void)ilevel;
-    (void)flags;
-
-    int jmin = flags & JER_F_MINIFIED;
-
-    if(!st || !st->buf)
+    if(!cts && td) cts = td->encoding_constraints.jer_constraints;
+    if(cts) fixed_bits = cts->size;
+    if(!cb || BIT_STRING__jer_validate_value(st, fixed_bits, &bit_count)) {
         ASN__ENCODE_FAILED;
+    }
+    (void)bit_count;
 
-    er.encoded = 0;
-
-    buf = st->buf;
-    end = buf + st->size - 1;  /* Last byte is special */
-
-    /*
-     * Hex dump
-     */
-    if(cts && cts->size != -1) { /* Fixed size */
-        *p++ = '"';
-        for(int i = 0; buf < end; buf++, i++) {
-            if(!(i % 16) && (i || st->size > 16)) {
-                ASN__CALLBACK(scratch, p-scratch);
-                p = scratch;
-            }
-            *p++ = h2c[*buf >> 4];
-            *p++ = h2c[*buf & 0x0F];
-        }
-
-        ASN__CALLBACK(scratch, p - scratch);
-        p = scratch;
-
-        if(buf == end) {
-            int ubits = st->bits_unused;
-            uint8_t v = *buf & (0xff << ubits);
-            *p++ = h2c[v >> 4];
-            *p++ = h2c[v & 0x0F];
-            ASN__CALLBACK(scratch, p - scratch);
-            p = scratch;
-        }
-        *p++ = '"';
-        ASN__CALLBACK(scratch, p - scratch);
-    } else { /* Variable size */
+    if(fixed_bits >= 0) {
+        ASN__CALLBACK("\"", 1);
+        if(BIT_STRING__jer_emit_hex(st, cb, app_key, &er)) ASN__ENCODE_FAILED;
+        ASN__CALLBACK("\"", 1);
+    } else {
         ASN__CALLBACK("{", 1);
-        if(!jmin) {
-            ASN__TEXT_INDENT(1, ilevel + 1);
-            ASN__CALLBACK("\"value\": ", 9);
-        } else {
-            ASN__CALLBACK("\"value\":", 8);
-        }
-        *p++ = '"';
-        for(int i = 0; buf < end; buf++, i++) {
-            if(!(i % 16) && (i || st->size > 16)) {
-                ASN__CALLBACK(scratch, p-scratch);
-                p = scratch;
-            }
-            *p++ = h2c[*buf >> 4];
-            *p++ = h2c[*buf & 0x0F];
-        }
-
-        ASN__CALLBACK(scratch, p - scratch);
-        p = scratch;
-
-        if(buf == end) {
-            int ubits = st->bits_unused;
-            uint8_t v = *buf & (0xff << ubits);
-            *p++ = h2c[v >> 4];
-            *p++ = h2c[v & 0x0F];
-            ASN__CALLBACK(scratch, p - scratch);
-            p = scratch;
-        }
-        *p++ = '"';
-        ASN__CALLBACK(scratch, p - scratch);
-
-        ASN__CALLBACK(",", 1);
-        if (!jmin) {
-            ASN__TEXT_INDENT(1, ilevel + 1);
-        }
-
-        if(!jmin) {
-            ASN__CALLBACK("\"length\": ", 10);
-        } else {
-            ASN__CALLBACK("\"length\":", 9);
-        }
-        int wr = snprintf(scratch, sizeof(scratch), "%lu",
-                st->size * 8 - (st->bits_unused));
-        if(wr < 0 || (size_t)wr >= sizeof(scratch)) {
+        if(!minified) ASN__TEXT_INDENT(1, ilevel + 1);
+        ASN__CALLBACK(minified ? "\"value\":" : "\"value\": ",
+                      minified ? 8 : 9);
+        ASN__CALLBACK("\"", 1);
+        if(BIT_STRING__jer_emit_hex(st, cb, app_key, &er)) ASN__ENCODE_FAILED;
+        ASN__CALLBACK("\",", 2);
+        if(!minified) ASN__TEXT_INDENT(1, ilevel + 1);
+        ASN__CALLBACK(minified ? "\"length\":" : "\"length\": ",
+                      minified ? 9 : 10);
+        written = snprintf(scratch, sizeof(scratch), "%zu", bit_count);
+        if(written < 0 || (size_t)written >= sizeof(scratch)) {
             ASN__ENCODE_FAILED;
         }
-        ASN__CALLBACK(scratch, wr);
-        if (!jmin) {
-            ASN__TEXT_INDENT(1, ilevel);
-        }
+        ASN__CALLBACK(scratch, (size_t)written);
+        if(!minified) ASN__TEXT_INDENT(1, ilevel);
         ASN__CALLBACK("}", 1);
     }
-
     ASN__ENCODED_OK(er);
 cb_failed:
     ASN__ENCODE_FAILED;
@@ -217,170 +302,106 @@ cb_failed:
  * Return a standardized complex structure.
  */
 #undef RETURN
-#define RETURN(_code)                     \
-    do {                                  \
-        rval.code = _code;                \
-        rval.consumed = consumed_myself;  \
-        return rval;                      \
+#define RETURN(_code)                                      \
+    do {                                                   \
+        rval.code = (_code);                              \
+        rval.consumed = (ssize_t)(p - input);              \
+        FREEMEM(new_buf);                                  \
+        return rval;                                       \
     } while(0)
 
-#define SKIPCHAR(_c)                 \
-    do {                             \
-        int found = 0;               \
-        for (; p < pend; ++p) {      \
-            if (*p == _c) {          \
-                found = 1; ++p;      \
-                break;               \
-            }                        \
-        }                            \
-        if(!found) RETURN(RC_WMORE); \
-    } while(0)
-
+/*
+ * Decode fixed quoted hex or a variable BIT STRING JER value transactionally.
+ *
+ * Original source: asn1c BIT STRING JER decoder, hardened locally.
+ * Version/date: 2026-10-30. Parameters: opt_codec_ctx is unused; td supplies
+ * descriptor constraints; constraints optionally overrides them; sptr is the
+ * destination pointer; buf_ptr/size describe one input value. Returns: RC_OK
+ * with consumed bytes, RC_WMORE for incomplete input, or RC_FAIL. Throws:
+ * nothing. Responsible party: asn1c maintainers. History: exact sizes,
+ * padding, overflow, and malformed JSON checks; failed parses preserve values.
+ * Example: a variable value uses {"value":"AB","length":8}.
+ */
 asn_dec_rval_t
 BIT_STRING_decode_jer(const asn_codec_ctx_t *opt_codec_ctx,
-                            const asn_TYPE_descriptor_t *td,
-                            const asn_jer_constraints_t *constraints,
-                            void **sptr,
-                            const void *buf_ptr, size_t size) {
-    BIT_STRING_t *st = (BIT_STRING_t *)*sptr;
-    const asn_jer_constraints_t *cts = constraints ?
-        constraints : td->encoding_constraints.jer_constraints;
-    asn_dec_rval_t rval;  /* Return value from the decoder */
-    ssize_t consumed_myself = 0;  /* Consumed bytes from buf_ptr */
+                      const asn_TYPE_descriptor_t *td,
+                      const asn_jer_constraints_t *constraints,
+                      void **sptr, const void *buf_ptr, size_t size) {
+    static const char empty_input[] = "";
+    BIT_STRING_t *st;
+    const asn_jer_constraints_t *cts = constraints;
+    const char *input = empty_input;
+    const char *p = empty_input;
+    const char *end;
+    asn_dec_rval_t rval = {RC_FAIL, 0};
+    uint8_t *new_buf = 0;
+    size_t byte_count = 0;
+    size_t bit_count = 0;
+    size_t fixed_bits = 0;
+    int variable;
+    int parse_result;
 
-    /*
-     * Create the string if does not exist.
-     */
+    (void)opt_codec_ctx;
+    if(!sptr || (size && !buf_ptr) || size > PTRDIFF_MAX) RETURN(RC_FAIL);
+    if(!cts && td) cts = td->encoding_constraints.jer_constraints;
+    variable = !cts || cts->size == -1;
+    if(cts && cts->size < -1) RETURN(RC_FAIL);
+    input = buf_ptr ? (const char *)buf_ptr : empty_input;
+    p = input;
+    end = input + size;
+
+    /* Variable BIT STRING values require the exact value/length object shape. */
+    if(variable) {
+        parse_result = BIT_STRING__jer_expect_char(&p, end, '{');
+        if(parse_result <= 0) RETURN(parse_result == 0 ? RC_WMORE : RC_FAIL);
+        parse_result = BIT_STRING__jer_expect_key(&p, end, "value");
+        if(parse_result <= 0) RETURN(parse_result == 0 ? RC_WMORE : RC_FAIL);
+        parse_result = BIT_STRING__jer_expect_char(&p, end, ':');
+        if(parse_result <= 0) RETURN(parse_result == 0 ? RC_WMORE : RC_FAIL);
+    }
+
+    /* Parse the complete hex string into temporary storage for transactionality. */
+    parse_result = BIT_STRING__jer_parse_hex(&p, end, &new_buf, &byte_count);
+    if(parse_result <= 0) RETURN(parse_result == 0 ? RC_WMORE : RC_FAIL);
+
+    if(variable) {
+        parse_result = BIT_STRING__jer_expect_char(&p, end, ',');
+        if(parse_result <= 0) RETURN(parse_result == 0 ? RC_WMORE : RC_FAIL);
+        parse_result = BIT_STRING__jer_expect_key(&p, end, "length");
+        if(parse_result <= 0) RETURN(parse_result == 0 ? RC_WMORE : RC_FAIL);
+        parse_result = BIT_STRING__jer_expect_char(&p, end, ':');
+        if(parse_result <= 0) RETURN(parse_result == 0 ? RC_WMORE : RC_FAIL);
+        parse_result = BIT_STRING__jer_parse_length(&p, end, &bit_count);
+        if(parse_result <= 0) RETURN(parse_result == 0 ? RC_WMORE : RC_FAIL);
+    } else {
+        fixed_bits = (size_t)cts->size;
+        bit_count = fixed_bits;
+    }
+
+    /* Confirm byte count, logical width, and all discarded low bits agree. */
+    if(byte_count > SIZE_MAX / 8 || bit_count > byte_count * 8
+       || byte_count * 8 - bit_count > 7) RETURN(RC_FAIL);
+    if(!variable) {
+        size_t expected_bytes = (fixed_bits + 7) / 8;
+        size_t expected_unused = expected_bytes * 8 - fixed_bits;
+        if(byte_count != expected_bytes || byte_count * 8 - bit_count
+           != expected_unused) RETURN(RC_FAIL);
+    }
+    if(byte_count && (byte_count * 8 != bit_count)
+       && (new_buf[byte_count - 1]
+           & ((1u << (byte_count * 8 - bit_count)) - 1u))) RETURN(RC_FAIL);
+
+    /* Allocate the result only after every member and bit invariant is valid. */
+    st = (BIT_STRING_t *)*sptr;
     if(!st) {
-        st = (BIT_STRING_t *)(*sptr = CALLOC(1, sizeof(*st)));
-        if(!st) ASN__DECODE_FAILED;
+        st = (BIT_STRING_t *)CALLOC(1, sizeof(*st));
+        if(!st) RETURN(RC_FAIL);
     }
-
-    const char *p = (const char*)buf_ptr;
-    const char *pend = p + size;
-
-    if(!cts || cts->size == -1) {
-        int parse_result = BIT_STRING__jer_expect_char(&p, pend, '{');
-        if(parse_result <= 0) RETURN(parse_result == 0 ? RC_WMORE : RC_FAIL);
-        parse_result = BIT_STRING__jer_expect_key(&p, pend, "value");
-        if(parse_result <= 0) RETURN(parse_result == 0 ? RC_WMORE : RC_FAIL);
-        parse_result = BIT_STRING__jer_expect_char(&p, pend, ':');
-        if(parse_result <= 0) RETURN(parse_result == 0 ? RC_WMORE : RC_FAIL);
-    }
-
-    /* bitstring value */
-    if(!cts || cts->size == -1) {
-        int parse_result = BIT_STRING__jer_expect_char(&p, pend, '"');
-        if(parse_result <= 0) RETURN(parse_result == 0 ? RC_WMORE : RC_FAIL);
-    } else {
-        SKIPCHAR('"');
-    }
-
-    /* calculate size */
-    const char* p0 = p;
-    SKIPCHAR('"');
-    const char* p1 = p - 1;
-    p = p0;
-
-    void *nptr = REALLOC(st->buf, (p1-p0 + 1) / 2 + 1);
-    if(!nptr) RETURN(RC_FAIL);
-    st->buf = (uint8_t *)nptr;
-    uint8_t *buf = st->buf;
-    unsigned int clv = 0;
-    int half = 0;
-
-    for(; p < p1; p++) {
-        int ch = *(const unsigned char *)p;
-        switch(ch) {
-        case 0x30: case 0x31: case 0x32: case 0x33: case 0x34:  /*01234*/
-        case 0x35: case 0x36: case 0x37: case 0x38: case 0x39:  /*56789*/
-            clv = (clv << 4) + (ch - 0x30);
-            break;
-        case 0x41: case 0x42: case 0x43:  /* ABC */
-        case 0x44: case 0x45: case 0x46:  /* DEF */
-            clv = (clv << 4) + (ch - 0x41 + 10);
-            break;
-        case 0x61: case 0x62: case 0x63:  /* abc */
-        case 0x64: case 0x65: case 0x66:  /* def */
-            clv = (clv << 4) + (ch - 0x61 + 10);
-            break;
-        default:
-            *buf = 0;  /* JIC */
-            RETURN(RC_FAIL);
-        }
-        if(half++) {
-            half = 0;
-            *buf++ = clv;
-        }
-    }
-
-    /*
-     * Check partial decoding.
-     */
-    if(half) {
-        RETURN(RC_FAIL);
-    }
-
-    st->size = buf - st->buf;  /* Adjust the buffer size */
-    st->buf[st->size] = 0;  /* Courtesy termination */
-
-    SKIPCHAR('"');
-
-    if(!cts || cts->size == -1) {
-        int parse_result = BIT_STRING__jer_expect_char(&p, pend, ',');
-        if(parse_result <= 0) RETURN(parse_result == 0 ? RC_WMORE : RC_FAIL);
-        parse_result = BIT_STRING__jer_expect_key(&p, pend, "length");
-        if(parse_result <= 0) RETURN(parse_result == 0 ? RC_WMORE : RC_FAIL);
-        parse_result = BIT_STRING__jer_expect_char(&p, pend, ':');
-        if(parse_result <= 0) RETURN(parse_result == 0 ? RC_WMORE : RC_FAIL);
-        p0 = p;
-        /* Skip whitespace, numbers, for length calc for INTEGER dec
-         * Stop on first non-whitespace/non-number */
-        int numbered = 0;
-        for (; p < pend; ++p) {
-            switch (*p) {
-                case 0x09: case 0x0a: case 0x0d:
-                case 0x20:
-                    continue;
-                case 0x30: case 0x31: case 0x32: case 0x33: case 0x34:  /*01234*/
-                case 0x35: case 0x36: case 0x37: case 0x38: case 0x39:  /*56789*/
-                case 0x2d:  /*-*/
-                    numbered = 1;
-                    continue;
-            }
-            if(numbered) break;
-        }
-        if(!numbered) RETURN(RC_FAIL);
-        if(p == pend) RETURN(RC_WMORE);
-        if(*p != '}') RETURN(RC_FAIL);
-
-        unsigned long length;
-
-        INTEGER_t integer = { 0 };
-        void *integer_ptr = (void *)&integer;
-        memset(&integer, 0, sizeof(integer));
-
-        asn_dec_rval_t dec =
-            INTEGER_decode_jer(NULL, &asn_DEF_INTEGER, NULL, &integer_ptr, p0, p-p0);
-        if(dec.code != RC_OK || asn_INTEGER2ulong(&integer, (unsigned long *)&length)) {
-            ASN_STRUCT_FREE_CONTENTS_ONLY(asn_DEF_INTEGER, &integer);
-            RETURN(RC_FAIL);
-        }
-        ASN_STRUCT_FREE_CONTENTS_ONLY(asn_DEF_INTEGER, &integer);
-
-        if(length > st->size * 8 || (st->size * 8) - length > 7) {
-            RETURN(RC_FAIL);
-        }
-        st->bits_unused = (st->size * 8) - length;
-
-        ++p;
-    } else {
-        if(st->size * 8 < (size_t)cts->size) {
-            RETURN(RC_FAIL);
-        }
-        st->bits_unused = (st->size * 8) - cts->size;
-    }
-
-    consumed_myself = (const char *)p - (const char *)buf_ptr;
+    if(st->buf) FREEMEM(st->buf);
+    st->buf = new_buf;
+    st->size = byte_count;
+    st->bits_unused = (int)(byte_count * 8 - bit_count);
+    new_buf = 0;
+    *sptr = st;
     RETURN(RC_OK);
 }

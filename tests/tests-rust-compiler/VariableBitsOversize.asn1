@@ -1,0 +1,3 @@
+VariableBitsOversize DEFINITIONS ::= BEGIN
+Bits ::= BIT STRING (SIZE(65534..65536))
+END

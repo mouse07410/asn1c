@@ -1,0 +1,3 @@
+VariableBitsExtensible DEFINITIONS ::= BEGIN
+Bits ::= BIT STRING (SIZE(1..3, ...))
+END

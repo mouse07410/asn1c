@@ -681,12 +681,14 @@ asn_SET_specifics_t asn_SPC_Stuff_specs_6 = {
 	3,	/* Count of tags in the CXER map */
 	2,	/* Whether extensible */
 	(const unsigned int *)asn_MAP_Stuff_mmap_6,	/* Mandatory elements map */
-	sizeof(asn_SET_specifics_t),	/* Metadata size */
+	offsetof(asn_SET_specifics_t, extension_groups),	/* Metadata size */
 	ASN_SET_SPECIFICS_VERSION,	/* Metadata version */
 	asn_MAP_Stuff_root_6,	/* Root members in declaration order */
 	2,	/* Root member count */
 	asn_MAP_Stuff_extension_6,	/* Additions in declaration order */
-	1	/* Extension addition count */
+	1,	/* Extension addition count */
+	0,	/* No extension group adapters */
+	0	/* Extension group count */
 };
 asn_TYPE_descriptor_t asn_DEF_Stuff = {
 	"Stuff",

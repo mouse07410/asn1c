@@ -153,7 +153,7 @@ main(void) {
 
     specs = (asn_SET_specifics_t *)asn_DEF_IndividualSet.specifics;
     assert(specs && specs->extensible == 2);
-    assert(specs->specifics_size >= sizeof(*specs));
+    assert(specs->specifics_size >= offsetof(asn_SET_specifics_t, extension_groups));
     assert(specs->specifics_version == ASN_SET_SPECIFICS_VERSION);
     assert(specs->root_count == 3 && specs->extension_count == 3);
     assert(memcmp(specs->root_map, expected_roots, sizeof(expected_roots)) == 0);

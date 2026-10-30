@@ -35,7 +35,7 @@ SET__canonical_order(const asn_TYPE_descriptor_t *td,
     unsigned count = specs->tag2el_cxer_count;
     unsigned i;
     unsigned n = 0;
-    unsigned expected = specs->extensible == 2 ? specs->root_count : td->elements_count;
+    unsigned expected = specs->extensible >= 2 ? specs->root_count : td->elements_count;
 
     if(!map && expected) return -1;
 
@@ -49,7 +49,7 @@ SET__canonical_order(const asn_TYPE_descriptor_t *td,
             unsigned j;
             ber_tlv_tag_t tag = map[i].el_tag;
             if(el_no >= td->elements_count) return -1;
-            if(specs->extensible == 2) {
+            if(specs->extensible >= 2) {
                 for(j = 0; j < specs->root_count; j++)
                     if(specs->root_map[j] == el_no) break;
                 if(j == specs->root_count) continue;
@@ -103,7 +103,8 @@ SET__uper_partition(const asn_TYPE_descriptor_t *td, const asn_SET_specifics_t *
         unsigned idx = i < specs->root_count ? specs->root_map[i] : specs->extension_map[i - specs->root_count];
         if(idx >= td->elements_count) return -1;
         if(!td->elements[idx].type || !td->elements[idx].type->op) return -1;
-        if(td->elements[idx].flags & ATF_EXTENSION_GROUP) return -1;
+        if((td->elements[idx].flags & ATF_EXTENSION_GROUP)
+        && (specs->extensible != 3 || i < specs->root_count)) return -1;
         if(i >= specs->root_count && !(td->elements[idx].flags & ATF_POINTER)) return -1;
         for(j = 0; j < i; j++) {
             unsigned prev = j < specs->root_count ? specs->root_map[j] : specs->extension_map[j - specs->root_count];
@@ -123,12 +124,12 @@ static int
 SET__uper_layout(const asn_TYPE_descriptor_t *td, const asn_SET_specifics_t *specs) {
     if(SET__uper_base_layout(td, specs)) return -1;
     if(specs->extensible == 0) return 0;
-    if(specs->extensible != 2 || specs->specifics_size < sizeof(*specs)
-       || specs->specifics_version != 2) return -1;
+    if(!SET_version_valid(specs)) return -1;
     if(specs->root_count > td->elements_count || specs->extension_count > td->elements_count
        || specs->root_count != td->elements_count - specs->extension_count) return -1;
     if((specs->root_count && !specs->root_map) || (specs->extension_count && !specs->extension_map)) return -1;
-    return SET__uper_partition(td, specs);
+    if(SET__uper_partition(td, specs)) return -1;
+    return SET_group_metadata_valid(td);
 }
 
 /*
@@ -143,8 +144,42 @@ SET__uper_storage(const asn_TYPE_descriptor_t *td, const void *st) {
     unsigned i;
     for(i = 0; i < td->elements_count; i++) {
         asn_SET_member_view_t view;
-        if(SET_member_view(td, st, i, ASN_SET_DIRECT_MEMBER, &view)) return -1;
+        unsigned child = (td->elements[i].flags & ATF_EXTENSION_GROUP) ? 0 : ASN_SET_DIRECT_MEMBER;
+        if(SET_member_view(td, st, i, child, &view)) return -1;
     }
+    return 0;
+}
+
+/*
+ * Purpose: encode or transactionally decode one SEQUENCE-view SET group.
+ * Source: X.691 clauses 19.9 and 21; generated v3 group adapter metadata.
+ * Version/date: 1.0, 2026-10-30. Inputs: td/st/index select the group;
+ * ctx/pd decode and po encodes. Returns: 0, -1 on failure, -2 on truncation.
+ * Errors: temporary values are freed through the original SET descriptor.
+ * Author: asn1c maintainers. History: added for grouped SET additions.
+ * Example: a present group uses one PER open-type wrapper.
+ */
+static int
+SET__uper_group(const asn_TYPE_descriptor_t *td, void *st, unsigned index,
+                const asn_codec_ctx_t *ctx, asn_per_data_t *pd, asn_per_outp_t *po) {
+    asn_TYPE_descriptor_t adapter;
+    const asn_TYPE_member_t *member = &td->elements[index];
+    const asn_SET_specifics_t *specs = (const asn_SET_specifics_t *)td->specifics;
+    void **slot = (void **)((char *)st + member->memb_offset);
+    void *temporary = 0;
+    asn_dec_rval_t result;
+
+    if(SET_group_adapter(td, index, &adapter)) return -1;
+    if(po) return uper_open_type_put(&adapter, 0, *slot, po);
+    result = uper_open_type_get(ctx, &adapter, 0, &temporary, pd);
+    if(temporary && SET_group_clear_wire_context(member->type, temporary)) result.code = RC_FAIL;
+    if(result.code != RC_OK || SET_group_mark_present(member->type, temporary)) {
+        if(temporary) member->type->op->free_struct(member->type, temporary, ASFM_FREE_EVERYTHING);
+        return result.code == RC_WMORE ? -2 : -1;
+    }
+    if(*slot) member->type->op->free_struct(member->type, *slot, ASFM_FREE_EVERYTHING);
+    *slot = temporary;
+    ASN_SET_MKPRESENT((char *)st + specs->pres_offset, index);
     return 0;
 }
 
@@ -164,6 +199,7 @@ SET__uper_addition(const asn_TYPE_descriptor_t *td, void *st, unsigned idx,
     asn_SET_member_view_t view;
     void *inline_value, **slot;
     int result;
+    if(member->flags & ATF_EXTENSION_GROUP) return SET__uper_group(td, st, idx, ctx, pd, po);
     if(SET_member_view(td, st, idx, ASN_SET_DIRECT_MEMBER, &view)) return -1;
     if(member->flags & ATF_POINTER) slot = (void **)((char *)st + member->memb_offset);
     else { inline_value = (char *)st + member->memb_offset; slot = &inline_value; }
@@ -194,6 +230,7 @@ static int
 SET__uper_present(const asn_TYPE_descriptor_t *td, const void *st, unsigned idx) {
     const asn_TYPE_member_t *elm = &td->elements[idx];
     asn_SET_member_view_t view;
+    if(elm->flags & ATF_EXTENSION_GROUP) return SET_group_wire_present(td, st, idx);
     if(SET_member_view(td, st, idx, ASN_SET_DIRECT_MEMBER, &view)) return -1;
     return view.present && (!elm->default_value_cmp || elm->default_value_cmp(view.value));
 }
@@ -446,7 +483,7 @@ SET__uper_target(const asn_TYPE_descriptor_t *td, const asn_SET_specifics_t *spe
         *sptr = CALLOC(1, specs->struct_size);
         if(!*sptr) return -1;
     }
-    if(specs->extensible == 2 && SET__uper_storage(td, *sptr)) return -1;
+    if(specs->extensible >= 2 && SET__uper_storage(td, *sptr)) return -1;
     return 0;
 }
 
@@ -477,8 +514,8 @@ SET_decode_uper(const asn_codec_ctx_t *opt_codec_ctx,
     if(!sptr || !pd || SET__uper_layout(td, specs)) ASN__DECODE_FAILED;
     if(SET__uper_target(td, specs, sptr)) ASN__DECODE_FAILED;
     st = *sptr;
-    root_count = specs->extensible == 2 ? specs->root_count : td->elements_count;
-    if(specs->extensible == 2) {
+    root_count = specs->extensible >= 2 ? specs->root_count : td->elements_count;
+    if(specs->extensible >= 2) {
         extpresent = per_get_few_bits(pd, 1);
         if(extpresent < 0) ASN__DECODE_STARVED;
     }
@@ -503,7 +540,7 @@ SET_decode_uper(const asn_codec_ctx_t *opt_codec_ctx,
         if(result == -2) ASN__DECODE_STARVED;
         if(result) ASN__DECODE_FAILED;
     }
-    if(specs->extensible == 2 && SET__uper_extension_defaults(td, st)) ASN__DECODE_FAILED;
+    if(specs->extensible >= 2 && SET__uper_extension_defaults(td, st)) ASN__DECODE_FAILED;
 
 	rv.consumed = 0;
 	rv.code = RC_OK;
@@ -539,9 +576,9 @@ SET_encode_uper(const asn_TYPE_descriptor_t *td,
 
 	ASN_DEBUG("Encoding %s as SET (UPER)", td->name);
 
-    if(specs->extensible == 2 && SET__uper_storage(td, sptr)) ASN__ENCODE_FAILED;
-    root_count = specs->extensible == 2 ? specs->root_count : td->elements_count;
-    if(specs->extensible == 2) {
+    if(specs->extensible >= 2 && SET__uper_storage(td, sptr)) ASN__ENCODE_FAILED;
+    root_count = specs->extensible >= 2 ? specs->root_count : td->elements_count;
+    if(specs->extensible >= 2) {
         for(i = 0; i < specs->extension_count; i++) {
             int present = SET__uper_present(td, sptr, specs->extension_map[i]);
             if(present < 0) ASN__ENCODE_FAILED;

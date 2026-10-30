@@ -1,0 +1,3 @@
+VariableUnion DEFINITIONS ::= BEGIN
+Data ::= OCTET STRING (SIZE(1..2 | 4..5))
+END

@@ -56,7 +56,7 @@ groups, and implied ENUMERATED extensibility (#582–#584). Regenerate C output
 with the matching updated runtime because SEQUENCE group descriptors now carry
 additional metadata. The follow-up [SET extension-group notes](docs/set-extension-groups.md)
 describe transparent SET groups, regenerated descriptor layout, stack bounds,
-and the current PER support boundary.
+and UPER, APER, OER, and JER group support.
 
 The [incremental JER design proposal](docs/jer-streaming-design.md) describes
 how to progress from buffering one PDU to decoding large messages in chunks,
@@ -178,20 +178,27 @@ for a short installation guide.
 
 ## Documentation
 
-`--rust` selects native Rust output as a complete compiler mode. The current
-implementation generates a standalone Cargo package with safe, dependency-free
-UPER, CER, and opt-in APER/OER/JER primitive codecs for BOOLEAN, NULL, and finite
-nonextensible INTEGER ranges fitting `i64`. Unsupported schemas, codec requests, and C-specific
+`--rust` selects native Rust output as a complete compiler mode. It generates a
+standalone Cargo package with safe, dependency-free UPER and CER codecs for
+BOOLEAN, NULL, and finite nonextensible INTEGER ranges fitting `i64`.
+APER, OER, BER/DER, and JER are available for selected direct primitive types
+when explicitly enabled. Unsupported schemas, codec requests, and C-specific
 output options fail with diagnostics. Build the generated package with Cargo
 in offline mode.
-Flat SEQUENCE assignments with required and OPTIONAL direct primitive fields are supported
-when UPER is the only selected Rust codec (`-no-gen-CER`). A shared cursor
-enforces one resource budget across their fields.
-The same UPER-only selection supports direct fixed-size OCTET STRING and BIT
-STRING types, including required and OPTIONAL fields inside those flat SEQUENCEs. Variable
-sizes, named-bit lists, and other string codecs remain outside this slice.
-Direct nonextensible ENUMERATED assignments also support UPER-only generation;
-their root indexes follow numeric value order.
+
+With UPER as the only selected codec (`-no-gen-CER`), SEQUENCE assignments can
+contain required, OPTIONAL, and supported primitive DEFAULT fields, including
+inline nested SEQUENCE records. A shared cursor enforces one resource budget
+across the complete value. Direct fixed-size OCTET STRING and BIT STRING types,
+and either string type with one bounded contiguous `SIZE` range below 65536,
+support UPER, including required and OPTIONAL SEQUENCE fields. Bounded BIT
+STRING values carry their exact meaningful bit length. Direct
+nonextensible ENUMERATED assignments use UPER indexes in numeric value order.
+ENUMERATED and direct fixed-size or bounded OCTET STRING assignments can also
+opt into JER.
+Direct fixed-size and bounded BIT STRING assignments support the C-compatible
+JER hexadecimal forms, including the bit length for bounded values.
+Named-bit lists and other unsupported forms are rejected with diagnostics.
 
 See [the initial implementation](docs/rust/implementation.md) for usage and
 limits, and [the conversion plan](docs/rust/README.md) for incremental delivery

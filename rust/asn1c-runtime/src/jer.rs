@@ -1,8 +1,9 @@
 //! Safe, bounded primitive codecs for the compact JSON Encoding Rules (JER).
 //!
 //! This module encodes BOOLEAN, NULL, finite bounded signed `i64` INTEGER,
-//! direct ENUMERATED values, and fixed-size OCTET STRING values as compact
-//! C-compatible JSON tokens. Decoders accept one complete primitive with
+//! direct ENUMERATED values, fixed-size OCTET STRING and BIT STRING values,
+//! and bounded BIT STRING objects as compact C-compatible JSON tokens. Decoders
+//! accept one complete primitive with
 //! optional JSON whitespace (space, tab, LF, or CR)
 //! around it. They reject any non-whitespace suffix and consume the complete
 //! supplied input, including surrounding whitespace. This is a complete-input
@@ -11,7 +12,8 @@
 //! Specification: ITU-T X.697 (02/2021),
 //! <https://www.itu.int/rec/T-REC-X.697-202102-I/en>. C implementation
 //! references: `skeletons/BOOLEAN_jer.c`, `NULL_jer.c`, `NativeInteger_jer.c`,
-//! `INTEGER_jer.c`, `ENUMERATED_jer.c`, and `OCTET_STRING_jer.c`. The INTEGER
+//! `INTEGER_jer.c`, `ENUMERATED_jer.c`, `OCTET_STRING_jer.c`, and
+//! `BIT_STRING_jer.c`. The INTEGER
 //! lexical tests reflect vectors in
 //! `tests/tests-skeletons/check-INTEGER.c`. Version/date: 2026-10-30.
 //! Responsible party: asn1c maintainers. History: initial bounded JER
@@ -19,8 +21,8 @@
 //! produces the four bytes `true`.
 
 use super::{
-    allocate_zeroed, check_input_limit, check_work_limit, validate_integer, Decoded, Encoded,
-    Error, Limits,
+    allocate_zeroed, check_input_limit, check_work_limit, validate_integer, BitStringValue,
+    Decoded, Encoded, Error, Limits,
 };
 
 /// Maximum number of root alternatives accepted by the generated ENUMERATED JER API.
@@ -426,36 +428,663 @@ pub fn decode_octet_string_jer(
     else {
         return Err(invalid_octet_string_token());
     };
-    if body.len() % 2 != 0 {
+    let output = decode_octet_string_body(body, Some(declared_size), consumed_bits, limits)?;
+    Ok(decoded_complete(output, input.len(), consumed_bits))
+}
+
+/// Encode a bounded OCTET STRING as the C-compatible quoted hexadecimal form.
+///
+/// # Parameters
+/// `value` contains the octets; `lower` and `upper` are inclusive ASN.1 SIZE
+/// bounds; `limits` bounds encoded output and byte-processing work.
+///
+/// # Returns
+/// Uppercase hexadecimal digits in one quoted JSON string.
+///
+/// # Errors
+/// Returns `InvalidEncoding` for invalid bounds or an out-of-range length, and
+/// resource, overflow, or allocation errors. It raises no exception.
+///
+/// # Source, version, history, and example
+/// Original source: `OCTET_STRING_encode_jer` in `skeletons/OCTET_STRING_jer.c`.
+/// Version/date: 2026-10-30. Responsible party: asn1c maintainers. History:
+/// added direct bounded OCTET STRING JER. Example: `[0xAF]` encodes as `"AF"`.
+pub fn encode_bounded_octet_string_jer(
+    value: &[u8],
+    lower: usize,
+    upper: usize,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    validate_octet_string_bounds(value.len(), lower, upper)?;
+    encode_octet_string_jer(value, value.len(), limits)
+}
+
+/// Decode one complete bounded OCTET STRING JER hexadecimal string.
+///
+/// # Parameters
+/// `input` is the entire JSON value; `lower` and `upper` are inclusive ASN.1
+/// SIZE bounds; `limits` bounds input, decoded output, and processing work.
+///
+/// # Returns
+/// The decoded octets and consumption of the complete input, including JSON
+/// whitespace surrounding the string.
+///
+/// # Errors
+/// Returns an error for malformed JSON/hex, an invalid range or length,
+/// trailing input, or exhausted resources. It raises no exception.
+///
+/// # Source, version, history, and example
+/// Original source: `OCTET_STRING_decode_jer_hex` in
+/// `skeletons/OCTET_STRING_jer.c`; this API additionally requires one complete
+/// token. Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+/// History: added direct bounded OCTET STRING JER. Example: decode `"00af"`
+/// with bounds `1..=3`.
+pub fn decode_bounded_octet_string_jer(
+    input: &[u8],
+    lower: usize,
+    upper: usize,
+    limits: &Limits,
+) -> Result<Decoded<Vec<u8>>, Error> {
+    let (token, consumed_bits) = complete_token(input, limits)?;
+    let Some(body) = token
+        .strip_prefix(b"\"")
+        .and_then(|bytes| bytes.strip_suffix(b"\""))
+    else {
+        return Err(invalid_octet_string_token());
+    };
+    if body.len() & 1 != 0 {
         return Err(invalid_octet_string_token());
     }
-    let expected_body_len = declared_size.checked_mul(2).ok_or(Error::SizeOverflow)?;
-    if body.len() != expected_body_len {
+    let octet_len = body.len() / 2;
+    validate_octet_string_bounds(octet_len, lower, upper)?;
+    let output = decode_octet_string_body(body, Some(octet_len), consumed_bits, limits)?;
+    Ok(decoded_complete(output, input.len(), consumed_bits))
+}
+
+/// Decode and validate a hexadecimal OCTET STRING body before allocating output.
+///
+/// # Parameters and returns
+/// `body` is the string content; `expected_size` optionally constrains decoded
+/// octets; `prior_work` is complete-input scan work; `limits` bounds all work.
+/// Returns the decoded bytes.
+///
+/// # Errors
+/// Returns malformed-hex, size, resource-limit, overflow, or allocation errors.
+/// It raises no exception.
+///
+/// # Source, version, history, and example
+/// Original source: hexadecimal conversion in `OCTET_STRING_jer.c`.
+/// Version/date: 2026-10-30. Responsible party: asn1c maintainers. History:
+/// shared fixed and bounded OCTET STRING JER validation. Example: decodes
+/// `b"A8"` as one octet.
+fn decode_octet_string_body(
+    body: &[u8],
+    expected_size: Option<usize>,
+    prior_work: usize,
+    limits: &Limits,
+) -> Result<Vec<u8>, Error> {
+    if body.len() & 1 != 0 {
+        return Err(invalid_octet_string_token());
+    }
+    let output_len = body.len() / 2;
+    if expected_size.is_some_and(|expected| expected != output_len) {
         return Err(invalid_octet_string_size());
     }
-
-    // Account for the validation and conversion passes in addition to input scanning.
-    let hex_work_bits = body.len().checked_mul(8).ok_or(Error::SizeOverflow)?;
-    let total_work = consumed_bits
-        .checked_add(hex_work_bits)
+    let hex_work = body.len().checked_mul(8).ok_or(Error::SizeOverflow)?;
+    let total_work = prior_work
+        .checked_add(hex_work)
         .ok_or(Error::SizeOverflow)?;
     check_work_limit(total_work, limits)?;
 
-    // Reject malformed digits before reserving output, including for constrained values.
+    // Check every digit before reserving the decoded value's output buffer.
     for pair_start in (0..body.len()).step_by(2) {
         if hex_nibble(body[pair_start]).is_none() || hex_nibble(body[pair_start + 1]).is_none() {
             return Err(invalid_octet_string_token());
         }
     }
-
-    let mut output = allocate_zeroed(declared_size, limits)?;
+    let mut output = allocate_zeroed(output_len, limits)?;
     for (index, decoded_octet) in output.iter_mut().enumerate() {
         let offset = index.checked_mul(2).ok_or(Error::SizeOverflow)?;
         let high = hex_nibble(body[offset]).ok_or_else(invalid_octet_string_token)?;
         let low = hex_nibble(body[offset + 1]).ok_or_else(invalid_octet_string_token)?;
         *decoded_octet = (high << 4) | low;
     }
+    Ok(output)
+}
+
+/// Validate inclusive OCTET STRING bounds and one actual length.
+///
+/// # Parameters and returns
+/// `length` is the actual octet count; `lower` and `upper` are inclusive
+/// declared bounds. Returns success when the ordered range contains length.
+///
+/// # Errors
+/// Returns `InvalidEncoding` for reversed bounds or an out-of-range length.
+/// It raises no exception.
+///
+/// # Source, version, history, and example
+/// Original source: direct bounded Rust OCTET STRING JER validation.
+/// Version/date: 2026-10-30. Responsible party: asn1c maintainers. History:
+/// added bounded JER bounds checks. Example: validates length two in `1..=3`.
+fn validate_octet_string_bounds(length: usize, lower: usize, upper: usize) -> Result<(), Error> {
+    if lower > upper {
+        return Err(Error::InvalidEncoding {
+            reason: "OCTET STRING SIZE bounds are invalid",
+        });
+    }
+    if !(lower..=upper).contains(&length) {
+        return Err(invalid_octet_string_size());
+    }
+    Ok(())
+}
+
+/// Encode a fixed-size BIT STRING as the C-compatible quoted hexadecimal form.
+///
+/// # Parameters
+/// `value` is the packed value with zero unused low bits; `declared_bit_len`
+/// is the fixed ASN.1 SIZE; `limits` bounds output and work.
+///
+/// # Returns
+/// Uppercase hexadecimal octets in one JSON string, including packed padding.
+///
+/// # Errors
+/// Returns an error for a wrong storage length, nonzero padding, or resource
+/// limits. It raises no exception.
+///
+/// # Source, version, history, and example
+/// Original source: `BIT_STRING_encode_jer` in `skeletons/BIT_STRING_jer.c`.
+/// Version/date: 2026-10-30. Responsible party: asn1c maintainers. History:
+/// added direct fixed BIT STRING JER. Example: a three-bit `0xA0` value emits
+/// the JSON token `"A0"`.
+pub fn encode_bit_string_jer(
+    value: &[u8],
+    declared_bit_len: usize,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    validate_jer_bit_string(value, declared_bit_len)?;
+    encode_bit_string_token(value, declared_bit_len, None, limits)
+}
+
+/// Decode one complete fixed-size BIT STRING JER hexadecimal token.
+///
+/// # Parameters
+/// `input` is the entire JSON string; `declared_bit_len` is the fixed ASN.1
+/// SIZE; `limits` bounds input, output, and processing work.
+///
+/// # Returns
+/// The validated packed value and full-input consumption, including whitespace.
+///
+/// # Errors
+/// Returns an error for malformed JSON/hex, wrong size, nonzero unused bits,
+/// trailing input, or resource limits. It raises no exception.
+///
+/// # Source, version, history, and example
+/// Original source: `BIT_STRING_decode_jer` in `skeletons/BIT_STRING_jer.c`.
+/// Version/date: 2026-10-30. Responsible party: asn1c maintainers. History:
+/// added direct fixed BIT STRING JER. Example: decode `b"\"A0\""` at SIZE(3).
+pub fn decode_bit_string_jer(
+    input: &[u8],
+    declared_bit_len: usize,
+    limits: &Limits,
+) -> Result<Decoded<Vec<u8>>, Error> {
+    let (token, consumed_bits) = complete_token(input, limits)?;
+    let Some(body) = token
+        .strip_prefix(b"\"")
+        .and_then(|bytes| bytes.strip_suffix(b"\""))
+    else {
+        return Err(invalid_bit_string_token());
+    };
+    let expected_bytes = bit_string_octet_len(declared_bit_len)?;
+    let output = decode_hex_body(body, Some(expected_bytes), consumed_bits, limits)?;
+    validate_jer_bit_string(&output, declared_bit_len)?;
     Ok(decoded_complete(output, input.len(), consumed_bits))
+}
+
+/// Encode a bounded BIT STRING as the C-compatible minified JER object.
+///
+/// # Parameters
+/// `value` carries packed bytes and its exact bit length; `lower` and `upper`
+/// are inclusive ASN.1 SIZE bounds; `limits` bounds output and work.
+///
+/// # Returns
+/// A token shaped as `{"value":"A8","length":5}` with uppercase hex.
+///
+/// # Errors
+/// Returns an error for invalid bounds, length, padding, or resource limits.
+/// It raises no exception.
+///
+/// # Source, version, history, and example
+/// Original source: variable-size `BIT_STRING_encode_jer` in
+/// `skeletons/BIT_STRING_jer.c`. Version/date: 2026-10-30. Responsible party:
+/// asn1c maintainers. History: added bounded BIT STRING JER. Example: a
+/// five-bit `0xA8` value emits `{"value":"A8","length":5}`.
+pub fn encode_bounded_bit_string_jer(
+    value: &BitStringValue,
+    lower: usize,
+    upper: usize,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    validate_bit_string_bounds(value.bit_len(), lower, upper)?;
+    validate_jer_bit_string(value.as_bytes(), value.bit_len())?;
+    encode_bit_string_token(
+        value.as_bytes(),
+        value.bit_len(),
+        Some(value.bit_len()),
+        limits,
+    )
+}
+
+/// Decode one complete bounded BIT STRING JER object.
+///
+/// # Parameters
+/// `input` is the entire JSON object; `lower` and `upper` are inclusive ASN.1
+/// SIZE bounds; `limits` bounds input, output, and processing work.
+///
+/// # Returns
+/// The validated packed value, exact bit length, and full-input consumption.
+///
+/// # Errors
+/// Returns malformed JSON/hex, invalid bounds or length, nonzero padding,
+/// trailing input, or resource-limit errors. It raises no exception.
+///
+/// # Source, version, history, and example
+/// Original source: variable-size `BIT_STRING_decode_jer` in
+/// `skeletons/BIT_STRING_jer.c`. Version/date: 2026-10-30. Responsible party:
+/// asn1c maintainers. History: added bounded BIT STRING JER. Example: decode
+/// `b"{\"value\":\"A8\",\"length\":5}"` for SIZE(1..7).
+pub fn decode_bounded_bit_string_jer(
+    input: &[u8],
+    lower: usize,
+    upper: usize,
+    limits: &Limits,
+) -> Result<Decoded<BitStringValue>, Error> {
+    let (token, consumed_bits) = complete_token(input, limits)?;
+    let (body, bit_len) = parse_bounded_bit_string_object(token)?;
+    validate_bit_string_bounds(bit_len, lower, upper)?;
+    let expected_bytes = bit_string_octet_len(bit_len)?;
+    let output = decode_hex_body(body, Some(expected_bytes), consumed_bits, limits)?;
+    validate_jer_bit_string(&output, bit_len)?;
+    let value = BitStringValue::new(output, bit_len)?;
+    Ok(decoded_complete(value, input.len(), consumed_bits))
+}
+
+/// Build one fixed-string or bounded-object JER token from validated packed bits.
+///
+/// # Parameters
+/// `value` is the packed content; `bit_len` is meaningful bits; `include_length`
+/// selects C's variable-size object shape; `limits` bounds output and work.
+///
+/// # Returns
+/// The uppercase hexadecimal token with complete-octet bit length.
+///
+/// # Errors
+/// Returns checked-size, resource-limit, allocation, or storage validation
+/// errors. It raises no exception.
+///
+/// # Source, version, history, and example
+/// Original source: fixed and variable `BIT_STRING_encode_jer` output shapes.
+/// Version/date: 2026-10-30. Responsible party: asn1c maintainers. History:
+/// shared JER encoder. Example: encode a zero-padded three-bit value.
+fn encode_bit_string_token(
+    value: &[u8],
+    bit_len: usize,
+    include_length: Option<usize>,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    validate_jer_bit_string(value, bit_len)?;
+    let hex_len = value.len().checked_mul(2).ok_or(Error::SizeOverflow)?;
+    let mut length_digits = [0_u8; 20];
+    let digit_start = format_usize(include_length.unwrap_or(0), &mut length_digits);
+    let (prefix_len, suffix_len) = if include_length.is_some() {
+        (
+            10_usize,
+            12_usize
+                .checked_add(length_digits.len() - digit_start)
+                .ok_or(Error::SizeOverflow)?,
+        )
+    } else {
+        (1, 1)
+    };
+    let output_len = prefix_len
+        .checked_add(hex_len)
+        .and_then(|len| len.checked_add(suffix_len))
+        .ok_or(Error::SizeOverflow)?;
+    let work_bits = output_len.checked_mul(8).ok_or(Error::SizeOverflow)?;
+    check_work_limit(work_bits, limits)?;
+    let mut output = allocate_zeroed(output_len, limits)?;
+    if include_length.is_some() {
+        output[..prefix_len].copy_from_slice(b"{\"value\":\"");
+    } else {
+        output[0] = b'"';
+    }
+    for (index, octet) in value.iter().enumerate() {
+        let offset = prefix_len
+            .checked_add(index.checked_mul(2).ok_or(Error::SizeOverflow)?)
+            .ok_or(Error::SizeOverflow)?;
+        output[offset] = b"0123456789ABCDEF"[usize::from(octet >> 4)];
+        output[offset + 1] = b"0123456789ABCDEF"[usize::from(octet & 0x0f)];
+    }
+    let mut suffix = prefix_len.checked_add(hex_len).ok_or(Error::SizeOverflow)?;
+    output[suffix] = b'"';
+    if include_length.is_some() {
+        suffix += 1;
+        output[suffix..suffix + 10].copy_from_slice(b",\"length\":");
+        suffix += 10;
+        let digits = &length_digits[digit_start..];
+        output[suffix..suffix + digits.len()].copy_from_slice(digits);
+        suffix += digits.len();
+        output[suffix] = b'}';
+    }
+    Ok(Encoded {
+        bytes: output,
+        bit_len: work_bits,
+    })
+}
+
+/// Validate storage length and zero unused low bits for a logical BIT STRING.
+///
+/// # Parameters and returns
+/// `value` is packed content and `bit_len` is its meaningful width. Returns
+/// success only for the exact storage length and canonical zero padding.
+///
+/// # Errors
+/// Returns `InvalidEncoding` for an inconsistent value; raises no exception.
+///
+/// # Source, version, history, and example
+/// Original source: BIT STRING representation requirements in
+/// `skeletons/BIT_STRING_jer.c`. Version/date: 2026-10-30. Responsible party:
+/// asn1c maintainers. History: added BIT STRING JER validation. Example:
+/// validates `[0xA0]` at width three.
+fn validate_jer_bit_string(value: &[u8], bit_len: usize) -> Result<(), Error> {
+    if value.len() != bit_string_octet_len(bit_len)? {
+        return Err(invalid_bit_string_size());
+    }
+    let remainder = bit_len % 8;
+    if remainder != 0
+        && value
+            .last()
+            .is_some_and(|byte| byte & (0xff >> remainder) != 0)
+    {
+        return Err(invalid_bit_string_padding());
+    }
+    Ok(())
+}
+
+/// Compute the canonical packed-octet count for a meaningful BIT STRING width.
+///
+/// # Parameters and returns
+/// `bit_len` is the number of meaningful bits. Returns `ceil(bit_len / 8)`.
+///
+/// # Errors
+/// Returns `SizeOverflow` if rounding the width exceeds `usize`.
+///
+/// # Source, version, history, and example
+/// Original source: packed ASN.1 BIT STRING storage. Version/date: 2026-10-30.
+/// Responsible party: asn1c maintainers. History: added JER storage checks.
+/// Example: `bit_string_octet_len(9)` returns two.
+fn bit_string_octet_len(bit_len: usize) -> Result<usize, Error> {
+    bit_len
+        .checked_add(7)
+        .map(|rounded| rounded / 8)
+        .ok_or(Error::SizeOverflow)
+}
+
+/// Check inclusive bounds for a bounded BIT STRING JER operation.
+///
+/// # Parameters and returns
+/// `bit_len` is the actual width; `lower` and `upper` are inclusive bounds.
+/// Returns success when the bounds are ordered and contain the width.
+///
+/// # Errors
+/// Returns `InvalidEncoding` for reversed bounds or an out-of-range length.
+/// It raises no exception.
+///
+/// # Source, version, history, and example
+/// Original source: constrained BIT STRING validation. Version/date:
+/// 2026-10-30. Responsible party: asn1c maintainers. History: bounded JER.
+/// Example: validates bit length five in SIZE(1..7).
+fn validate_bit_string_bounds(bit_len: usize, lower: usize, upper: usize) -> Result<(), Error> {
+    if lower > upper {
+        return Err(Error::InvalidEncoding {
+            reason: "BIT STRING SIZE bounds are invalid",
+        });
+    }
+    if !(lower..=upper).contains(&bit_len) {
+        return Err(invalid_bit_string_size());
+    }
+    Ok(())
+}
+
+/// Parse the exact ordered `value` and `length` members of a bounded JER object.
+///
+/// # Parameters and returns
+/// `token` is the trimmed JSON object. Returns the quoted hex body and logical
+/// bit length for the C-compatible member order.
+///
+/// # Errors
+/// Returns `InvalidEncoding` for missing, reordered, malformed, or extra data.
+/// It raises no exception.
+///
+/// # Source, version, history, and example
+/// Original source: key order in `BIT_STRING_decode_jer`. Version/date:
+/// 2026-10-30. Responsible party: asn1c maintainers. History: bounded JER.
+/// Example: parses `{"value":"A8","length":5}`.
+fn parse_bounded_bit_string_object(token: &[u8]) -> Result<(&[u8], usize), Error> {
+    let mut offset = 0;
+    take_json_literal(token, &mut offset, b"{")?;
+    take_json_literal(token, &mut offset, b"\"value\"")?;
+    take_json_literal(token, &mut offset, b":")?;
+    take_json_literal(token, &mut offset, b"\"")?;
+    let body_start = offset;
+    let body_len = token[offset..]
+        .iter()
+        .position(|byte| *byte == b'"')
+        .ok_or_else(invalid_bit_string_token)?;
+    let body_end = body_start
+        .checked_add(body_len)
+        .ok_or(Error::SizeOverflow)?;
+    let body = &token[body_start..body_end];
+    offset = body_end.checked_add(1).ok_or(Error::SizeOverflow)?;
+    take_json_literal(token, &mut offset, b",")?;
+    take_json_literal(token, &mut offset, b"\"length\"")?;
+    take_json_literal(token, &mut offset, b":")?;
+    skip_json_whitespace(token, &mut offset);
+    let digits_start = offset;
+    while token.get(offset).is_some_and(u8::is_ascii_digit) {
+        offset += 1;
+    }
+    let digits = token
+        .get(digits_start..offset)
+        .filter(|digits| !digits.is_empty())
+        .ok_or_else(invalid_bit_string_token)?;
+    if digits.len() > 1 && digits[0] == b'0' {
+        return Err(invalid_bit_string_token());
+    }
+    let bit_len = std::str::from_utf8(digits)
+        .map_err(|_| invalid_bit_string_token())?
+        .parse::<usize>()
+        .map_err(|_| invalid_bit_string_token())?;
+    take_json_literal(token, &mut offset, b"}")?;
+    if offset != token.len() {
+        return Err(invalid_bit_string_token());
+    }
+    Ok((body, bit_len))
+}
+
+/// Consume one expected JSON punctuation or quoted key after JSON whitespace.
+///
+/// # Parameters and returns
+/// `input` is the bounded token, `offset` is updated past `expected`, and
+/// `expected` is a literal byte string. Returns success on exact match.
+///
+/// # Errors
+/// Returns `InvalidEncoding` on truncation or mismatch; raises no exception.
+///
+/// # Source, version, history, and example
+/// Original source: structural checks in `BIT_STRING_decode_jer`.
+/// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+/// History: bounded JER parser. Example: consume `:` after a key.
+fn take_json_literal(input: &[u8], offset: &mut usize, expected: &[u8]) -> Result<(), Error> {
+    skip_json_whitespace(input, offset);
+    let end = offset
+        .checked_add(expected.len())
+        .ok_or(Error::SizeOverflow)?;
+    if input.get(*offset..end) != Some(expected) {
+        return Err(invalid_bit_string_token());
+    }
+    *offset = end;
+    Ok(())
+}
+
+/// Skip the four JSON whitespace bytes without advancing beyond the input.
+///
+/// # Parameters and returns
+/// `input` is the token and `offset` is updated past spaces, tabs, CR, and LF.
+/// This helper returns no value and cannot fail.
+///
+/// # Errors
+/// None; it raises no exception and allocates no memory.
+///
+/// # Source, version, history, and example
+/// Original source: JSON whitespace accepted by `BIT_STRING__jer_skip_whitespace`.
+/// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+/// History: bounded JER parser. Example: skip whitespace before a colon.
+fn skip_json_whitespace(input: &[u8], offset: &mut usize) {
+    while input
+        .get(*offset)
+        .is_some_and(|byte| matches!(byte, b' ' | b'\t' | b'\n' | b'\r'))
+    {
+        *offset += 1;
+    }
+}
+
+/// Decode and validate an even-length hexadecimal body before allocating output.
+///
+/// # Parameters and returns
+/// `body` is the quoted token content; `expected_len` optionally specifies
+/// decoded octets; `prior_work` is input-scan work; `limits` bounds all work.
+/// Returns decoded bytes.
+///
+/// # Errors
+/// Returns malformed-hex, size, resource-limit, or allocation errors.
+/// It raises no exception.
+///
+/// # Source, version, history, and example
+/// Original source: hex conversion in `BIT_STRING_decode_jer` and the fixed
+/// OCTET STRING JER helper. Version/date: 2026-10-30. Responsible party:
+/// asn1c maintainers. History: shared BIT STRING JER parser. Example: decodes
+/// `b"A8"` as one octet.
+fn decode_hex_body(
+    body: &[u8],
+    expected_len: Option<usize>,
+    prior_work: usize,
+    limits: &Limits,
+) -> Result<Vec<u8>, Error> {
+    if body.len() & 1 != 0 {
+        return Err(invalid_bit_string_token());
+    }
+    let output_len = body.len() / 2;
+    if expected_len.is_some_and(|expected| expected != output_len) {
+        return Err(invalid_bit_string_size());
+    }
+    let hex_work = body.len().checked_mul(8).ok_or(Error::SizeOverflow)?;
+    let total_work = prior_work
+        .checked_add(hex_work)
+        .ok_or(Error::SizeOverflow)?;
+    check_work_limit(total_work, limits)?;
+    for pair_start in (0..body.len()).step_by(2) {
+        if hex_nibble(body[pair_start]).is_none() || hex_nibble(body[pair_start + 1]).is_none() {
+            return Err(invalid_bit_string_token());
+        }
+    }
+    let mut output = allocate_zeroed(output_len, limits)?;
+    for (index, octet) in output.iter_mut().enumerate() {
+        let offset = index.checked_mul(2).ok_or(Error::SizeOverflow)?;
+        let high = hex_nibble(body[offset]).ok_or_else(invalid_bit_string_token)?;
+        let low = hex_nibble(body[offset + 1]).ok_or_else(invalid_bit_string_token)?;
+        *octet = (high << 4) | low;
+    }
+    Ok(output)
+}
+
+/// Format one `usize` as decimal text in caller-provided storage.
+///
+/// # Parameters and returns
+/// `value` is a nonnegative integer and `buffer` holds at least 20 bytes.
+/// Returns the first occupied index; the number is `buffer[start..]`.
+///
+/// # Errors
+/// This helper cannot fail, raises no exception, and allocates no memory.
+///
+/// # Source, version, history, and example
+/// Original source: minimal length field in C JER BIT STRING output.
+/// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+/// History: bounded JER output. Example: formats zero as `b"0"`.
+const fn format_usize(value: usize, buffer: &mut [u8; 20]) -> usize {
+    let mut cursor = buffer.len();
+    let mut remaining = value;
+    loop {
+        cursor -= 1;
+        buffer[cursor] = b"0123456789"[remaining % 10];
+        remaining /= 10;
+        if remaining == 0 {
+            return cursor;
+        }
+    }
+}
+
+/// Return the static error for a malformed BIT STRING JER token.
+///
+/// # Parameters and returns
+/// No parameters. Returns a stable `InvalidEncoding` error.
+///
+/// # Errors
+/// Constructs an error and cannot itself fail or raise an exception.
+///
+/// # Source, version, history, and example
+/// Original source: strict complete-input BIT STRING JER validation.
+/// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+/// History: added BIT STRING JER. Example: reports malformed hex.
+const fn invalid_bit_string_token() -> Error {
+    Error::InvalidEncoding {
+        reason: "expected one complete BIT STRING JER value",
+    }
+}
+
+/// Return the static error for inconsistent BIT STRING size or logical length.
+///
+/// # Parameters and returns
+/// No parameters. Returns a stable `InvalidEncoding` error.
+///
+/// # Errors
+/// Constructs an error and cannot itself fail or raise an exception.
+///
+/// # Source, version, history, and example
+/// Original source: BIT STRING SIZE validation in the generated Rust wrapper.
+/// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+/// History: added BIT STRING JER. Example: reports a fixed-width mismatch.
+const fn invalid_bit_string_size() -> Error {
+    Error::InvalidEncoding {
+        reason: "BIT STRING length does not match declared SIZE",
+    }
+}
+
+/// Return the static error for nonzero unused low bits in packed BIT STRING data.
+///
+/// # Parameters and returns
+/// No parameters. Returns a stable `InvalidEncoding` error.
+///
+/// # Errors
+/// Constructs an error and cannot itself fail or raise an exception.
+///
+/// # Source, version, history, and example
+/// Original source: canonical BIT STRING storage and UPER cursor validation.
+/// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+/// History: added BIT STRING JER. Example: rejects `0xA1` for a three-bit value.
+const fn invalid_bit_string_padding() -> Error {
+    Error::InvalidEncoding {
+        reason: "nonzero unused BIT STRING bits",
+    }
 }
 
 /// Convert one ASCII hexadecimal digit to its four-bit numeric value.
@@ -1177,6 +1806,123 @@ mod tests {
         ));
     }
 
+    /// Verify bounded OCTET STRING JER emits quoted hex and requires full input.
+    ///
+    /// # Parameters and returns
+    /// No parameters or return value.
+    ///
+    /// # Errors
+    /// Panics only when a valid round trip or expected rejection fails.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: variable OCTET STRING JER in
+    /// `skeletons/OCTET_STRING_jer.c`. Version/date: 2026-10-30.
+    /// Responsible party: asn1c maintainers. History: bounded OCTET JER.
+    /// Example: `[0x00, 0xAF]` encodes as `"00AF"` in SIZE(1..3).
+    #[test]
+    fn bounded_octet_string_jer_round_trips_complete_hex_tokens() {
+        let value = [0x00, 0xaf, 0xff];
+        let encoded = encode_bounded_octet_string_jer(&value, 1, 7, &limits()).unwrap();
+        assert_eq!(encoded.bytes, b"\"00AFFF\"");
+        assert_eq!(encoded.bit_len, 64);
+
+        let decoded =
+            decode_bounded_octet_string_jer(b" \t\"00aFfF\"\r\n", 1, 7, &limits()).unwrap();
+        assert_eq!(decoded.value, value);
+        assert_eq!(decoded.consumed_bytes, 12);
+        assert_eq!(decoded.consumed_bits, 96);
+        for input in [
+            b"\"\"".as_slice(),
+            b"\"00AFFF\"x",
+            b"\"00AFFFx\"",
+            b"\"00AFFFG1\"",
+            b"\"0000000000000000\"",
+            b"[\"00AFFF\"]",
+        ] {
+            assert!(decode_bounded_octet_string_jer(input, 1, 7, &limits()).is_err());
+        }
+        assert!(encode_bounded_octet_string_jer(&[], 1, 7, &limits()).is_err());
+        assert!(encode_bounded_octet_string_jer(&[0; 8], 1, 7, &limits()).is_err());
+        assert_eq!(
+            decode_bounded_octet_string_jer(b"\"\"", 0, 0, &limits())
+                .unwrap()
+                .value,
+            Vec::<u8>::new()
+        );
+        assert!(decode_bounded_octet_string_jer(b"\"00\"", 2, 1, &limits()).is_err());
+    }
+
+    /// Verify bounded OCTET STRING JER honors all configured resource ceilings.
+    ///
+    /// # Parameters and returns
+    /// No parameters or return value.
+    ///
+    /// # Errors
+    /// Panics only when a configured input, output, or work cap is not enforced.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: bounded OCTET STRING JER resource accounting.
+    /// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+    /// History: bounded OCTET JER. Example: an output cap rejects `"00"`.
+    #[test]
+    fn bounded_octet_string_jer_enforces_resource_limits() {
+        let value = [0x00];
+        let encoded = b"\"00\"";
+        let output_limited = Limits {
+            max_output_bytes: 0,
+            ..limits()
+        };
+        assert!(matches!(
+            encode_bounded_octet_string_jer(&value, 1, 3, &output_limited),
+            Err(Error::LimitExceeded {
+                resource: Resource::OutputBytes,
+                ..
+            })
+        ));
+        assert!(matches!(
+            decode_bounded_octet_string_jer(encoded, 1, 3, &output_limited),
+            Err(Error::LimitExceeded {
+                resource: Resource::OutputBytes,
+                ..
+            })
+        ));
+
+        let input_limited = Limits {
+            max_input_bytes: 3,
+            ..limits()
+        };
+        assert!(matches!(
+            decode_bounded_octet_string_jer(encoded, 1, 3, &input_limited),
+            Err(Error::LimitExceeded {
+                resource: Resource::InputBytes,
+                ..
+            })
+        ));
+
+        let work_limited = Limits {
+            max_work_bits: 31,
+            ..limits()
+        };
+        assert!(matches!(
+            encode_bounded_octet_string_jer(&value, 1, 3, &work_limited),
+            Err(Error::LimitExceeded {
+                resource: Resource::WorkBits,
+                ..
+            })
+        ));
+        let decode_work_limited = Limits {
+            max_work_bits: 47,
+            ..limits()
+        };
+        assert!(matches!(
+            decode_bounded_octet_string_jer(encoded, 1, 3, &decode_work_limited),
+            Err(Error::LimitExceeded {
+                resource: Resource::WorkBits,
+                ..
+            })
+        ));
+    }
+
     /// Verify minimal integer encoding and signed `i64` boundary round trips.
     ///
     /// # Parameters and returns
@@ -1534,6 +2280,168 @@ mod tests {
         };
         assert!(matches!(
             encode_enumerated_jer(0, &names, &encode_work_limited),
+            Err(Error::LimitExceeded {
+                resource: Resource::WorkBits,
+                ..
+            })
+        ));
+    }
+
+    /// Verify fixed BIT STRING hexadecimal tokens preserve exact logical width.
+    ///
+    /// # Parameters and returns
+    /// No parameters or return value.
+    ///
+    /// # Errors
+    /// Panics only if a regression assertion fails.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: fixed-size `BIT_STRING_encode_jer` representation.
+    /// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+    /// History: added BIT STRING JER tests. Example: a three-bit value uses
+    /// one packed byte and emits `"A0"`.
+    #[test]
+    fn fixed_bit_string_jer_round_trips_canonical_hex() {
+        let encoded = encode_bit_string_jer(&[0xa0], 3, &limits()).unwrap();
+        assert_eq!(encoded.bytes, b"\"A0\"");
+        assert_eq!(encoded.bit_len, 32);
+        let decoded = decode_bit_string_jer(b" \t\"a0\"\r\n", 3, &limits()).unwrap();
+        assert_eq!(decoded.value, [0xa0]);
+        assert_eq!(decoded.consumed_bytes, 8);
+        assert_eq!(decoded.consumed_bits, 64);
+        assert_eq!(
+            encode_bit_string_jer(&[], 0, &limits()).unwrap().bytes,
+            b"\"\""
+        );
+    }
+
+    /// Reject malformed fixed BIT STRING tokens and noncanonical padding.
+    ///
+    /// # Parameters and returns
+    /// No parameters or return value.
+    ///
+    /// # Errors
+    /// Panics only if a malformed-input regression assertion fails.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: strict validation around `BIT_STRING_decode_jer`.
+    /// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+    /// History: added BIT STRING JER tests. Example: reject `"A1"` at width 3.
+    #[test]
+    fn fixed_bit_string_jer_rejects_bad_hex_size_padding_and_suffixes() {
+        for input in [b"\"A\"".as_slice(), b"\"GG\"", b"\"A0\"false", b"\"0000\""] {
+            assert!(decode_bit_string_jer(input, 3, &limits()).is_err());
+        }
+        assert!(decode_bit_string_jer(b"\"A1\"", 3, &limits()).is_err());
+        assert!(encode_bit_string_jer(&[0xa1], 3, &limits()).is_err());
+        assert!(encode_bit_string_jer(&[], 1, &limits()).is_err());
+    }
+
+    /// Verify bounded BIT STRING values use the C variable-size JSON shape.
+    ///
+    /// # Parameters and returns
+    /// No parameters or return value.
+    ///
+    /// # Errors
+    /// Panics only if a generated token or round-trip assertion fails.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: variable-size `BIT_STRING_encode_jer` representation.
+    /// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+    /// History: added bounded BIT STRING JER tests. Example: width five `A8`
+    /// encodes as `{"value":"A8","length":5}`.
+    #[test]
+    fn bounded_bit_string_jer_uses_value_then_length_object() {
+        let value = BitStringValue::new(vec![0xa8], 5).unwrap();
+        let encoded = encode_bounded_bit_string_jer(&value, 1, 7, &limits()).unwrap();
+        assert_eq!(encoded.bytes, b"{\"value\":\"A8\",\"length\":5}");
+        assert_eq!(encoded.bit_len, encoded.bytes.len() * 8);
+        let decoded = decode_bounded_bit_string_jer(
+            b" { \"value\" : \"a8\" , \"length\" : 5 } ",
+            1,
+            7,
+            &limits(),
+        )
+        .unwrap();
+        assert_eq!(decoded.value, value);
+        assert_eq!(decoded.consumed_bytes, 35);
+        assert_eq!(decoded.consumed_bits, 35 * 8);
+    }
+
+    /// Reject bounded BIT STRING objects with invalid syntax, widths, or padding.
+    ///
+    /// # Parameters and returns
+    /// No parameters or return value.
+    ///
+    /// # Errors
+    /// Panics only if an invalid bounded object is accepted.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: size and packed-data validation for variable BIT STRING.
+    /// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+    /// History: added bounded BIT STRING JER tests. Example: `length:5` with
+    /// an empty payload is rejected.
+    #[test]
+    fn bounded_bit_string_jer_rejects_invalid_objects() {
+        for input in [
+            b"{}".as_slice(),
+            b"{\"length\":5,\"value\":\"A8\"}",
+            b"{\"value\":\"A8\",\"length\":0}",
+            b"{\"value\":\"A8\",\"length\":8}",
+            b"{\"value\":\"A1\",\"length\":5}",
+            b"{\"value\":\"A8\",\"length\":05}",
+            b"{\"value\":\"A8\",\"length\":5} false",
+        ] {
+            assert!(decode_bounded_bit_string_jer(input, 1, 7, &limits()).is_err());
+        }
+        let value = BitStringValue::new(vec![0xa8], 5).unwrap();
+        assert!(encode_bounded_bit_string_jer(&value, 6, 7, &limits()).is_err());
+        assert!(encode_bounded_bit_string_jer(&value, 7, 1, &limits()).is_err());
+    }
+
+    /// Ensure fixed and bounded BIT STRING JER obey input, output, and work caps.
+    ///
+    /// # Parameters and returns
+    /// No parameters or return value.
+    ///
+    /// # Errors
+    /// Panics only if a resource ceiling is not enforced.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: bounded JER runtime resource accounting.
+    /// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+    /// History: added BIT STRING JER limit coverage. Example: a three-byte
+    /// output limit rejects the four-byte fixed token `"A0"`.
+    #[test]
+    fn bit_string_jer_enforces_resource_limits() {
+        let output_limited = Limits {
+            max_output_bytes: 3,
+            ..limits()
+        };
+        assert!(matches!(
+            encode_bit_string_jer(&[0xa0], 3, &output_limited),
+            Err(Error::LimitExceeded {
+                resource: Resource::OutputBytes,
+                ..
+            })
+        ));
+        let input_limited = Limits {
+            max_input_bytes: 3,
+            ..limits()
+        };
+        assert!(matches!(
+            decode_bit_string_jer(b"\"A0\"", 3, &input_limited),
+            Err(Error::LimitExceeded {
+                resource: Resource::InputBytes,
+                ..
+            })
+        ));
+        let work_limited = Limits {
+            max_work_bits: 31,
+            ..limits()
+        };
+        assert!(matches!(
+            encode_bit_string_jer(&[0xa0], 3, &work_limited),
             Err(Error::LimitExceeded {
                 resource: Resource::WorkBits,
                 ..

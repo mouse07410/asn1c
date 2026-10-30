@@ -36,6 +36,8 @@ static void emit_set_mandatory_map(arg_t *arg, asn1p_expr_t *expr,
 		int elements);
 static void emit_set_member_map(arg_t *arg, asn1p_expr_t *expr,
 		int root, int count);
+static int emit_set_extension_group_adapters(arg_t *arg,
+		asn1p_expr_t *expr, int group_count);
 static int assign_set_extension_group_names(asn1p_expr_t *expr);
 
 enum onc_flags {
@@ -847,6 +849,111 @@ asn1c_lang_C_type_SET(arg_t *arg) {
 	return asn1c_lang_C_type_SET_def(arg);
 }
 
+/*
+ * Purpose: emit SET specifics and the versioned extension-group adapter map.
+ * Source: Existing SET descriptor emission and generated v2/v3 metadata.
+ * Version/date: 1.0, 2026-10-30. Inputs: arg/expr identify the SET; counts
+ * and has_cxer describe its maps, roots, and extension groups.
+ * Returns: nothing. Errors: output failures are handled by the emitter.
+ * Author: asn1c maintainers. History: split from SET descriptor generation.
+ * Example: group-bearing descriptors advertise v3 and their adapter table.
+ */
+static void
+emit_set_specifics(arg_t *arg, asn1p_expr_t *expr, int tag2el_count,
+                   int tag2el_cxer_count, int has_cxer, int first_extension,
+                   int root_count, int extension_count, int extension_group_count) {
+    const char *p;
+	if(!(expr->_type_referenced)) OUT("static \n");
+	OUT("asn_SET_specifics_t asn_SPC_%s_specs_%d = {\n",
+		MKID(expr), expr->_type_unique_index);
+	INDENTED(
+		OUT("sizeof(%s),\n", c_name(arg).full_name);
+		OUT("offsetof(%s, _asn_ctx),\n", c_name(arg).full_name);
+		OUT("offsetof(%s, _presence_map),\n", c_name(arg).full_name);
+		emit_tag2member_reference(arg, expr, tag2el_count);
+		p = MKID(expr);
+		if(has_cxer)
+			OUT("asn_MAP_%s_tag2el_cxer_%d,\n",
+				p, expr->_type_unique_index);
+		else
+			OUT("asn_MAP_%s_tag2el_%d,\t/* Same as above */\n",
+				p, expr->_type_unique_index);
+		OUT("%d,\t/* Count of tags in the CXER map */\n",
+			tag2el_cxer_count);
+		OUT("%d,\t/* Whether extensible */\n",
+			first_extension < 0 ? 0 : (extension_group_count ? 3 : 2));
+		OUT("(const unsigned int *)asn_MAP_%s_mmap_%d,\t/* Mandatory elements map */\n",
+			p, expr->_type_unique_index);
+		if(extension_group_count) {
+			OUT("sizeof(asn_SET_specifics_t),\t/* Metadata size */\n");
+			OUT("ASN_SET_SPECIFICS_VERSION_3,\t/* Metadata version */\n");
+		} else {
+			OUT("offsetof(asn_SET_specifics_t, extension_groups),\t/* Metadata size */\n");
+			OUT("ASN_SET_SPECIFICS_VERSION,\t/* Metadata version */\n");
+		}
+		if(root_count) {
+			OUT("asn_MAP_%s_root_%d,\t/* Root members in declaration order */\n",
+				p, expr->_type_unique_index);
+		} else {
+			OUT("0,\t/* No root members */\n");
+		}
+		OUT("%d,\t/* Root member count */\n", root_count);
+		if(extension_count) {
+			OUT("asn_MAP_%s_extension_%d,\t/* Additions in declaration order */\n",
+				p, expr->_type_unique_index);
+		} else {
+			OUT("0,\t/* No extension additions */\n");
+		}
+		OUT("%d,\t/* Extension addition count */\n", extension_count);
+		if(extension_group_count) {
+			OUT("asn_MAP_%s_group_adapters_%d,\t/* Group SEQUENCE layouts */\n",
+				p, expr->_type_unique_index);
+			OUT("%d\t/* Extension group count */\n",
+				extension_group_count);
+		} else {
+			OUT("0,\t/* No extension group adapters */\n");
+			OUT("0\t/* Extension group count */\n");
+		}
+	);
+	OUT("};\n");
+
+}
+
+/*
+ * Purpose: emit declaration-order SET root, addition, and group maps.
+ * Source: SET component lists and compiler extension-marker handling.
+ * Version/date: 1.0, 2026-10-30. Inputs: arg/expr identify the SET;
+ * root_count, extension_count and group_count receive generated counts.
+ * Returns: zero on success, -1 when adapter generation fails.
+ * Errors: compiler output and group adapter errors are propagated.
+ * Author: asn1c maintainers. History: split from SET descriptor generation.
+ * Example: trailing root components are counted in the root partition.
+ */
+static int
+emit_set_partition(arg_t *arg, asn1p_expr_t *expr, int *root_count,
+                   int *extension_count, int *group_count) {
+    asn1p_expr_t *member;
+    int section = 0;
+    *root_count = *extension_count = *group_count = 0;
+    TQ_FOR(member, &(expr->members), next) {
+        if(member->expr_type == A1TC_EXTENSIBLE) {
+            if(section < 2) section++;
+        } else if(section == 1) {
+            (*extension_count)++;
+            if(member->marker.flags & EM_EXTENSION_GROUP) (*group_count)++;
+        } else {
+            (*root_count)++;
+        }
+    }
+    if(*root_count) emit_set_member_map(arg, expr, 1, *root_count);
+    if(*extension_count) emit_set_member_map(arg, expr, 0, *extension_count);
+    if(*group_count) {
+        GEN_INCLUDE_STD("constr_SEQUENCE");
+        if(emit_set_extension_group_adapters(arg, expr, *group_count)) return -1;
+    }
+    return 0;
+}
+
 static int
 asn1c_lang_C_type_SET_def(arg_t *arg) {
 	asn1p_expr_t *expr = arg->expr;
@@ -861,9 +968,8 @@ asn1c_lang_C_type_SET_def(arg_t *arg) {
 	int first_extension;
 	int root_count;
 	int extension_count;
-	int section;
+	int extension_group_count;
 	enum tvm_compat tv_mode;
-	const char *p;
 	int saved_target = arg->target->target;
 	first_extension = compute_extensions_start(expr);
 
@@ -929,58 +1035,17 @@ asn1c_lang_C_type_SET_def(arg_t *arg) {
 
 	/* Emit the mandatory-member bit map in outer SET component order. */
 	emit_set_mandatory_map(arg, expr, elements);
-	root_count = extension_count = section = 0;
-	TQ_FOR(v, &(expr->members), next) {
-		if(v->expr_type == A1TC_EXTENSIBLE) {
-			if(section < 2) section++;
-		} else if(section == 1) {
-			extension_count++;
-		} else {
-			root_count++;
-		}
+	if(emit_set_partition(arg, expr, &root_count, &extension_count,
+	                      &extension_group_count)) {
+		free(tag2el);
+		free(tag2el_cxer);
+		REDIR(saved_target);
+		return -1;
 	}
-	if(root_count) emit_set_member_map(arg, expr, 1, root_count);
-	if(extension_count) emit_set_member_map(arg, expr, 0, extension_count);
 
-	if(!(expr->_type_referenced)) OUT("static \n");
-	OUT("asn_SET_specifics_t asn_SPC_%s_specs_%d = {\n",
-		MKID(expr), expr->_type_unique_index);
-	INDENTED(
-		OUT("sizeof(%s),\n", c_name(arg).full_name);
-		OUT("offsetof(%s, _asn_ctx),\n", c_name(arg).full_name);
-		OUT("offsetof(%s, _presence_map),\n", c_name(arg).full_name);
-		emit_tag2member_reference(arg, expr, tag2el_count);
-		p = MKID(expr);
-		if(tag2el_cxer)
-			OUT("asn_MAP_%s_tag2el_cxer_%d,\n",
-				p, expr->_type_unique_index);
-		else
-			OUT("asn_MAP_%s_tag2el_%d,\t/* Same as above */\n",
-				p, expr->_type_unique_index);
-		OUT("%d,\t/* Count of tags in the CXER map */\n",
-			tag2el_cxer_count);
-		OUT("%d,\t/* Whether extensible */\n",
-			first_extension < 0 ? 0 : 2);
-		OUT("(const unsigned int *)asn_MAP_%s_mmap_%d,\t/* Mandatory elements map */\n",
-			p, expr->_type_unique_index);
-		OUT("sizeof(asn_SET_specifics_t),\t/* Metadata size */\n");
-		OUT("ASN_SET_SPECIFICS_VERSION,\t/* Metadata version */\n");
-		if(root_count) {
-			OUT("asn_MAP_%s_root_%d,\t/* Root members in declaration order */\n",
-				p, expr->_type_unique_index);
-		} else {
-			OUT("0,\t/* No root members */\n");
-		}
-		OUT("%d,\t/* Root member count */\n", root_count);
-		if(extension_count) {
-			OUT("asn_MAP_%s_extension_%d,\t/* Additions in declaration order */\n",
-				p, expr->_type_unique_index);
-		} else {
-			OUT("0,\t/* No extension additions */\n");
-		}
-		OUT("%d\t/* Extension addition count */\n", extension_count);
-	);
-	OUT("};\n");
+	emit_set_specifics(arg, expr, tag2el_count, tag2el_cxer_count,
+	                   tag2el_cxer != NULL, first_extension, root_count,
+	                   extension_count, extension_group_count);
 
 	/*
 	 * Emit asn_DEF_xxx table.
@@ -1104,6 +1169,126 @@ emit_set_member_map(arg_t *arg, asn1p_expr_t *expr, int root, int count) {
 		member_index++;
 	}
 	OUT("};\n");
+}
+
+/*
+ * Purpose: emit SEQUENCE wire-layout metadata for synthetic SET groups.
+ * Original source: SET extension-group component lists and SEQUENCE specifics.
+ * Version/date: 2026-10-30.
+ * Parameters: arg selects the output context; expr is the parent SET;
+ *             group_count is the number of marked extension-group members.
+ * Returns: zero after emitting metadata, or -1 if the count disagrees.
+ * Errors: an inconsistent group count is reported to the compiler log.
+ * Responsible party: asn1c maintainers.
+ * History: Adds a v3 adapter while preserving the group's original SET type.
+ * Example: a SET group with two optional fields gets a SEQUENCE preamble map.
+ */
+static int
+emit_set_extension_group_adapters(arg_t *arg, asn1p_expr_t *expr,
+		int group_count) {
+	asn1p_expr_t *member;
+	int section = 0;
+	int outer_index = 0;
+	int group_index = 0;
+	const char *parent_id_buffer = MKID(expr);
+	char *parent_id = NULL;
+	int unique_index = expr->_type_unique_index;
+
+	/* Keep the parent name stable across c_expr_name()'s shared buffers. */
+	if(parent_id_buffer) parent_id = strdup(parent_id_buffer);
+	if(!parent_id) {
+		FATAL("Cannot copy SET extension-group adapter name");
+		return -1;
+	}
+
+	/* Emit the group-specific SEQUENCE layout without altering the SET type. */
+	TQ_FOR(member, &(expr->members), next) {
+		asn1p_expr_t *child;
+		struct c_names group_names;
+		int optional_count = 0;
+		int child_index = 0;
+		int emitted = 0;
+
+		if(member->expr_type == A1TC_EXTENSIBLE) {
+			if(section < 2) section++;
+			continue;
+		}
+		if(section != 1 || !(member->marker.flags & EM_EXTENSION_GROUP)) {
+			outer_index++;
+			continue;
+		}
+
+		TQ_FOR(child, &(member->members), next) {
+			if(child->expr_type == A1TC_EXTENSIBLE) continue;
+			if(child->marker.flags & EM_OMITABLE) optional_count++;
+		}
+		group_names = c_expr_name(arg, member);
+		if(optional_count) {
+			OUT("static const int asn_MAP_%s_group_oms_%d_%d[%d] = {",
+				parent_id, unique_index, group_index, optional_count);
+			TQ_FOR(child, &(member->members), next) {
+				if(child->expr_type == A1TC_EXTENSIBLE) continue;
+				if(child->marker.flags & EM_OMITABLE) {
+					if(emitted++) OUT(", ");
+					OUT("%d", child_index);
+				}
+				child_index++;
+			}
+			OUT("};\n");
+		}
+		OUT("static asn_SEQUENCE_specifics_t ");
+		OUT("asn_SPC_%s_group_sequence_%d_%d = {\n",
+			parent_id, unique_index, group_index);
+		INDENT(+1);
+		OUT("sizeof(%s),\t/* Group storage size */\n", group_names.full_name);
+		OUT("offsetof(%s, _asn_ctx),\t/* Group context offset */\n",
+			group_names.full_name);
+		OUT("0, 0,\t/* Tag map is not used by OER */\n");
+		if(optional_count) {
+			OUT("asn_MAP_%s_group_oms_%d_%d,\t/* Optional members */\n",
+				parent_id, unique_index, group_index);
+		} else {
+			OUT("0,\t/* No optional members */\n");
+		}
+		OUT("%d, 0,\t/* Root and additions optional counts */\n",
+			optional_count);
+		OUT("-1, 0\t/* No nested extensions or group body */\n");
+		INDENT(-1);
+		OUT("};\n");
+		outer_index++;
+		group_index++;
+	}
+
+	if(group_index != group_count) {
+		FATAL("SET extension-group adapter count changed during code generation");
+		free(parent_id);
+		return -1;
+	}
+
+	/* Keep adapters in declaration order for runtime index lookup. */
+	OUT("static const asn_SET_extension_group_t ");
+	OUT("asn_MAP_%s_group_adapters_%d[%d] = {\n",
+		parent_id, unique_index, group_count);
+	INDENTED(
+		section = 0;
+		outer_index = 0;
+		group_index = 0;
+		TQ_FOR(member, &(expr->members), next) {
+			if(member->expr_type == A1TC_EXTENSIBLE) {
+				if(section < 2) section++;
+				continue;
+			}
+			if(section == 1 && (member->marker.flags & EM_EXTENSION_GROUP)) {
+				OUT("{ %d, &asn_SPC_%s_group_sequence_%d_%d },\n",
+					outer_index, parent_id, unique_index, group_index++);
+			}
+			outer_index++;
+		}
+	);
+	OUT("};\n");
+
+	free(parent_id);
+	return 0;
 }
 
 /*

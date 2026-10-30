@@ -1,4 +1,44 @@
 Changes since v1.5.3:
+	* Encoded and decoded C SET extension-group leaves as flat JER object
+	  members. Added key routing across input splits, duplicate and malformed
+	  descriptor checks, DEFAULT and renamed-leaf regressions, and pretty
+	  output. Group-bearing CBOR SET values now fail before output or decoder
+	  allocation until a repository CBOR mapping is defined.
+	* Added Rust JER encoding and decoding for direct bounded nonextensible
+	  OCTET STRING values, with inclusive SIZE checks, malformed-input and
+	  resource-limit tests, and generated C/Rust hexadecimal wire comparisons.
+	* Added Rust JER encoding and decoding for direct fixed-size and bounded
+	  BIT STRING values, with exact bit lengths, canonical padding checks,
+	  resource limits, and generated C/Rust interoperability vectors.
+	* Hardened C BIT STRING JER parsing and encoding for empty values,
+	  malformed lengths, exact fixed sizes, unused-bit padding, and existing
+	  value preservation on decode failure. C OCTET STRING JER hex and base64
+	  encoders now handle null-backed empty values safely; base64 chunking no
+	  longer narrows remaining lengths to int.
+	* Added C UPER, APER, and OER support for SET extension groups. Version 3
+	  metadata supplies a SEQUENCE wire view while preserving the synthetic SET
+	  structure for other codecs. Groups use one addition bitmap bit and an
+	  open type; empty or DEFAULT-only groups are omitted. Added independent
+	  wire vectors, malformed-metadata tests, older-schema skipping, OER split
+	  input, and single-flavor generated build checks.
+	* Added generated Rust UPER encoding and decoding for nonextensible BIT
+	  STRING values with one bounded SIZE range below 65536. A validated
+	  packed value preserves exact bit length, including non-octet values.
+	  Standalone and required or OPTIONAL SEQUENCE fields share bit cursors and
+	  resource limits; generated C/Rust wire vectors and malformed-input tests
+	  cover the new slice. Named-bit lists remain unsupported.
+	* Added C OER encoding and streaming decoding for SETs with individual
+	  extension additions. Versioned metadata separates roots from additions;
+	  root values use canonical tag order and additions use declaration-order
+	  open types. Known additions, unknown additions, DEFAULT restoration,
+	  malformed bitmaps, split input, and extensible CHOICE ordering have
+	  generated-code regressions. Legacy extensible descriptors continue to
+	  fail closed.
+	* Added generated Rust UPER encoding and decoding for OCTET STRING values
+	  with one contiguous nonextensible SIZE range below 65536. Standalone
+	  values and required or OPTIONAL SEQUENCE fields share checked bit cursors
+	  and resource limits. Added malformed-length, unsupported-constraint,
+	  strict Clippy, and generated C/Rust interoperability tests.
 	* Added C APER encoding and decoding for SETs with individual extension
 	  additions using versioned root and addition maps. Trailing roots retain
 	  canonical tag order; known and unknown additions use aligned open types.

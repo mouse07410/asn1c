@@ -1045,12 +1045,14 @@ asn_SET_specifics_t asn_SPC_two_name_specs_16 = {
 	1,	/* Count of tags in the CXER map */
 	0,	/* Whether extensible */
 	(const unsigned int *)asn_MAP_two_name_mmap_16,	/* Mandatory elements map */
-	sizeof(asn_SET_specifics_t),	/* Metadata size */
+	offsetof(asn_SET_specifics_t, extension_groups),	/* Metadata size */
 	ASN_SET_SPECIFICS_VERSION,	/* Metadata version */
 	asn_MAP_two_name_root_16,	/* Root members in declaration order */
 	1,	/* Root member count */
 	0,	/* No extension additions */
-	0	/* Extension addition count */
+	0,	/* Extension addition count */
+	0,	/* No extension group adapters */
+	0	/* Extension group count */
 };
 static /* Use -fall-defs-global to expose */
 asn_TYPE_descriptor_t asn_DEF_two_name_16 = {

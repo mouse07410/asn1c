@@ -1,0 +1,9 @@
+VariableBitString DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+Bits ::= BIT STRING (SIZE(1..3))
+
+Packet ::= SEQUENCE {
+    prefix BOOLEAN,
+    maybe BIT STRING (SIZE(1..3)) OPTIONAL,
+    tail BIT STRING (SIZE(2..4))
+}
+END

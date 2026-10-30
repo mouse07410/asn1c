@@ -17,8 +17,20 @@ required and OPTIONAL direct primitive or inline nested fields, BOOLEAN and
 bounded INTEGER DEFAULT fields, and one cumulative resource budget. Direct
 nonextensible fixed-size OCTET STRING and BIT STRING assignments and fields
 are also supported with that selection.
+Direct OCTET STRING assignments and SEQUENCE fields with one contiguous,
+nonextensible `SIZE(l..u)` range (`0 <= l < u < 65536`) also support UPER
+encode/decode. Direct bounded OCTET STRING assignments additionally support
+opt-in JER encode/decode as quoted uppercase hexadecimal; that JER selection
+can stand alone or accompany UPER. Extensible, unbounded, disjoint, and larger
+ranges remain unsupported.
+The same UPER-only subset supports nonextensible BIT STRING ranges with an
+explicit packed value and exact bit length. Direct fixed and bounded BIT STRING
+assignments also support opt-in JER with `-gen-JER`; bounded values preserve
+their exact bit length in C's `{"value":"HEX","length":N}` object form.
+`NamedBitList` forms remain unsupported, and JER for SEQUENCE string fields is
+not available.
 Direct nonextensible fixed-size OCTET STRING assignments additionally support
-opt-in JER encode/decode with `-gen-JER`; BIT STRING remains UPER-only.
+opt-in JER encode/decode with `-gen-JER`.
 The same selection supports direct nonextensible ENUMERATED assignments;
 JER is also available for those assignments when selected explicitly.
 

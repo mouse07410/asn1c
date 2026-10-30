@@ -10,6 +10,17 @@
 static const char jer_base64_encode_table[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
+/*
+ * Encode an OCTET STRING as the established uppercase hexadecimal JER string.
+ *
+ * Original source: asn1c OCTET STRING JER encoder.
+ * Version/date: 2026-10-30. Parameters: td/constraints describe the ASN.1
+ * type; sptr supplies the octets; ilevel/flags select formatting; cb/app_key
+ * receive output. Returns: encoded byte count or -1 on failure. Throws:
+ * nothing. Responsible party: asn1c maintainers. History: empty values use
+ * valid backing storage before forming the end pointer. Example: empty input
+ * emits `""`.
+ */
 asn_enc_rval_t
 OCTET_STRING_encode_jer(const asn_TYPE_descriptor_t *td,
                         const asn_jer_constraints_t *constraints,
@@ -21,8 +32,9 @@ OCTET_STRING_encode_jer(const asn_TYPE_descriptor_t *td,
     asn_enc_rval_t er = { 0, 0, 0 };
     char scratch[16 * 3 + 4];
     char *p = scratch;
-    uint8_t *buf;
-    uint8_t *end;
+    static const uint8_t empty[1] = {0};
+    const uint8_t *buf;
+    const uint8_t *end;
     size_t i;
 
     (void)ilevel;
@@ -36,7 +48,8 @@ OCTET_STRING_encode_jer(const asn_TYPE_descriptor_t *td,
     /*
      * Dump the contents of the buffer in hexadecimal.
      */
-    buf = st->buf;
+    /* Use valid storage for empty strings before forming the end pointer. */
+    buf = st->buf ? st->buf : empty;
     end = buf + st->size;
     ASN__CALLBACK("\"", 1);
     for(i = 0; buf < end; buf++, i++) {
@@ -57,6 +70,17 @@ cb_failed:
     ASN__ENCODE_FAILED;
 }
 
+/*
+ * Encode an OCTET STRING as the established padded base64 JER string.
+ *
+ * Original source: asn1c OCTET STRING base64 JER encoder.
+ * Version/date: 2026-10-30. Parameters: td/constraints describe the ASN.1
+ * type; sptr supplies the octets; ilevel/flags select formatting; cb/app_key
+ * receive output. Returns: encoded byte count or -1 on failure. Throws:
+ * nothing. Responsible party: asn1c maintainers. History: empty values use
+ * valid backing storage before forming the end pointer. Example: empty input
+ * emits `""`.
+ */
 asn_enc_rval_t
 OCTET_STRING_encode_jer_base64(const asn_TYPE_descriptor_t *td,
                                const asn_jer_constraints_t *constraints,
@@ -67,8 +91,9 @@ OCTET_STRING_encode_jer_base64(const asn_TYPE_descriptor_t *td,
     asn_enc_rval_t er = { 0, 0, 0 };
     char scratch[128];
     char *p = scratch;
+    static const uint8_t empty[1] = {0};
     const uint8_t *buf;
-    const uint8_t *end;
+    size_t remaining;
 
     (void)td;
     (void)constraints;
@@ -81,12 +106,12 @@ OCTET_STRING_encode_jer_base64(const asn_TYPE_descriptor_t *td,
     er.encoded = 0;
     ASN__CALLBACK("\"", 1);
 
-    buf = st->buf;
-    end = buf + st->size;
-    while(buf < end) {
+    /* Use valid storage for empty strings before iterating over octets. */
+    buf = st->buf ? st->buf : empty;
+    remaining = st->size;
+    while(remaining) {
         uint32_t value = 0;
-        int bytes_left = (int)(end - buf);
-        int bytes_to_encode = bytes_left >= 3 ? 3 : bytes_left;
+        int bytes_to_encode = remaining >= 3 ? 3 : (int)remaining;
         int i;
 
         for(i = 0; i < bytes_to_encode; i++)
@@ -94,6 +119,7 @@ OCTET_STRING_encode_jer_base64(const asn_TYPE_descriptor_t *td,
         if(bytes_to_encode < 3)
             value <<= 8 * (3 - bytes_to_encode);
         buf += bytes_to_encode;
+        remaining -= (size_t)bytes_to_encode;
 
         for(i = 0; i < 4; i++) {
             if(p >= scratch + sizeof(scratch) - 4) {

@@ -17,6 +17,9 @@
 #include <Singleton.h>
 #include <EmptyHexOctets.h>
 #include <MixedHexOctets.h>
+#include <BoundedHexOctets.h>
+#include <ThreeBits.h>
+#include <BoundedBits.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -244,8 +247,8 @@ check_bmp_string(void) {
 /*
  * Check C fixed vectors and optionally consume the Rust-generated token files.
  * Parameters: argc is the argument count; argv contains no arguments or the
- * pair `--decode-dir directory`, `--decode-octet-dir directory`, or
- * `--write-dir directory`.
+ * pair `--decode-dir directory`, `--decode-octet-dir directory`,
+ * `--decode-bit-dir directory`, or `--write-dir directory`.
  * Returns zero on success or one for invalid arguments or any mismatch.
  * Exceptions: none. Original source: C/Rust JER interoperability fixture.
  * Version/date: 2026-10-30. Responsible party: asn1c maintainers. History:
@@ -263,8 +266,14 @@ main(int argc, char **argv) {
     SignBounds_t sign_max = 128;
     unsigned char empty_octet_storage = 0; /* state variable: safe non-NULL zero-size backing. */
     unsigned char mixed_octets[] = {0x00, 0xaf, 0xff}; /* state variable: mixed test bytes. */
+    unsigned char bounded_octets[] = {0x00, 0xaf, 0xff}; /* state variable: bounded payload. */
+    unsigned char fixed_bit_storage = 0xa0; /* state variable: fixed three-bit payload. */
+    unsigned char bounded_bit_storage = 0xa8; /* state variable: bounded five-bit payload. */
     OCTET_STRING_t empty_octets = {&empty_octet_storage, 0};
     OCTET_STRING_t mixed_octet_value = {mixed_octets, sizeof(mixed_octets)};
+    OCTET_STRING_t bounded_octet_value = {bounded_octets, sizeof(bounded_octets)};
+    BIT_STRING_t fixed_bit_value = {&fixed_bit_storage, 1, 5};
+    BIT_STRING_t bounded_bit_value = {&bounded_bit_storage, 1, 3};
     const jer_case_t cases[] = {
         {&asn_DEF_Flag, &flag_false, "false", "BOOLEAN FALSE"},
         {&asn_DEF_Flag, &flag_true, "true", "BOOLEAN TRUE"},
@@ -279,18 +288,21 @@ main(int argc, char **argv) {
     int failed = 0;
     const char *directory = NULL;
     const char *octet_directory = NULL;
+    const char *bit_directory = NULL;
     const char *write_directory = NULL;
 
     if(argc == 3 && strcmp(argv[1], "--decode-dir") == 0) {
         directory = argv[2];
     } else if(argc == 3 && strcmp(argv[1], "--decode-octet-dir") == 0) {
         octet_directory = argv[2];
+    } else if(argc == 3 && strcmp(argv[1], "--decode-bit-dir") == 0) {
+        bit_directory = argv[2];
     } else if(argc == 3 && strcmp(argv[1], "--write-dir") == 0) {
         write_directory = argv[2];
     } else if(argc != 1) {
         fprintf(stderr,
                 "usage: %s [--decode-dir directory | --decode-octet-dir directory "
-                "| --write-dir directory]\n", argv[0]);
+                "| --decode-bit-dir directory | --write-dir directory]\n", argv[0]);
         return 1;
     }
     for(index = 0; index < sizeof(cases) / sizeof(cases[0]); index++) {
@@ -302,15 +314,32 @@ main(int argc, char **argv) {
             {&asn_DEF_EmptyHexOctets, &empty_octets, "\"\"", "empty OCTET STRING"},
             {&asn_DEF_MixedHexOctets, &mixed_octet_value, "\"00AFFF\"",
              "mixed OCTET STRING"},
+            {&asn_DEF_BoundedHexOctets, &bounded_octet_value, "\"00AFFF\"",
+             "bounded OCTET STRING"},
         };
         for(index = 0; index < sizeof(octet_cases) / sizeof(octet_cases[0]); index++)
             failed |= check_case(&octet_cases[index]);
+    }
+    {
+        const jer_case_t bit_cases[] = {
+            {&asn_DEF_ThreeBits, &fixed_bit_value, "\"A0\"", "fixed three-bit BIT STRING"},
+            {&asn_DEF_BoundedBits, &bounded_bit_value,
+             "{\"value\":\"A8\",\"length\":5}", "bounded five-bit BIT STRING"},
+        };
+        for(index = 0; index < sizeof(bit_cases) / sizeof(bit_cases[0]); index++)
+            failed |= check_case(&bit_cases[index]);
     }
     if(write_directory) {
         failed |= write_c_vector(&asn_DEF_EmptyHexOctets, &empty_octets,
                                  write_directory, "jer_empty_octets.json");
         failed |= write_c_vector(&asn_DEF_MixedHexOctets, &mixed_octet_value,
                                  write_directory, "jer_mixed_octets.json");
+        failed |= write_c_vector(&asn_DEF_BoundedHexOctets, &bounded_octet_value,
+                                 write_directory, "jer_bounded_octets.json");
+        failed |= write_c_vector(&asn_DEF_ThreeBits, &fixed_bit_value,
+                                 write_directory, "jer_three_bits.json");
+        failed |= write_c_vector(&asn_DEF_BoundedBits, &bounded_bit_value,
+                                 write_directory, "jer_bounded_bits.json");
     }
     if(directory) {
         failed |= check_rust_file(&asn_DEF_Flag, directory, "jer_flag_false.json");
@@ -329,6 +358,14 @@ main(int argc, char **argv) {
                                   "jer_empty_octets.json");
         failed |= check_rust_file(&asn_DEF_MixedHexOctets, octet_directory,
                                   "jer_mixed_octets.json");
+        failed |= check_rust_file(&asn_DEF_BoundedHexOctets, octet_directory,
+                                  "jer_bounded_octets.json");
+    }
+    if(bit_directory) {
+        failed |= check_rust_file(&asn_DEF_ThreeBits, bit_directory,
+                                  "jer_three_bits.json");
+        failed |= check_rust_file(&asn_DEF_BoundedBits, bit_directory,
+                                  "jer_bounded_bits.json");
     }
     return failed;
 }

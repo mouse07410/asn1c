@@ -29,10 +29,13 @@ JSON strings; decoding accepts JSON whitespace and requires one complete,
 known string. Tests reject unknown names, escapes, trailing JSON values, and
 input/output/work limit violations. Generated C code independently encodes
 fixed primitive tokens and decodes Rust-generated JSON files for comparison.
-Direct fixed-size OCTET STRING assignments also support JER hexadecimal
-strings, alone or with UPER. Tests compare empty and mixed-byte values in both
-directions with generated C, accept lowercase hex input, and reject malformed
-tokens, wrong sizes, unsupported codec selections, and exhausted limits.
+Direct fixed-size OCTET STRING and BIT STRING assignments support JER
+hexadecimal strings, alone or with UPER. Direct bounded OCTET STRING
+assignments use the same quoted uppercase hexadecimal form; bounded BIT STRING
+assignments use the C-compatible `value`/`length` JSON object. Tests compare
+fixed and bounded string values with generated C in both directions, accept
+lowercase hex input, and reject malformed tokens, wrong sizes, nonzero padding,
+unsupported forms, and exhausted limits.
 
 The UPER-only SEQUENCE slice packs required and OPTIONAL direct BOOLEAN, NULL,
 bounded INTEGER, fixed string, and inline nested SEQUENCE fields, plus literal
@@ -54,6 +57,18 @@ The fixed-size string fixture covers standalone OCTET STRING and BIT STRING,
 zero-sized values, bit packing inside a mixed SEQUENCE, malformed lengths and
 pad bits, truncation, and whole-operation budgets. It also checks that the
 default UPER/CER selection rejects strings without CER support.
+The bounded OCTET STRING fixture adds one direct nonextensible contiguous
+`SIZE(l..u)` range with `0 <= l < u < 65536`, encoded by UPER for standalone
+values and SEQUENCE fields. Direct assignments also support opt-in JER and
+compare quoted hex with C vectors. UPER vectors cover standalone lengths,
+OPTIONAL and required fields in a shared SEQUENCE cursor, spare length codes,
+truncation, resource ceilings, and generated C comparisons. Extensible sizes
+and disjoint size unions still fail before output publication.
+The bounded BIT STRING fixture carries its exact logical bit length alongside
+the packed octets. It checks non-octet standalone vectors, required and OPTIONAL
+SEQUENCE fields, spare codes, truncation, zero padding, resource limits, and
+generated C comparisons. Extensible ranges, disjoint unions, upper bounds at
+65536, and variable `NamedBitList` forms fail before publication.
 Direct ENUMERATED tests cover numeric index ordering, spare indexes,
 singleton framing, budgets, extension rejection, and live C comparisons.
 

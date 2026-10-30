@@ -28,6 +28,7 @@ main(void) {
     ChoiceSet_t choice_source;
     ChoiceSet_t *choice_decoded = 0;
     ExtensibleSet_t extensible;
+    ExtensibleSet_t *extensible_decoded = 0;
     uint8_t encoded[64];
     size_t encoded_size;
     asn_enc_rval_t er;
@@ -152,16 +153,16 @@ main(void) {
         decoded = 0;
     }
 
-    /* Extensible SET metadata is deliberately unsupported by this codec. */
+    /* Extensible SET without additions round-trips through v2 metadata. */
     memset(&extensible, 0, sizeof(extensible));
     extensible.first = 1;
     er = oer_encode_to_buffer(&asn_DEF_ExtensibleSet, 0, &extensible,
                               encoded, sizeof(encoded));
-    assert(er.encoded == -1);
+    assert(er.encoded > 0);
     dr = asn_DEF_ExtensibleSet.op->oer_decoder(
-        0, &asn_DEF_ExtensibleSet, 0, (void **)&decoded, encoded, 0);
-    assert(dr.code == RC_FAIL);
-    assert(decoded == 0);
+        0, &asn_DEF_ExtensibleSet, 0, (void **)&extensible_decoded, encoded, (size_t)er.encoded);
+    assert(dr.code == RC_OK && extensible_decoded->first == 1);
+    ASN_STRUCT_FREE(asn_DEF_ExtensibleSet, extensible_decoded);
 
     /* Exhaust every one-octet preamble as a bounded malformed-input sweep. */
     for(offset = 0; offset < 256; offset++) {

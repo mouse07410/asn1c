@@ -22,7 +22,15 @@ EXTRA_DIST = $(srcdir)/FirstSlice.asn1 \
     $(srcdir)/EnumSlice.asn1 \
     $(srcdir)/ExtensibleEnum.asn1 \
     $(srcdir)/VariableString.asn1 \
+    $(srcdir)/VariableSequence.asn1 \
+    $(srcdir)/VariableUnion.asn1 \
     $(srcdir)/ExtensibleString.asn1 \
+    $(srcdir)/ExtensibleOctets.asn1 \
+    $(srcdir)/VariableOversize.asn1 \
+    $(srcdir)/VariableBitString.asn1 \
+    $(srcdir)/VariableBitsExtensible.asn1 \
+    $(srcdir)/VariableBitsUnion.asn1 \
+    $(srcdir)/VariableBitsOversize.asn1 \
     $(srcdir)/NamedBitString.asn1 \
     $(srcdir)/SequenceOptional.asn1 \
     $(srcdir)/SequenceDefaults.asn1 \
@@ -47,16 +55,21 @@ EXTRA_DIST = $(srcdir)/FirstSlice.asn1 \
     $(srcdir)/jer_conformance.rs \
     $(srcdir)/sequence_conformance.rs \
     $(srcdir)/string_conformance.rs \
+    $(srcdir)/variable_string_conformance.rs \
+    $(srcdir)/variable_bit_string_conformance.rs \
     $(srcdir)/boundary_conformance.rs \
     $(srcdir)/enum_conformance.rs \
     $(srcdir)/enum_jer_conformance.rs \
     $(srcdir)/octet_jer_conformance.rs \
+    $(srcdir)/bit_jer_conformance.rs \
     $(srcdir)/c_reference.c \
     $(srcdir)/c_additional.c \
     $(srcdir)/c_jer.c \
     $(srcdir)/c_sequence.c \
     $(srcdir)/nested_conformance.rs \
     $(srcdir)/c_string.c \
+    $(srcdir)/c_variable_string.c \
+    $(srcdir)/c_variable_bit_string.c \
     $(srcdir)/c_enum.c \
     $(srcdir)/coverage.json \
     $(srcdir)/README.md

@@ -1,0 +1,19 @@
+SetJerGroups DEFINITIONS IMPLICIT TAGS ::= BEGIN
+
+JerGroupSet ::= SET {
+    root [0] INTEGER (0..255),
+    ...,
+    [[ first [1] INTEGER (0..255), flag [2] BOOLEAN OPTIONAL ]],
+    [[ second [3] INTEGER (0..255) OPTIONAL, defaulted [4] INTEGER (0..255) DEFAULT 5 ]],
+    extra [5] INTEGER (0..255) OPTIONAL
+}
+
+JerRecursive ::= SET {
+    root [0] INTEGER,
+    ...,
+    [[ child [1] JerRecursive ]]
+}
+
+JerPlainSet ::= SET { root [0] INTEGER (0..255) }
+
+END

@@ -718,12 +718,14 @@ asn_SET_specifics_t asn_SPC_Set_specs_23 = {
 	2,	/* Count of tags in the CXER map */
 	0,	/* Whether extensible */
 	(const unsigned int *)asn_MAP_Set_mmap_23,	/* Mandatory elements map */
-	sizeof(asn_SET_specifics_t),	/* Metadata size */
+	offsetof(asn_SET_specifics_t, extension_groups),	/* Metadata size */
 	ASN_SET_SPECIFICS_VERSION,	/* Metadata version */
 	asn_MAP_Set_root_23,	/* Root members in declaration order */
 	2,	/* Root member count */
 	0,	/* No extension additions */
-	0	/* Extension addition count */
+	0,	/* Extension addition count */
+	0,	/* No extension group adapters */
+	0	/* Extension group count */
 };
 asn_TYPE_descriptor_t asn_DEF_Set = {
 	"Set",
@@ -931,12 +933,14 @@ asn_SET_specifics_t asn_SPC_ExtensibleSet_specs_26 = {
 	2,	/* Count of tags in the CXER map */
 	2,	/* Whether extensible */
 	(const unsigned int *)asn_MAP_ExtensibleSet_mmap_26,	/* Mandatory elements map */
-	sizeof(asn_SET_specifics_t),	/* Metadata size */
+	offsetof(asn_SET_specifics_t, extension_groups),	/* Metadata size */
 	ASN_SET_SPECIFICS_VERSION,	/* Metadata version */
 	asn_MAP_ExtensibleSet_root_26,	/* Root members in declaration order */
 	1,	/* Root member count */
 	asn_MAP_ExtensibleSet_extension_26,	/* Additions in declaration order */
-	1	/* Extension addition count */
+	1,	/* Extension addition count */
+	0,	/* No extension group adapters */
+	0	/* Extension group count */
 };
 asn_TYPE_descriptor_t asn_DEF_ExtensibleSet = {
 	"ExtensibleSet",

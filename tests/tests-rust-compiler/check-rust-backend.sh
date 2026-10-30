@@ -294,6 +294,17 @@ if "$asn1c_bin" --rust -gen-JER -no-gen-UPER -no-gen-CER \
     exit 1
 fi
 test ! -e "$test_tmp/rejected-jer-bit-string"
+for unsupported in ExtensibleString VariableBitsExtensible VariableBitsUnion \
+    VariableBitsOversize OversizeBits NamedBitString; do
+    if "$asn1c_bin" --rust -gen-JER -no-gen-UPER -no-gen-CER \
+        -S "$skeletons" -D "$test_tmp/rejected-jer-$unsupported" \
+        "$test_srcdir/$unsupported.asn1" \
+        >"$test_tmp/rejected-jer-$unsupported.log" 2>&1; then
+        echo "FAIL: JER-only Rust selection accepted unsupported BIT STRING $unsupported"
+        exit 1
+    fi
+    test ! -e "$test_tmp/rejected-jer-$unsupported"
+done
 if "$asn1c_bin" --rust -gen-JER -gen-OER -no-gen-UPER -no-gen-CER \
     -S "$skeletons" -D "$test_tmp/rejected-octet-jer-oer" \
     "$test_srcdir/OctetJER.asn1" >"$test_tmp/rejected-octet-jer-oer.log" 2>&1; then
@@ -301,6 +312,16 @@ if "$asn1c_bin" --rust -gen-JER -gen-OER -no-gen-UPER -no-gen-CER \
     exit 1
 fi
 test ! -e "$test_tmp/rejected-octet-jer-oer"
+for unsupported in VariableUnion VariableOversize ExtensibleOctets; do
+    if "$asn1c_bin" --rust -gen-JER -no-gen-UPER -no-gen-CER \
+        -S "$skeletons" -D "$test_tmp/rejected-bounded-octet-jer-$unsupported" \
+        "$test_srcdir/$unsupported.asn1" \
+        >"$test_tmp/rejected-bounded-octet-jer-$unsupported.log" 2>&1; then
+        echo "FAIL: JER-only Rust selection accepted unsupported OCTET STRING $unsupported"
+        exit 1
+    fi
+    test ! -e "$test_tmp/rejected-bounded-octet-jer-$unsupported"
+done
 
 octet_both_out="$test_tmp/octet-uper-jer"
 "$asn1c_bin" --rust -gen-JER -no-gen-CER -S "$skeletons" \
@@ -363,7 +384,8 @@ if "$asn1c_bin" --rust -S "$skeletons" -D "$test_tmp/rejected-string-default" \
     exit 1
 fi
 test ! -e "$test_tmp/rejected-string-default"
-for unsupported in VariableString ExtensibleString NamedBitString \
+for unsupported in ExtensibleString ExtensibleOctets VariableUnion VariableOversize \
+    VariableBitsExtensible VariableBitsUnion VariableBitsOversize NamedBitString \
     OversizeOctets OversizeBits; do
     if "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" \
         -D "$test_tmp/rejected-$unsupported" "$test_srcdir/$unsupported.asn1" \
@@ -372,6 +394,25 @@ for unsupported in VariableString ExtensibleString NamedBitString \
         exit 1
     fi
     test ! -e "$test_tmp/rejected-$unsupported"
+done
+for codec_args in "-gen-OER -no-gen-CER"; do
+    if "$asn1c_bin" --rust $codec_args -S "$skeletons" \
+        -D "$test_tmp/rejected-variable-codecs" "$test_srcdir/VariableString.asn1" \
+        >"$test_tmp/rejected-variable-codecs.log" 2>&1; then
+        echo "FAIL: Rust accepted bounded OCTET STRING with unsupported codec selection"
+        exit 1
+    fi
+    test ! -e "$test_tmp/rejected-variable-codecs"
+done
+for codec_args in "-gen-OER -no-gen-CER"; do
+    if "$asn1c_bin" --rust $codec_args -S "$skeletons" \
+        -D "$test_tmp/rejected-variable-bit-codecs" \
+        "$test_srcdir/VariableBitString.asn1" \
+        >"$test_tmp/rejected-variable-bit-codecs.log" 2>&1; then
+        echo "FAIL: Rust accepted bounded BIT STRING with non-UPER codecs"
+        exit 1
+    fi
+    test ! -e "$test_tmp/rejected-variable-bit-codecs"
 done
 boundary_out="$test_tmp/boundary-strings"
 "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$boundary_out" \
@@ -420,6 +461,77 @@ if ! cc $string_cflags -I"$string_c_out" "$string_c_out"/*.c \
     exit 1
 fi
 "$test_tmp/c-string"
+
+# Bounded OCTET STRING UPER supports one contiguous nonextensible SIZE range.
+variable_out="$test_tmp/variable-string-uper"
+"$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$variable_out" \
+    "$test_srcdir/VariableString.asn1" "$test_srcdir/VariableSequence.asn1"
+mkdir "$variable_out/tests"
+cp "$test_srcdir/variable_string_conformance.rs" \
+    "$variable_out/tests/variable_string_conformance.rs"
+if ! (cd "$variable_out" && CARGO_TARGET_DIR="$test_tmp/target-variable-string" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-variable-string" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/check-variable-string.log" 2>&1; then
+    cat "$test_tmp/check-variable-string.log"
+    echo "FAIL: generated bounded OCTET STRING tests or strict Clippy"
+    exit 1
+fi
+variable_c_out="$test_tmp/variable-string-c"
+mkdir "$variable_c_out"
+"$asn1c_bin" -S "$skeletons" -gen-UPER -no-gen-XER -no-gen-JER \
+    -no-gen-CBOR -no-gen-OER -no-gen-APER -no-gen-print \
+    -no-gen-random-fill -fwide-types -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$variable_c_out" "$test_srcdir/VariableString.asn1" \
+    "$test_srcdir/VariableSequence.asn1" \
+    >"$test_tmp/variable-string-c-generate.log" 2>&1
+variable_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$variable_c_out/Makefile.am.libasncodec")
+if ! cc $variable_cflags -I"$variable_c_out" "$variable_c_out"/*.c \
+    "$test_srcdir/c_variable_string.c" -lm -o "$test_tmp/c-variable-string" \
+    >"$test_tmp/c-variable-string-compile.log" 2>&1; then
+    cat "$test_tmp/c-variable-string-compile.log"
+    exit 1
+fi
+"$test_tmp/c-variable-string"
+
+# Bounded BIT STRING UPER carries exact non-octet bit lengths in each value.
+variable_bits_out="$test_tmp/variable-bit-string-uper"
+"$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$variable_bits_out" \
+    "$test_srcdir/VariableBitString.asn1"
+mkdir "$variable_bits_out/tests"
+cp "$test_srcdir/variable_bit_string_conformance.rs" \
+    "$variable_bits_out/tests/variable_bit_string_conformance.rs"
+if ! (cd "$variable_bits_out" && CARGO_TARGET_DIR="$test_tmp/target-variable-bits" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-variable-bits" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/check-variable-bits.log" 2>&1; then
+    cat "$test_tmp/check-variable-bits.log"
+    echo "FAIL: generated bounded BIT STRING tests or strict Clippy"
+    exit 1
+fi
+variable_bits_c_out="$test_tmp/variable-bit-string-c"
+mkdir "$variable_bits_c_out"
+"$asn1c_bin" -S "$skeletons" -gen-UPER -no-gen-XER -no-gen-JER \
+    -no-gen-CBOR -no-gen-OER -no-gen-APER -no-gen-print \
+    -no-gen-random-fill -fwide-types -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$variable_bits_c_out" \
+    "$test_srcdir/VariableBitString.asn1" \
+    >"$test_tmp/variable-bit-string-c-generate.log" 2>&1
+variable_bits_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$variable_bits_c_out/Makefile.am.libasncodec")
+if ! cc $variable_bits_cflags -I"$variable_bits_c_out" \
+    "$variable_bits_c_out"/*.c "$test_srcdir/c_variable_bit_string.c" \
+    -lm -o "$test_tmp/c-variable-bit-string" \
+    >"$test_tmp/c-variable-bit-string-compile.log" 2>&1; then
+    cat "$test_tmp/c-variable-bit-string-compile.log"
+    exit 1
+fi
+"$test_tmp/c-variable-bit-string"
 
 # Root ENUMERATED indexes follow numeric value order; extensions are gated.
 if "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" \
@@ -908,10 +1020,14 @@ mkdir "$octet_jer_out/tests" "$test_tmp/c-octet-jer-vectors" \
     "$test_tmp/rust-octet-jer-vectors"
 cp "$test_srcdir/octet_jer_conformance.rs" \
     "$octet_jer_out/tests/octet_jer_conformance.rs"
+cp "$test_srcdir/bit_jer_conformance.rs" \
+    "$octet_jer_out/tests/bit_jer_conformance.rs"
 "$test_tmp/c-jer" --write-dir "$test_tmp/c-octet-jer-vectors"
 if ! (cd "$octet_jer_out" && \
     ASN1C_C_JER_VECTORS="$test_tmp/c-octet-jer-vectors" \
     ASN1C_RUST_JER_VECTORS="$test_tmp/rust-octet-jer-vectors" \
+    ASN1C_C_BIT_JER_VECTORS="$test_tmp/c-octet-jer-vectors" \
+    ASN1C_RUST_BIT_JER_VECTORS="$test_tmp/rust-octet-jer-vectors" \
     CARGO_TARGET_DIR="$test_tmp/target-octet-jer" \
     cargo test --offline --manifest-path Cargo.toml && \
     CARGO_TARGET_DIR="$test_tmp/target-octet-jer" \
@@ -923,6 +1039,7 @@ if ! (cd "$octet_jer_out" && \
     exit 1
 fi
 "$test_tmp/c-jer" --decode-octet-dir "$test_tmp/rust-octet-jer-vectors"
+"$test_tmp/c-jer" --decode-bit-dir "$test_tmp/rust-octet-jer-vectors"
 
 # Exchange Rust JER primitive tokens with the independently built C decoder.
 mkdir "$test_tmp/jer-vectors"

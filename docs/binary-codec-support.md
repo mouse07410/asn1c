@@ -138,7 +138,8 @@ The Rust backend currently emits CER encoding for top-level BOOLEAN, NULL, and
 finite nonextensible INTEGER ranges that fit in `i64`, plus a strict
 `decode_cer()` that accepts only the canonical short-form TLV.
 Rust codec defaults include UPER and CER; `-no-gen-UPER` selects CER-only
-generation. Other Rust types and codecs remain outside this implemented slice.
+generation. See [the Rust implementation matrix](rust/implementation.md#implemented-boundary)
+for the additional supported UPER, APER, OER, BER/DER, and JER slices.
 
 CER is a constrained form of BER. The primary
 [X.690 (2015) text, sections 9.1, 9.2, 9.3, and 11.6][x690]
@@ -153,24 +154,30 @@ rejects input that does not match them.
 ### C SET support in OER and APER
 
 The C `SET` operation table has OER and APER encoders and decoders for
-nonextensible `SET` types, plus individual extension additions in APER.
+nonextensible `SET` types and individual extension additions in both codecs.
 Root members and their optionality bits follow
 canonical tag order. An untagged `CHOICE` is placed by its lowest root
 alternative tag, even when another alternative is selected or an extension
 alternative has a lower tag. The OER decoder supports input split across
 calls and frees its retained presence map when an incomplete value is freed.
 The APER codec uses child APER operations, including aligned member
-encodings. OER rejects extensible `SET` descriptors; both codecs reject
-table-selected open types. An open component can precede its selector in
+encodings. Both codecs reject table-selected open types. An open component can precede its selector in
 canonical SET order; decoding that form requires deferred component resolution.
 The shared OER open-type decoder now releases incomplete or failed CHOICE
 wrappers through their descriptor, with a focused malformed-input regression.
 Generated C UPER descriptors now carry versioned root and addition maps.
 UPER and APER encode and decode individual SET extension additions, including
 roots after a second extension marker, and skip unknown additions during
-decoding. APER uses aligned open types for additions. Legacy extensible
-descriptors and SET extension groups fail closed in both PER flavors.
-Extensible SETs remain outside the OER codec.
+decoding. APER uses aligned open types for additions. Version 3 descriptors
+also encode and decode SET extension groups as SEQUENCE open types in UPER,
+APER, and OER. Empty or DEFAULT-only groups are omitted, and unknown groups
+are skipped. Legacy group descriptors fail closed in these codecs. OER
+streams roots, the extension bitmap, and known or unknown open types across
+input chunks. It restores omitted DEFAULT additions and rejects malformed
+bitmap padding and open types with trailing child bytes. Its decoder accepts
+an empty or all-zero extension map when the extension bit is set, matching the
+existing C SEQUENCE decoder's permissive behavior; the encoder sets that bit
+only when at least one addition is present.
 
 The focused generated C regressions are
 [check-593](../tests/tests-c-compiler/check-src/check-593.-gen-UPER.c),
@@ -187,6 +194,19 @@ cover versioned metadata, known and unknown UPER additions, and truncation.
 [Check-598](../tests/tests-c-compiler/check-src/check-598.-gen-APER.c)
 covers APER additions, trailing-root order, DEFAULT restoration, unknown
 additions, truncation, and malformed metadata.
+[Check-599](../tests/tests-c-compiler/check-src/check-599.-gen-OER.c)
+covers OER additions, independent wire vectors, trailing-root and extensible
+CHOICE ordering, DEFAULT restoration, unknown additions, every input split,
+malformed bitmaps, and strict open-type payload consumption.
+[Check-600](../tests/tests-c-compiler/check-src/check-600.-gen-UPER.-gen-APER.-gen-OER.c)
+covers grouped additions with independent UPER, APER, and OER vectors, empty
+groups, DEFAULT restoration, older-schema skipping, malformed v3 metadata,
+and OER streaming and payload validation.
+[Check-601](../tests/tests-c-compiler/check-src/check-601.-fcompound-names.-gen-JER.-gen-CBOR.c)
+covers flat SET group members in JER, split input, defaults, renamed and
+duplicate keys, malformed metadata, and explicit rejection of grouped CBOR
+SET values. CBOR group representation is not specified by this repository;
+rejecting it avoids silently emitting synthetic nested wrappers.
 
 The generic binary selectors map to their implemented codec families.
 Basic/canonical OER and PER decode selectors share

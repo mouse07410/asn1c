@@ -1,0 +1,37 @@
+SetOerIndividualAdditions DEFINITIONS IMPLICIT TAGS ::= BEGIN
+
+OerIndividualSet ::= SET {
+    rootHigh [9] INTEGER (0..15),
+    rootLow [1] BOOLEAN OPTIONAL,
+    ...,
+    addedFlag [4] BOOLEAN OPTIONAL,
+    addedValue [7] INTEGER (0..15),
+    addedDefault [8] INTEGER (0..15) DEFAULT 3,
+    ...,
+    trailingRoot [3] INTEGER (0..15) OPTIONAL
+}
+
+-- Root CHOICE alternatives both contribute a tag-map entry for member c.
+ChoiceSet ::= SET {
+    n [5] INTEGER (0..255),
+    c Choice
+}
+
+Choice ::= CHOICE {
+    x [3] INTEGER (0..255),
+    y [4] BOOLEAN
+}
+
+-- An extension alternative must not influence the root CHOICE minimum tag.
+ExtChoiceSet ::= SET {
+    n [2] INTEGER (0..255),
+    c ExtChoice
+}
+
+ExtChoice ::= CHOICE {
+    root [3] BOOLEAN,
+    ...,
+    extension [1] BOOLEAN
+}
+
+END
