@@ -29,6 +29,12 @@ cover cross-byte packing, zero-width fields and whole-value filler, full `i64`
 bounds, spare codes, truncation, and exact work/input/output ceilings. Default
 UPER/CER selection rejects SEQUENCE until CER support exists; optional and
 nested fields are also rejected before publishing output.
+The fixed-size string fixture covers standalone OCTET STRING and BIT STRING,
+zero-sized values, bit packing inside a mixed SEQUENCE, malformed lengths and
+pad bits, truncation, and whole-operation budgets. It also checks that the
+default UPER/CER selection rejects strings without CER support.
+Direct ENUMERATED tests cover numeric index ordering, spare indexes,
+singleton framing, budgets, extension rejection, and live C comparisons.
 
 The harness covers codec selection as well as wire behavior. The default Rust
 mask contains UPER and CER; `-gen-UPER` retains both, `-no-gen-UPER` selects

@@ -13,6 +13,15 @@ $(TEST_LOGS): $(ASN1C)
 
 EXTRA_DIST = $(srcdir)/FirstSlice.asn1 \
     $(srcdir)/SequenceSlice.asn1 \
+    $(srcdir)/StringSlice.asn1 \
+    $(srcdir)/BoundaryStrings.asn1 \
+    $(srcdir)/OversizeOctets.asn1 \
+    $(srcdir)/OversizeBits.asn1 \
+    $(srcdir)/EnumSlice.asn1 \
+    $(srcdir)/ExtensibleEnum.asn1 \
+    $(srcdir)/VariableString.asn1 \
+    $(srcdir)/ExtensibleString.asn1 \
+    $(srcdir)/NamedBitString.asn1 \
     $(srcdir)/SequenceOptional.asn1 \
     $(srcdir)/SequenceNested.asn1 \
     $(srcdir)/SequenceExtension.asn1 \
@@ -32,8 +41,13 @@ EXTRA_DIST = $(srcdir)/FirstSlice.asn1 \
     $(srcdir)/conformance.rs \
     $(srcdir)/additional_codecs.rs \
     $(srcdir)/sequence_conformance.rs \
+    $(srcdir)/string_conformance.rs \
+    $(srcdir)/boundary_conformance.rs \
+    $(srcdir)/enum_conformance.rs \
     $(srcdir)/c_reference.c \
     $(srcdir)/c_additional.c \
     $(srcdir)/c_sequence.c \
+    $(srcdir)/c_string.c \
+    $(srcdir)/c_enum.c \
     $(srcdir)/coverage.json \
     $(srcdir)/README.md

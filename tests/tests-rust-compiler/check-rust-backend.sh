@@ -290,6 +290,111 @@ if ! (cd "$additional_out" && CARGO_TARGET_DIR="$test_tmp/target-aper-oer" \
     exit 1
 fi
 
+# Fixed-size strings require UPER-only selection and compile with strict Clippy.
+if "$asn1c_bin" --rust -S "$skeletons" -D "$test_tmp/rejected-string-default" \
+    "$test_srcdir/StringSlice.asn1" >"$test_tmp/rejected-string-default.log" 2>&1; then
+    echo "FAIL: default Rust codecs accepted strings without CER support"
+    exit 1
+fi
+test ! -e "$test_tmp/rejected-string-default"
+for unsupported in VariableString ExtensibleString NamedBitString \
+    OversizeOctets OversizeBits; do
+    if "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" \
+        -D "$test_tmp/rejected-$unsupported" "$test_srcdir/$unsupported.asn1" \
+        >"$test_tmp/rejected-$unsupported.log" 2>&1; then
+        echo "FAIL: Rust accepted unsupported string form $unsupported"
+        exit 1
+    fi
+    test ! -e "$test_tmp/rejected-$unsupported"
+done
+boundary_out="$test_tmp/boundary-strings"
+"$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$boundary_out" \
+    "$test_srcdir/BoundaryStrings.asn1"
+mkdir "$boundary_out/tests"
+cp "$test_srcdir/boundary_conformance.rs" "$boundary_out/tests/boundary_conformance.rs"
+if ! (cd "$boundary_out" && CARGO_TARGET_DIR="$test_tmp/target-boundary" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-boundary" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/check-boundary.log" 2>&1; then
+    cat "$test_tmp/check-boundary.log"
+    echo "FAIL: maximum fixed-string boundary or strict Clippy"
+    exit 1
+fi
+string_out="$test_tmp/string-uper"
+"$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$string_out" \
+    "$test_srcdir/StringSlice.asn1"
+mkdir "$string_out/tests"
+cp "$test_srcdir/string_conformance.rs" "$string_out/tests/string_conformance.rs"
+if ! (cd "$string_out" && CARGO_TARGET_DIR="$test_tmp/target-string" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-string" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/check-string.log" 2>&1; then
+    cat "$test_tmp/check-string.log"
+    echo "FAIL: generated fixed-size string tests or strict Clippy"
+    exit 1
+fi
+# Compare fixed string and mixed-record vectors with separately generated C.
+string_c_out="$test_tmp/string-c"
+mkdir "$string_c_out"
+"$asn1c_bin" -S "$skeletons" -gen-UPER -no-gen-XER -no-gen-JER \
+    -no-gen-CBOR -no-gen-OER -no-gen-APER -no-gen-print \
+    -no-gen-random-fill -fwide-types -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$string_c_out" "$test_srcdir/StringSlice.asn1" \
+    >"$test_tmp/string-c-generate.log" 2>&1
+string_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$string_c_out/Makefile.am.libasncodec")
+if ! cc $string_cflags -I"$string_c_out" "$string_c_out"/*.c \
+    "$test_srcdir/c_string.c" -lm -o "$test_tmp/c-string" \
+    >"$test_tmp/c-string-compile.log" 2>&1; then
+    cat "$test_tmp/c-string-compile.log"
+    exit 1
+fi
+"$test_tmp/c-string"
+
+# Root ENUMERATED indexes follow numeric value order; extensions are gated.
+if "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/rejected-extensible-enum" "$test_srcdir/ExtensibleEnum.asn1" \
+    >"$test_tmp/rejected-extensible-enum.log" 2>&1; then
+    echo "FAIL: Rust accepted an extensible ENUMERATED"
+    exit 1
+fi
+test ! -e "$test_tmp/rejected-extensible-enum"
+enum_out="$test_tmp/enum-uper"
+"$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$enum_out" \
+    "$test_srcdir/EnumSlice.asn1"
+mkdir "$enum_out/tests"
+cp "$test_srcdir/enum_conformance.rs" "$enum_out/tests/enum_conformance.rs"
+if ! (cd "$enum_out" && CARGO_TARGET_DIR="$test_tmp/target-enum" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-enum" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/check-enum.log" 2>&1; then
+    cat "$test_tmp/check-enum.log"
+    echo "FAIL: generated ENUMERATED tests or strict Clippy"
+    exit 1
+fi
+enum_c_out="$test_tmp/enum-c"
+mkdir "$enum_c_out"
+"$asn1c_bin" -S "$skeletons" -gen-UPER -no-gen-XER -no-gen-JER \
+    -no-gen-CBOR -no-gen-OER -no-gen-APER -no-gen-print \
+    -no-gen-random-fill -fwide-types -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$enum_c_out" "$test_srcdir/EnumSlice.asn1" \
+    >"$test_tmp/enum-c-generate.log" 2>&1
+enum_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$enum_c_out/Makefile.am.libasncodec")
+if ! cc $enum_cflags -I"$enum_c_out" "$enum_c_out"/*.c \
+    "$test_srcdir/c_enum.c" -lm -o "$test_tmp/c-enum" \
+    >"$test_tmp/c-enum-compile.log" 2>&1; then
+    cat "$test_tmp/c-enum-compile.log"
+    exit 1
+fi
+"$test_tmp/c-enum"
+
 # Flat required-field SEQUENCE is qualified only for an explicit UPER-only mask.
 if "$asn1c_bin" --rust -S "$skeletons" -D "$test_tmp/rejected-sequence-default" \
     "$test_srcdir/SequenceSlice.asn1" >"$test_tmp/rejected-sequence-default.log" 2>&1; then
@@ -344,7 +449,7 @@ for fixture in SequenceOptional SequenceNested SequenceExtension; do
         exit 1
     fi
     if [ "$fixture" = SequenceExtension ]; then
-        grep -F 'SEQUENCE field needs BOOLEAN, NULL, or finite i64 INTEGER' \
+        grep -F 'SEQUENCE field needs a supported direct UPER primitive' \
             "$test_tmp/rejected-$fixture.log" >/dev/null
     else
         grep -F 'SEQUENCE field must be a required direct untagged primitive' \
@@ -374,7 +479,7 @@ if "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$test_tmp/rejected-sequen
     echo "FAIL: Rust backend accepted an unsupported SEQUENCE"
     exit 1
 fi
-grep -F 'SEQUENCE field needs BOOLEAN, NULL, or finite i64 INTEGER' \
+grep -F 'SEQUENCE field needs a supported direct UPER primitive' \
     "$test_tmp/rejected-sequence.log" >/dev/null
 if [ -e "$test_tmp/rejected-sequence" ]; then
     echo "FAIL: unsupported SEQUENCE created output before rejection"

@@ -44,6 +44,7 @@ typedef struct rust_output_s {
 } rust_output_t;
 
 static char *rust_identifier(const char *, int);
+static char *rust_enum_variant(const char *);
 static int rust_check_tree(asn1p_t *, uint64_t);
 static int rust_check_module(asn1p_t *, asn1p_module_t *, int *, uint64_t);
 static int rust_check_module_name(asn1p_t *, asn1p_module_t *);
@@ -55,6 +56,12 @@ static int rust_check_sequence_member(asn1p_module_t *, asn1p_expr_t *);
 static int rust_check_sequence_name(asn1p_module_t *, asn1p_expr_t *, asn1p_expr_t *);
 static int rust_constraint_supported(const asn1p_constraint_t *, unsigned);
 static int rust_integer_bounds(asn1p_expr_t *, int64_t *, int64_t *);
+static int rust_size_constraint_supported(const asn1p_constraint_t *, unsigned);
+static int rust_fixed_size(asn1p_expr_t *, size_t *);
+static int rust_check_enumerated(asn1p_module_t *, asn1p_expr_t *, uint64_t);
+static int rust_enum_item_valid(const asn1p_expr_t *);
+static int rust_enum_unique(asn1p_expr_t *, asn1p_expr_t *);
+static size_t rust_enumerated_rank(asn1p_expr_t *, asn1p_expr_t *);
 static int rust_stage_project(asn1p_t *, const char *, rust_output_t *, uint64_t);
 static int rust_publish_project(rust_output_t *);
 static int rust_check_existing(const char *);
@@ -76,6 +83,8 @@ static int rust_write_boolean_ber(FILE *);
 static int rust_write_null(FILE *, const char *, uint64_t);
 static int rust_write_null_ber(FILE *);
 static int rust_write_integer(FILE *, const char *, int64_t, int64_t, uint64_t);
+static int rust_write_string(FILE *, const char *, asn1p_expr_t *);
+static int rust_write_enumerated(FILE *, const char *, asn1p_expr_t *);
 static int rust_write_integer_ber(FILE *, const char *, const char *);
 static int rust_write_sequence(FILE *, const char *, asn1p_expr_t *);
 static int rust_write_sequence_field(FILE *, asn1p_expr_t *);
@@ -333,6 +342,8 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
     }
     if(expr->expr_type == ASN_CONSTR_SEQUENCE)
         return rust_check_sequence(module, expr, codecs);
+    if(expr->expr_type == ASN_BASIC_ENUMERATED)
+        return rust_check_enumerated(module, expr, codecs);
     if(expr->lhs_params || expr->ioc_table || expr->members.tq_head) {
         rust_diagnostic(module, expr,
                         "parameterized, constructed, or object types are unsupported");
@@ -352,6 +363,17 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
            || rust_integer_bounds(expr, &(int64_t){0}, &(int64_t){0})) {
             rust_diagnostic(module, expr,
                             "INTEGER needs one finite, nonextensible range fitting i64");
+            return -1;
+        }
+        return 0;
+    }
+    if(expr->expr_type == ASN_BASIC_OCTET_STRING
+       || expr->expr_type == ASN_BASIC_BIT_STRING) {
+        if(codecs != RUST_CODEC_UPER || !expr->combined_constraints
+           || !rust_size_constraint_supported(expr->combined_constraints, 0)
+           || rust_fixed_size(expr, &(size_t){0})) {
+            rust_diagnostic(module, expr,
+                "OCTET STRING and BIT STRING need UPER-only fixed, nonextensible SIZE below 65536");
             return -1;
         }
         return 0;
@@ -419,9 +441,14 @@ rust_check_sequence_member(asn1p_module_t *module, asn1p_expr_t *member) {
         if(member->combined_constraints
            && rust_constraint_supported(member->combined_constraints, 0)
            && !rust_integer_bounds(member, &(int64_t){0}, &(int64_t){0})) return 0;
+    } else if(member->expr_type == ASN_BASIC_OCTET_STRING
+              || member->expr_type == ASN_BASIC_BIT_STRING) {
+        if(member->combined_constraints
+           && rust_size_constraint_supported(member->combined_constraints, 0)
+           && !rust_fixed_size(member, &(size_t){0})) return 0;
     }
     rust_diagnostic(module, member,
-                    "SEQUENCE field needs BOOLEAN, NULL, or finite i64 INTEGER");
+                    "SEQUENCE field needs a supported direct UPER primitive");
     return -1;
 }
 
@@ -522,6 +549,212 @@ rust_integer_bounds(asn1p_expr_t *expr, int64_t *lower, int64_t *upper) {
     *upper = (int64_t)range->right.value;
     asn1constraint_range_free(range);
     return 0;
+}
+
+/*
+ * Accept only a SIZE wrapper with finite integer range or value leaves.
+ * Parameters: constraint is the fixed parser node; depth bounds recursion.
+ * Returns true for this conservative shape and false otherwise; no exception.
+ * Original source: Rust backend constraint gate. Version/date: 0.3.0,
+ * 2026-10-30. Responsible party: asn1c maintainers. History: fixed strings.
+ * Example: rust_size_constraint_supported(expr->combined_constraints, 0).
+ */
+static int
+rust_size_constraint_supported(const asn1p_constraint_t *constraint,
+                               unsigned depth) {
+    unsigned i;
+    if(!constraint || depth > RUST_CONSTRAINT_DEPTH_LIMIT) return 0;
+    if(constraint->type == ACT_CT_SIZE || constraint->type == ACT_CA_SET
+       || constraint->type == ACT_CA_INT) {
+        if(!constraint->el_count) return 0;
+        for(i = 0; i < constraint->el_count; i++) {
+            if(!rust_size_constraint_supported(constraint->elements[i], depth + 1))
+                return 0;
+        }
+        return 1;
+    }
+    if(constraint->type == ACT_EL_RANGE)
+        return constraint->range_start && constraint->range_stop
+            && constraint->range_start->type == ATV_INTEGER
+            && constraint->range_stop->type == ATV_INTEGER;
+    if(constraint->type == ACT_EL_VALUE)
+        return constraint->value && constraint->value->type == ATV_INTEGER;
+    return 0;
+}
+
+/*
+ * Extract a fixed, nonextensible PER SIZE below the fragmentation threshold.
+ * Parameters: expr is a direct string type; length receives the unit count.
+ * Returns zero on success and -1 otherwise; frees every computed range.
+ * No exception is thrown.
+ * Original source: asn1c_C.c PER size selection. Version/date: 0.3.0,
+ * 2026-10-30. Responsible party: asn1c maintainers. History: fixed strings.
+ * Example: rust_fixed_size(expr, &length).
+ */
+static int
+rust_fixed_size(asn1p_expr_t *expr, size_t *length) {
+    asn1cnst_range_t *range;
+    if(!expr || !expr->combined_constraints || !length) return -1;
+    range = asn1constraint_compute_PER_range(expr->Identifier, expr->expr_type,
+        expr->combined_constraints, ACT_CT_SIZE, 0, 0, CPR_noflags);
+    if(!range) return -1;
+    if(range->incompatible || range->empty_constraint || range->not_PER_visible
+       || range->extensible || range->left.type != ARE_VALUE
+       || range->right.type != ARE_VALUE || range->left.value < 0
+       || range->left.value != range->right.value
+       || range->left.value >= 65536) {
+        asn1constraint_range_free(range);
+        return -1;
+    }
+    *length = (size_t)range->left.value;
+    asn1constraint_range_free(range);
+    return 0;
+}
+
+/*
+ * Validate one direct, nonextensible ENUMERATED assignment for UPER output.
+ * Parameters: module supplies diagnostics; expr is the assignment; codecs is
+ * the selected mask. Returns zero or -1 and throws no exception.
+ * Original source: asn1c_C.c value2enum ordering and Rust type preflight.
+ * Version/date: 0.3.0, 2026-10-30. Responsible party: asn1c maintainers.
+ * History: first ENUMERATED slice. Example: rust_check_enumerated(m, e, mask).
+ */
+static int
+rust_check_enumerated(asn1p_module_t *module, asn1p_expr_t *expr,
+                      uint64_t codecs) {
+    asn1p_expr_t *item;
+    size_t count = 0;
+    if(codecs != RUST_CODEC_UPER || expr->constraints
+       || expr->combined_constraints || expr->lhs_params || expr->ioc_table
+       || expr->rhs_pspecs) {
+        rust_diagnostic(module, expr,
+            "ENUMERATED needs UPER-only direct nonextensible values");
+        return -1;
+    }
+    TQ_FOR(item, &expr->members, next) {
+        if(++count > RUST_SEQUENCE_FIELD_LIMIT || !rust_enum_item_valid(item)) {
+            rust_diagnostic(module, item, "ENUMERATED item must be a finite direct i64 value");
+            return -1;
+        }
+        if(rust_enum_unique(expr, item)) {
+            rust_diagnostic(module, item, "ENUMERATED values or Rust names collide");
+            return -1;
+        }
+    }
+    if(!count) {
+        rust_diagnostic(module, expr, "ENUMERATED needs at least one root value");
+        return -1;
+    }
+    return 0;
+}
+
+/*
+ * Check one enum root item for a direct finite signed numeric value.
+ * Parameters: item is the parser member. Returns true when valid; no exception.
+ * Original source: Rust ENUMERATED preflight. Version/date: 0.3.0,
+ * 2026-10-30. Responsible party: asn1c maintainers. History: split gate to
+ * bound function complexity. Example: rust_enum_item_valid(item).
+ */
+static int
+rust_enum_item_valid(const asn1p_expr_t *item) {
+    const asn1c_integer_t min_i64 = -(asn1c_integer_t)INT64_MAX - 1;
+    const asn1c_integer_t max_i64 = (asn1c_integer_t)INT64_MAX;
+    return item && item->expr_type == A1TC_UNIVERVAL && item->Identifier
+        && item->value && item->value->type == ATV_INTEGER
+        && item->value->value.v_integer >= min_i64
+        && item->value->value.v_integer <= max_i64;
+}
+
+/*
+ * Reject duplicate numeric values and post-normalization Rust variant names.
+ * Parameters: expr owns the items; item is the current validated member.
+ * Returns zero when unique or -1 otherwise; allocation failure is an error.
+ * No exception is thrown.
+ * Original source: Rust ENUMERATED preflight. Version/date: 0.3.0,
+ * 2026-10-30. Responsible party: asn1c maintainers. History: split collision
+ * gate. Example: rust_enum_unique(expr, item).
+ */
+static int
+rust_enum_unique(asn1p_expr_t *expr, asn1p_expr_t *item) {
+    asn1p_expr_t *prior;
+    char *name = rust_enum_variant(item->Identifier);
+    if(!name) return -1;
+    TQ_FOR(prior, &expr->members, next) {
+        char *previous;
+        int collision;
+        if(prior == item) break;
+        previous = rust_enum_variant(prior->Identifier);
+        collision = !previous || !strcmp(name, previous)
+                    || prior->value->value.v_integer == item->value->value.v_integer;
+        free(previous);
+        if(collision) {
+            free(name);
+            return -1;
+        }
+    }
+    free(name);
+    return 0;
+}
+
+/*
+ * Return the numeric-order UPER root index for one validated enum item.
+ * Parameters: expr owns all values; item is one member. Returns its rank;
+ * no exception is thrown. Original source: asn1c_C.c value2enum qsort.
+ * Version/date: 0.3.0, 2026-10-30. Responsible party: asn1c maintainers.
+ * History: first ENUMERATED slice. Example: rust_enumerated_rank(expr, item).
+ */
+static size_t
+rust_enumerated_rank(asn1p_expr_t *expr, asn1p_expr_t *item) {
+    asn1p_expr_t *other;
+    size_t rank = 0;
+    TQ_FOR(other, &expr->members, next) {
+        if(other->value->value.v_integer < item->value->value.v_integer)
+            rank++;
+    }
+    return rank;
+}
+
+/*
+ * Convert a sanitized ASN.1 enum item to a Rust CamelCase variant name.
+ * Parameters: source is the ASN.1 item identifier. Returns allocated text or
+ * NULL; caller frees it. No exception is thrown. Original source: Rust backend
+ * identifier sanitizer.
+ * Version/date: 0.3.0, 2026-10-30. Responsible party: asn1c maintainers.
+ * History: first ENUMERATED slice. Example: rust_enum_variant("red-blue").
+ */
+static char *
+rust_enum_variant(const char *source) {
+    char *name = rust_identifier(source, 0);
+    size_t read, write = 0;
+    int capital = 1;
+    if(!name) return NULL;
+    for(read = 0; name[read]; read++) {
+        unsigned char ch = (unsigned char)name[read];
+        if(ch == '_') {
+            capital = 1;
+            continue;
+        }
+        if(capital && ch >= 'a' && ch <= 'z') ch -= 'a' - 'A';
+        else if(!capital && ch >= 'A' && ch <= 'Z') ch += 'a' - 'A';
+        name[write++] = (char)ch;
+        capital = 0;
+    }
+    name[write] = '\0';
+    if(!write) {
+        free(name);
+        return NULL;
+    }
+    if(rust_is_keyword(name)) {
+        const size_t prefix = 4;
+        size_t capacity = strlen(source) * 2 + 32;
+        if(write + prefix + 1 > capacity) {
+            free(name);
+            return NULL;
+        }
+        memmove(name + prefix, name, write + 1);
+        memcpy(name, "Asn1", prefix);
+    }
+    return name;
 }
 
 /*
@@ -1046,6 +1279,11 @@ rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
         ret = rust_write_boolean(stream, name, codecs);
     } else if(expr->expr_type == ASN_BASIC_NULL) {
         ret = rust_write_null(stream, name, codecs);
+    } else if(expr->expr_type == ASN_BASIC_OCTET_STRING
+              || expr->expr_type == ASN_BASIC_BIT_STRING) {
+        ret = rust_write_string(stream, name, expr);
+    } else if(expr->expr_type == ASN_BASIC_ENUMERATED) {
+        ret = rust_write_enumerated(stream, name, expr);
     } else {
         int64_t lower, upper;
         if(rust_integer_bounds(expr, &lower, &upper)) ret = -1;
@@ -1068,7 +1306,7 @@ rust_write_sequence(FILE *stream, const char *name, asn1p_expr_t *expr) {
     asn1p_expr_t *member;
     if(fprintf(stream,
         "/// Flat ASN.1 SEQUENCE with required direct primitive fields.\n"
-        "#[derive(Clone, Copy, Debug, Eq, PartialEq)]\n"
+        "#[derive(Clone, Debug, Eq, PartialEq)]\n"
         "pub struct %s {\n", name) < 0) return -1;
     TQ_FOR(member, &expr->members, next) {
         if(rust_write_sequence_field(stream, member)) return -1;
@@ -1133,7 +1371,9 @@ static int
 rust_write_sequence_field(FILE *stream, asn1p_expr_t *member) {
     char *name = rust_identifier(member->Identifier, 1);
     const char *type = member->expr_type == ASN_BASIC_BOOLEAN ? "bool"
-                       : member->expr_type == ASN_BASIC_NULL ? "()" : "i64";
+                       : member->expr_type == ASN_BASIC_NULL ? "()"
+                       : member->expr_type == ASN_BASIC_INTEGER ? "i64"
+                       : "::std::vec::Vec<u8>";
     int ret = name ? fprintf(stream,
         "    /// ASN.1 %s field state variable.\n    pub %s: %s,\n",
         member->Identifier, name, type) : -1;
@@ -1157,6 +1397,14 @@ rust_write_sequence_encode_field(FILE *stream, asn1p_expr_t *member) {
         ret = fprintf(stream, "        writer.write_boolean(self.%s)?;\n", name);
     else if(member->expr_type == ASN_BASIC_NULL)
         ret = fputs("        writer.write_null()?;\n", stream);
+    else if(member->expr_type == ASN_BASIC_OCTET_STRING
+            || member->expr_type == ASN_BASIC_BIT_STRING) {
+        size_t length;
+        if(!rust_fixed_size(member, &length))
+            ret = fprintf(stream, "        writer.write_%s(&self.%s, %zu)?;\n",
+                member->expr_type == ASN_BASIC_OCTET_STRING ? "octets" : "bit_string",
+                name, length);
+    }
     else {
         int64_t lower, upper;
         char low[64], high[64];
@@ -1187,6 +1435,14 @@ rust_write_sequence_decode_field(FILE *stream, asn1p_expr_t *member) {
         ret = fprintf(stream, "        let %s = reader.read_boolean()?;\n", name);
     else if(member->expr_type == ASN_BASIC_NULL)
         ret = fputs("        reader.read_null()?;\n", stream);
+    else if(member->expr_type == ASN_BASIC_OCTET_STRING
+            || member->expr_type == ASN_BASIC_BIT_STRING) {
+        size_t length;
+        if(!rust_fixed_size(member, &length))
+            ret = fprintf(stream, "        let %s = reader.read_%s(%zu)?;\n",
+                name, member->expr_type == ASN_BASIC_OCTET_STRING
+                    ? "octets" : "bit_string", length);
+    }
     else {
         int64_t lower, upper;
         char low[64], high[64];
@@ -1199,6 +1455,174 @@ rust_write_sequence_decode_field(FILE *stream, asn1p_expr_t *member) {
     }
     free(name);
     return ret < 0 ? -1 : 0;
+}
+
+/*
+ * Emit a fixed-size OCTET STRING or BIT STRING safe UPER wrapper.
+ * Parameters: stream receives source; name is the Rust type name; expr is the
+ * validated fixed string assignment. Returns zero or -1 on output failure;
+ * no exception is thrown.
+ * Original source: X.691 fixed-size string encoding and Rust cursor API.
+ * Version/date: 0.3.0, 2026-10-30. Responsible party: asn1c maintainers.
+ * History: first fixed string slice. Example: rust_write_string(out, name, expr).
+ */
+static int
+rust_write_string(FILE *stream, const char *name, asn1p_expr_t *expr) {
+    size_t length;
+    const int octets = expr->expr_type == ASN_BASIC_OCTET_STRING;
+    if(rust_fixed_size(expr, &length)) return -1;
+    if(fprintf(stream,
+        "#[derive(Clone, Debug, Eq, PartialEq)]\n"
+        "pub struct %s(\n    /// ASN.1 string payload state variable.\n"
+        "    ::std::vec::Vec<u8>\n);\n\nimpl %s {\n", name, name) < 0)
+        return -1;
+    if(rust_write_method_doc(stream,
+            "Construct a validated fixed-size ASN.1 string.",
+            "`value` contains packed content octets; fixed BIT STRING uses zero trailing pad bits.",
+            "Returns the validated value.",
+            "Returns an error for the wrong length or nonzero BIT STRING pad bits.",
+            "`let value = Type::new(vec![0x80])?;")) return -1;
+    if(fputs(
+        "    pub fn new(value: ::std::vec::Vec<u8>) ->\n"
+        "        ::core::result::Result<Self, ::asn1c_runtime::Error> {\n",
+        stream) == EOF) return -1;
+    if((octets ? length : (length + 7) / 8) == 0) {
+        if(fputs("        if !value.is_empty() {\n", stream) == EOF) return -1;
+    } else if(fprintf(stream, "        if value.len() != %zu {\n",
+                      octets ? length : (length + 7) / 8) < 0) return -1;
+    if(fputs(
+        "            return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+        "                reason: \"fixed ASN.1 string has wrong byte length\",\n"
+        "            });\n        }\n", stream) == EOF) return -1;
+    if(!octets && length % 8 != 0) {
+        if(fprintf(stream,
+            "        if value.last().is_some_and(|byte| byte & 0x%02x != 0) {\n"
+            "            return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+            "                reason: \"nonzero unused BIT STRING bits\",\n"
+            "            });\n        }\n", (unsigned)(0xffU >> (length % 8))) < 0)
+            return -1;
+    }
+    if(fputs("        Ok(Self(value))\n    }\n", stream) == EOF) return -1;
+    if(rust_write_method_doc(stream,
+            "Return the packed ASN.1 string contents.",
+            "`self` is the validated string value.",
+            "Returns its octets; BIT STRING unused low bits are zero.",
+            "This accessor cannot fail.",
+            "`let bytes = value.as_bytes();")) return -1;
+    if(fputs("    #[must_use]\n    pub fn as_bytes(&self) -> &[u8] { &self.0 }\n",
+             stream) == EOF) return -1;
+    if(rust_write_method_doc(stream,
+            "Encode the complete fixed-size string with UPER.",
+            "`self` is the value; `limits` bounds output and work.",
+            "Returns packed bytes and meaningful bit length.",
+            "Returns an error for invalid content or exhausted resources.",
+            "`let encoded = value.encode_uper(&Default::default())?;")) return -1;
+    if(fprintf(stream,
+        "    pub fn encode_uper(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+        "        let mut writer = ::asn1c_runtime::UperWriter::new(limits)?;\n"
+        "        writer.write_%s(&self.0, %zu)?;\n"
+        "        writer.finish()\n    }\n",
+        octets ? "octets" : "bit_string", length) < 0) return -1;
+    if(rust_write_method_doc(stream,
+            "Decode one complete fixed-size UPER string.",
+            "`input` is the encoded prefix; `limits` bounds input and work.",
+            "Returns the string and consumed prefix lengths.",
+            "Returns an error for truncation, malformed input, or exhausted resources.",
+            "`let decoded = Type::decode_uper(input, &Default::default())?;")) return -1;
+    if(fprintf(stream,
+        "    pub fn decode_uper(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+        "        let mut reader = ::asn1c_runtime::UperReader::new(input, limits)?;\n"
+        "        let value = reader.read_%s(%zu)?;\n"
+        "        let consumed = reader.finish()?;\n"
+        "        Ok(::asn1c_runtime::Decoded {\n"
+        "            value: Self(value),\n"
+        "            consumed_bits: consumed.consumed_bits,\n"
+        "            consumed_bytes: consumed.consumed_bytes,\n"
+        "        })\n    }\n}\n\n",
+        octets ? "octets" : "bit_string", length) < 0) return -1;
+    return 0;
+}
+
+/*
+ * Emit one nonextensible ENUMERATED with numeric-order UPER indexes.
+ * Parameters: stream receives Rust; name is the sanitized type name; expr
+ * owns validated members. Returns zero or -1 on output failure; no exception.
+ * Original source: X.691 root enumeration rule and asn1c_C.c value2enum.
+ * Version/date: 0.3.0, 2026-10-30. Responsible party: asn1c maintainers.
+ * History: first ENUMERATED slice. Example: rust_write_enumerated(out, name, e).
+ */
+static int
+rust_write_enumerated(FILE *stream, const char *name, asn1p_expr_t *expr) {
+    asn1p_expr_t *item;
+    size_t count = 0;
+    TQ_FOR(item, &expr->members, next) count++;
+    if(fprintf(stream,
+        "#[derive(Clone, Copy, Debug, Eq, PartialEq)]\n"
+        "pub enum %s {\n", name) < 0) return -1;
+    TQ_FOR(item, &expr->members, next) {
+        char *variant = rust_enum_variant(item->Identifier);
+        int ret = variant ? fprintf(stream,
+            "    /// ASN.1 %s root enumeration value.\n    %s,\n",
+            item->Identifier, variant) : -1;
+        free(variant);
+        if(ret < 0) return -1;
+    }
+    if(fprintf(stream, "}\n\nimpl %s {\n", name) < 0) return -1;
+    if(rust_write_method_doc(stream,
+            "Encode a root ENUMERATED value with UPER.",
+            "`self` is a root variant; `limits` bounds output and work.",
+            "Returns packed bytes and meaningful bit length.",
+            "Returns an error when a resource limit is exceeded.",
+            "`let encoded = value.encode_uper(&Default::default())?;")) return -1;
+    if(fputs(
+        "    pub fn encode_uper(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+        "        let index = match self {\n", stream) == EOF) return -1;
+    TQ_FOR(item, &expr->members, next) {
+        char *variant = rust_enum_variant(item->Identifier);
+        int ret = variant ? fprintf(stream, "            Self::%s => %zu,\n",
+            variant, rust_enumerated_rank(expr, item)) : -1;
+        free(variant);
+        if(ret < 0) return -1;
+    }
+    if(fprintf(stream,
+        "        };\n"
+        "        let mut writer = ::asn1c_runtime::UperWriter::new(limits)?;\n"
+        "        writer.write_integer(index, 0, %zu)?;\n"
+        "        writer.finish()\n    }\n", count - 1) < 0) return -1;
+    if(rust_write_method_doc(stream,
+            "Decode one root ENUMERATED UPER value.",
+            "`input` is the encoded prefix; `limits` bounds input and work.",
+            "Returns a variant and consumed prefix lengths.",
+            "Returns an error for truncation, unused indexes, or exhausted resources.",
+            "`let decoded = Type::decode_uper(input, &Default::default())?;")) return -1;
+    if(fprintf(stream,
+        "    pub fn decode_uper(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+        "        let mut reader = ::asn1c_runtime::UperReader::new(input, limits)?;\n"
+        "        let index = reader.read_integer(0, %zu)?;\n"
+        "        let value = match index {\n", count - 1) < 0) return -1;
+    TQ_FOR(item, &expr->members, next) {
+        char *variant = rust_enum_variant(item->Identifier);
+        int ret = variant ? fprintf(stream, "            %zu => Self::%s,\n",
+            rust_enumerated_rank(expr, item), variant) : -1;
+        free(variant);
+        if(ret < 0) return -1;
+    }
+    if(fputs(
+        "            _ => return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+        "                reason: \"unused ENUMERATED root index\",\n"
+        "            }),\n"
+        "        };\n"
+        "        let consumed = reader.finish()?;\n"
+        "        Ok(::asn1c_runtime::Decoded {\n"
+        "            value,\n"
+        "            consumed_bits: consumed.consumed_bits,\n"
+        "            consumed_bytes: consumed.consumed_bytes,\n"
+        "        })\n    }\n}\n\n", stream) == EOF) return -1;
+    return 0;
 }
 
 /*

@@ -1,0 +1,3 @@
+NamedBitString DEFINITIONS ::= BEGIN
+Data ::= BIT STRING { flagged(0) } (SIZE(3))
+END

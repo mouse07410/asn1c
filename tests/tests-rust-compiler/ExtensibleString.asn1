@@ -1,0 +1,3 @@
+ExtensibleString DEFINITIONS ::= BEGIN
+Data ::= BIT STRING (SIZE(3, ...))
+END

@@ -1,4 +1,12 @@
 Changes since v1.5.3:
+	* Added generated Rust UPER support for direct fixed-size OCTET STRING
+	  and BIT STRING, standalone and as required flat SEQUENCE fields. The
+	  runtime validates exact sizes and unused BIT STRING bits, packs fields
+	  continuously, and enforces one complete-value resource budget. Added
+	  generated-code and malformed-input regression tests.
+	* Added direct nonextensible ENUMERATED UPER generation with root indexes
+	  sorted by numeric value. Added spare-index, singleton, budget, and live
+	  C interoperability regressions.
 	* Added operation-wide UPER reader/writer budgets for composed fields and
 	  generated Rust support for flat SEQUENCE assignments with required direct
 	  BOOLEAN, NULL, and finite i64 INTEGER fields under UPER-only selection.

@@ -1,0 +1,15 @@
+StringSlice DEFINITIONS ::= BEGIN
+
+OneOctet ::= OCTET STRING (SIZE(1))
+ThreeBits ::= BIT STRING (SIZE(3))
+EmptyOctets ::= OCTET STRING (SIZE(0))
+EmptyBits ::= BIT STRING (SIZE(0))
+
+MixedStringRecord ::= SEQUENCE {
+    prefix BOOLEAN,
+    octets OCTET STRING (SIZE(2)),
+    bits BIT STRING (SIZE(5)),
+    suffix INTEGER (0..3)
+}
+
+END

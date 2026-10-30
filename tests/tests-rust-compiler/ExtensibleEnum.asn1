@@ -1,0 +1,3 @@
+ExtensibleEnum DEFINITIONS ::= BEGIN
+State ::= ENUMERATED { off(0), on(1), ..., pending(2) }
+END

@@ -1,0 +1,3 @@
+OversizeBits DEFINITIONS ::= BEGIN
+Data ::= BIT STRING (SIZE(65536))
+END

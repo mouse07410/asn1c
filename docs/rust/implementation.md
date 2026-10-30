@@ -27,8 +27,9 @@ asn1c --rust -no-gen-UPER -D generated schema.asn1
 cargo check --offline --manifest-path generated/Cargo.toml
 ```
 
-For a flat SEQUENCE of required direct BOOLEAN, NULL, and finite bounded
-INTEGER fields, select UPER alone:
+For fixed-size OCTET STRING or BIT STRING, or a flat SEQUENCE of required
+direct BOOLEAN, NULL, finite bounded INTEGER, and fixed-size string fields,
+select UPER alone:
 
 ```sh
 asn1c --rust -no-gen-CER -D generated schema.asn1
@@ -62,11 +63,13 @@ fresh directory after adding application code or running Cargo there.
 | Top-level BOOLEAN, NULL, bounded INTEGER | CER encoding; INTEGER bounds are finite, nonextensible, and fit `i64` |
 | Runtime limits | Input bytes, output bytes, and cumulative field work for composed UPER values |
 | Flat SEQUENCE | Required direct primitive fields; UPER-only encode/decode with shared cursor |
+| Fixed OCTET STRING and BIT STRING | Direct nonextensible SIZE(N), 0 <= N < 65536; UPER-only, standalone or required flat SEQUENCE field |
+| Direct ENUMERATED | Nonextensible root values fitting i64, up to 64 items; UPER-only encode/decode |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Strict CER decoding; canonical short-form TLV only |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in BER prefix decoding and DER encoding with `-gen-BER` |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in APER and OER encode/decode; each call begins at an octet boundary |
 | XER, JER, CBOR | Planned; unavailable in Rust mode |
-| SET, collections, strings, ENUMERATED, aliases, imports, tagged types | Planned; rejected in this slice |
+| SET, collections, variable strings, named-bit strings, extensible ENUMERATED, aliases, imports, tagged types | Planned; rejected in this slice |
 | Encoding controls, information objects, parameterized types | Planned; rejected in this slice |
 
 BOOLEAN and INTEGER wrappers expose constructors, value getters, and the
@@ -83,6 +86,16 @@ whole operation. Each field charges its wire bits plus eight work units, so
 NULL and singleton INTEGER fields still consume work budget. The entire decode
 slice counts toward the input-byte limit. Only a complete zero-width SEQUENCE
 uses one zero filler byte; a zero-width field inside a nonzero value adds none.
+Fixed OCTET STRING values use exactly N octets; fixed BIT STRING values use
+ceil(N/8) octets with unused low bits zero in the Rust API. The two string
+forms contribute N*8 and N wire bits, respectively, with no length determinant
+or per-field alignment. Constructors and cursor writes reject invalid lengths
+and nonzero unused BIT STRING bits. This subset excludes PER fragmentation.
+Direct ENUMERATED values are Rust enum variants. Their UPER indexes follow
+ascending ASN.1 numeric value order, including when declaration order differs.
+Unused root indexes fail decoding; a singleton uses zero meaningful bits and
+the complete-value filler. Extension markers and named-number constraints are
+outside this ENUMERATED subset.
 
 CER and DER methods emit complete TLV byte strings. `Encoded.bit_len` is the encoded
 byte length multiplied by eight. `decode_cer` accepts only the exact universal
@@ -122,10 +135,10 @@ packages offline and checks CLI failures, schema gates, output ownership,
 repeat generation. Rust CI checks runtime formatting,
 unit tests, Clippy, generated codecs, and installed runtime packaging.
 
-The Rust runtime suite passes 35 tests, including composable UPER cursors and APER/OER range transitions,
-malformed-input, and limit cases. The generated Rust harness includes 12
-earlier conformance tests, two APER/OER wrapper tests, and five SEQUENCE tests,
-including C comparisons for UPER/CER/APER/OER and the matching primitive DER bytes,
+The Rust runtime suite passes 42 tests, including composable UPER cursors,
+fixed strings, APER/OER range transitions, malformed-input, and limit cases.
+The generated Rust harness includes primitive, string, ENUMERATED, and flat
+SEQUENCE tests, including C comparisons for selected UPER/CER/APER/OER vectors,
 C decoding of Rust output, codec selection, and negative-schema checks.
 Runtime and generated crates pass pedantic and nursery Clippy with warnings
 denied. `make dist` includes the APER, OER, and UPER cursor modules and their

@@ -1,0 +1,3 @@
+OversizeOctets DEFINITIONS ::= BEGIN
+Data ::= OCTET STRING (SIZE(65536))
+END

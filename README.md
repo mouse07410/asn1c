@@ -187,6 +187,11 @@ in offline mode.
 Flat SEQUENCE assignments with required direct primitive fields are supported
 when UPER is the only selected Rust codec (`-no-gen-CER`). A shared cursor
 enforces one resource budget across their fields.
+The same UPER-only selection supports direct fixed-size OCTET STRING and BIT
+STRING types, including required fields inside those flat SEQUENCEs. Variable
+sizes, named-bit lists, and other string codecs remain outside this slice.
+Direct nonextensible ENUMERATED assignments also support UPER-only generation;
+their root indexes follow numeric value order.
 
 See [the initial implementation](docs/rust/implementation.md) for usage and
 limits, and [the conversion plan](docs/rust/README.md) for incremental delivery

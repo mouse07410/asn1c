@@ -1,0 +1,8 @@
+EnumSlice DEFINITIONS ::= BEGIN
+
+Color ::= ENUMERATED { blue(20), red(2), green(9) }
+Only ::= ENUMERATED { sole(5) }
+Three ::= ENUMERATED { first(-3), second(0), third(7) }
+Keyword ::= ENUMERATED { sELF(0), ok(1) }
+
+END

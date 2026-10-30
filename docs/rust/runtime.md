@@ -6,7 +6,8 @@ Baseline: commit 5a0ccf24ede9b176e8fd76861bf4855ed95f5105.
 
 Status: architecture target with an implemented first runtime slice in
 [rust/asn1c-runtime](../../rust/asn1c-runtime/README.md). That slice supports
-UPER, CER, and BER/DER BOOLEAN, NULL, and bounded i64 INTEGER operations. The
+UPER, CER, and BER/DER BOOLEAN, NULL, and bounded i64 INTEGER operations. Its
+UPER cursor also composes fixed-size OCTET STRING and BIT STRING fields. The
 generic runtime
 shape and remaining codec families described below are conversion targets.
 

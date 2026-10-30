@@ -1,7 +1,8 @@
 //! Stateful bit cursors for composing one bounded UPER value.
 //!
 //! `UperWriter` and `UperReader` append or consume primitive BOOLEAN, NULL,
-//! and finite bounded signed INTEGER fields in one continuous bit stream.
+//! finite bounded signed INTEGER, fixed-size OCTET STRING, and fixed-size BIT
+//! STRING fields in one continuous bit stream.
 //! The configured input ceiling applies once to the complete supplied slice;
 //! output bytes and work are accumulated over every field in the operation.
 //! A complete zero-width value is represented by one zero filler byte at
@@ -146,6 +147,85 @@ impl UperWriter {
         let next_bits = self.next_bit_len(field_bits)?;
         self.prepare_output(next_bits)?;
         write_bits_at(&mut self.bytes, self.bit_len, offset, field_bits)?;
+        self.bit_len = next_bits;
+        self.work_used = work;
+        Ok(())
+    }
+
+    /// Append a fixed-size OCTET STRING without aligning the shared bit stream.
+    ///
+    /// # Parameters
+    /// `value` supplies the octets; `expected_len` is the exact ASN.1 size.
+    ///
+    /// # Returns
+    /// `Ok(())` after appending all octet bits in most-significant-first order.
+    ///
+    /// # Errors
+    /// Returns an exact-length validation, cumulative work/output limit,
+    /// checked-size, or allocation error. On error, cursor bit and work state
+    /// are unchanged.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: X.691 fixed-size OCTET STRING UPER encoding.
+    /// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+    /// History: added to the composable cursor API. Example:
+    /// `writer.write_octets(&[0xA5], 1)?;`.
+    pub fn write_octets(&mut self, value: &[u8], expected_len: usize) -> Result<(), Error> {
+        let field_bits = expected_len.checked_mul(8).ok_or(Error::SizeOverflow)?;
+        if value.len() != expected_len {
+            return Err(Error::InvalidEncoding {
+                reason: "OCTET STRING length does not match its fixed size",
+            });
+        }
+        let work = self.next_work(field_bits)?;
+        let next_bits = self.next_bit_len(field_bits)?;
+        self.prepare_output(next_bits)?;
+        write_slice_bits_at(&mut self.bytes, self.bit_len, value, field_bits)?;
+        self.bit_len = next_bits;
+        self.work_used = work;
+        Ok(())
+    }
+
+    /// Append a fixed-size BIT STRING without aligning the shared bit stream.
+    ///
+    /// # Parameters
+    /// `value` stores the bits most-significant first; `bit_len` is the exact
+    /// number of meaningful bits. Unused low bits in the final octet must be
+    /// zero.
+    ///
+    /// # Returns
+    /// `Ok(())` after appending exactly `bit_len` bits.
+    ///
+    /// # Errors
+    /// Returns an exact-storage-length or unused-bit validation, cumulative
+    /// work/output limit, checked-size, or allocation error. On error, cursor
+    /// bit and work state are unchanged.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: X.691 fixed-size BIT STRING UPER encoding.
+    /// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+    /// History: added to the composable cursor API. Example:
+    /// `writer.write_bit_string(&[0xA0], 3)?;`.
+    pub fn write_bit_string(&mut self, value: &[u8], bit_len: usize) -> Result<(), Error> {
+        let expected_bytes = bit_storage_len(bit_len)?;
+        if value.len() != expected_bytes {
+            return Err(Error::InvalidEncoding {
+                reason: "BIT STRING storage length does not match its bit length",
+            });
+        }
+        if let Some(unused_mask) = unused_low_bit_mask(bit_len) {
+            let last = value.last().copied().ok_or(Error::SizeOverflow)?;
+            if last & unused_mask != 0 {
+                return Err(Error::InvalidEncoding {
+                    reason: "BIT STRING has nonzero unused trailing bits",
+                });
+            }
+        }
+
+        let work = self.next_work(bit_len)?;
+        let next_bits = self.next_bit_len(bit_len)?;
+        self.prepare_output(next_bits)?;
+        write_slice_bits_at(&mut self.bytes, self.bit_len, value, bit_len)?;
         self.bit_len = next_bits;
         self.work_used = work;
         Ok(())
@@ -407,6 +487,61 @@ impl<'a> UperReader<'a> {
         Ok(value)
     }
 
+    /// Read a fixed-size OCTET STRING from the shared bit stream.
+    ///
+    /// # Parameters
+    /// `expected_len` is the exact number of octets to consume.
+    ///
+    /// # Returns
+    /// A newly allocated vector containing the decoded octets.
+    ///
+    /// # Errors
+    /// Returns truncation, cumulative work-limit, checked-size, or fallible
+    /// allocation errors. On error, cursor bit and work state are unchanged.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: X.691 fixed-size OCTET STRING UPER decoding.
+    /// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+    /// History: added to the composable cursor API. Example:
+    /// `let octets = reader.read_octets(1)?;`.
+    pub fn read_octets(&mut self, expected_len: usize) -> Result<Vec<u8>, Error> {
+        let field_bits = expected_len.checked_mul(8).ok_or(Error::SizeOverflow)?;
+        let work = self.next_work(field_bits)?;
+        self.ensure_available(field_bits)?;
+        let mut value = allocate_zeroed_bytes(expected_len)?;
+        read_slice_bits_at(self.input, self.bit_offset, &mut value, field_bits)?;
+        self.commit_field(field_bits, work)?;
+        Ok(value)
+    }
+
+    /// Read a fixed-size BIT STRING from the shared bit stream.
+    ///
+    /// # Parameters
+    /// `bit_len` is the exact number of meaningful bits to consume.
+    ///
+    /// # Returns
+    /// A newly allocated, most-significant-first byte vector. Unused low bits
+    /// in its final octet are zero.
+    ///
+    /// # Errors
+    /// Returns truncation, cumulative work-limit, checked-size, or fallible
+    /// allocation errors. On error, cursor bit and work state are unchanged.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: X.691 fixed-size BIT STRING UPER decoding.
+    /// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+    /// History: added to the composable cursor API. Example:
+    /// `let bits = reader.read_bit_string(3)?;`.
+    pub fn read_bit_string(&mut self, bit_len: usize) -> Result<Vec<u8>, Error> {
+        let output_len = bit_storage_len(bit_len)?;
+        let work = self.next_work(bit_len)?;
+        self.ensure_available(bit_len)?;
+        let mut value = allocate_zeroed_bytes(output_len)?;
+        read_slice_bits_at(self.input, self.bit_offset, &mut value, bit_len)?;
+        self.commit_field(bit_len, work)?;
+        Ok(value)
+    }
+
     /// Finish decoding and report the consumed prefix.
     ///
     /// # Parameters
@@ -508,6 +643,33 @@ impl<'a> UperReader<'a> {
             value = (value << 1) | u64::from((byte >> shift) & 1);
         }
         Ok(value)
+    }
+
+    /// Validate that a complete arbitrary-width field is available.
+    ///
+    /// # Parameters and returns
+    /// `field_bits` is the requested width. Returns `Ok(())` if its endpoint
+    /// fits in the complete input slice.
+    ///
+    /// # Errors
+    /// Returns `NeedMoreBits` or `SizeOverflow`; it does not mutate reader state.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: new asn1c UPER cursor API. Version/date: 2026-10-30.
+    /// Responsible party: asn1c maintainers. History: added for string fields.
+    /// Example: `self.ensure_available(8)?`.
+    fn ensure_available(&self, field_bits: usize) -> Result<(), Error> {
+        let end = self
+            .bit_offset
+            .checked_add(field_bits)
+            .ok_or(Error::SizeOverflow)?;
+        if end > self.available_bits {
+            return Err(Error::NeedMoreBits {
+                required_bits: end,
+                available_bits: self.available_bits,
+            });
+        }
+        Ok(())
     }
 
     /// Commit a previously validated field width and its work charge.
@@ -616,6 +778,163 @@ fn write_bits_at(output: &mut [u8], start: usize, value: u64, width: usize) -> R
         }
     }
     Ok(())
+}
+
+/// Write arbitrary-width source bits into an already sized output buffer.
+///
+/// # Parameters and returns
+/// `output` is the destination; `start` is its bit offset; `input` stores
+/// most-significant-first bits; `bit_len` is their meaningful count. Returns
+/// `Ok(())` after copying exactly that many bits.
+///
+/// # Errors
+/// Returns `SizeOverflow` for unrepresentable sizes or `InvalidEncoding` for
+/// inconsistent internal buffer lengths. No allocation occurs.
+///
+/// # Source, version, history, and example
+/// Original source: X.691 UPER bit-string packing. Version/date: 2026-10-30.
+/// Responsible party: asn1c maintainers. History: added for cursor strings.
+/// Example: `write_slice_bits_at(output, 3, &[0xA0], 3)?`.
+fn write_slice_bits_at(
+    output: &mut [u8],
+    start: usize,
+    input: &[u8],
+    bit_len: usize,
+) -> Result<(), Error> {
+    let end = start.checked_add(bit_len).ok_or(Error::SizeOverflow)?;
+    let output_bits = output.len().checked_mul(8).ok_or(Error::SizeOverflow)?;
+    let input_bits = input.len().checked_mul(8).ok_or(Error::SizeOverflow)?;
+    if end > output_bits || bit_len > input_bits {
+        return Err(Error::InvalidEncoding {
+            reason: "bit-slice buffer is too small for the requested field",
+        });
+    }
+
+    // Copy source bits individually to preserve existing bits around an
+    // unaligned destination range in the continuous output stream.
+    for relative in 0..bit_len {
+        let source = *input.get(relative / 8).ok_or(Error::SizeOverflow)?;
+        let source_bit = (source >> (7 - (relative % 8))) & 1;
+        if source_bit != 0 {
+            let absolute = start.checked_add(relative).ok_or(Error::SizeOverflow)?;
+            let target = output.get_mut(absolute / 8).ok_or(Error::SizeOverflow)?;
+            *target |= 1 << (7 - (absolute % 8));
+        }
+    }
+    Ok(())
+}
+
+/// Copy arbitrary-width input bits into a zeroed output buffer.
+///
+/// # Parameters and returns
+/// `input` is the complete source; `start` is its bit offset; `output` is the
+/// destination; `bit_len` is the meaningful count. Returns `Ok(())` after
+/// copying exactly that many bits.
+///
+/// # Errors
+/// Returns `SizeOverflow` for unrepresentable sizes or `InvalidEncoding` for
+/// inconsistent internal buffer lengths. No allocation occurs.
+///
+/// # Source, version, history, and example
+/// Original source: X.691 UPER bit-string unpacking. Version/date: 2026-10-30.
+/// Responsible party: asn1c maintainers. History: added for cursor strings.
+/// Example: `read_slice_bits_at(input, 3, output, 3)?`.
+fn read_slice_bits_at(
+    input: &[u8],
+    start: usize,
+    output: &mut [u8],
+    bit_len: usize,
+) -> Result<(), Error> {
+    let end = start.checked_add(bit_len).ok_or(Error::SizeOverflow)?;
+    let input_bits = input.len().checked_mul(8).ok_or(Error::SizeOverflow)?;
+    let output_bits = output.len().checked_mul(8).ok_or(Error::SizeOverflow)?;
+    if end > input_bits || bit_len > output_bits {
+        return Err(Error::InvalidEncoding {
+            reason: "bit-slice buffer is too small for the requested field",
+        });
+    }
+
+    // Set only one bits; the caller zero-initializes the destination so unused
+    // trailing output bits remain canonical zeros.
+    for relative in 0..bit_len {
+        let absolute = start.checked_add(relative).ok_or(Error::SizeOverflow)?;
+        let source = *input.get(absolute / 8).ok_or(Error::SizeOverflow)?;
+        if ((source >> (7 - (absolute % 8))) & 1) != 0 {
+            let target = output.get_mut(relative / 8).ok_or(Error::SizeOverflow)?;
+            *target |= 1 << (7 - (relative % 8));
+        }
+    }
+    Ok(())
+}
+
+/// Allocate a zero-initialized byte vector using fallible reservation.
+///
+/// # Parameters and returns
+/// `byte_len` is the exact required byte count. Returns a vector of that size.
+///
+/// # Errors
+/// Returns `AllocationFailed` with the requested byte count; allocation is
+/// attempted only after caller-side input and work validation.
+///
+/// # Source, version, history, and example
+/// Original source: bounded allocation policy in the asn1c runtime.
+/// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+/// History: added for arbitrary-width cursor reads. Example:
+/// `let bytes = allocate_zeroed_bytes(2)?;`.
+fn allocate_zeroed_bytes(byte_len: usize) -> Result<Vec<u8>, Error> {
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(byte_len)
+        .map_err(|_| Error::AllocationFailed {
+            requested_bytes: byte_len,
+        })?;
+    bytes.resize(byte_len, 0);
+    Ok(bytes)
+}
+
+/// Return the storage-byte count for a meaningful BIT STRING width.
+///
+/// # Parameters and returns
+/// `bit_len` is the number of meaningful bits. Returns zero for zero bits and
+/// the ceiling byte count otherwise.
+///
+/// # Errors
+/// Returns `SizeOverflow` if rounding cannot be represented.
+///
+/// # Source, version, history, and example
+/// Original source: X.691 BIT STRING storage sizing. Version/date: 2026-10-30.
+/// Responsible party: asn1c maintainers. History: added for cursor strings.
+/// Example: `bit_storage_len(9)?` returns two.
+fn bit_storage_len(bit_len: usize) -> Result<usize, Error> {
+    if bit_len == 0 {
+        return Ok(0);
+    }
+    bit_len
+        .checked_add(7)
+        .map(|rounded| rounded / 8)
+        .ok_or(Error::SizeOverflow)
+}
+
+/// Return the mask covering unused low-order bits in a partial final octet.
+///
+/// # Parameters and returns
+/// `bit_len` is the meaningful BIT STRING width. Returns `None` when aligned,
+/// or a mask whose set bits must be zero in the final source octet.
+///
+/// # Errors
+/// This helper is total and raises no error.
+///
+/// # Source, version, history, and example
+/// Original source: X.691 BIT STRING padding validation. Version/date:
+/// 2026-10-30. Responsible party: asn1c maintainers. History: added for
+/// cursor strings. Example: `unused_low_bit_mask(3) == Some(0x1f)`.
+const fn unused_low_bit_mask(bit_len: usize) -> Option<u8> {
+    let used_in_last = bit_len % 8;
+    if used_in_last == 0 {
+        None
+    } else {
+        Some((1_u8 << (8 - used_in_last)) - 1)
+    }
 }
 
 /// Check a complete output byte count against the writer's configured ceiling.
@@ -921,5 +1240,255 @@ mod tests {
             encoded_byte_len(usize::MAX),
             Err(Error::SizeOverflow)
         ));
+    }
+
+    /// Verify fixed-size strings share cross-byte positions with other fields.
+    ///
+    /// Original source: composable X.691 UPER string contract. Version/date:
+    /// 2026-10-30. Inputs: one BOOLEAN, two octets, and five string bits.
+    /// Returns: no value; assertions check packed bytes and decoded fields.
+    /// Errors: none expected. Responsible party: asn1c maintainers.
+    /// History: added with fixed-size cursor strings. Example: 22 bits pack
+    /// into `[0xD2, 0x9E, 0x58]` without field alignment.
+    #[test]
+    fn packs_fixed_strings_across_byte_boundaries() {
+        let limits = Limits::default();
+        let mut writer = UperWriter::new(&limits).expect("writer");
+        writer.write_boolean(true).expect("boolean");
+        writer.write_octets(&[0xA5, 0x3C], 2).expect("octets");
+        writer.write_bit_string(&[0xB0], 5).expect("bits");
+        let encoded = writer.finish().expect("finish");
+        assert_eq!(encoded.bytes, [0xD2, 0x9E, 0x58]);
+        assert_eq!(encoded.bit_len, 22);
+
+        let mut reader = UperReader::new(&encoded.bytes, &limits).expect("reader");
+        assert!(reader.read_boolean().expect("boolean"));
+        assert_eq!(reader.read_octets(2).expect("octets"), [0xA5, 0x3C]);
+        assert_eq!(reader.read_bit_string(5).expect("bits"), [0xB0]);
+        let decoded = reader.finish().expect("finish");
+        assert_eq!(decoded.consumed_bits, 22);
+        assert_eq!(decoded.consumed_bytes, 3);
+    }
+
+    /// Verify empty fixed-size strings consume work but no wire bits.
+    ///
+    /// Original source: cursor zero-width field contract. Version/date:
+    /// 2026-10-30. Inputs: empty OCTET STRING and BIT STRING fields.
+    /// Returns: no value; assertions inspect filler and state accounting.
+    /// Errors: none expected. Responsible party: asn1c maintainers.
+    /// History: added with fixed-size cursor strings. Example: each empty
+    /// field costs eight work units and the complete value has one filler byte.
+    #[test]
+    fn accepts_zero_length_strings() {
+        let limits = Limits::default();
+        let mut writer = UperWriter::new(&limits).expect("writer");
+        writer.write_octets(&[], 0).expect("empty octets");
+        writer.write_bit_string(&[], 0).expect("empty bits");
+        assert_eq!(writer.work_used, 16);
+        let encoded = writer.finish().expect("finish");
+        assert_eq!(encoded.bytes, [0]);
+        assert_eq!(encoded.bit_len, 0);
+
+        let mut reader = UperReader::new(&encoded.bytes, &limits).expect("reader");
+        assert_eq!(reader.read_octets(0).expect("empty octets"), []);
+        assert_eq!(reader.read_bit_string(0).expect("empty bits"), []);
+        assert_eq!(reader.work_used, 16);
+        assert_eq!(reader.finish().expect("finish").consumed_bits, 0);
+    }
+
+    /// Verify malformed string inputs leave writer cursor and work state intact.
+    ///
+    /// Original source: fixed-size ASN.1 string validation. Version/date:
+    /// 2026-10-30. Inputs: wrong OCTET STRING size, wrong BIT STRING storage,
+    /// and nonzero unused trailing bits. Returns: no value; assertions inspect
+    /// state and a subsequent valid encoding. Errors: validation errors are
+    /// expected. Responsible party: asn1c maintainers. History: added with
+    /// fixed-size cursor strings. Example: a 3-bit value must have five low
+    /// zero bits in its final octet.
+    #[test]
+    fn rejects_malformed_writer_strings_without_state_changes() {
+        let limits = Limits::default();
+        let mut writer = UperWriter::new(&limits).expect("writer");
+        assert!(matches!(
+            writer.write_octets(&[0xAA], 2),
+            Err(Error::InvalidEncoding { .. })
+        ));
+        assert!(matches!(
+            writer.write_bit_string(&[], 3),
+            Err(Error::InvalidEncoding { .. })
+        ));
+        assert!(matches!(
+            writer.write_bit_string(&[0xA1], 3),
+            Err(Error::InvalidEncoding { .. })
+        ));
+        assert_eq!(writer.bit_len, 0);
+        assert_eq!(writer.work_used, 0);
+
+        writer.write_bit_string(&[0xA0], 3).expect("valid bits");
+        let encoded = writer.finish().expect("finish");
+        assert_eq!(encoded.bytes, [0xA0]);
+        assert_eq!(encoded.bit_len, 3);
+    }
+
+    /// Verify truncated reads do not advance either reader state variable.
+    ///
+    /// Original source: fixed-size UPER string decoding. Version/date:
+    /// 2026-10-30. Inputs: one byte consumed partly, then an overlong octet
+    /// request. Returns: no value; assertions validate retry and final offset.
+    /// Errors: one `NeedMoreBits` is expected. Responsible party: asn1c
+    /// maintainers. History: added with fixed-size cursor strings. Example:
+    /// seven remaining bits can still be read after the failed octet request.
+    #[test]
+    fn truncated_string_read_preserves_reader_state() {
+        let limits = Limits::default();
+        let mut reader = UperReader::new(&[0xA0], &limits).expect("reader");
+        assert!(reader.read_boolean().expect("boolean"));
+        let prior_work = reader.work_used;
+        assert!(matches!(
+            reader.read_octets(1),
+            Err(Error::NeedMoreBits {
+                required_bits: 9,
+                available_bits: 8
+            })
+        ));
+        assert_eq!(reader.bit_offset, 1);
+        assert_eq!(reader.work_used, prior_work);
+        assert_eq!(reader.read_bit_string(7).expect("remaining bits"), [0x40]);
+        assert_eq!(reader.finish().expect("finish").consumed_bits, 8);
+    }
+
+    /// Verify string fields charge payload bits plus eight units per field.
+    ///
+    /// Original source: cursor operation-wide work and output ceilings.
+    /// Version/date: 2026-10-30. Inputs: exact and under-budget bit strings,
+    /// plus a cross-byte output attempt. Returns: no value; assertions inspect
+    /// typed errors and unchanged state. Errors: work/output limits expected.
+    /// Responsible party: asn1c maintainers. History: added with fixed-size
+    /// cursor strings. Example: a five-bit field costs thirteen work units.
+    #[test]
+    fn string_fields_enforce_work_and_output_budgets() {
+        let exact_work = Limits {
+            max_work_bits: 13,
+            ..Limits::default()
+        };
+        let mut writer = UperWriter::new(&exact_work).expect("writer");
+        writer
+            .write_bit_string(&[0xA0], 5)
+            .expect("exact work budget");
+        assert_eq!(writer.work_used, 13);
+
+        let tight_work = Limits {
+            max_work_bits: 12,
+            ..Limits::default()
+        };
+        let mut writer = UperWriter::new(&tight_work).expect("writer");
+        assert!(matches!(
+            writer.write_bit_string(&[0xA0], 5),
+            Err(Error::LimitExceeded {
+                resource: Resource::WorkBits,
+                requested: 13,
+                ..
+            })
+        ));
+        assert_eq!(writer.bit_len, 0);
+        assert_eq!(writer.work_used, 0);
+
+        let tight_output = Limits {
+            max_output_bytes: 1,
+            ..Limits::default()
+        };
+        let mut writer = UperWriter::new(&tight_output).expect("writer");
+        writer.write_boolean(true).expect("first bit");
+        assert!(matches!(
+            writer.write_octets(&[0xFF], 1),
+            Err(Error::LimitExceeded {
+                resource: Resource::OutputBytes,
+                requested: 2,
+                ..
+            })
+        ));
+        assert_eq!(writer.bit_len, 1);
+        assert_eq!(writer.work_used, 9);
+
+        let tight_reader = Limits {
+            max_work_bits: 12,
+            ..Limits::default()
+        };
+        let mut reader = UperReader::new(&[0xA0], &tight_reader).expect("reader");
+        assert!(matches!(
+            reader.read_bit_string(5),
+            Err(Error::LimitExceeded {
+                resource: Resource::WorkBits,
+                requested: 13,
+                ..
+            })
+        ));
+        assert_eq!(reader.bit_offset, 0);
+        assert_eq!(reader.work_used, 0);
+    }
+
+    /// Verify string width arithmetic rejects unrepresentable values.
+    ///
+    /// Original source: checked cursor size arithmetic. Version/date:
+    /// 2026-10-30. Inputs: maximum `usize` bit and octet lengths.
+    /// Returns: no value; assertions inspect `SizeOverflow`. Errors: overflow
+    /// is expected. Responsible party: asn1c maintainers. History: added with
+    /// fixed-size cursor strings. Example: `bit_storage_len(usize::MAX)` fails.
+    #[test]
+    fn rejects_string_size_overflow() {
+        assert!(matches!(
+            bit_storage_len(usize::MAX),
+            Err(Error::SizeOverflow)
+        ));
+        let limits = Limits::default();
+        let mut writer = UperWriter::new(&limits).expect("writer");
+        assert!(matches!(
+            writer.write_octets(&[], usize::MAX),
+            Err(Error::SizeOverflow)
+        ));
+        let mut reader = UperReader::new(&[], &limits).expect("reader");
+        assert!(matches!(
+            reader.read_octets(usize::MAX),
+            Err(Error::SizeOverflow)
+        ));
+        assert_eq!(writer.bit_len, 0);
+        assert_eq!(reader.bit_offset, 0);
+    }
+
+    /// Exhaust every one-octet pattern at every short BIT STRING width.
+    ///
+    /// Parameters: none. Returns: no value; assertions check validation and
+    /// round trips. Errors: nonzero unused bits must be rejected. Original
+    /// source: deterministic mutation coverage for unaligned X.691 bit copy.
+    /// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+    /// History: fixed string cursor fuzz-style regression. Example: all 256
+    /// byte patterns are tried at each width from one through eight bits.
+    #[test]
+    fn exhaustive_short_bit_string_patterns() {
+        let limits = Limits::default();
+        for width in 1..=8 {
+            let unused_mask = if width == 8 {
+                0
+            } else {
+                (1_u8 << (8 - width)) - 1
+            };
+            for raw in u8::MIN..=u8::MAX {
+                let mut writer = UperWriter::new(&limits).expect("writer");
+                writer.write_boolean(true).expect("prefix");
+                let result = writer.write_bit_string(&[raw], width);
+                if raw & unused_mask != 0 {
+                    assert!(matches!(result, Err(Error::InvalidEncoding { .. })));
+                    continue;
+                }
+                result.expect("valid bits");
+                writer.write_boolean(false).expect("suffix");
+                let encoded = writer.finish().expect("complete value");
+                let mut reader = UperReader::new(&encoded.bytes, &limits).expect("reader");
+                assert!(reader.read_boolean().expect("prefix"));
+                assert_eq!(reader.read_bit_string(width).expect("bits"), [raw]);
+                assert!(!reader.read_boolean().expect("suffix"));
+                assert_eq!(reader.finish().expect("complete").consumed_bits, width + 2);
+            }
+        }
     }
 }

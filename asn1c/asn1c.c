@@ -1336,7 +1336,7 @@ usage(const char *av0) {
 "ASN.1 Compiler, " VERSION "\n" COPYRIGHT
 "Usage: %s [options] file ...\n"
 "Options:\n"
-"  --rust                Generate Rust primitive codecs and flat UPER-only SEQUENCE\n"
+"  --rust                Generate Rust codecs for selected types and flat UPER SEQUENCE\n"
 "                        (UPER/CER default; opt-in BER/DER, APER, OER)\n"
 "  -E                    Run only the ASN.1 parser and print out the tree\n"
 "  -F                    During -E operation, also perform tree fixing\n"

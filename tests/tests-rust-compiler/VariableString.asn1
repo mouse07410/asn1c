@@ -1,0 +1,3 @@
+VariableString DEFINITIONS ::= BEGIN
+Data ::= OCTET STRING (SIZE(1..3))
+END

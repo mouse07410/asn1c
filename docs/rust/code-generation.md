@@ -245,9 +245,11 @@ encode/decode methods and CER encode and strict decode methods. INTEGER must hav
 effective finite PER range that fits `i64`; `new(value)` returns `Result` and
 checks that range. The BOOLEAN constructor is infallible. Reject aliases,
 imports, tags, constructed types outside the flat UPER-only SEQUENCE slice,
-unsupported constraints, and all other types before creating output.
-ENUMERATED, OCTET STRING, and BIT STRING remain future
-increments.
+and unsupported constraints before creating output. An explicit UPER-only
+selection adds direct nonextensible ENUMERATED and fixed-size OCTET STRING
+and BIT STRING, including string fields inside flat required-field SEQUENCE.
+Variable-size strings, named-bit lists, and extensible ENUMERATED remain
+future increments.
 
 Use a safe, `std`-only runtime crate at `rust/asn1c-runtime/`, package name
 `asn1c-runtime`, import name `asn1c_runtime`, and Cargo edition 2021. Make no
@@ -379,7 +381,7 @@ The current Rust option handling is:
 | Option family | Rust handling |
 | --- | --- |
 | `-D` | Selects the output directory; Rust defaults to `asn1c-rust`. |
-| `-gen-*`, `-no-gen-*` | UPER and CER are default; APER/OER/BER are opt-in for primitives; flat SEQUENCE needs UPER alone. |
+| `-gen-*`, `-no-gen-*` | UPER and CER are default; APER/OER/BER are opt-in for initial primitives; flat SEQUENCE, fixed strings, and ENUMERATED need UPER alone. |
 | C storage/layout/output flags | Fail as incompatible with `--rust`. |
 | `-S` | Selects standard modules and resolves the matching runtime assets. |
 | `-P`, `-R`, C helper/example flags | Fail as incompatible with `--rust`. |

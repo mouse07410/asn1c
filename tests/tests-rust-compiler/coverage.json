@@ -1,5 +1,5 @@
 {
-  "suite": "generated Rust primitive codecs and flat UPER SEQUENCE slice",
+  "suite": "generated Rust primitive codecs, fixed UPER strings, ENUMERATED, and flat UPER SEQUENCE slice",
   "scope": "Only the listed nonextensible primitive subset is qualified.",
   "cases": [
     {
@@ -185,6 +185,42 @@
       ],
       "status": "tested_flat_constructed_subset",
       "evidence": "sequence_conformance.rs; asn1c-runtime/src/uper_cursor.rs tests"
+    },
+    {
+      "asn1_type": "OCTET STRING, BIT STRING",
+      "feature": "direct fixed nonextensible SIZE(N), N < 65536; standalone and required flat SEQUENCE field",
+      "codec": "UPER",
+      "variants": [
+        "zero-size complete filler",
+        "continuous cross-byte packing",
+        "BIT STRING unused-bit validation",
+        "whole-value resource budgets",
+        "SIZE(65535) accepted; SIZE(65536) rejected"
+      ],
+      "directions": [
+        "encode",
+        "decode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "string_conformance.rs; c_string.c; asn1c-runtime/src/uper_cursor.rs tests; boundary_conformance.rs"
+    },
+    {
+      "asn1_type": "ENUMERATED",
+      "feature": "direct nonextensible root values fitting i64, at most 64 members; numeric-order UPER indexes",
+      "codec": "UPER",
+      "variants": [
+        "out-of-order numeric declaration",
+        "singleton complete filler",
+        "spare root index",
+        "work budget",
+        "mixed-case keyword normalization"
+      ],
+      "directions": [
+        "encode",
+        "decode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "enum_conformance.rs; c_enum.c; EnumSlice.asn1"
     }
   ],
   "not_yet_implemented_by_this_Rust_slice": [
@@ -204,9 +240,9 @@
       "note": "No generated Rust encoder or decoder is qualified."
     },
     {
-      "family": "constructed outside flat UPER SEQUENCE, string, CHOICE, ENUMERATED, REAL, open types",
+      "family": "constructed outside flat UPER SEQUENCE, variable-size or named-bit strings, CHOICE, extensible ENUMERATED, REAL, open types",
       "status": "outside_first_slice",
-      "note": "No Rust correctness or interoperability claim is made beyond the listed flat SEQUENCE subset."
+      "note": "No Rust correctness or interoperability claim is made beyond the listed flat SEQUENCE and fixed string subsets."
     },
     {
       "family": "extensible constraints and cross-codec conversion",
@@ -232,7 +268,10 @@
       "optional, nested, extensible, tagged, and otherwise unsupported constructed types and module-name sanitization collisions",
       "duplicate --rust selectors and disabling all Rust codecs",
       "an incomplete runtime asset set beside explicit skeletons",
-      "unsupported XER/JER/CBOR codecs and C-layout selectors"
+      "unsupported XER/JER/CBOR codecs and C-layout selectors",
+      "variable-size, extensible-size, and named-bit OCTET/BIT STRING forms",
+      "extensible ENUMERATED root values",
+      "fixed string SIZE(65536) at the fragmentation boundary"
     ],
     "output_safety": [
       "unowned destination preservation",
@@ -246,11 +285,12 @@
     ]
   },
   "observed_counts": {
-    "generated_rust_test_functions": 19,
+    "generated_rust_test_functions": 26,
     "live_c_rust_vectors_each_direction": 8,
-    "unsupported_target_or_schema_cases": 23,
     "single_octet_mutation_inputs": 768,
     "wide_prefix_inputs_including_complete_value": 9,
-    "truncated_wide_prefix_inputs": 8
+    "truncated_wide_prefix_inputs": 8,
+    "live_C_fixed_string_encode_vectors": 5,
+    "live_C_enum_encode_vectors": 4
   }
 }

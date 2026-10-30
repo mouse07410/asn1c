@@ -1,0 +1,4 @@
+BoundaryStrings DEFINITIONS ::= BEGIN
+MaxOctets ::= OCTET STRING (SIZE(65535))
+MaxBits ::= BIT STRING (SIZE(65535))
+END
