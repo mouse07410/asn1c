@@ -258,21 +258,42 @@ uper_open_type_get(const asn_codec_ctx_t *ctx, const asn_TYPE_descriptor_t *td,
     return uper_open_type_get_simple(ctx, td, constraints, sptr, pd);
 }
 
+/*
+ * Purpose: skip an unknown open type while preserving decode status.
+ * Source: existing uper_open_type_skip implementation. Version: 2026-10-30.
+ * Inputs: ctx provides decoder limits; pd is the input bit stream.
+ * Returns: RC_OK, RC_WMORE or RC_FAIL from the open type decoder.
+ * Errors: a null input fails; malformed input and truncation use the decoder status.
+ * Author: asn1c maintainers. History: expose status without changing the old API.
+ * Example: a short open-type payload returns RC_WMORE.
+ */
+asn_dec_rval_t
+uper_open_type_skip_result(const asn_codec_ctx_t *ctx, asn_per_data_t *pd) {
+    asn_TYPE_descriptor_t s_td;
+    asn_TYPE_operation_t s_op;
+    if(!pd) {
+        asn_dec_rval_t invalid = { RC_FAIL, 0 };
+        return invalid;
+    }
+    memset(&s_td, 0, sizeof(s_td));
+    memset(&s_op, 0, sizeof(s_op));
+    s_td.name = "<unknown extension>";
+    s_td.op = &s_op;
+    s_op.uper_decoder = uper_sot_suck;
+    return uper_open_type_get(ctx, &s_td, 0, 0, pd);
+}
+
+/*
+ * Purpose: skip an unknown open type using the legacy integer interface.
+ * Source: uper_open_type_skip_result. Version: 2026-10-30.
+ * Inputs: ctx and pd follow the open type decoder API.
+ * Returns: zero on success, -1 otherwise. Errors: propagated as -1.
+ * Author: asn1c maintainers. History: retained for ABI compatibility.
+ * Example: a complete open type returns zero.
+ */
 int
 uper_open_type_skip(const asn_codec_ctx_t *ctx, asn_per_data_t *pd) {
-	asn_TYPE_descriptor_t s_td;
-    asn_TYPE_operation_t s_op;
-	asn_dec_rval_t rv;
-
-	s_td.name = "<unknown extension>";
-	s_td.op = &s_op;
-    s_op.uper_decoder = uper_sot_suck;
-
-	rv = uper_open_type_get(ctx, &s_td, 0, 0, pd);
-	if(rv.code != RC_OK)
-		return -1;
-	else
-		return 0;
+    return uper_open_type_skip_result(ctx, pd).code == RC_OK ? 0 : -1;
 }
 
 /*

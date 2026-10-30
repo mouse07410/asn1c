@@ -1,0 +1,6 @@
+NestedNameCollision DEFINITIONS ::= BEGIN
+
+A ::= SEQUENCE { b-c SEQUENCE { flag BOOLEAN } }
+AB ::= SEQUENCE { c SEQUENCE { flag BOOLEAN } }
+
+END

@@ -151,16 +151,17 @@ control only in Rust codecs that implement its behavior.
    `libasn1compiler/asn1c_rust.c` and `asn1c_rust.h`, registered in
    `libasn1compiler/Makefile.am`. It validates the fixed tree before staging
    output. The current gate accepts top-level BOOLEAN, NULL, and bounded,
-   nonextensible INTEGER whose complete range fits `i64`, plus flat SEQUENCE
-   with required and OPTIONAL direct fields and literal BOOLEAN or bounded
-   INTEGER DEFAULT fields under UPER-only selection.
+   nonextensible INTEGER whose complete range fits `i64`, plus SEQUENCE with
+   required and OPTIONAL direct or inline nested fields and literal BOOLEAN or
+   bounded INTEGER DEFAULT fields under UPER-only selection.
 6. Runtime sources now live under `rust/asn1c-runtime/` and are included in
    Automake distribution and package-data installation. The CLI resolves the
    runtime separately from `-S`, which still selects C skeletons and standard
    ASN.1 modules.
 7. Rust has a bounded identifier sanitizer and collision checker. Diagnostics
-   retain source module/type names and line numbers. The flat SEQUENCE gate
-   validates member names, direct types, presence markers, and DEFAULT literal
+   retain source module/type names and line numbers. The SEQUENCE gate checks
+   direct field shapes, recursive depth and aggregate field-work limits,
+   generated nested-type name collisions, presence markers, and DEFAULT literal
    types and ranges.
 8. The generated-crate harness lives under
    `tests/tests-rust-compiler/`. It invokes the built compiler and checks the
@@ -234,7 +235,7 @@ integer-width heuristics.
 | OBJECT IDENTIFIER | runtime `ObjectIdentifier` | Use checked arcs; do not assume every arc fits a machine integer. |
 | RELATIVE-OID | runtime `RelativeOid` | Same checked-arithmetic requirement as OID arcs. |
 | UTCTime, GeneralizedTime | runtime time wrapper or validated text newtype | Canonical rules need explicit APIs. |
-| SEQUENCE, SET | generated `struct` | Current UPER SEQUENCE slice uses values and `Option<T>` fields with a leading presence bitmap; direct component tags are ignored by PER, BOOLEAN and bounded INTEGER DEFAULT are supported, SET is unsupported. |
+| SEQUENCE, SET | generated `struct` | UPER SEQUENCE fields use values and `Option<T>`; inline nested records share a cursor and put their presence bitmap before each record payload. Direct component tags are ignored by PER, BOOLEAN and bounded INTEGER DEFAULT are supported, SET is unsupported. |
 | CHOICE | generated `enum` | Include an unknown extension variant when the type is extensible. |
 | SEQUENCE OF, SET OF | `Vec<T>` newtype | Retain SET OF ordering rules in codec logic. |
 | Type reference | module-qualified reference | Use public newtypes for aliases that add constraints or API identity. |
@@ -249,8 +250,11 @@ checks that range. The BOOLEAN constructor is infallible. Reject aliases,
 imports, tags, constructed types outside the flat UPER-only SEQUENCE slice,
 and unsupported constraints before creating output. An explicit UPER-only
 selection adds direct nonextensible ENUMERATED and fixed-size OCTET STRING
-and BIT STRING, including string fields inside flat required or OPTIONAL-field
-SEQUENCE.
+and BIT STRING, including string fields inside supported required or OPTIONAL
+SEQUENCE records.
+Direct fixed-size OCTET STRING assignments also accept the JER codec alone or
+with UPER. Their generated methods call the runtime's fixed-size hexadecimal
+JER helpers. BIT STRING and OCTET STRING SEQUENCE fields remain UPER-only.
 Variable-size strings, named-bit lists, and extensible ENUMERATED remain
 future increments.
 

@@ -1,0 +1,14 @@
+SetUperIndividualAdditions DEFINITIONS IMPLICIT TAGS ::= BEGIN
+
+IndividualSet ::= SET {
+    rootHigh [9] INTEGER (0..15),
+    rootLow [1] BOOLEAN OPTIONAL,
+    ...,
+    addedFlag [4] BOOLEAN OPTIONAL,
+    addedValue [7] INTEGER (0..15),
+    addedDefault [8] INTEGER (0..15) DEFAULT 3,
+    ...,
+    trailingRoot [3] INTEGER (0..15) OPTIONAL
+}
+
+END

@@ -707,6 +707,7 @@ static const asn_TYPE_tag2member_t asn_MAP_Set_tag2el_23[] = {
 static const uint8_t asn_MAP_Set_mmap_23[(2 + (8 * sizeof(unsigned int)) - 1) / 8] = {
 	(1 << 7) | (0 << 6)
 };
+static const unsigned asn_MAP_Set_root_23[2] = {0, 1};
 asn_SET_specifics_t asn_SPC_Set_specs_23 = {
 	sizeof(struct Set),
 	offsetof(struct Set, _asn_ctx),
@@ -716,7 +717,13 @@ asn_SET_specifics_t asn_SPC_Set_specs_23 = {
 	asn_MAP_Set_tag2el_23,	/* Same as above */
 	2,	/* Count of tags in the CXER map */
 	0,	/* Whether extensible */
-	(const unsigned int *)asn_MAP_Set_mmap_23	/* Mandatory elements map */
+	(const unsigned int *)asn_MAP_Set_mmap_23,	/* Mandatory elements map */
+	sizeof(asn_SET_specifics_t),	/* Metadata size */
+	ASN_SET_SPECIFICS_VERSION,	/* Metadata version */
+	asn_MAP_Set_root_23,	/* Root members in declaration order */
+	2,	/* Root member count */
+	0,	/* No extension additions */
+	0	/* Extension addition count */
 };
 asn_TYPE_descriptor_t asn_DEF_Set = {
 	"Set",
@@ -912,6 +919,8 @@ static const asn_TYPE_tag2member_t asn_MAP_ExtensibleSet_tag2el_26[] = {
 static const uint8_t asn_MAP_ExtensibleSet_mmap_26[(2 + (8 * sizeof(unsigned int)) - 1) / 8] = {
 	(0 << 7) | (0 << 6)
 };
+static const unsigned asn_MAP_ExtensibleSet_root_26[1] = {0};
+static const unsigned asn_MAP_ExtensibleSet_extension_26[1] = {1};
 asn_SET_specifics_t asn_SPC_ExtensibleSet_specs_26 = {
 	sizeof(struct ExtensibleSet),
 	offsetof(struct ExtensibleSet, _asn_ctx),
@@ -920,8 +929,14 @@ asn_SET_specifics_t asn_SPC_ExtensibleSet_specs_26 = {
 	.tag2el_count = 2,	/* Count of tags in the map */
 	asn_MAP_ExtensibleSet_tag2el_26,	/* Same as above */
 	2,	/* Count of tags in the CXER map */
-	1,	/* Whether extensible */
-	(const unsigned int *)asn_MAP_ExtensibleSet_mmap_26	/* Mandatory elements map */
+	2,	/* Whether extensible */
+	(const unsigned int *)asn_MAP_ExtensibleSet_mmap_26,	/* Mandatory elements map */
+	sizeof(asn_SET_specifics_t),	/* Metadata size */
+	ASN_SET_SPECIFICS_VERSION,	/* Metadata version */
+	asn_MAP_ExtensibleSet_root_26,	/* Root members in declaration order */
+	1,	/* Root member count */
+	asn_MAP_ExtensibleSet_extension_26,	/* Additions in declaration order */
+	1	/* Extension addition count */
 };
 asn_TYPE_descriptor_t asn_DEF_ExtensibleSet = {
 	"ExtensibleSet",

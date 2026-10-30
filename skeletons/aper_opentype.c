@@ -130,20 +130,43 @@ aper_open_type_get(const asn_codec_ctx_t *ctx,
 	return aper_open_type_get_simple(ctx, td, constraints, sptr, pd);
 }
 
-int
-aper_open_type_skip(const asn_codec_ctx_t *ctx, asn_per_data_t *pd) {
+/*
+ * Purpose: skip an unknown APER open type while preserving decode status.
+ * Source: Existing aper_open_type_skip implementation.
+ * Version/date: 2026-10-30.
+ * Inputs: ctx provides decoder limits; pd is the encoded open type input.
+ * Returns: RC_OK, RC_WMORE, or RC_FAIL from the APER open-type decoder.
+ * Errors: A null input fails; malformed input and truncation retain status.
+ * Author: asn1c maintainers. History: Added a status-preserving interface.
+ * Example: A short open-type payload returns RC_WMORE.
+ */
+asn_dec_rval_t
+aper_open_type_skip_result(const asn_codec_ctx_t *ctx, asn_per_data_t *pd) {
 	asn_TYPE_descriptor_t s_td;
-	asn_dec_rval_t rv;
 	asn_TYPE_operation_t op_t;
-
+	if(!pd) {
+		asn_dec_rval_t invalid = {RC_FAIL, 0};
+		return invalid;
+	}
+	memset(&s_td, 0, sizeof(s_td));
 	memset(&op_t, 0, sizeof(op_t));
 	s_td.name = "<unknown extension>";
 	s_td.op = &op_t;
-	s_td.op->aper_decoder = uper_sot_suck;
+	op_t.aper_decoder = uper_sot_suck;
+	return aper_open_type_get(ctx, &s_td, 0, 0, pd);
+}
 
-	rv = aper_open_type_get(ctx, &s_td, 0, 0, pd);
-	if(rv.code != RC_OK)
-		return -1;
-	else
-		return 0;
+/*
+ * Purpose: skip an APER open type through the legacy integer interface.
+ * Source: aper_open_type_skip_result.
+ * Version/date: 2026-10-30.
+ * Inputs: ctx and pd follow the APER open-type decoder API.
+ * Returns: zero on success, -1 for truncation or malformed data.
+ * Errors: Detailed decoder status is available from aper_open_type_skip_result.
+ * Author: asn1c maintainers. History: Retained for ABI compatibility.
+ * Example: A complete open type returns zero.
+ */
+int
+aper_open_type_skip(const asn_codec_ctx_t *ctx, asn_per_data_t *pd) {
+	return aper_open_type_skip_result(ctx, pd).code == RC_OK ? 0 : -1;
 }

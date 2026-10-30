@@ -7,11 +7,13 @@ decoding; and BER decoding plus DER encoding. This is a bounded primitive
 subset, not complete ASN.1 codec or type coverage.
 
 The crate also has JER encode/decode functions for BOOLEAN, NULL, finite
-bounded signed `i64` INTEGER, and direct nonextensible ENUMERATED. ENUMERATED
-root names encode as compact quoted JSON strings. Its decoder accepts one
-complete known name with JSON whitespace around it and rejects unknown names,
-escapes, trailing values, and exhausted input, output, or lookup-work limits.
-The primitive decoders report consumption of the entire supplied input.
+bounded signed `i64` INTEGER, direct nonextensible ENUMERATED, and fixed-size
+OCTET STRING. ENUMERATED root names encode as compact quoted JSON strings;
+OCTET STRING values encode as quoted uppercase hexadecimal. Their decoders
+accept one complete token with JSON whitespace around it and reject unknown
+names, escapes, malformed hex, incorrect fixed sizes, trailing values, and
+exhausted input, output, or work limits. The primitive decoders report
+consumption of the entire supplied input.
 `-0` decodes as zero; integer output uses minimal decimal notation. JER does
 not yet provide streaming or constructed-value codecs. Consumers that
 represent JSON numbers as floating point should verify that their chosen

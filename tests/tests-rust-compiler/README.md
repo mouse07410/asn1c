@@ -29,19 +29,27 @@ JSON strings; decoding accepts JSON whitespace and requires one complete,
 known string. Tests reject unknown names, escapes, trailing JSON values, and
 input/output/work limit violations. Generated C code independently encodes
 fixed primitive tokens and decodes Rust-generated JSON files for comparison.
+Direct fixed-size OCTET STRING assignments also support JER hexadecimal
+strings, alone or with UPER. Tests compare empty and mixed-byte values in both
+directions with generated C, accept lowercase hex input, and reject malformed
+tokens, wrong sizes, unsupported codec selections, and exhausted limits.
 
 The UPER-only SEQUENCE slice packs required and OPTIONAL direct BOOLEAN, NULL,
-bounded INTEGER, and fixed string fields, plus literal BOOLEAN and bounded
-INTEGER DEFAULT fields, with one bit cursor and one cumulative resource budget.
+bounded INTEGER, fixed string, and inline nested SEQUENCE fields, plus literal
+BOOLEAN and bounded INTEGER DEFAULT fields (including inside nested records),
+with one bit cursor and one cumulative resource budget.
 Tests cover declaration-order OPTIONAL/DEFAULT presence bits, omitted and
 present defaults, an OPTIONAL interleaved bitmap crossing an octet, cross-byte
 packing, zero-width fields and whole-value filler, full `i64` bounds, truncation,
 and exact work/input/output ceilings. The C fixture checks both C encoding of
 Rust vectors and C decoding of a Rust-compatible present-default vector.
 Default UPER/CER selection rejects SEQUENCE until CER support exists; unsupported
-DEFAULT forms, nested, extensible fields, and top-level tagged types fail before
-publication. The automatic component tags in `SequenceDefaults.asn1` are covered
-by live C encode/decode parity vectors.
+DEFAULT forms, nested constructed DEFAULTs, extensions, excessive nesting or
+aggregate field-work, generated-name collisions, and top-level tagged types fail
+before publication. Required and OPTIONAL inline records each write their own
+presence bitmap immediately before payload. Private record helpers share the
+top-level cursor, budget, and final filler. The automatic component tags in
+`SequenceDefaults.asn1` are covered by live C encode/decode parity vectors.
 The fixed-size string fixture covers standalone OCTET STRING and BIT STRING,
 zero-sized values, bit packing inside a mixed SEQUENCE, malformed lengths and
 pad bits, truncation, and whole-operation budgets. It also checks that the

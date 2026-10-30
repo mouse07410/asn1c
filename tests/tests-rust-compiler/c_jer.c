@@ -15,6 +15,8 @@
 #include <Flag.h>
 #include <SignBounds.h>
 #include <Singleton.h>
+#include <EmptyHexOctets.h>
+#include <MixedHexOctets.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -168,6 +170,39 @@ check_rust_file(const asn_TYPE_descriptor_t *type, const char *directory,
 }
 
 /*
+ * Encode one C value and save its compact JER token for the Rust decoder.
+ * Parameters: type is the generated descriptor; value is a valid value;
+ * directory is the output folder; filename is a fixed test filename.
+ * Returns zero on success or one for codec, path, or file errors. Exceptions:
+ * none. Original source: generated C JER interoperability fixture.
+ * Version/date: 2026-10-30. Responsible party: asn1c maintainers. History:
+ * added OCTET STRING cross-decoding. Example: save an empty OCTET STRING token.
+ */
+static int
+write_c_vector(const asn_TYPE_descriptor_t *type, const void *value,
+               const char *directory, const char *filename) {
+    char path[4096];
+    jer_buffer_t output = {{0}, 0};
+    asn_enc_rval_t encoded;
+    FILE *stream;
+    int path_length;
+    int failed;
+
+    if(!type || !value || !directory || !directory[0] || !filename || !filename[0])
+        return 1;
+    path_length = snprintf(path, sizeof(path), "%s/%s", directory, filename);
+    if(path_length < 0 || (size_t)path_length >= sizeof(path)) return 1;
+    encoded = jer_encode(type, value, JER_F_MINIFIED, append_bytes, &output);
+    if(encoded.encoded < 0) return 1;
+    stream = fopen(path, "wb");
+    if(!stream) return 1;
+    failed = fwrite(output.data, 1, output.length, stream) != output.length;
+    if(fclose(stream) != 0) failed = 1;
+    if(failed) fprintf(stderr, "cannot write C JER vector: %s\n", path);
+    return failed;
+}
+
+/*
  * Exercise the BMPString helper in a JER-only C build without print or XER.
  * Parameters: none. Returns zero for a compact encode/decode round trip or
  * one on failure. Exceptions: none; codec failures become a return value.
@@ -209,7 +244,8 @@ check_bmp_string(void) {
 /*
  * Check C fixed vectors and optionally consume the Rust-generated token files.
  * Parameters: argc is the argument count; argv contains no arguments or the
- * pair `--decode-dir directory`.
+ * pair `--decode-dir directory`, `--decode-octet-dir directory`, or
+ * `--write-dir directory`.
  * Returns zero on success or one for invalid arguments or any mismatch.
  * Exceptions: none. Original source: C/Rust JER interoperability fixture.
  * Version/date: 2026-10-30. Responsible party: asn1c maintainers. History:
@@ -225,6 +261,10 @@ main(int argc, char **argv) {
     Singleton_t singleton = 5;
     SignBounds_t sign_min = -129;
     SignBounds_t sign_max = 128;
+    unsigned char empty_octet_storage = 0; /* state variable: safe non-NULL zero-size backing. */
+    unsigned char mixed_octets[] = {0x00, 0xaf, 0xff}; /* state variable: mixed test bytes. */
+    OCTET_STRING_t empty_octets = {&empty_octet_storage, 0};
+    OCTET_STRING_t mixed_octet_value = {mixed_octets, sizeof(mixed_octets)};
     const jer_case_t cases[] = {
         {&asn_DEF_Flag, &flag_false, "false", "BOOLEAN FALSE"},
         {&asn_DEF_Flag, &flag_true, "true", "BOOLEAN TRUE"},
@@ -238,17 +278,40 @@ main(int argc, char **argv) {
     size_t index;
     int failed = 0;
     const char *directory = NULL;
+    const char *octet_directory = NULL;
+    const char *write_directory = NULL;
 
     if(argc == 3 && strcmp(argv[1], "--decode-dir") == 0) {
         directory = argv[2];
+    } else if(argc == 3 && strcmp(argv[1], "--decode-octet-dir") == 0) {
+        octet_directory = argv[2];
+    } else if(argc == 3 && strcmp(argv[1], "--write-dir") == 0) {
+        write_directory = argv[2];
     } else if(argc != 1) {
-        fprintf(stderr, "usage: %s [--decode-dir directory]\n", argv[0]);
+        fprintf(stderr,
+                "usage: %s [--decode-dir directory | --decode-octet-dir directory "
+                "| --write-dir directory]\n", argv[0]);
         return 1;
     }
     for(index = 0; index < sizeof(cases) / sizeof(cases[0]); index++) {
         failed |= check_case(&cases[index]);
     }
     failed |= check_bmp_string();
+    {
+        const jer_case_t octet_cases[] = {
+            {&asn_DEF_EmptyHexOctets, &empty_octets, "\"\"", "empty OCTET STRING"},
+            {&asn_DEF_MixedHexOctets, &mixed_octet_value, "\"00AFFF\"",
+             "mixed OCTET STRING"},
+        };
+        for(index = 0; index < sizeof(octet_cases) / sizeof(octet_cases[0]); index++)
+            failed |= check_case(&octet_cases[index]);
+    }
+    if(write_directory) {
+        failed |= write_c_vector(&asn_DEF_EmptyHexOctets, &empty_octets,
+                                 write_directory, "jer_empty_octets.json");
+        failed |= write_c_vector(&asn_DEF_MixedHexOctets, &mixed_octet_value,
+                                 write_directory, "jer_mixed_octets.json");
+    }
     if(directory) {
         failed |= check_rust_file(&asn_DEF_Flag, directory, "jer_flag_false.json");
         failed |= check_rust_file(&asn_DEF_Flag, directory, "jer_flag_true.json");
@@ -260,6 +323,12 @@ main(int argc, char **argv) {
                                   "jer_sign_bounds_min.json");
         failed |= check_rust_file(&asn_DEF_SignBounds, directory,
                                   "jer_sign_bounds_max.json");
+    }
+    if(octet_directory) {
+        failed |= check_rust_file(&asn_DEF_EmptyHexOctets, octet_directory,
+                                  "jer_empty_octets.json");
+        failed |= check_rust_file(&asn_DEF_MixedHexOctets, octet_directory,
+                                  "jer_mixed_octets.json");
     }
     return failed;
 }

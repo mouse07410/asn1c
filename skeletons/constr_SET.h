@@ -41,7 +41,18 @@ typedef struct asn_SET_specifics_s {
 	 */
 	int extensible;                             /* Whether SET is extensible */
 	const unsigned int *_mandatory_elements;    /* Bitmask of mandatory ones */
+
+	/* Versioned metadata appended to preserve the legacy field offsets. */
+	unsigned specifics_size;                    /* Size of this specifics object. */
+	unsigned specifics_version;                 /* Metadata layout version. */
+	const unsigned *root_map;                   /* Root member indexes in declaration order. */
+	unsigned root_count;                        /* Number of root members. */
+	const unsigned *extension_map;              /* Addition indexes in declaration order. */
+	unsigned extension_count;                   /* Number of extension additions. */
 } asn_SET_specifics_t;
+
+/* Version 2 adds explicit root and extension membership maps. */
+#define ASN_SET_SPECIFICS_VERSION 2u
 
 /*
  * A read-only view of a SET member and the SET presence map that owns it.

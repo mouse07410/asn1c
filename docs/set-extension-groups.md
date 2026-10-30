@@ -47,14 +47,24 @@ assigning tags. The `31-set-of` compiler golden output now keeps its
 treating it as an extension addition and retagging it. The extension tag-range
 check follows the interpretation of clauses 27.3 and 29.8 described above.
 
-SET extension groups remain outside PER support. UPER rejects extensible
-`SET` values, and this follow-up does not add APER support or define a PER
-group encoding. The parser also has no version-prefix production for extension
-group notation.
+UPER supports extensible `SET` values with individual extension additions.
+Root components use canonical tag order, including roots after a second
+extension marker; additions use declaration order and unknown additions are
+skipped on decode. Regenerate C descriptors with the matching runtime: v2
+metadata records the root and addition maps; addition storage must be
+pointer-backed so absence is representable. A legacy extensible descriptor
+fails closed, and the runtime reads appended metadata only for the v2 sentinel.
 
-This follow-up implements and validates BER, DER, CER, and XER only. JER, OER,
-and CBOR SET handling was not audited or changed here; no extension-group
-support or conformance claim is made for those codecs.
+Extension groups remain outside SET PER support. UPER rejects descriptors
+containing a group because the synthetic SET descriptor does not retain the
+original group member order needed for its SEQUENCE open type. APER also
+supports individual additions and rejects groups; OER rejects extensible SETs.
+The parser has no version-prefix production for extension group notation.
+
+The extension-group work implements and validates BER, DER, CER, and XER.
+The UPER support described above covers individual additions only. JER, OER,
+and CBOR group handling was not audited here; no extension-group support or
+conformance claim is made for those codecs.
 
 The tag-order validation follows [x680]. The encoding rules follow [x690]
 (clauses 8.11 for BER SET, 9.3 for CER SET, and 10.3 for DER SET) and [x693]

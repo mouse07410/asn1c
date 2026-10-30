@@ -1,7 +1,8 @@
 //! Safe, bounded primitive codecs for generated ASN.1 Rust code.
 //!
-//! This crate covers BOOLEAN, NULL, bounded signed INTEGER, direct ENUMERATED
-//! JER, and fixed-size string values in a limited codec slice.
+//! In addition to a limited PER/OER/CER/DER/BER codec slice, this crate covers
+//! BOOLEAN, NULL, bounded signed INTEGER, direct ENUMERATED, and fixed-size
+//! OCTET STRING JER.
 //! It uses only the Rust standard library and applies caller-configurable input,
 //! output, and work limits before reading bits or allocating output storage.
 //!
@@ -30,7 +31,8 @@ pub use aper::{
 };
 pub use jer::{
     decode_boolean_jer, decode_enumerated_jer, decode_integer_jer, decode_null_jer,
-    encode_boolean_jer, encode_enumerated_jer, encode_integer_jer, encode_null_jer,
+    decode_octet_string_jer, encode_boolean_jer, encode_enumerated_jer, encode_integer_jer,
+    encode_null_jer, encode_octet_string_jer,
 };
 pub use oer::{
     decode_boolean_oer, decode_integer_oer, decode_null_oer, encode_boolean_oer,

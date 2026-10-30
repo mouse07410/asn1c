@@ -12,11 +12,13 @@ The user authorized backend implementation on 2026-10-11. The selected mode is
 current generated-code slice supports UPER encode/decode, CER encode/strict
 decode, and opt-in APER/OER/JER encode/decode or BER decode/DER encode for BOOLEAN, NULL, and bounded
 nonextensible INTEGER. Other types and codecs remain conversion targets.
-An explicit UPER-only selection also supports flat SEQUENCE assignments with
-required and OPTIONAL direct primitive fields, BOOLEAN and bounded INTEGER
-DEFAULT fields, and one cumulative resource budget. Direct
+An explicit UPER-only selection also supports SEQUENCE assignments with
+required and OPTIONAL direct primitive or inline nested fields, BOOLEAN and
+bounded INTEGER DEFAULT fields, and one cumulative resource budget. Direct
 nonextensible fixed-size OCTET STRING and BIT STRING assignments and fields
 are also supported with that selection.
+Direct nonextensible fixed-size OCTET STRING assignments additionally support
+opt-in JER encode/decode with `-gen-JER`; BIT STRING remains UPER-only.
 The same selection supports direct nonextensible ENUMERATED assignments;
 JER is also available for those assignments when selected explicitly.
 

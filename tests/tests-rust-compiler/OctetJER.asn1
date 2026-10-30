@@ -1,0 +1,6 @@
+OctetJER DEFINITIONS ::= BEGIN
+
+EmptyHexOctets ::= OCTET STRING (SIZE(0))
+MixedHexOctets ::= OCTET STRING (SIZE(3))
+
+END

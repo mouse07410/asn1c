@@ -1,5 +1,17 @@
 SequenceNested DEFINITIONS ::= BEGIN
 
-NestedPacket ::= SEQUENCE { inner SEQUENCE { flag BOOLEAN } }
+NestedPacket ::= SEQUENCE {
+    prefix BOOLEAN,
+    fixed SEQUENCE {
+        flag BOOLEAN,
+        count INTEGER (0..3) DEFAULT 1,
+        suffix BOOLEAN
+    },
+    maybe SEQUENCE {
+        number INTEGER (0..2),
+        enabled BOOLEAN OPTIONAL
+    } OPTIONAL,
+    tail BOOLEAN
+}
 
 END

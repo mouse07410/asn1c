@@ -1,0 +1,13 @@
+SetUperExtensionMetadata DEFINITIONS IMPLICIT TAGS ::= BEGIN
+
+SetMetadata ::= SET {
+    rootHigh [9] INTEGER (0..255),
+    rootLow [1] BOOLEAN OPTIONAL,
+    ...,
+    addedHigh [4] BOOLEAN OPTIONAL,
+    [[ groupEarlier [5] BOOLEAN, groupLater [6] INTEGER (0..255) ]],
+    ...,
+    trailingRoot [3] INTEGER (0..255) OPTIONAL
+}
+
+END

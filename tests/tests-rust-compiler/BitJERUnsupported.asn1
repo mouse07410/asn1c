@@ -1,0 +1,5 @@
+BitJERUnsupported DEFINITIONS ::= BEGIN
+
+Bits ::= BIT STRING (SIZE(3))
+
+END

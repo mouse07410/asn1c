@@ -1886,6 +1886,7 @@ static const asn_TYPE_tag2member_t asn_MAP_OneTwo_tag2el_52[] = {
 static const uint8_t asn_MAP_OneTwo_mmap_52[(1 + (8 * sizeof(unsigned int)) - 1) / 8] = {
 	(1 << 7)
 };
+static const unsigned asn_MAP_OneTwo_root_52[1] = {0};
 asn_SET_specifics_t asn_SPC_OneTwo_specs_52 = {
 	sizeof(struct OneTwo),
 	offsetof(struct OneTwo, _asn_ctx),
@@ -1895,7 +1896,13 @@ asn_SET_specifics_t asn_SPC_OneTwo_specs_52 = {
 	asn_MAP_OneTwo_tag2el_52,	/* Same as above */
 	1,	/* Count of tags in the CXER map */
 	0,	/* Whether extensible */
-	(const unsigned int *)asn_MAP_OneTwo_mmap_52	/* Mandatory elements map */
+	(const unsigned int *)asn_MAP_OneTwo_mmap_52,	/* Mandatory elements map */
+	sizeof(asn_SET_specifics_t),	/* Metadata size */
+	ASN_SET_SPECIFICS_VERSION,	/* Metadata version */
+	asn_MAP_OneTwo_root_52,	/* Root members in declaration order */
+	1,	/* Root member count */
+	0,	/* No extension additions */
+	0	/* Extension addition count */
 };
 asn_TYPE_descriptor_t asn_DEF_OneTwo = {
 	"OneTwo",
@@ -1999,6 +2006,7 @@ static const asn_TYPE_tag2member_t asn_MAP_TwoThree_tag2el_54[] = {
 static const uint8_t asn_MAP_TwoThree_mmap_54[(1 + (8 * sizeof(unsigned int)) - 1) / 8] = {
 	(1 << 7)
 };
+static const unsigned asn_MAP_TwoThree_root_54[1] = {0};
 asn_SET_specifics_t asn_SPC_TwoThree_specs_54 = {
 	sizeof(struct TwoThree),
 	offsetof(struct TwoThree, _asn_ctx),
@@ -2008,7 +2016,13 @@ asn_SET_specifics_t asn_SPC_TwoThree_specs_54 = {
 	asn_MAP_TwoThree_tag2el_54,	/* Same as above */
 	1,	/* Count of tags in the CXER map */
 	0,	/* Whether extensible */
-	(const unsigned int *)asn_MAP_TwoThree_mmap_54	/* Mandatory elements map */
+	(const unsigned int *)asn_MAP_TwoThree_mmap_54,	/* Mandatory elements map */
+	sizeof(asn_SET_specifics_t),	/* Metadata size */
+	ASN_SET_SPECIFICS_VERSION,	/* Metadata version */
+	asn_MAP_TwoThree_root_54,	/* Root members in declaration order */
+	1,	/* Root member count */
+	0,	/* No extension additions */
+	0	/* Extension addition count */
 };
 asn_TYPE_descriptor_t asn_DEF_TwoThree = {
 	"TwoThree",
@@ -2137,6 +2151,7 @@ static const asn_TYPE_tag2member_t asn_MAP_ThreeOne_tag2el_56[] = {
 static const uint8_t asn_MAP_ThreeOne_mmap_56[(2 + (8 * sizeof(unsigned int)) - 1) / 8] = {
 	(1 << 7) | (1 << 6)
 };
+static const unsigned asn_MAP_ThreeOne_root_56[2] = {0, 1};
 asn_SET_specifics_t asn_SPC_ThreeOne_specs_56 = {
 	sizeof(struct ThreeOne),
 	offsetof(struct ThreeOne, _asn_ctx),
@@ -2146,7 +2161,13 @@ asn_SET_specifics_t asn_SPC_ThreeOne_specs_56 = {
 	asn_MAP_ThreeOne_tag2el_56,	/* Same as above */
 	2,	/* Count of tags in the CXER map */
 	0,	/* Whether extensible */
-	(const unsigned int *)asn_MAP_ThreeOne_mmap_56	/* Mandatory elements map */
+	(const unsigned int *)asn_MAP_ThreeOne_mmap_56,	/* Mandatory elements map */
+	sizeof(asn_SET_specifics_t),	/* Metadata size */
+	ASN_SET_SPECIFICS_VERSION,	/* Metadata version */
+	asn_MAP_ThreeOne_root_56,	/* Root members in declaration order */
+	2,	/* Root member count */
+	0,	/* No extension additions */
+	0	/* Extension addition count */
 };
 asn_TYPE_descriptor_t asn_DEF_ThreeOne = {
 	"ThreeOne",

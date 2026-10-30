@@ -90,6 +90,9 @@ check_595_prefix = check-src/check-595.-gen-APER.
 check_595_disabled_a = -no-gen-BER.-no-gen-XER.-no-gen-JER.-no-gen-CBOR.
 check_595_disabled_b = -no-gen-OER.-no-gen-UPER.-no-gen-print.-no-gen-random-fill.c
 TESTS += $(check_595_prefix)$(check_595_disabled_a)$(check_595_disabled_b)
+TESTS += check-src/check-596.-gen-UPER.c
+TESTS += check-src/check-597.-gen-UPER.c
+TESTS += check-src/check-598.-gen-APER.c
 TESTS += check-src/check-582.-gen-UPER.-gen-APER.c
 TESTS += check-src/check-569.-gen-UPER.c
 TESTS += check-src/check-570.c
@@ -123,6 +126,9 @@ EXTRA_DIST =    \
     check-src/check64-134.-gen-UPER.c    \
     check-src/check64-136.-gen-OER.c
 EXTRA_DIST += $(check_595_prefix)$(check_595_disabled_a)$(check_595_disabled_b)
+EXTRA_DIST += check-src/check-596.-gen-UPER.c
+EXTRA_DIST += check-src/check-597.-gen-UPER.c
+EXTRA_DIST += check-src/check-598.-gen-APER.c
 
 clean-local:
 	rm -rf test-*

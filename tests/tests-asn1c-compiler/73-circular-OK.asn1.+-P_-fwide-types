@@ -828,6 +828,7 @@ static const asn_TYPE_tag2member_t asn_MAP_Ypet_tag2el_10[] = {
 static const uint8_t asn_MAP_Ypet_mmap_10[(5 + (8 * sizeof(unsigned int)) - 1) / 8] = {
 	(1 << 7) | (0 << 6) | (1 << 5) | (1 << 4) | (1 << 3)
 };
+static const unsigned asn_MAP_Ypet_root_10[5] = {0, 1, 2, 3, 4};
 asn_SET_specifics_t asn_SPC_Ypet_specs_10 = {
 	sizeof(struct Ypet),
 	offsetof(struct Ypet, _asn_ctx),
@@ -837,7 +838,13 @@ asn_SET_specifics_t asn_SPC_Ypet_specs_10 = {
 	asn_MAP_Ypet_tag2el_10,	/* Same as above */
 	5,	/* Count of tags in the CXER map */
 	0,	/* Whether extensible */
-	(const unsigned int *)asn_MAP_Ypet_mmap_10	/* Mandatory elements map */
+	(const unsigned int *)asn_MAP_Ypet_mmap_10,	/* Mandatory elements map */
+	sizeof(asn_SET_specifics_t),	/* Metadata size */
+	ASN_SET_SPECIFICS_VERSION,	/* Metadata version */
+	asn_MAP_Ypet_root_10,	/* Root members in declaration order */
+	5,	/* Root member count */
+	0,	/* No extension additions */
+	0	/* Extension addition count */
 };
 asn_TYPE_descriptor_t asn_DEF_Ypet = {
 	"Ypet",

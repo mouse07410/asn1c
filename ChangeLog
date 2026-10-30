@@ -1,4 +1,22 @@
 Changes since v1.5.3:
+	* Added C APER encoding and decoding for SETs with individual extension
+	  additions using versioned root and addition maps. Trailing roots retain
+	  canonical tag order; known and unknown additions use aligned open types.
+	  Added DEFAULT, truncation, malformed-metadata, and APER-only regressions.
+	  Legacy extensible descriptors and extension groups remain unsupported.
+	* Added generated Rust JER encoding and complete-input decoding for direct
+	  fixed-size OCTET STRING values as quoted hexadecimal. Added uppercase
+	  output, lowercase input, length and resource validation, malformed-input
+	  tests, and two-way C interoperability vectors.
+	* Added C UPER encoding and decoding for SETs with individual extension
+	  additions. Versioned generated metadata records roots and additions,
+	  including roots after a second marker. Decoding skips unknown additions
+	  and preserves the open-type decoder status for truncated input. Legacy
+	  extensible descriptors and extension groups fail closed in UPER.
+	* Added generated Rust UPER support for inline nested SEQUENCE fields.
+	  Required and OPTIONAL nested records share one bit cursor and resource
+	  budget with their parent. Added C/Rust wire comparisons, nested DEFAULT
+	  cases, and malformed-input and generator-limit regressions.
 	* Corrected C OER table-selected open-type cleanup for incomplete and
 	  failed CHOICE-wrapper decoding. Added ownership and malformed-input
 	  regressions, including truncated length determinants.

@@ -668,6 +668,8 @@ static const asn_TYPE_tag2member_t asn_MAP_Stuff_tag2el_cxer_6[] = {
 static const uint8_t asn_MAP_Stuff_mmap_6[(3 + (8 * sizeof(unsigned int)) - 1) / 8] = {
 	(0 << 7) | (0 << 6) | (0 << 5)
 };
+static const unsigned asn_MAP_Stuff_root_6[2] = {0, 1};
+static const unsigned asn_MAP_Stuff_extension_6[1] = {2};
 static
 asn_SET_specifics_t asn_SPC_Stuff_specs_6 = {
 	sizeof(struct Stuff),
@@ -677,8 +679,14 @@ asn_SET_specifics_t asn_SPC_Stuff_specs_6 = {
 	.tag2el_count = 4,	/* Count of tags in the map */
 	asn_MAP_Stuff_tag2el_cxer_6,
 	3,	/* Count of tags in the CXER map */
-	1,	/* Whether extensible */
-	(const unsigned int *)asn_MAP_Stuff_mmap_6	/* Mandatory elements map */
+	2,	/* Whether extensible */
+	(const unsigned int *)asn_MAP_Stuff_mmap_6,	/* Mandatory elements map */
+	sizeof(asn_SET_specifics_t),	/* Metadata size */
+	ASN_SET_SPECIFICS_VERSION,	/* Metadata version */
+	asn_MAP_Stuff_root_6,	/* Root members in declaration order */
+	2,	/* Root member count */
+	asn_MAP_Stuff_extension_6,	/* Additions in declaration order */
+	1	/* Extension addition count */
 };
 asn_TYPE_descriptor_t asn_DEF_Stuff = {
 	"Stuff",

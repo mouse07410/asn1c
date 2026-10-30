@@ -31,6 +31,10 @@
 #define RUST_MANIFEST_LIMIT (1024 * 1024)
 #define RUST_MANIFEST_ENTRY_LIMIT 4096
 #define RUST_SEQUENCE_FIELD_LIMIT 64
+#define RUST_SEQUENCE_DEPTH_LIMIT 16
+#define RUST_SEQUENCE_NODE_LIMIT 64
+#define RUST_SEQUENCE_WORK_LIMIT 256
+#define RUST_MODULE_NESTED_NAME_LIMIT 4096
 
 /*
  * Paths used while staging and validating a generated crate.
@@ -53,6 +57,11 @@ static int rust_check_module_types(asn1p_module_t *, int *, uint64_t);
 static int rust_check_type_name(asn1p_module_t *, asn1p_expr_t *);
 static int rust_check_type(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_sequence(asn1p_module_t *, asn1p_expr_t *, uint64_t);
+static int rust_check_sequence_tree(asn1p_module_t *, asn1p_expr_t *,
+                                   asn1p_expr_t **, size_t, size_t *, size_t *);
+static int rust_check_module_nested_names(asn1p_module_t *);
+static int rust_collect_nested_names(asn1p_module_t *, asn1p_expr_t *,
+                                     const char *, char **, size_t *, size_t);
 static int rust_check_sequence_member(asn1p_module_t *, asn1p_expr_t *);
 static int rust_sequence_member_shape_valid(const asn1p_expr_t *);
 static int rust_sequence_default_literal(asn1p_expr_t *, char *, size_t);
@@ -88,19 +97,22 @@ static int rust_write_boolean_ber(FILE *);
 static int rust_write_null(FILE *, const char *, uint64_t);
 static int rust_write_null_ber(FILE *);
 static int rust_write_integer(FILE *, const char *, int64_t, int64_t, uint64_t);
-static int rust_write_string(FILE *, const char *, asn1p_expr_t *);
+static int rust_write_string(FILE *, const char *, asn1p_expr_t *, uint64_t);
 static int rust_write_enumerated(FILE *, const char *, asn1p_expr_t *, uint64_t);
 static int rust_write_enumerated_jer(FILE *, asn1p_expr_t *);
 static int rust_write_integer_ber(FILE *, const char *, const char *);
-static int rust_write_sequence(FILE *, const char *, asn1p_expr_t *);
-static int rust_write_sequence_field(FILE *, asn1p_expr_t *);
+static int rust_write_sequence(FILE *, const char *, asn1p_expr_t *, int);
+static int rust_write_all_sequences(FILE *, const char *, asn1p_expr_t *, int);
+static int rust_write_sequence_field(FILE *, const char *, asn1p_expr_t *);
 static int rust_write_sequence_encode_field(FILE *, asn1p_expr_t *);
 static int rust_write_sequence_encode_default(FILE *, asn1p_expr_t *, const char *);
 static int rust_write_sequence_encode_optional(FILE *, asn1p_expr_t *, const char *);
-static int rust_write_sequence_decode_field(FILE *, asn1p_expr_t *, size_t *);
+static int rust_write_sequence_decode_field(FILE *, const char *, asn1p_expr_t *,
+                                            size_t *);
 static int rust_write_sequence_decode_default(FILE *, asn1p_expr_t *, size_t);
 static int rust_write_sequence_encode_presence(FILE *, asn1p_expr_t *);
 static int rust_write_sequence_decode_presence(FILE *, asn1p_expr_t *);
+static char *rust_nested_type_name(const char *, const asn1p_expr_t *);
 static int rust_write_per_oer(FILE *, const char *, const char *,
                               const char *, const char *);
 static int rust_write_method_doc(FILE *, const char *, const char *,
@@ -271,6 +283,7 @@ rust_check_module_name(asn1p_t *asn, asn1p_module_t *module) {
 static int
 rust_check_module_types(asn1p_module_t *module, int *emitted, uint64_t codecs) {
     asn1p_expr_t *expr;
+    if(rust_check_module_nested_names(module)) return -1;
     TQ_FOR(expr, &module->members, next) {
         if(expr->meta_type != AMT_TYPE) {
             rust_diagnostic(module, expr,
@@ -379,13 +392,23 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
         }
         return 0;
     }
-    if(expr->expr_type == ASN_BASIC_OCTET_STRING
-       || expr->expr_type == ASN_BASIC_BIT_STRING) {
+    if(expr->expr_type == ASN_BASIC_OCTET_STRING) {
+        if(!codecs || (codecs & ~(RUST_CODEC_UPER | RUST_CODEC_JER))
+           || !expr->combined_constraints
+           || !rust_size_constraint_supported(expr->combined_constraints, 0)
+           || rust_fixed_size(expr, &(size_t){0})) {
+            rust_diagnostic(module, expr,
+                "OCTET STRING needs UPER and/or JER with fixed, nonextensible SIZE below 65536");
+            return -1;
+        }
+        return 0;
+    }
+    if(expr->expr_type == ASN_BASIC_BIT_STRING) {
         if(codecs != RUST_CODEC_UPER || !expr->combined_constraints
            || !rust_size_constraint_supported(expr->combined_constraints, 0)
            || rust_fixed_size(expr, &(size_t){0})) {
             rust_diagnostic(module, expr,
-                "OCTET STRING and BIT STRING need UPER-only fixed, nonextensible SIZE below 65536");
+                "BIT STRING needs UPER-only fixed, nonextensible SIZE below 65536");
             return -1;
         }
         return 0;
@@ -406,8 +429,9 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
 static int
 rust_check_sequence(asn1p_module_t *module, asn1p_expr_t *expr,
                     uint64_t codecs) {
-    asn1p_expr_t *member;
-    size_t count = 0;
+    asn1p_expr_t *stack[RUST_SEQUENCE_DEPTH_LIMIT + 1];
+    size_t nodes = 0;
+    size_t work = 0;
     if(codecs != RUST_CODEC_UPER || expr->constraints
        || expr->combined_constraints || expr->lhs_params || expr->ioc_table
        || expr->marker.flags || expr->rhs_pspecs) {
@@ -415,13 +439,179 @@ rust_check_sequence(asn1p_module_t *module, asn1p_expr_t *expr,
                         "SEQUENCE needs UPER-only selection and direct fields");
         return -1;
     }
-    TQ_FOR(member, &expr->members, next) {
-        if(++count > RUST_SEQUENCE_FIELD_LIMIT) {
-            rust_diagnostic(module, member, "SEQUENCE has too many fields");
+    return rust_check_sequence_tree(module, expr, stack, 0, &nodes, &work);
+}
+
+/*
+ * Check nested type names across every assignment in one generated module.
+ * Parameters: module owns all assignments. Returns zero or -1 with a
+ * diagnostic. Original source: Rust name-collision preflight. Version/date:
+ * 0.4.0, 2026-10-30. Responsible party: asn1c maintainers. History: nested
+ * type generation. Example: reject two records both named ParentChild.
+ */
+static int
+rust_check_module_nested_names(asn1p_module_t *module) {
+    asn1p_expr_t *expr;
+    char *names[RUST_MODULE_NESTED_NAME_LIMIT] = {0};
+    size_t name_count = 0;
+    int failed = 0;
+    TQ_FOR(expr, &module->members, next) {
+        char *root;
+        if(expr->expr_type != ASN_CONSTR_SEQUENCE) continue;
+        root = rust_identifier(expr->Identifier, 0);
+        if(!root || rust_collect_nested_names(module, expr, root, names,
+                                              &name_count, 0)) failed = 1;
+        free(root);
+        if(failed) break;
+    }
+    while(name_count) free(names[--name_count]);
+    return failed ? -1 : 0;
+}
+
+/*
+ * Collect deterministic nested type names and reject every collision.
+ * Parameters: module owns type assignments; sequence is the current record;
+ * parent is its generated name; names stores earlier nested names.
+ * Returns zero or -1. Original source: Rust backend name preflight.
+ * Version/date: 0.4.0, 2026-10-30. Responsible party: asn1c maintainers.
+ * History: inline SEQUENCE naming. Example: collect names under a parent type.
+ */
+static int
+rust_collect_nested_names(asn1p_module_t *module, asn1p_expr_t *sequence,
+                          const char *parent, char **names, size_t *name_count,
+                          size_t depth) {
+    asn1p_expr_t *member;
+    asn1p_expr_t *assignment;
+    if(depth >= RUST_SEQUENCE_DEPTH_LIMIT) {
+        rust_diagnostic(module, sequence, "nested SEQUENCE depth limit exceeded");
+        return -1;
+    }
+    TQ_FOR(member, &sequence->members, next) {
+        char *name;
+        size_t i;
+        int collision = 0;
+        if(member->expr_type != ASN_CONSTR_SEQUENCE) continue;
+        name = rust_nested_type_name(parent, member);
+        if(!name) {
+            rust_diagnostic(module, member, "nested SEQUENCE type name is too long");
             return -1;
         }
-        if(rust_check_sequence_member(module, member)
-           || rust_check_sequence_name(module, expr, member)) return -1;
+        TQ_FOR(assignment, &module->members, next) {
+            char *top_name = rust_identifier(assignment->Identifier, 0);
+            collision = !top_name || !strcmp(name, top_name);
+            free(top_name);
+            if(collision) break;
+        }
+        if(collision || *name_count >= RUST_MODULE_NESTED_NAME_LIMIT) {
+            rust_diagnostic(module, member, "nested SEQUENCE type names collide");
+            free(name);
+            return -1;
+        }
+        for(i = 0; i < *name_count; i++) {
+            if(!strcmp(name, names[i])) {
+                rust_diagnostic(module, member, "nested SEQUENCE type names collide");
+                free(name);
+                return -1;
+            }
+        }
+        names[(*name_count)++] = name;
+        if(rust_collect_nested_names(module, member, name, names, name_count,
+                                     depth + 1))
+            return -1;
+    }
+    return 0;
+}
+
+/*
+ * Build a nested record type name from its parent and field identifier.
+ * Parameters: parent is the generated enclosing name; member is the nested
+ * field. Returns allocated normalized name or NULL. Original source: Rust
+ * naming rules. Version/date: 0.4.0, 2026-10-30. Responsible party: asn1c.
+ * History: introduced for inline SEQUENCE records. Example: ParentInner.
+ */
+static char *
+rust_nested_type_name(const char *parent, const asn1p_expr_t *member) {
+    size_t parent_length;
+    size_t field_length;
+    char *field_name;
+    char *source;
+    char *name;
+    if(!parent || !member || !member->Identifier) return NULL;
+    field_name = rust_enum_variant(member->Identifier);
+    if(!field_name) return NULL;
+    parent_length = strlen(parent);
+    field_length = strlen(field_name);
+    if(parent_length > SIZE_MAX - field_length - 1) {
+        free(field_name);
+        return NULL;
+    }
+    source = malloc(parent_length + field_length + 1);
+    if(!source) {
+        free(field_name);
+        return NULL;
+    }
+    memcpy(source, parent, parent_length);
+    memcpy(source + parent_length, field_name, field_length + 1);
+    name = rust_identifier(source, 0);
+    free(source);
+    free(field_name);
+    return name;
+}
+
+/*
+ * Validate an inline SEQUENCE tree with cycle, depth, and aggregate-work caps.
+ * Parameters: module supplies diagnostics; sequence is the current record;
+ * stack tracks active records; nodes/work accumulate tree totals.
+ * Returns zero or -1. Original source: Rust UPER generator preflight.
+ * Version/date: 0.4.0, 2026-10-30. Responsible party: asn1c maintainers.
+ * History: bounded inline SEQUENCE support. Example: validate a child record.
+ */
+static int
+rust_check_sequence_tree(asn1p_module_t *module, asn1p_expr_t *sequence,
+                         asn1p_expr_t **stack, size_t depth, size_t *nodes,
+                         size_t *work) {
+    asn1p_expr_t *member;
+    size_t count = 0;
+    size_t i;
+    if(depth >= RUST_SEQUENCE_DEPTH_LIMIT || ++*nodes > RUST_SEQUENCE_NODE_LIMIT) {
+        rust_diagnostic(module, sequence, "nested SEQUENCE depth or node limit exceeded");
+        return -1;
+    }
+    for(i = 0; i < depth; i++) {
+        if(stack[i] == sequence) {
+            rust_diagnostic(module, sequence, "cyclic nested SEQUENCE is unsupported");
+            return -1;
+        }
+    }
+    if(sequence->expr_type != ASN_CONSTR_SEQUENCE || sequence->constraints
+       || sequence->combined_constraints || sequence->lhs_params
+       || sequence->ioc_table
+       || (sequence->marker.flags != EM_NOMARK
+           && sequence->marker.flags != EM_OPTIONAL)
+       || sequence->rhs_pspecs
+       || sequence->encoding_control.encoding_type != EC_NONE) {
+        rust_diagnostic(module, sequence, "nested SEQUENCE has unsupported extensions or constraints");
+        return -1;
+    }
+    stack[depth] = sequence;
+    TQ_FOR(member, &sequence->members, next) {
+        if(++count > RUST_SEQUENCE_FIELD_LIMIT
+           || ++*work > RUST_SEQUENCE_WORK_LIMIT) {
+            rust_diagnostic(module, member, "SEQUENCE aggregate field-work limit exceeded");
+            return -1;
+        }
+        if(rust_check_sequence_name(module, sequence, member)) return -1;
+        if(member->expr_type == ASN_CONSTR_SEQUENCE) {
+            if(member->marker.flags == EM_DEFAULT) {
+                rust_diagnostic(module, member, "constructed DEFAULT fields are unsupported");
+                return -1;
+            }
+            if(!rust_sequence_member_shape_valid(member)
+               || rust_check_sequence_tree(module, member, stack, depth + 1,
+                                            nodes, work)) return -1;
+        } else if(rust_check_sequence_member(module, member)) {
+            return -1;
+        }
     }
     return 0;
 }
@@ -441,6 +631,11 @@ rust_check_sequence_member(asn1p_module_t *module, asn1p_expr_t *member) {
     if(!rust_sequence_member_shape_valid(member)) {
         rust_diagnostic(module, member,
                         "SEQUENCE field must be a direct primitive with supported shape");
+        return -1;
+    }
+    if(member->members.tq_head) {
+        rust_diagnostic(module, member,
+                        "primitive SEQUENCE field cannot contain child members");
         return -1;
     }
     if(member->expr_type == ASN_BASIC_BOOLEAN
@@ -486,8 +681,7 @@ rust_sequence_member_shape_valid(const asn1p_expr_t *member) {
             || member->marker.flags == EM_OPTIONAL
             || member->marker.flags == EM_DEFAULT)
         && member->encoding_control.encoding_type == EC_NONE
-        && !member->lhs_params && !member->rhs_pspecs && !member->ioc_table
-        && !member->members.tq_head;
+        && !member->lhs_params && !member->rhs_pspecs && !member->ioc_table;
 }
 
 /*
@@ -1395,14 +1589,14 @@ rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
         return -1;
     }
     if(expr->expr_type == ASN_CONSTR_SEQUENCE) {
-        ret = rust_write_sequence(stream, name, expr);
+        ret = rust_write_all_sequences(stream, name, expr, 1);
     } else if(expr->expr_type == ASN_BASIC_BOOLEAN) {
         ret = rust_write_boolean(stream, name, codecs);
     } else if(expr->expr_type == ASN_BASIC_NULL) {
         ret = rust_write_null(stream, name, codecs);
     } else if(expr->expr_type == ASN_BASIC_OCTET_STRING
               || expr->expr_type == ASN_BASIC_BIT_STRING) {
-        ret = rust_write_string(stream, name, expr);
+        ret = rust_write_string(stream, name, expr, codecs);
     } else if(expr->expr_type == ASN_BASIC_ENUMERATED) {
         ret = rust_write_enumerated(stream, name, expr, codecs);
     } else {
@@ -1415,34 +1609,32 @@ rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
 }
 
 /*
- * Emit one flat SEQUENCE with required, OPTIONAL, and DEFAULT fields.
- * Parameters: stream receives Rust, name is the sanitized type name, and
- * expr owns validated fields. Returns zero or -1 on output failure. No
- * exception is thrown. Original source: Rust backend. Version/date: 0.2.0,
- * 2026-10-30. Responsible party: asn1c maintainers. History: first
- * constructed UPER type. Example: rust_write_sequence(out, "Packet", expr).
+ * Emit one documented SEQUENCE struct with private shared-cursor helpers.
+ * Parameters: stream receives Rust; name is its generated type name; expr owns
+ * validated fields. Returns zero or -1. Original source: Rust UPER backend.
+ * Version/date: 0.4.0, 2026-10-30. Responsible party: asn1c maintainers.
+ * History: nested-record helpers share one cursor. Example: emit Packet.
  */
 static int
-rust_write_sequence(FILE *stream, const char *name, asn1p_expr_t *expr) {
+rust_write_sequence(FILE *stream, const char *name, asn1p_expr_t *expr,
+                    int top_level) {
     asn1p_expr_t *member;
     if(fprintf(stream,
-        "/// Flat ASN.1 SEQUENCE with direct required, OPTIONAL, and DEFAULT fields.\n"
+        "/// ASN.1 SEQUENCE record with direct inline fields.\n"
         "#[derive(Clone, Debug, Eq, PartialEq)]\n"
         "pub struct %s {\n", name) < 0) return -1;
     TQ_FOR(member, &expr->members, next) {
-        if(rust_write_sequence_field(stream, member)) return -1;
+        if(rust_write_sequence_field(stream, name, member)) return -1;
     }
     if(fprintf(stream, "}\n\nimpl %s {\n", name) < 0) return -1;
     if(rust_write_method_doc(stream,
-            "Encode the complete SEQUENCE with one shared UPER budget.",
-            "`self` supplies fields; `limits` bounds the whole operation.",
-            "Returns packed bytes and meaningful bit length.",
-            "Returns an error for invalid fields or exhausted resources.",
-            "`let encoded = value.encode_uper(&Default::default())?;")) return -1;
-    if(fputs("    pub fn encode_uper(&self, limits: &::asn1c_runtime::Limits) ->\n"
-             "        ::core::result::Result<::asn1c_runtime::Encoded, "
-             "::asn1c_runtime::Error> {\n"
-             "        let mut writer = ::asn1c_runtime::UperWriter::new(limits)?;\n",
+            "Write this record's presence map and payload into the shared UPER cursor.",
+            "`self` supplies this record; `writer` belongs to the complete value.",
+            "Returns `Ok(())` after appending this record's fields.",
+            "Returns a cursor error for invalid fields or exhausted resources.",
+            "`self.encode_uper_fields(writer)?;")) return -1;
+    if(fputs("    fn encode_uper_fields(&self, writer: &mut ::asn1c_runtime::UperWriter) ->\n"
+             "        ::core::result::Result<(), ::asn1c_runtime::Error> {\n",
              stream) == EOF) return -1;
     TQ_FOR(member, &expr->members, next) {
         if(rust_write_sequence_encode_presence(stream, member)) return -1;
@@ -1450,35 +1642,83 @@ rust_write_sequence(FILE *stream, const char *name, asn1p_expr_t *expr) {
     TQ_FOR(member, &expr->members, next) {
         if(rust_write_sequence_encode_field(stream, member)) return -1;
     }
-    if(fputs("        writer.finish()\n    }\n", stream) == EOF) return -1;
+    if(fputs("        Ok(())\n    }\n\n", stream) == EOF) return -1;
     if(rust_write_method_doc(stream,
-            "Decode a complete SEQUENCE with one shared UPER budget.",
-            "`input` is the encoded prefix; `limits` bounds the whole operation.",
-            "Returns validated fields and bit/byte prefix consumption.",
-            "Returns an error for truncation, malformed fields, or exhausted resources.",
-            "`let decoded = Type::decode_uper(input, &Default::default())?;")) return -1;
-    if(fputs("    pub fn decode_uper(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
-             "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, "
-             "::asn1c_runtime::Error> {\n"
-             "        let mut reader = ::asn1c_runtime::UperReader::new(input, limits)?;\n",
+            "Read this record's presence map and payload from the shared UPER cursor.",
+            "`reader` belongs to the complete top-level value.",
+            "Returns a record with validated required, OPTIONAL, and DEFAULT fields.",
+            "Returns a cursor error for truncation, malformed values, or exhausted resources.",
+            "`let value = Self::decode_uper_fields(reader)?;")) return -1;
+    if(fputs("    fn decode_uper_fields(reader: &mut ::asn1c_runtime::UperReader) ->\n"
+             "        ::core::result::Result<Self, ::asn1c_runtime::Error> {\n",
              stream) == EOF) return -1;
     if(rust_write_sequence_decode_presence(stream, expr)) return -1;
     if(fputs("        let value = Self {\n", stream) == EOF) return -1;
     {
         size_t presence_index = 0;
         TQ_FOR(member, &expr->members, next) {
-            if(rust_write_sequence_decode_field(stream, member,
+            if(rust_write_sequence_decode_field(stream, name, member,
                                                 &presence_index)) return -1;
         }
     }
-    if(fputs("        };\n"
+    if(fputs("        };\n        Ok(value)\n    }\n\n", stream) == EOF)
+        return -1;
+    if(!top_level) return fputs("}\n\n", stream) == EOF ? -1 : 0;
+    if(rust_write_method_doc(stream,
+            "Encode the complete SEQUENCE with one shared UPER budget.",
+            "`self` supplies the record; `limits` bounds the whole operation.",
+            "Returns packed bytes and meaningful bit length.",
+            "Returns an error for invalid fields or exhausted resources.",
+            "`let encoded = value.encode_uper(&Default::default())?;")) return -1;
+    if(fputs("    pub fn encode_uper(&self, limits: &::asn1c_runtime::Limits) ->\n"
+             "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+             "        let mut writer = ::asn1c_runtime::UperWriter::new(limits)?;\n"
+             "        self.encode_uper_fields(&mut writer)?;\n"
+             "        writer.finish()\n"
+             "    }\n\n", stream) == EOF) return -1;
+    if(rust_write_method_doc(stream,
+            "Decode one complete SEQUENCE prefix with a shared UPER budget.",
+            "`input` is the encoded prefix; `limits` bounds the whole operation.",
+            "Returns validated fields and bit/byte prefix consumption.",
+            "Returns an error for truncation, malformed fields, or exhausted resources.",
+            "`let decoded = Type::decode_uper(input, &Default::default())?;")) return -1;
+    if(fputs("    pub fn decode_uper(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+             "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+             "        let mut reader = ::asn1c_runtime::UperReader::new(input, limits)?;\n"
+             "        let value = Self::decode_uper_fields(&mut reader)?;\n"
              "        let consumed = reader.finish()?;\n"
              "        Ok(::asn1c_runtime::Decoded {\n"
              "            value,\n"
              "            consumed_bits: consumed.consumed_bits,\n"
              "            consumed_bytes: consumed.consumed_bytes,\n"
-             "        })\n    }\n}\n\n", stream) == EOF) return -1;
+             "        })\n"
+             "    }\n}\n\n", stream) == EOF) return -1;
     return 0;
+}
+
+/*
+ * Emit child records before their parent so generated Rust types are declared.
+ * Parameters: stream receives Rust; name is the current generated name; expr
+ * owns the validated record tree. Returns zero or -1. Original source: Rust
+ * UPER backend. Version/date: 0.4.0, 2026-10-30. Responsible party: asn1c.
+ * History: inline nested records. Example: emit ParentChild before Parent.
+ */
+static int
+rust_write_all_sequences(FILE *stream, const char *name, asn1p_expr_t *expr,
+                         int top_level) {
+    asn1p_expr_t *member;
+    TQ_FOR(member, &expr->members, next) {
+        char *nested_name;
+        if(member->expr_type != ASN_CONSTR_SEQUENCE) continue;
+        nested_name = rust_nested_type_name(name, member);
+        if(!nested_name) return -1;
+        if(rust_write_all_sequences(stream, nested_name, member, 0)) {
+            free(nested_name);
+            return -1;
+        }
+        free(nested_name);
+    }
+    return rust_write_sequence(stream, name, expr, top_level);
 }
 
 /*
@@ -1489,15 +1729,21 @@ rust_write_sequence(FILE *stream, const char *name, asn1p_expr_t *expr) {
  * History: flat UPER SEQUENCE generation. Example: emit a BOOLEAN field.
  */
 static int
-rust_write_sequence_field(FILE *stream, asn1p_expr_t *member) {
+rust_write_sequence_field(FILE *stream, const char *parent,
+                         asn1p_expr_t *member) {
     char *name = rust_identifier(member->Identifier, 1);
-    const char *type = member->expr_type == ASN_BASIC_BOOLEAN ? "bool"
+    char *nested_type = member->expr_type == ASN_CONSTR_SEQUENCE
+        ? rust_nested_type_name(parent, member) : NULL;
+    const char *type = nested_type ? nested_type
+                       : member->expr_type == ASN_BASIC_BOOLEAN ? "bool"
                        : member->expr_type == ASN_BASIC_NULL ? "()"
                        : member->expr_type == ASN_BASIC_INTEGER ? "i64"
                        : "::std::vec::Vec<u8>";
     int ret = -1;
     if(name) {
-        ret = member->marker.flags == EM_OPTIONAL
+        if(member->expr_type == ASN_CONSTR_SEQUENCE && !nested_type) {
+            ret = -1;
+        } else ret = member->marker.flags == EM_OPTIONAL
             ? fprintf(stream,
                 "    /// ASN.1 %s OPTIONAL field state variable.\n"
                 "    pub %s: ::core::option::Option<%s>,\n",
@@ -1507,6 +1753,7 @@ rust_write_sequence_field(FILE *stream, asn1p_expr_t *member) {
                 member->Identifier, name, type);
     }
     free(name);
+    free(nested_type);
     return ret < 0 ? -1 : 0;
 }
 
@@ -1522,7 +1769,17 @@ rust_write_sequence_encode_field(FILE *stream, asn1p_expr_t *member) {
     char *name = rust_identifier(member->Identifier, 1);
     int ret = -1;
     if(!name) return -1;
-    if(member->marker.flags == EM_OPTIONAL) {
+    if(member->expr_type == ASN_CONSTR_SEQUENCE) {
+        if(member->marker.flags == EM_OPTIONAL) {
+            ret = fprintf(stream,
+                "        if let Some(value) = self.%s.as_ref() {\n"
+                "            value.encode_uper_fields(writer)?;\n"
+                "        }\n", name);
+        } else {
+            ret = fprintf(stream,
+                "        self.%s.encode_uper_fields(writer)?;\n", name);
+        }
+    } else if(member->marker.flags == EM_OPTIONAL) {
         ret = rust_write_sequence_encode_optional(stream, member, name);
     } else if(member->marker.flags == EM_DEFAULT) {
         ret = rust_write_sequence_encode_default(stream, member, name);
@@ -1703,15 +1960,35 @@ rust_write_sequence_decode_presence(FILE *stream, asn1p_expr_t *expr) {
  * rust_write_sequence_decode_field(stream, member, &index).
  */
 static int
-rust_write_sequence_decode_field(FILE *stream, asn1p_expr_t *member,
-                                 size_t *presence_index) {
+rust_write_sequence_decode_field(FILE *stream, const char *parent,
+                                 asn1p_expr_t *member, size_t *presence_index) {
     char *name = rust_identifier(member->Identifier, 1);
+    char *nested_type = member->expr_type == ASN_CONSTR_SEQUENCE
+        ? rust_nested_type_name(parent, member) : NULL;
     int ret = -1;
-    if(!name) return -1;
+    if(!name || (member->expr_type == ASN_CONSTR_SEQUENCE && !nested_type)) {
+        free(name);
+        free(nested_type);
+        return -1;
+    }
     ret = fprintf(stream, "                %s: ", name);
     if(ret < 0) {
         free(name);
+        free(nested_type);
         return -1;
+    }
+    if(member->expr_type == ASN_CONSTR_SEQUENCE) {
+        if(member->marker.flags == EM_OPTIONAL) {
+            ret = fprintf(stream,
+                "if __asn1c_presence[%zu] { Some(%s::decode_uper_fields(reader)?) } "
+                "else { None },\n", *presence_index, nested_type);
+            (*presence_index)++;
+        } else {
+            ret = fprintf(stream, "%s::decode_uper_fields(reader)?,\n", nested_type);
+        }
+        free(name);
+        free(nested_type);
+        return ret < 0 ? -1 : 0;
     }
     if(member->expr_type == ASN_BASIC_NULL) {
         if(member->marker.flags == EM_OPTIONAL) {
@@ -1723,12 +2000,14 @@ rust_write_sequence_decode_field(FILE *stream, asn1p_expr_t *member,
             ret = fputs("{ reader.read_null()?; },\n", stream);
         }
         free(name);
+        free(nested_type);
         return ret < 0 ? -1 : 0;
     }
     if(member->marker.flags == EM_DEFAULT) {
         ret = rust_write_sequence_decode_default(stream, member, *presence_index);
         (*presence_index)++;
         free(name);
+        free(nested_type);
         return ret < 0 ? -1 : 0;
     }
     if(member->marker.flags == EM_OPTIONAL) {
@@ -1737,6 +2016,7 @@ rust_write_sequence_decode_field(FILE *stream, asn1p_expr_t *member,
         (*presence_index)++;
         if(ret < 0) {
             free(name);
+            free(nested_type);
             return -1;
         }
     }
@@ -1762,6 +2042,7 @@ rust_write_sequence_decode_field(FILE *stream, asn1p_expr_t *member,
     else if(ret >= 0)
         ret = fputs(",\n", stream);
     free(name);
+    free(nested_type);
     return ret < 0 ? -1 : 0;
 }
 
@@ -1797,24 +2078,17 @@ rust_write_sequence_decode_default(FILE *stream, asn1p_expr_t *member,
 }
 
 /*
- * Emit a fixed-size OCTET STRING or BIT STRING safe UPER wrapper.
- * Parameters: stream receives source; name is the Rust type name; expr is the
- * validated fixed string assignment. Returns zero or -1 on output failure;
- * no exception is thrown.
- * Original source: X.691 fixed-size string encoding and Rust cursor API.
- * Version/date: 0.3.0, 2026-10-30. Responsible party: asn1c maintainers.
- * History: first fixed string slice. Example: rust_write_string(out, name, expr).
+ * Emit the validated constructor and accessor for fixed-size string wrappers.
+ * Parameters: stream receives Rust; length is the ASN.1 SIZE; octets selects
+ * OCTET STRING over BIT STRING. Returns zero or -1 on output failure; it
+ * throws no exception.
+ * Original source: Rust fixed-string API. Version/date: 0.4.0, 2026-10-30.
+ * Responsible party: asn1c maintainers. History: shared UPER/JER wrapper.
+ * Example: rust_write_string_constructor(out, 3, 1).
  */
 static int
-rust_write_string(FILE *stream, const char *name, asn1p_expr_t *expr) {
-    size_t length;
-    const int octets = expr->expr_type == ASN_BASIC_OCTET_STRING;
-    if(rust_fixed_size(expr, &length)) return -1;
-    if(fprintf(stream,
-        "#[derive(Clone, Debug, Eq, PartialEq)]\n"
-        "pub struct %s(\n    /// ASN.1 string payload state variable.\n"
-        "    ::std::vec::Vec<u8>\n);\n\nimpl %s {\n", name, name) < 0)
-        return -1;
+rust_write_string_constructor(FILE *stream, size_t length, int octets) {
+    size_t byte_length = octets ? length : (length + 7) / 8;
     if(rust_write_method_doc(stream,
             "Construct a validated fixed-size ASN.1 string.",
             "`value` contains packed content octets; fixed BIT STRING uses zero trailing pad bits.",
@@ -1825,10 +2099,11 @@ rust_write_string(FILE *stream, const char *name, asn1p_expr_t *expr) {
         "    pub fn new(value: ::std::vec::Vec<u8>) ->\n"
         "        ::core::result::Result<Self, ::asn1c_runtime::Error> {\n",
         stream) == EOF) return -1;
-    if((octets ? length : (length + 7) / 8) == 0) {
+    if(byte_length == 0) {
         if(fputs("        if !value.is_empty() {\n", stream) == EOF) return -1;
-    } else if(fprintf(stream, "        if value.len() != %zu {\n",
-                      octets ? length : (length + 7) / 8) < 0) return -1;
+    } else if(fprintf(stream, "        if value.len() != %zu {\n", byte_length) < 0) {
+        return -1;
+    }
     if(fputs(
         "            return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
         "                reason: \"fixed ASN.1 string has wrong byte length\",\n"
@@ -1848,8 +2123,21 @@ rust_write_string(FILE *stream, const char *name, asn1p_expr_t *expr) {
             "Returns its octets; BIT STRING unused low bits are zero.",
             "This accessor cannot fail.",
             "`let bytes = value.as_bytes();")) return -1;
-    if(fputs("    #[must_use]\n    pub fn as_bytes(&self) -> &[u8] { &self.0 }\n",
-             stream) == EOF) return -1;
+    return fputs("    #[must_use]\n    pub fn as_bytes(&self) -> &[u8] { &self.0 }\n",
+                 stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Emit selected UPER methods for one validated fixed-size string wrapper.
+ * Parameters: stream receives Rust; length is SIZE; octets selects its cursor
+ * method. Returns zero or -1 on output failure; it throws no exception.
+ * Original source: X.691 and the
+ * Rust UPER cursor. Version/date: 0.4.0, 2026-10-30. Responsible party:
+ * asn1c maintainers. History: split from the fixed-string writer. Example:
+ * rust_write_string_uper(out, 3, 1).
+ */
+static int
+rust_write_string_uper(FILE *stream, size_t length, int octets) {
     if(rust_write_method_doc(stream,
             "Encode the complete fixed-size string with UPER.",
             "`self` is the value; `limits` bounds output and work.",
@@ -1869,7 +2157,7 @@ rust_write_string(FILE *stream, const char *name, asn1p_expr_t *expr) {
             "Returns the string and consumed prefix lengths.",
             "Returns an error for truncation, malformed input, or exhausted resources.",
             "`let decoded = Type::decode_uper(input, &Default::default())?;")) return -1;
-    if(fprintf(stream,
+    return fprintf(stream,
         "    pub fn decode_uper(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
         "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
         "        let mut reader = ::asn1c_runtime::UperReader::new(input, limits)?;\n"
@@ -1879,9 +2167,76 @@ rust_write_string(FILE *stream, const char *name, asn1p_expr_t *expr) {
         "            value: Self(value),\n"
         "            consumed_bits: consumed.consumed_bits,\n"
         "            consumed_bytes: consumed.consumed_bytes,\n"
-        "        })\n    }\n}\n\n",
-        octets ? "octets" : "bit_string", length) < 0) return -1;
-    return 0;
+        "        })\n    }\n",
+        octets ? "octets" : "bit_string", length) < 0 ? -1 : 0;
+}
+
+/*
+ * Emit selected JER methods for one fixed-size OCTET STRING wrapper.
+ * Parameters: stream receives Rust; length is the declared octet count.
+ * Returns zero or -1 on output failure; it throws no exception.
+ * Original source: OCTET_STRING JER
+ * helpers in the Rust runtime. Version/date: 0.4.0, 2026-10-30. Responsible
+ * party: asn1c maintainers. History: direct fixed-size JER support. Example:
+ * rust_write_string_jer(out, 3).
+ */
+static int
+rust_write_string_jer(FILE *stream, size_t length) {
+    if(rust_write_method_doc(stream,
+            "Encode this fixed-size OCTET STRING as a JER hexadecimal string.",
+            "`self` is the validated value; `limits` bounds output and work.",
+            "Returns compact uppercase hexadecimal JSON and full byte counts.",
+            "Returns an error for invalid content or exhausted resources.",
+            "`let encoded = value.encode_jer(&Default::default())?;")) return -1;
+    if(fprintf(stream,
+        "    pub fn encode_jer(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::encode_octet_string_jer(&self.0, %zu, limits)\n"
+        "    }\n", length) < 0) return -1;
+    if(rust_write_method_doc(stream,
+            "Decode one complete fixed-size OCTET STRING JER value.",
+            "`input` is the entire JSON string; `limits` bounds input and work.",
+            "Returns the validated value and full-input byte and bit counts.",
+            "Returns an error for malformed hex, wrong size, trailing input, or limits.",
+            "`let decoded = Type::decode_jer(input, &Default::default())?;")) return -1;
+    return fprintf(stream,
+        "    pub fn decode_jer(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+        "        let decoded = ::asn1c_runtime::decode_octet_string_jer(input, %zu, limits)?;\n"
+        "        Ok(::asn1c_runtime::Decoded {\n"
+        "            value: Self(decoded.value),\n"
+        "            consumed_bits: decoded.consumed_bits,\n"
+        "            consumed_bytes: decoded.consumed_bytes,\n"
+        "        })\n"
+        "    }\n", length) < 0 ? -1 : 0;
+}
+
+/*
+ * Emit a fixed-size OCTET STRING or BIT STRING wrapper and selected codecs.
+ * Parameters: stream receives source; name is the Rust type name; expr is the
+ * validated fixed string assignment; codecs selects emitted methods. Returns
+ * zero or -1 on output failure; it throws no exception. Original source:
+ * Rust backend. Version/date:
+ * 0.4.0, 2026-10-30. Responsible party: asn1c maintainers. History: split
+ * UPER and JER emitters. Example: rust_write_string(out, name, expr, codecs).
+ */
+static int
+rust_write_string(FILE *stream, const char *name, asn1p_expr_t *expr,
+                  uint64_t codecs) {
+    size_t length;
+    const int octets = expr->expr_type == ASN_BASIC_OCTET_STRING;
+    if(rust_fixed_size(expr, &length)) return -1;
+    if(fprintf(stream,
+        "#[derive(Clone, Debug, Eq, PartialEq)]\n"
+        "pub struct %s(\n    /// ASN.1 string payload state variable.\n"
+        "    ::std::vec::Vec<u8>\n);\n\nimpl %s {\n", name, name) < 0)
+        return -1;
+    if(rust_write_string_constructor(stream, length, octets)) return -1;
+    if((codecs & RUST_CODEC_UPER)
+       && rust_write_string_uper(stream, length, octets)) return -1;
+    if(octets && (codecs & RUST_CODEC_JER)
+       && rust_write_string_jer(stream, length)) return -1;
+    return fputs("}\n\n", stream) == EOF ? -1 : 0;
 }
 
 /*

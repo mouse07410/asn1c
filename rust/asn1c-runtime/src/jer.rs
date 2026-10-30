@@ -1,8 +1,9 @@
 //! Safe, bounded primitive codecs for the compact JSON Encoding Rules (JER).
 //!
 //! This module encodes BOOLEAN, NULL, finite bounded signed `i64` INTEGER,
-//! and direct ENUMERATED values as compact C-compatible JSON tokens. Decoders
-//! accept one complete primitive with optional JSON whitespace (space, tab, LF, or CR)
+//! direct ENUMERATED values, and fixed-size OCTET STRING values as compact
+//! C-compatible JSON tokens. Decoders accept one complete primitive with
+//! optional JSON whitespace (space, tab, LF, or CR)
 //! around it. They reject any non-whitespace suffix and consume the complete
 //! supplied input, including surrounding whitespace. This is a complete-input
 //! API; it does not provide incremental or streaming token decoding.
@@ -10,7 +11,8 @@
 //! Specification: ITU-T X.697 (02/2021),
 //! <https://www.itu.int/rec/T-REC-X.697-202102-I/en>. C implementation
 //! references: `skeletons/BOOLEAN_jer.c`, `NULL_jer.c`, `NativeInteger_jer.c`,
-//! `INTEGER_jer.c`, and `ENUMERATED_jer.c`. The INTEGER lexical tests reflect vectors in
+//! `INTEGER_jer.c`, `ENUMERATED_jer.c`, and `OCTET_STRING_jer.c`. The INTEGER
+//! lexical tests reflect vectors in
 //! `tests/tests-skeletons/check-INTEGER.c`. Version/date: 2026-10-30.
 //! Responsible party: asn1c maintainers. History: initial bounded JER
 //! primitive slice. Example: `encode_boolean_jer(true, &Limits::default())?`
@@ -340,6 +342,183 @@ pub fn decode_enumerated_jer(
         .position(|name| name.as_bytes() == name_bytes)
         .ok_or_else(invalid_enumerated_token)?;
     Ok(decoded_complete(index, input.len(), consumed_bits))
+}
+
+/// Encode a fixed-size OCTET STRING as a quoted uppercase hexadecimal JSON string.
+///
+/// # Parameters
+/// `value` is the complete OCTET STRING value; `declared_size` is its ASN.1
+/// fixed `SIZE`; `limits` bounds the encoded output and byte-processing work.
+///
+/// # Returns
+/// A token such as `"00AF"` and its complete-octet bit length. Empty input
+/// encodes as `""`.
+///
+/// # Errors
+/// Returns `InvalidEncoding` when the value length differs from `declared_size`,
+/// or a checked-size, output/work-limit, or allocation error. It raises no
+/// exception.
+///
+/// # Source, version, history, and example
+/// Original source: `OCTET_STRING_encode_jer` in `skeletons/OCTET_STRING_jer.c`.
+/// Version/date: 2026-10-30. Responsible party: asn1c maintainers. History:
+/// added as fixed-size OCTET STRING JER runtime support. Example:
+/// `encode_octet_string_jer(&[0xAF], 1, limits)` emits `"AF"`.
+pub fn encode_octet_string_jer(
+    value: &[u8],
+    declared_size: usize,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    if value.len() != declared_size {
+        return Err(invalid_octet_string_size());
+    }
+
+    // Include both quotes and two hexadecimal digits per value octet.
+    let body_len = value.len().checked_mul(2).ok_or(Error::SizeOverflow)?;
+    let output_len = body_len.checked_add(2).ok_or(Error::SizeOverflow)?;
+    let bit_len = output_len.checked_mul(8).ok_or(Error::SizeOverflow)?;
+    check_work_limit(bit_len, limits)?;
+    let mut bytes = allocate_zeroed(output_len, limits)?;
+    bytes[0] = b'"';
+    for (index, octet) in value.iter().enumerate() {
+        let offset = index.checked_mul(2).ok_or(Error::SizeOverflow)?;
+        bytes[offset + 1] = b"0123456789ABCDEF"[usize::from(octet >> 4)];
+        bytes[offset + 2] = b"0123456789ABCDEF"[usize::from(octet & 0x0f)];
+    }
+    bytes[output_len - 1] = b'"';
+    Ok(Encoded { bytes, bit_len })
+}
+
+/// Decode one complete quoted hexadecimal OCTET STRING JSON token.
+///
+/// Lowercase and uppercase hexadecimal digits are accepted. The decoded byte
+/// count must exactly match `declared_size`; only JSON's four ASCII whitespace
+/// bytes may surround the quoted token.
+///
+/// # Parameters
+/// `input` is the entire primitive input; `declared_size` is its ASN.1 fixed
+/// `SIZE`; `limits` bounds input, decoded output, and processing work.
+///
+/// # Returns
+/// The decoded octets and consumption of the complete input, including
+/// surrounding whitespace.
+///
+/// # Errors
+/// Returns truncation for empty input, `InvalidEncoding` for malformed UTF-8,
+/// quotes, digits, odd digit counts, wrong lengths, or trailing tokens, and a
+/// checked-size, resource-limit, or allocation error. It raises no exception.
+///
+/// # Source, version, history, and example
+/// Original source: `OCTET_STRING_decode_jer_hex` in
+/// `skeletons/OCTET_STRING_jer.c`; this API additionally requires one complete
+/// token and the caller's fixed size. Version/date: 2026-10-30. Responsible
+/// party: asn1c maintainers. History: added as fixed-size OCTET STRING JER
+/// runtime support. Example: `decode_octet_string_jer(b"\"00af\"", 2, limits)`.
+pub fn decode_octet_string_jer(
+    input: &[u8],
+    declared_size: usize,
+    limits: &Limits,
+) -> Result<Decoded<Vec<u8>>, Error> {
+    let (token, consumed_bits) = complete_token(input, limits)?;
+    let Some(body) = token
+        .strip_prefix(b"\"")
+        .and_then(|bytes| bytes.strip_suffix(b"\""))
+    else {
+        return Err(invalid_octet_string_token());
+    };
+    if body.len() % 2 != 0 {
+        return Err(invalid_octet_string_token());
+    }
+    let expected_body_len = declared_size.checked_mul(2).ok_or(Error::SizeOverflow)?;
+    if body.len() != expected_body_len {
+        return Err(invalid_octet_string_size());
+    }
+
+    // Account for the validation and conversion passes in addition to input scanning.
+    let hex_work_bits = body.len().checked_mul(8).ok_or(Error::SizeOverflow)?;
+    let total_work = consumed_bits
+        .checked_add(hex_work_bits)
+        .ok_or(Error::SizeOverflow)?;
+    check_work_limit(total_work, limits)?;
+
+    // Reject malformed digits before reserving output, including for constrained values.
+    for pair_start in (0..body.len()).step_by(2) {
+        if hex_nibble(body[pair_start]).is_none() || hex_nibble(body[pair_start + 1]).is_none() {
+            return Err(invalid_octet_string_token());
+        }
+    }
+
+    let mut output = allocate_zeroed(declared_size, limits)?;
+    for (index, decoded_octet) in output.iter_mut().enumerate() {
+        let offset = index.checked_mul(2).ok_or(Error::SizeOverflow)?;
+        let high = hex_nibble(body[offset]).ok_or_else(invalid_octet_string_token)?;
+        let low = hex_nibble(body[offset + 1]).ok_or_else(invalid_octet_string_token)?;
+        *decoded_octet = (high << 4) | low;
+    }
+    Ok(decoded_complete(output, input.len(), consumed_bits))
+}
+
+/// Convert one ASCII hexadecimal digit to its four-bit numeric value.
+///
+/// # Parameters and returns
+/// `digit` is one candidate ASCII byte. Returns its nibble for `0`-`9`,
+/// `A`-`F`, or `a`-`f`; otherwise returns `None`.
+///
+/// # Errors
+/// This helper cannot fail, raises no exception, and allocates no memory.
+///
+/// # Source, version, history, and example
+/// Original source: hexadecimal digit mapping in `OCTET_STRING_jer.c`.
+/// Version/date: 2026-10-30. Responsible party: asn1c maintainers. History:
+/// added with fixed-size OCTET STRING JER support. Example: `hex_nibble(b'F')`
+/// returns `Some(15)`.
+const fn hex_nibble(digit: u8) -> Option<u8> {
+    match digit {
+        b'0'..=b'9' => Some(digit - b'0'),
+        b'A'..=b'F' => Some(digit - b'A' + 10),
+        b'a'..=b'f' => Some(digit - b'a' + 10),
+        _ => None,
+    }
+}
+
+/// Construct the static error for an OCTET STRING size mismatch.
+///
+/// # Parameters and returns
+/// No parameters. Returns an `InvalidEncoding` error for a nonmatching fixed
+/// `SIZE` value.
+///
+/// # Errors
+/// This helper constructs an error and cannot itself fail or raise an exception.
+///
+/// # Source, version, history, and example
+/// Original source: fixed-size validation for the generated Rust JER API.
+/// Version/date: 2026-10-30. Responsible party: asn1c maintainers. History:
+/// added with fixed-size OCTET STRING JER support. Example:
+/// `Err(invalid_octet_string_size())` reports a size mismatch.
+const fn invalid_octet_string_size() -> Error {
+    Error::InvalidEncoding {
+        reason: "OCTET STRING length does not match declared SIZE",
+    }
+}
+
+/// Construct the static error for a malformed OCTET STRING JSON token.
+///
+/// # Parameters and returns
+/// No parameters. Returns an `InvalidEncoding` error for an invalid quoted
+/// hexadecimal string.
+///
+/// # Errors
+/// This helper constructs an error and cannot itself fail or raise an exception.
+///
+/// # Source, version, history, and example
+/// Original source: strict complete-input validation for the generated Rust JER
+/// API. Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+/// History: added with fixed-size OCTET STRING JER support. Example:
+/// `Err(invalid_octet_string_token())` reports malformed hex.
+const fn invalid_octet_string_token() -> Error {
+    Error::InvalidEncoding {
+        reason: "expected one complete quoted hexadecimal OCTET STRING",
+    }
 }
 
 /// Check that a root identifier is safe as a literal JSON string body.
@@ -804,6 +983,198 @@ mod tests {
         assert_eq!(null_value.value, ());
         assert_eq!(null_value.consumed_bytes, 7);
         assert_eq!(null_value.consumed_bits, 56);
+    }
+
+    /// Verify uppercase encoding, lowercase decoding, empty values, and every octet.
+    ///
+    /// # Parameters and returns
+    /// No parameters or return value.
+    ///
+    /// # Errors
+    /// Panics only when a test assertion fails.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: fixed-size OCTET STRING JER regression tests.
+    /// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+    /// History: added with OCTET STRING JER support. Example: run with
+    /// `cargo test`.
+    #[test]
+    fn octet_string_tokens_encode_uppercase_and_round_trip_all_octets() {
+        let all_octets: Vec<u8> = (0..=u8::MAX).collect();
+        let encoded = encode_octet_string_jer(&all_octets, 256, &limits()).unwrap();
+        assert_eq!(encoded.bytes.len(), 514);
+        assert_eq!(&encoded.bytes[..5], b"\"0001");
+        assert_eq!(&encoded.bytes[encoded.bytes.len() - 5..], b"FEFF\"");
+        assert_eq!(encoded.bit_len, encoded.bytes.len() * 8);
+        assert!(encoded.bytes.iter().all(u8::is_ascii));
+
+        let decoded = decode_octet_string_jer(&encoded.bytes, 256, &limits()).unwrap();
+        assert_eq!(decoded.value, all_octets);
+        assert_eq!(decoded.consumed_bytes, encoded.bytes.len());
+        assert_eq!(decoded.consumed_bits, encoded.bit_len);
+
+        let lowercase = decode_octet_string_jer(b" \t\"00af\"\r\n", 2, &limits()).unwrap();
+        assert_eq!(lowercase.value, [0x00, 0xaf]);
+        assert_eq!(lowercase.consumed_bytes, 10);
+        assert_eq!(lowercase.consumed_bits, 80);
+
+        let empty = encode_octet_string_jer(&[], 0, &limits()).unwrap();
+        assert_eq!(empty.bytes, b"\"\"");
+        assert_eq!(
+            decode_octet_string_jer(b"\"\"", 0, &limits())
+                .unwrap()
+                .value,
+            []
+        );
+    }
+
+    /// Verify malformed OCTET STRING JSON forms and fixed-size mismatches are rejected.
+    ///
+    /// # Parameters and returns
+    /// No parameters or return value.
+    ///
+    /// # Errors
+    /// Panics only when a test assertion fails.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: strict OCTET STRING JER regression tests.
+    /// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+    /// History: added with OCTET STRING JER support. Example: run with
+    /// `cargo test`.
+    #[test]
+    fn octet_string_decoder_rejects_malformed_tokens_and_sizes() {
+        let invalid = [
+            b"".as_slice(),
+            b"\"",
+            b"00\"",
+            b"\"00",
+            b"\"0\"",
+            b"\"0G\"",
+            b"\"GG\"",
+            b"\"00\"x",
+            b"\"00\" \"01\"",
+            b"\"\\u0030\\u0030\"",
+            b"\"00\"\0",
+            b"\"\xff\"",
+        ];
+        for input in invalid {
+            assert!(
+                decode_octet_string_jer(input, 1, &limits()).is_err(),
+                "accepted {input:?}"
+            );
+        }
+        assert!(matches!(
+            decode_octet_string_jer(b"\"00\"", 0, &limits()),
+            Err(Error::InvalidEncoding { .. })
+        ));
+        assert!(matches!(
+            decode_octet_string_jer(b"\"\"", 1, &limits()),
+            Err(Error::InvalidEncoding { .. })
+        ));
+        assert!(matches!(
+            encode_octet_string_jer(&[0], 0, &limits()),
+            Err(Error::InvalidEncoding { .. })
+        ));
+    }
+
+    /// Verify every token byte mutation to a non-hex character is rejected.
+    ///
+    /// # Parameters and returns
+    /// No parameters or return value.
+    ///
+    /// # Errors
+    /// Panics only when a test assertion fails.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: deterministic malformed-input mutation regression test.
+    /// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+    /// History: added with OCTET STRING JER support. Example: run with
+    /// `cargo test`.
+    #[test]
+    fn octet_string_decoder_rejects_deterministic_malformed_mutations() {
+        let valid = b"\"0123456789ABCDEF\"";
+        for index in 1..valid.len() - 1 {
+            let mut mutated = valid.to_vec();
+            mutated[index] = b'G';
+            assert!(
+                matches!(
+                    decode_octet_string_jer(&mutated, 8, &limits()),
+                    Err(Error::InvalidEncoding { .. })
+                ),
+                "accepted mutation at byte {index}"
+            );
+        }
+    }
+
+    /// Verify OCTET STRING operations report input, output, and work limit errors.
+    ///
+    /// # Parameters and returns
+    /// No parameters or return value.
+    ///
+    /// # Errors
+    /// Panics only when a test assertion fails.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: bounded OCTET STRING JER regression tests.
+    /// Version/date: 2026-10-30. Responsible party: asn1c maintainers.
+    /// History: added with OCTET STRING JER support. Example: run with
+    /// `cargo test`.
+    #[test]
+    fn octet_string_operations_enforce_resource_limits() {
+        let encoded = b"\"00\"";
+        let input_limited = Limits {
+            max_input_bytes: 3,
+            ..limits()
+        };
+        assert!(matches!(
+            decode_octet_string_jer(encoded, 1, &input_limited),
+            Err(Error::LimitExceeded {
+                resource: Resource::InputBytes,
+                ..
+            })
+        ));
+
+        let output_limited = Limits {
+            max_output_bytes: 0,
+            ..limits()
+        };
+        assert!(matches!(
+            encode_octet_string_jer(&[0], 1, &output_limited),
+            Err(Error::LimitExceeded {
+                resource: Resource::OutputBytes,
+                ..
+            })
+        ));
+        assert!(matches!(
+            decode_octet_string_jer(encoded, 1, &output_limited),
+            Err(Error::LimitExceeded {
+                resource: Resource::OutputBytes,
+                ..
+            })
+        ));
+
+        let encode_work_limited = Limits {
+            max_work_bits: 31,
+            ..limits()
+        };
+        assert!(matches!(
+            encode_octet_string_jer(&[0], 1, &encode_work_limited),
+            Err(Error::LimitExceeded {
+                resource: Resource::WorkBits,
+                ..
+            })
+        ));
+        let decode_work_limited = Limits {
+            max_work_bits: 47,
+            ..limits()
+        };
+        assert!(matches!(
+            decode_octet_string_jer(encoded, 1, &decode_work_limited),
+            Err(Error::LimitExceeded {
+                resource: Resource::WorkBits,
+                ..
+            })
+        ));
     }
 
     /// Verify minimal integer encoding and signed `i64` boundary round trips.

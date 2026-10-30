@@ -1,6 +1,6 @@
 # Binary codec support and dispatch
 
-Source-audited on 2026-10-12 against generated descriptors, the generic
+Source-audited through 2026-10-30 against generated descriptors, the generic
 dispatcher, and CER regression cases. This records available operations, not
 blanket support for every ASN.1 type or proof of canonical conformance.
 
@@ -152,21 +152,25 @@ rejects input that does not match them.
 
 ### C SET support in OER and APER
 
-The C `SET` operation table now has OER and APER encoders and decoders for
-nonextensible `SET` types. Root members and their optionality bits follow
+The C `SET` operation table has OER and APER encoders and decoders for
+nonextensible `SET` types, plus individual extension additions in APER.
+Root members and their optionality bits follow
 canonical tag order. An untagged `CHOICE` is placed by its lowest root
 alternative tag, even when another alternative is selected or an extension
 alternative has a lower tag. The OER decoder supports input split across
 calls and frees its retained presence map when an incomplete value is freed.
 The APER codec uses child APER operations, including aligned member
-encodings. Both reject extensible `SET` descriptors and table-selected open
-types cleanly. An open component can precede its selector in canonical SET
-order; decoding that form requires deferred component resolution.
+encodings. OER rejects extensible `SET` descriptors; both codecs reject
+table-selected open types. An open component can precede its selector in
+canonical SET order; decoding that form requires deferred component resolution.
 The shared OER open-type decoder now releases incomplete or failed CHOICE
 wrappers through their descriptor, with a focused malformed-input regression.
-Generated schemas with extension additions, including trailing roots after a
-second extension marker, need additional root/addition metadata and remain
-outside SET OER, APER, and UPER support.
+Generated C UPER descriptors now carry versioned root and addition maps.
+UPER and APER encode and decode individual SET extension additions, including
+roots after a second extension marker, and skip unknown additions during
+decoding. APER uses aligned open types for additions. Legacy extensible
+descriptors and SET extension groups fail closed in both PER flavors.
+Extensible SETs remain outside the OER codec.
 
 The focused generated C regressions are
 [check-593](../tests/tests-c-compiler/check-src/check-593.-gen-UPER.c),
@@ -177,6 +181,12 @@ single-flavor generated dependencies, malformed input and metadata, and
 unsupported extensions. The runtime APER tests also cover alignment and
 truncated input. The root ordering follows [X.691 section 21][x691], while
 OER SET ordering follows [X.696 section 18][x696].
+The additional [check-596](../tests/tests-c-compiler/check-src/check-596.-gen-UPER.c)
+and [check-597](../tests/tests-c-compiler/check-src/check-597.-gen-UPER.c)
+cover versioned metadata, known and unknown UPER additions, and truncation.
+[Check-598](../tests/tests-c-compiler/check-src/check-598.-gen-APER.c)
+covers APER additions, trailing-root order, DEFAULT restoration, unknown
+additions, truncation, and malformed metadata.
 
 The generic binary selectors map to their implemented codec families.
 Basic/canonical OER and PER decode selectors share

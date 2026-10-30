@@ -16,6 +16,10 @@ asn_dec_rval_t uper_open_type_get(const asn_codec_ctx_t *opt_codec_ctx,
                                   const asn_per_constraints_t *constraints,
                                   void **sptr, asn_per_data_t *pd);
 
+/* Return the decoder status when skipping an unknown open type. */
+asn_dec_rval_t uper_open_type_skip_result(const asn_codec_ctx_t *opt_codec_ctx,
+                                          asn_per_data_t *pd);
+
 int uper_open_type_skip(const asn_codec_ctx_t *opt_codec_ctx,
                         asn_per_data_t *pd);
 

@@ -68,6 +68,7 @@ static const asn_TYPE_tag2member_t asn_MAP_T1_tag2el_1[] = {
 static const uint8_t asn_MAP_T1_mmap_1[(1 + (8 * sizeof(unsigned int)) - 1) / 8] = {
 	(1 << 7)
 };
+static const unsigned asn_MAP_T1_root_1[1] = {0};
 static 
 asn_SET_specifics_t asn_SPC_T1_specs_1 = {
 	sizeof(struct T1),
@@ -77,8 +78,14 @@ asn_SET_specifics_t asn_SPC_T1_specs_1 = {
 	.tag2el_count = 1,	/* Count of tags in the map */
 	asn_MAP_T1_tag2el_1,	/* Same as above */
 	1,	/* Count of tags in the CXER map */
-	1,	/* Whether extensible */
-	(const unsigned int *)asn_MAP_T1_mmap_1	/* Mandatory elements map */
+	2,	/* Whether extensible */
+	(const unsigned int *)asn_MAP_T1_mmap_1,	/* Mandatory elements map */
+	sizeof(asn_SET_specifics_t),	/* Metadata size */
+	ASN_SET_SPECIFICS_VERSION,	/* Metadata version */
+	asn_MAP_T1_root_1,	/* Root members in declaration order */
+	1,	/* Root member count */
+	0,	/* No extension additions */
+	0	/* Extension addition count */
 };
 asn_TYPE_descriptor_t asn_DEF_T1 = {
 	"T1",
@@ -177,6 +184,7 @@ static const asn_TYPE_tag2member_t asn_MAP_T2_tag2el_4[] = {
 static const uint8_t asn_MAP_T2_mmap_4[(1 + (8 * sizeof(unsigned int)) - 1) / 8] = {
 	(1 << 7)
 };
+static const unsigned asn_MAP_T2_root_4[1] = {0};
 static 
 asn_SET_specifics_t asn_SPC_T2_specs_4 = {
 	sizeof(struct T2),
@@ -186,8 +194,14 @@ asn_SET_specifics_t asn_SPC_T2_specs_4 = {
 	.tag2el_count = 1,	/* Count of tags in the map */
 	asn_MAP_T2_tag2el_4,	/* Same as above */
 	1,	/* Count of tags in the CXER map */
-	1,	/* Whether extensible */
-	(const unsigned int *)asn_MAP_T2_mmap_4	/* Mandatory elements map */
+	2,	/* Whether extensible */
+	(const unsigned int *)asn_MAP_T2_mmap_4,	/* Mandatory elements map */
+	sizeof(asn_SET_specifics_t),	/* Metadata size */
+	ASN_SET_SPECIFICS_VERSION,	/* Metadata version */
+	asn_MAP_T2_root_4,	/* Root members in declaration order */
+	1,	/* Root member count */
+	0,	/* No extension additions */
+	0	/* Extension addition count */
 };
 asn_TYPE_descriptor_t asn_DEF_T2 = {
 	"T2",

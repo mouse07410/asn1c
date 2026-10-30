@@ -23,6 +23,7 @@
 #include <Packet.h>
 #include <WideRecord.h>
 #include <DefaultPacket.h>
+#include <NestedPacket.h>
 
 /*
  * Description of one expected complete UPER encoding.
@@ -93,6 +94,8 @@ main(int argc, char **argv) {
     BitmapAcrossOctets_t bitmap_crossing = {0};
     DefaultPacket_t defaults_omitted = {0};
     DefaultPacket_t defaults_mixed = {0};
+    NestedPacket_t nested = {0};
+    struct maybe nested_maybe = {0};
     NULL_t null_value = 0;
     long optional_number = 2;
     long optional_single = 7;
@@ -104,6 +107,8 @@ main(int argc, char **argv) {
     BOOLEAN_t default_enabled = 1;
     long default_count = 1;
     long default_tail = 2;
+    long nested_count = 3;
+    BOOLEAN_t nested_enabled = 1;
     unsigned char optional_octet_data[] = {0xa5};
     unsigned char optional_bits_data[] = {0xa0};
     OCTET_STRING_t optional_octet = {optional_octet_data, 1};
@@ -124,7 +129,8 @@ main(int argc, char **argv) {
     const unsigned char default_omitted_bytes[] = {0x04};
     const unsigned char default_mixed_bytes[] = {0xda, 0xe0};
     const unsigned char default_present_bytes[] = {0x71, 0x80};
-    sequence_case_t cases[13];
+    const unsigned char nested_bytes[] = {0xef, 0xa0};
+    sequence_case_t cases[14];
     size_t i, count = 3;
     int failed = 0;
     (void)argv;
@@ -170,6 +176,14 @@ main(int argc, char **argv) {
     defaults_mixed.active = &default_active;
     defaults_mixed.after = &default_after;
     defaults_mixed.tail = 3;
+    nested.prefix = 1;
+    nested.fixed.flag = 0;
+    nested.fixed.count = &nested_count;
+    nested.fixed.suffix = 1;
+    nested_maybe.number = 2;
+    nested_maybe.enabled = &nested_enabled;
+    nested.maybe = &nested_maybe;
+    nested.tail = 0;
     cases[count++] = (sequence_case_t){&asn_DEF_OptionalPacket, &optional_absent,
         optional_absent_bytes, 1, 5, "OptionalPacket absent"};
     cases[count++] = (sequence_case_t){&asn_DEF_OptionalPacket, &optional_present,
@@ -188,6 +202,8 @@ main(int argc, char **argv) {
         default_omitted_bytes, 1, 7, "DefaultPacket omitted"};
     cases[count++] = (sequence_case_t){&asn_DEF_DefaultPacket, &defaults_mixed,
         default_mixed_bytes, 2, 11, "DefaultPacket mixed"};
+    cases[count++] = (sequence_case_t){&asn_DEF_NestedPacket, &nested,
+        nested_bytes, 2, 12, "NestedPacket"};
     for(i = 0; i < count; i++) failed |= check_case(&cases[i]);
     {
         void *decoded = NULL;
@@ -203,6 +219,23 @@ main(int argc, char **argv) {
             failed = 1;
         }
         if(decoded) ASN_STRUCT_FREE(asn_DEF_DefaultPacket, decoded);
+    }
+    {
+        void *decoded = NULL;
+        asn_dec_rval_t result = uper_decode_complete(
+            NULL, &asn_DEF_NestedPacket, &decoded,
+            nested_bytes, sizeof(nested_bytes));
+        NestedPacket_t *value = (NestedPacket_t *)decoded;
+        if(result.code != RC_OK || !value || value->prefix != 1
+           || value->fixed.flag != 0 || !value->fixed.count
+           || *value->fixed.count != 3 || value->fixed.suffix != 1
+           || !value->maybe || value->maybe->number != 2
+           || !value->maybe->enabled || *value->maybe->enabled != 1
+           || value->tail != 0) {
+            fprintf(stderr, "C UPER nested decoder mismatch: NestedPacket\n");
+            failed = 1;
+        }
+        if(decoded) ASN_STRUCT_FREE(asn_DEF_NestedPacket, decoded);
     }
     free(wide.wide.buf);
     return failed;

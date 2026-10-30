@@ -14,6 +14,8 @@ $(TEST_LOGS): $(ASN1C)
 EXTRA_DIST = $(srcdir)/FirstSlice.asn1 \
     $(srcdir)/SequenceSlice.asn1 \
     $(srcdir)/StringSlice.asn1 \
+    $(srcdir)/OctetJER.asn1 \
+    $(srcdir)/BitJERUnsupported.asn1 \
     $(srcdir)/BoundaryStrings.asn1 \
     $(srcdir)/OversizeOctets.asn1 \
     $(srcdir)/OversizeBits.asn1 \
@@ -25,6 +27,7 @@ EXTRA_DIST = $(srcdir)/FirstSlice.asn1 \
     $(srcdir)/SequenceOptional.asn1 \
     $(srcdir)/SequenceDefaults.asn1 \
     $(srcdir)/SequenceNested.asn1 \
+    $(srcdir)/NestedNameCollision.asn1 \
     $(srcdir)/SequenceExtension.asn1 \
     $(srcdir)/CParity.asn1 \
     $(srcdir)/Unsupported.asn1 \
@@ -47,10 +50,12 @@ EXTRA_DIST = $(srcdir)/FirstSlice.asn1 \
     $(srcdir)/boundary_conformance.rs \
     $(srcdir)/enum_conformance.rs \
     $(srcdir)/enum_jer_conformance.rs \
+    $(srcdir)/octet_jer_conformance.rs \
     $(srcdir)/c_reference.c \
     $(srcdir)/c_additional.c \
     $(srcdir)/c_jer.c \
     $(srcdir)/c_sequence.c \
+    $(srcdir)/nested_conformance.rs \
     $(srcdir)/c_string.c \
     $(srcdir)/c_enum.c \
     $(srcdir)/coverage.json \

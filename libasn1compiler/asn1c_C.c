@@ -34,6 +34,8 @@ static int _tag2el_maps_emitted_equal(const tag2el_t *left,
 		const tag2el_t *right, int count);
 static void emit_set_mandatory_map(arg_t *arg, asn1p_expr_t *expr,
 		int elements);
+static void emit_set_member_map(arg_t *arg, asn1p_expr_t *expr,
+		int root, int count);
 static int assign_set_extension_group_names(asn1p_expr_t *expr);
 
 enum onc_flags {
@@ -856,9 +858,14 @@ asn1c_lang_C_type_SET_def(arg_t *arg) {
 	int tag2el_cxer_count = 0;
 	int tags_count;
 	int all_tags_count;
+	int first_extension;
+	int root_count;
+	int extension_count;
+	int section;
 	enum tvm_compat tv_mode;
 	const char *p;
 	int saved_target = arg->target->target;
+	first_extension = compute_extensions_start(expr);
 
 	/*
 	 * Fetch every inner tag from the tag to elements map.
@@ -922,6 +929,18 @@ asn1c_lang_C_type_SET_def(arg_t *arg) {
 
 	/* Emit the mandatory-member bit map in outer SET component order. */
 	emit_set_mandatory_map(arg, expr, elements);
+	root_count = extension_count = section = 0;
+	TQ_FOR(v, &(expr->members), next) {
+		if(v->expr_type == A1TC_EXTENSIBLE) {
+			if(section < 2) section++;
+		} else if(section == 1) {
+			extension_count++;
+		} else {
+			root_count++;
+		}
+	}
+	if(root_count) emit_set_member_map(arg, expr, 1, root_count);
+	if(extension_count) emit_set_member_map(arg, expr, 0, extension_count);
 
 	if(!(expr->_type_referenced)) OUT("static \n");
 	OUT("asn_SET_specifics_t asn_SPC_%s_specs_%d = {\n",
@@ -941,9 +960,25 @@ asn1c_lang_C_type_SET_def(arg_t *arg) {
 		OUT("%d,\t/* Count of tags in the CXER map */\n",
 			tag2el_cxer_count);
 		OUT("%d,\t/* Whether extensible */\n",
-			compute_extensions_start(expr) == -1 ? 0 : 1);
-		OUT("(const unsigned int *)asn_MAP_%s_mmap_%d\t/* Mandatory elements map */\n",
+			first_extension < 0 ? 0 : 2);
+		OUT("(const unsigned int *)asn_MAP_%s_mmap_%d,\t/* Mandatory elements map */\n",
 			p, expr->_type_unique_index);
+		OUT("sizeof(asn_SET_specifics_t),\t/* Metadata size */\n");
+		OUT("ASN_SET_SPECIFICS_VERSION,\t/* Metadata version */\n");
+		if(root_count) {
+			OUT("asn_MAP_%s_root_%d,\t/* Root members in declaration order */\n",
+				p, expr->_type_unique_index);
+		} else {
+			OUT("0,\t/* No root members */\n");
+		}
+		OUT("%d,\t/* Root member count */\n", root_count);
+		if(extension_count) {
+			OUT("asn_MAP_%s_extension_%d,\t/* Additions in declaration order */\n",
+				p, expr->_type_unique_index);
+		} else {
+			OUT("0,\t/* No extension additions */\n");
+		}
+		OUT("%d\t/* Extension addition count */\n", extension_count);
 	);
 	OUT("};\n");
 
@@ -1030,6 +1065,44 @@ emit_set_mandatory_map(arg_t *arg, asn1p_expr_t *expr, int elements) {
 	}
 	);
 	OUT("\n");
+	OUT("};\n");
+}
+
+/*
+ * Purpose: emit a SET root-member or extension-addition index map.
+ * Source: ASN.1 component order and extension-marker semantics.
+ * Version/date: 2026-10-30.
+ * Parameters: arg selects output; expr is the SET; root selects the root map.
+ *             count is the number of descriptor indexes to emit.
+ * Returns: none.
+ * Errors: output errors are handled by the compiler output layer.
+ * Author: asn1c maintainers.
+ * History: Added for versioned SET PER metadata.
+ * Example: emits roots surrounding a one-member extension region.
+ */
+static void
+emit_set_member_map(arg_t *arg, asn1p_expr_t *expr, int root, int count) {
+	asn1p_expr_t *member;
+	int section = 0;
+	int member_index = 0;
+	int emitted = 0;
+	const char *map_name = root ? "root" : "extension";
+
+	OUT("static const unsigned asn_MAP_%s_%s_%d[%d] = {",
+		MKID(expr), map_name, expr->_type_unique_index, count);
+	TQ_FOR(member, &(expr->members), next) {
+		if(member->expr_type == A1TC_EXTENSIBLE) {
+			/* Keep the first addition region separate from trailing roots. */
+			if(section < 2) section++;
+			continue;
+		}
+		if((section != 1) == root) {
+			if(emitted) OUT(", ");
+			OUT("%d", member_index);
+			emitted++;
+		}
+		member_index++;
+	}
 	OUT("};\n");
 }
 

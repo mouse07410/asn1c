@@ -12,7 +12,9 @@ with typed Rust bindings and a local copy of the Rust runtime. The current
 defaults are UPER and CER. `-gen-APER` and `-gen-OER` add paired primitive
 encoders and decoders; `-gen-BER` adds BER decoding and DER encoding.
 -gen-JER adds compact JSON encoding and complete-input decoding for top-level
-BOOLEAN, NULL, bounded INTEGER, and direct nonextensible ENUMERATED assignments.
+BOOLEAN, NULL, bounded INTEGER, direct nonextensible ENUMERATED, and direct
+fixed-size nonextensible OCTET STRING assignments. OCTET STRING JER is
+available by itself or together with UPER; BIT STRING remains UPER-only.
 An explicit request for an unavailable
 codec or unsupported ASN.1 form fails before publishing output; the C
 compiler's default codec set does not select Rust codecs.
@@ -29,9 +31,10 @@ asn1c --rust -no-gen-UPER -D generated schema.asn1
 cargo check --offline --manifest-path generated/Cargo.toml
 ```
 
-For fixed-size OCTET STRING or BIT STRING, or a flat SEQUENCE of required and
-OPTIONAL direct BOOLEAN, NULL, finite bounded INTEGER, and fixed-size string
-fields, plus BOOLEAN and bounded INTEGER DEFAULT fields, select UPER alone:
+For fixed-size OCTET STRING or BIT STRING, or a SEQUENCE with required and
+OPTIONAL direct or inline nested BOOLEAN, NULL, finite bounded INTEGER, and
+fixed-size string fields, plus BOOLEAN and bounded INTEGER DEFAULT fields,
+select UPER alone:
 
 ```sh
 asn1c --rust -no-gen-CER -D generated schema.asn1
@@ -64,13 +67,15 @@ fresh directory after adding application code or running Cargo there.
 | Direct bounded INTEGER | Nonextensible finite signed i64 range; UPER codecs |
 | Top-level BOOLEAN, NULL, bounded INTEGER | CER encoding; INTEGER bounds are finite, nonextensible, and fit `i64` |
 | Runtime limits | Input bytes, output bytes, and cumulative field work for composed UPER values |
-| Flat SEQUENCE | Required and OPTIONAL direct primitive fields; BOOLEAN and bounded INTEGER DEFAULT fields; UPER-only shared cursor and presence bitmap |
-| Fixed OCTET STRING and BIT STRING | Direct nonextensible SIZE(N), 0 <= N < 65536; UPER-only, standalone or flat SEQUENCE field |
+| SEQUENCE | Required and OPTIONAL direct primitive or inline nested records; BOOLEAN and bounded INTEGER DEFAULT fields; UPER-only shared cursor and presence bitmap |
+| Fixed OCTET STRING and BIT STRING | Direct nonextensible SIZE(N), 0 <= N < 65536; UPER, standalone or SEQUENCE field |
+| Direct fixed OCTET STRING | Opt-in JER hexadecimal string encode/decode; JER alone or with UPER |
 | Direct ENUMERATED | Nonextensible root values fitting i64, up to 64 items; UPER or opt-in JER encode/decode |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Strict CER decoding; canonical short-form TLV only |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in BER prefix decoding and DER encoding with `-gen-BER` |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in APER and OER encode/decode; each call begins at an octet boundary |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in JER encode/decode of one complete JSON primitive with -gen-JER |
+| Direct fixed OCTET STRING | Opt-in JER uppercase-hex encoding, case-insensitive complete-input decoding, and resource limits |
 | Direct ENUMERATED | Opt-in JER quoted-name encode/decode; complete input, JSON whitespace, unknown-name and resource-limit checks |
 | XER, CBOR, and nonprimitive JER | Planned; unavailable in Rust mode |
 | SET, collections, variable strings, named-bit strings, extensible ENUMERATED, aliases, imports, top-level tagged types | Planned; rejected in this slice |
@@ -92,16 +97,23 @@ native `long` and may have a narrower range on 32-bit targets.
 INTEGER construction checks the
 declared range. Codecs return typed errors for malformed values, invalid
 constraints, exceeded limits, or allocation failure.
-Generated flat SEQUENCE structs expose required and DEFAULT fields directly
-and represent OPTIONAL fields as `Option<T>`. DEFAULT is supported only for
-literal BOOLEAN and in-range finite bounded INTEGER values. Their UPER methods
-write or read each OPTIONAL or DEFAULT presence bit in declaration order
-before any component payload. Encoding omits a DEFAULT payload when the field
-equals its literal; decoding substitutes the literal when absent and accepts
-a present value equal to the default. UPER ignores direct component tags,
-including `AUTOMATIC TAGS`; tagged top-level types remain unsupported. Fields
-pack without per-field padding. One budget covers the whole operation. Each field charges its wire bits plus
-eight work units, including presence bits, NULL, and singleton INTEGER fields.
+Generated SEQUENCE structs expose required and DEFAULT fields directly and
+represent OPTIONAL fields as `Option<T>`. Inline nested SEQUENCE fields use
+deterministic public Rust record types. Nested record types and aggregate field
+work are bounded during generation; cycles and generated-name collisions are
+rejected. Constructed DEFAULTs, extensions, aliases, and imports remain
+unsupported. DEFAULT is supported only for literal BOOLEAN and in-range finite
+bounded INTEGER values. Each record writes or reads its own OPTIONAL and
+DEFAULT presence bitmap immediately before that record's payload. Encoding
+omits a DEFAULT payload when the field equals its literal; decoding substitutes
+the literal when absent and accepts a present value equal to the default.
+UPER ignores direct component tags, including `AUTOMATIC TAGS`; tagged
+top-level types remain unsupported. Fields pack without per-field padding.
+Private `encode_uper_fields` and `decode_uper_fields` helpers pass one cursor
+through all records; only the public top-level methods create the cursor and
+finish the complete value. One budget covers the whole operation. Each field
+charges its wire bits plus eight work units, including presence bits, NULL, and
+singleton INTEGER fields.
 The entire decode slice counts toward the input-byte limit. Only a complete
 zero-width SEQUENCE uses one zero filler byte; a zero-width field inside a
 nonzero value adds none.
@@ -110,6 +122,12 @@ ceil(N/8) octets with unused low bits zero in the Rust API. The two string
 forms contribute N*8 and N wire bits, respectively, with no length determinant
 or per-field alignment. Constructors and cursor writes reject invalid lengths
 and nonzero unused BIT STRING bits. This subset excludes PER fragmentation.
+With `-gen-JER`, a direct fixed OCTET STRING is represented by the C-compatible
+quoted hexadecimal form. Encoding uses uppercase digits; decoding accepts
+upper- or lowercase digits and surrounding JSON whitespace, then requires the
+complete input to contain exactly the declared number of octets. JER is
+available without UPER or alongside UPER. BIT STRING JER and JER for string
+fields inside SEQUENCE remain unsupported.
 Direct ENUMERATED values are Rust enum variants. Their UPER indexes follow
 ascending ASN.1 numeric value order, including when declaration order differs.
 Unused root indexes fail decoding; a singleton uses zero meaningful bits and
@@ -170,8 +188,8 @@ test fixtures; `make install-data` installs the runtime modules. Hosted Rust CI 
 for this extension. No minimum Rust compiler version is claimed.
 
 These are first-slice gates. The [test migration plan](testing.md) remains the
-stage-wide target; unsupported DEFAULT forms, nested constructed types, SET,
-and open types still need schema and codec support. XER, CBOR, and JER for
+stage-wide target; unsupported DEFAULT forms, SET, and open types still need
+schema and codec support. XER, CBOR, and JER for
 types outside the listed primitive and ENUMERATED slices remain unimplemented.
 The CER encoder is also only a first slice and does not establish whole-runtime
 parity.
