@@ -17,13 +17,20 @@ bytes against independent vectors and C-produced primitive TLVs, BER prefix
 consumption, noncanonical but accepted BER forms, malformed input, and bounds.
 The harness also generates a BER-only crate to check codec selection.
 
+The APER/OER primitive extension adds opt-in paired encode/decode methods for
+the same direct BOOLEAN, NULL, and bounded INTEGER subset. The harness builds
+each codec alone and together, runs generated Rust vectors and malformed-input
+checks, and compares selected APER/OER bytes with a separately generated C
+fixture. Runtime tests cover additional alignment and integer-width edges.
+
 The harness covers codec selection as well as wire behavior. The default Rust
 mask contains UPER and CER; `-gen-UPER` retains both, `-no-gen-UPER` selects
 CER-only output, and `-no-gen-CER` leaves UPER enabled. `-gen-BER` adds BER/DER
-methods and `-no-gen-BER` omits them. CER-only generation is
+methods and `-no-gen-BER` omits them. APER/OER are opt-in and can be selected
+independently. CER-only generation is
 also checked with explicit `-gen-CER -no-gen-UPER`; `-no-gen-BER` leaves CER
 selected. Disabling all supported codecs and requesting
-unsupported codecs are rejected before output publication. The generated
+unsupported XER/JER/CBOR codecs are rejected before output publication. The generated
 dual-codec and CER-only APIs are checked to contain `decode_cer`, and the
 `-no-gen-CER` output is checked to omit it.
 

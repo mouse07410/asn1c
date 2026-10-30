@@ -130,6 +130,8 @@ integers. Rust CER output is selected by default with UPER; `-no-gen-UPER`
 selects CER-only output. Generated Rust types also provide a strict
 `decode_cer()` that accepts only the canonical short-form CER TLV. See
 [Rust output usage and limits](docs/rust/implementation.md).
+The same primitive Rust subset also supports opt-in APER and OER encoding and
+decoding with `-gen-APER` and `-gen-OER`.
 
 Basic/canonical OER, UPER, and APER selectors share each family's decoder;
 CBOR has its own encoder and decoder. Support still depends on the generated
@@ -178,8 +180,8 @@ for a short installation guide.
 
 `--rust` selects native Rust output as a complete compiler mode. The current
 implementation generates a standalone Cargo package with safe, dependency-free
-UPER encode/decode and CER encoding for BOOLEAN, NULL, and finite nonextensible
-INTEGER ranges fitting `i64`. Unsupported schemas, codec requests, and C-specific
+UPER, CER, and opt-in APER/OER primitive codecs for BOOLEAN, NULL, and finite
+nonextensible INTEGER ranges fitting `i64`. Unsupported schemas, codec requests, and C-specific
 output options fail with diagnostics. Build the generated package with Cargo
 in offline mode.
 

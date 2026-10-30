@@ -31,4 +31,5 @@ nobase_dist_docs_DATA = docs/binary-codec-support.md docs/cer-encoder-plan.md \
 # Installing these sources requires no Rust compiler for the C compiler build.
 nobase_dist_pkgdata_DATA = rust/asn1c-runtime/Cargo.toml \
     rust/asn1c-runtime/README.md rust/asn1c-runtime/LICENSE \
-    rust/asn1c-runtime/src/lib.rs
+    rust/asn1c-runtime/src/lib.rs rust/asn1c-runtime/src/aper.rs \
+    rust/asn1c-runtime/src/oer.rs

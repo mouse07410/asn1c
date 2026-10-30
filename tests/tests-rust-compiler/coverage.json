@@ -1,13 +1,18 @@
 {
-  "suite": "generated Rust stage-one primitive UPER, CER, and BER/DER slice",
+  "suite": "generated Rust primitive UPER, APER, OER, CER, and BER/DER slices",
   "scope": "Only the listed nonextensible primitive subset is qualified.",
   "cases": [
     {
       "asn1_type": "BOOLEAN",
       "feature": "primitive, nonextensible",
       "codec": "UPER",
-      "variants": ["basic/default UPER API"],
-      "directions": ["encode", "decode"],
+      "variants": [
+        "basic/default UPER API"
+      ],
+      "directions": [
+        "encode",
+        "decode"
+      ],
       "status": "tested",
       "evidence": "conformance.rs; c_reference.c"
     },
@@ -15,8 +20,13 @@
       "asn1_type": "NULL",
       "feature": "primitive, nonextensible, zero-width complete value",
       "codec": "UPER",
-      "variants": ["basic/default UPER API"],
-      "directions": ["encode", "decode"],
+      "variants": [
+        "basic/default UPER API"
+      ],
+      "directions": [
+        "encode",
+        "decode"
+      ],
       "status": "tested",
       "evidence": "conformance.rs; c_reference.c"
     },
@@ -24,8 +34,13 @@
       "asn1_type": "INTEGER",
       "feature": "bounded signed i64, nonextensible, range -10..10",
       "codec": "UPER",
-      "variants": ["basic/default UPER API"],
-      "directions": ["encode", "decode"],
+      "variants": [
+        "basic/default UPER API"
+      ],
+      "directions": [
+        "encode",
+        "decode"
+      ],
       "status": "tested_with_live_C_comparison",
       "evidence": "conformance.rs; c_reference.c"
     },
@@ -33,8 +48,13 @@
       "asn1_type": "INTEGER",
       "feature": "singleton range 5..5",
       "codec": "UPER",
-      "variants": ["basic/default UPER API"],
-      "directions": ["encode", "decode"],
+      "variants": [
+        "basic/default UPER API"
+      ],
+      "directions": [
+        "encode",
+        "decode"
+      ],
       "status": "tested_with_live_C_comparison",
       "evidence": "conformance.rs; c_reference.c"
     },
@@ -42,8 +62,13 @@
       "asn1_type": "INTEGER",
       "feature": "full signed i64 range",
       "codec": "UPER",
-      "variants": ["basic/default UPER API"],
-      "directions": ["encode", "decode"],
+      "variants": [
+        "basic/default UPER API"
+      ],
+      "directions": [
+        "encode",
+        "decode"
+      ],
       "status": "tested_against_fixed_golden_vectors",
       "evidence": "conformance.rs"
     },
@@ -51,8 +76,14 @@
       "asn1_type": "BOOLEAN",
       "feature": "primitive, nonextensible",
       "codec": "CER",
-      "variants": ["canonical FALSE 00", "canonical TRUE FF"],
-      "directions": ["encode", "strict decode"],
+      "variants": [
+        "canonical FALSE 00",
+        "canonical TRUE FF"
+      ],
+      "directions": [
+        "encode",
+        "strict decode"
+      ],
       "status": "tested_with_live_C_comparison",
       "evidence": "conformance.rs; c_reference.c; asn1c-runtime unit tests"
     },
@@ -60,8 +91,13 @@
       "asn1_type": "NULL",
       "feature": "primitive, nonextensible",
       "codec": "CER",
-      "variants": ["empty primitive content"],
-      "directions": ["encode", "strict decode"],
+      "variants": [
+        "empty primitive content"
+      ],
+      "directions": [
+        "encode",
+        "strict decode"
+      ],
       "status": "tested_with_live_C_comparison",
       "evidence": "conformance.rs; c_reference.c; asn1c-runtime unit tests"
     },
@@ -69,8 +105,18 @@
       "asn1_type": "INTEGER",
       "feature": "finite signed i64, minimal two's-complement content",
       "codec": "CER",
-      "variants": ["127", "128", "-128", "-129", "i64::MIN", "i64::MAX"],
-      "directions": ["encode", "strict decode"],
+      "variants": [
+        "127",
+        "128",
+        "-128",
+        "-129",
+        "i64::MIN",
+        "i64::MAX"
+      ],
+      "directions": [
+        "encode",
+        "strict decode"
+      ],
       "status": "tested_with_live_C_comparison",
       "evidence": "conformance.rs; c_reference.c; asn1c-runtime unit tests"
     },
@@ -84,9 +130,44 @@
         "BER prefix consumption",
         "BOOLEAN content is exactly one octet"
       ],
-      "directions": ["BER decode", "DER encode"],
+      "directions": [
+        "BER decode",
+        "DER encode"
+      ],
       "status": "tested_primitive_subset",
       "evidence": "conformance.rs; asn1c-runtime unit tests"
+    },
+    {
+      "asn1_type": "BOOLEAN, NULL, INTEGER",
+      "feature": "direct primitive; INTEGER finite nonextensible signed i64 bounds",
+      "codec": "APER",
+      "variants": [
+        "BOOLEAN one bit",
+        "NULL zero-width complete value",
+        "bounded INTEGER aligned range thresholds"
+      ],
+      "directions": [
+        "encode",
+        "decode"
+      ],
+      "status": "tested_primitive_subset",
+      "evidence": "additional_codecs.rs; asn1c-runtime/src/aper.rs tests; c_additional.c"
+    },
+    {
+      "asn1_type": "BOOLEAN, NULL, INTEGER",
+      "feature": "direct primitive; INTEGER finite nonextensible signed i64 bounds",
+      "codec": "OER",
+      "variants": [
+        "canonical BOOLEAN output and basic truth decoding",
+        "empty NULL",
+        "fixed-width bounded INTEGER"
+      ],
+      "directions": [
+        "encode",
+        "decode"
+      ],
+      "status": "tested_primitive_subset",
+      "evidence": "additional_codecs.rs; asn1c-runtime/src/oer.rs tests; c_additional.c"
     }
   ],
   "not_yet_implemented_by_this_Rust_slice": [
@@ -96,14 +177,9 @@
       "note": "Constructed, tagged, and other primitive types are not qualified."
     },
     {
-      "family": "APER",
+      "family": "APER/OER outside the primitive slice",
       "status": "not_implemented",
-      "note": "No generated Rust encoder or decoder is qualified."
-    },
-    {
-      "family": "OER",
-      "status": "not_implemented",
-      "note": "Basic and canonical OER are not qualified."
+      "note": "Constructed, tagged, extensible, unconstrained, and other primitive types are not qualified."
     },
     {
       "family": "XER/JER/CBOR",
@@ -137,9 +213,9 @@
       "explicit tags and encoding controls",
       "unconstrained, extensible, union, and named-number INTEGER",
       "unsupported constructed types and module-name sanitization collisions",
-      "unsupported codec and C-layout selectors",
       "duplicate --rust selectors and disabling all Rust codecs",
-      "an incomplete runtime asset set beside explicit skeletons"
+      "an incomplete runtime asset set beside explicit skeletons",
+      "unsupported XER/JER/CBOR codecs and C-layout selectors"
     ],
     "output_safety": [
       "unowned destination preservation",
@@ -153,7 +229,7 @@
     ]
   },
   "observed_counts": {
-    "generated_rust_test_functions": 12,
+    "generated_rust_test_functions": 14,
     "live_c_rust_vectors_each_direction": 8,
     "unsupported_target_or_schema_cases": 23,
     "single_octet_mutation_inputs": 768,

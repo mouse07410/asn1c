@@ -1,6 +1,6 @@
 # Rust code generation architecture
 
-**Status:** Implementation in progress; initial UPER, CER, and BER/DER slices present
+**Status:** Implementation in progress; primitive UPER, APER, OER, CER, and BER/DER slices present
 **Date:** 2026-10-11
 **Baseline:** `5a0ccf24ede9b176e8fd76861bf4855ed95f5105`
 **Scope:** An opt-in Rust target that reuses the C parser and fixer, emits a
@@ -357,9 +357,10 @@ the operand of `-D` or `-S`. Existing `-gen-*` spellings remain unchanged.
 
 Rust defaults independently to its qualified codecs. In the current slice,
 `--rust` alone selects UPER and CER. `-gen-BER` opts into BER decoding and DER
-encoding; there is no separate `-gen-DER` flag. `-no-gen-UPER` selects CER-only
+encoding; there is no separate `-gen-DER` flag. `-gen-APER` and `-gen-OER`
+select the corresponding primitive encode/decode pairs. `-no-gen-UPER` selects CER-only
 output unless BER was explicitly selected, while `-no-gen-CER` omits CER
-methods. Explicit requests for APER, OER, XER, JER, or CBOR fail before output
+methods. Explicit requests for XER, JER, or CBOR fail before output
 is created. Disabling every supported codec or selecting an unsupported ASN.1
 form also fails before output is published. The CLI keeps the C defaults
 unchanged.

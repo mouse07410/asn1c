@@ -1,6 +1,7 @@
-//! Safe, bounded UPER and CER primitives for generated ASN.1 Rust code.
+//! Safe, bounded primitive codecs for generated ASN.1 Rust code.
 //!
-//! This initial crate covers BOOLEAN, NULL, and bounded signed INTEGER values.
+//! This crate covers BOOLEAN, NULL, and bounded signed INTEGER values in a
+//! limited UPER, APER, OER, BER/DER, and CER slice.
 //! It uses only the Rust standard library and applies caller-configurable input,
 //! output, and work limits before reading bits or allocating output storage.
 //!
@@ -13,6 +14,20 @@
 #![deny(missing_docs)]
 
 use std::fmt;
+
+/// Primitive Aligned Packed Encoding Rules (APER) codecs.
+pub mod aper;
+/// Primitive Octet Encoding Rules (OER) codecs.
+pub mod oer;
+
+pub use aper::{
+    decode_boolean_aper, decode_integer_aper, decode_null_aper, encode_boolean_aper,
+    encode_integer_aper, encode_null_aper,
+};
+pub use oer::{
+    decode_boolean_oer, decode_integer_oer, decode_null_oer, encode_boolean_oer,
+    encode_integer_oer, encode_null_oer,
+};
 
 /// Default maximum number of input bytes accepted by one operation (1 MiB).
 pub const DEFAULT_MAX_INPUT_BYTES: usize = 1024 * 1024;
@@ -28,14 +43,14 @@ pub const DEFAULT_MAX_WORK_BITS: usize = 8 * 1024 * 1024;
 /// The byte limits apply to the complete provided input slice and the complete
 /// encoded output buffer. `max_work_bits` bounds meaningful UPER bits or total
 /// CER output bits processed by one operation. These finite defaults are
-/// configurable by each caller.
+/// configurable by each caller. APER and OER operations use the same ceilings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Limits {
     /// Maximum size of the entire input slice accepted by a decode operation.
     pub max_input_bytes: usize,
     /// Maximum size of an encoded output buffer, including padding bytes.
     pub max_output_bytes: usize,
-    /// Maximum UPER bits or CER output bits processed per operation.
+    /// Maximum wire bits processed by one primitive operation.
     pub max_work_bits: usize,
 }
 
@@ -52,13 +67,13 @@ pub enum Resource {
 
 /// A bounded encoding and the number of meaningful bits it contains.
 ///
-/// For UPER, `bit_len` counts meaningful bits and excludes final-byte padding.
-/// For CER, `bit_len` counts every bit in the complete octet-aligned TLV.
+/// For UPER and APER, `bit_len` counts meaningful bits; APER includes required
+/// internal alignment. OER, CER, and DER count all bits in their octets.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Encoded {
     /// Encoded bytes, including codec-specific complete-value framing.
     pub bytes: Vec<u8>,
-    /// UPER meaningful bits or total octet-aligned CER wire bits.
+    /// Meaningful PER bits or total octet-aligned OER/CER/DER wire bits.
     pub bit_len: usize,
 }
 

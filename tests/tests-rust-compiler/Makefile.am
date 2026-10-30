@@ -26,6 +26,8 @@ EXTRA_DIST = $(srcdir)/FirstSlice.asn1 \
     $(srcdir)/EncodingControl.asn1 \
     $(srcdir)/ReservedModule.asn1 \
     $(srcdir)/conformance.rs \
+    $(srcdir)/additional_codecs.rs \
     $(srcdir)/c_reference.c \
+    $(srcdir)/c_additional.c \
     $(srcdir)/coverage.json \
     $(srcdir)/README.md

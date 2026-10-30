@@ -1,4 +1,9 @@
 Changes since v1.5.3:
+	* Added opt-in generated Rust APER and OER encoding/decoding for direct
+	  BOOLEAN, NULL, and finite nonextensible signed i64 INTEGER assignments.
+	  Added bounded runtime primitives, malformed-input and range-boundary
+	  tests, generated API vectors, and offline packaging of both new modules.
+	  Constructed and open types, and XER/JER, remain outside the Rust slice.
 	* Extended the generated Rust primitive slice with opt-in BER decoding and
 	  DER encoding for BOOLEAN, NULL, and bounded i64 INTEGER. BER accepts
 	  definite long-form lengths and reports prefix consumption; DER emits

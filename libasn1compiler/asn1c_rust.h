@@ -11,13 +11,15 @@
  *   asn         Fixed parser tree.
  *   runtime_dir Directory containing the asn1c-runtime source crate.
  *   destdir     Destination project directory, or NULL for "asn1c-rust".
- *   codecs      Nonempty subset of A1C_GEN_UPER, A1C_GEN_BER, and A1C_GEN_CER.
+ *   codecs      Nonempty subset of A1C_GEN_UPER, A1C_GEN_APER, A1C_GEN_OER,
+ *               A1C_GEN_BER, and A1C_GEN_CER.
  * Returns zero on success, -1 on validation or output failure.
  * Errors are printed with ASN.1 module, type, and line where applicable.
  * Original source: new asn1c Rust backend. Version/date: 0.1.0, 2026-10-11.
  * Responsible party: asn1c maintainers. History: initial BOOLEAN, NULL, and
  * bounded INTEGER UPER and CER implementations. BER selection emits DER
- * encoding and BER decoding methods. Example: called through
+ * encoding and BER decoding methods. APER and OER selection emits both
+ * primitive directions. Example: called through
  * asn1_compile_with_target() for a Rust compilation request.
  */
 int asn1c_rust_compile(asn1p_t *asn, const char *runtime_dir,

@@ -21,7 +21,10 @@
 #define RUST_CODEC_UPER ((uint64_t)A1C_GEN_UPER)
 #define RUST_CODEC_BER ((uint64_t)A1C_GEN_BER)
 #define RUST_CODEC_CER ((uint64_t)A1C_GEN_CER)
-#define RUST_CODEC_MASK (RUST_CODEC_UPER | RUST_CODEC_BER | RUST_CODEC_CER)
+#define RUST_CODEC_APER ((uint64_t)A1C_GEN_APER)
+#define RUST_CODEC_OER ((uint64_t)A1C_GEN_OER)
+#define RUST_CODEC_MASK (RUST_CODEC_UPER | RUST_CODEC_BER | RUST_CODEC_CER \
+                         | RUST_CODEC_APER | RUST_CODEC_OER)
 #define RUST_CONSTRAINT_DEPTH_LIMIT 128
 #define RUST_IDENTIFIER_LIMIT 80
 #define RUST_MANIFEST_LIMIT (1024 * 1024)
@@ -70,6 +73,8 @@ static int rust_write_null(FILE *, const char *, uint64_t);
 static int rust_write_null_ber(FILE *);
 static int rust_write_integer(FILE *, const char *, int64_t, int64_t, uint64_t);
 static int rust_write_integer_ber(FILE *, const char *, const char *);
+static int rust_write_per_oer(FILE *, const char *, const char *,
+                              const char *, const char *);
 static int rust_write_method_doc(FILE *, const char *, const char *,
                                  const char *, const char *, const char *);
 static int rust_write_manifest(asn1p_t *, const char *);
@@ -107,7 +112,7 @@ asn1c_rust_compile(asn1p_t *asn, const char *runtime_dir,
         return -1;
     }
     if(!codecs || (codecs & ~RUST_CODEC_MASK)) {
-        fprintf(stderr, "asn1c: Rust backend supports UPER, BER, and CER only\n");
+        fprintf(stderr, "asn1c: Rust backend supports UPER, APER, OER, BER, and CER only\n");
         return -1;
     }
     if(rust_check_tree(asn)) return -1;
@@ -738,7 +743,9 @@ rust_manifest_path_allowed(const char *path) {
        || !strcmp(path, "runtime/Cargo.toml")
        || !strcmp(path, "runtime/README.md")
        || !strcmp(path, "runtime/LICENSE")
-       || !strcmp(path, "runtime/src/lib.rs")) return 1;
+       || !strcmp(path, "runtime/src/lib.rs")
+       || !strcmp(path, "runtime/src/aper.rs")
+       || !strcmp(path, "runtime/src/oer.rs")) return 1;
     if(strncmp(path, "src/", 4)) return 0;
     module_name = path + 4;
     suffix = strrchr(module_name, '.');
@@ -794,7 +801,8 @@ rust_remove_tree(const char *path) {
 static int
 rust_copy_runtime(const char *source, const char *destination) {
     static const char *const files[] = {
-        "Cargo.toml", "README.md", "LICENSE", "src/lib.rs"
+        "Cargo.toml", "README.md", "LICENSE", "src/lib.rs",
+        "src/aper.rs", "src/oer.rs"
     };
     struct stat status;
     char source_src[PATH_MAX];
@@ -1014,6 +1022,10 @@ rust_write_boolean(FILE *stream, const char *name, uint64_t codecs) {
             return -1;
     }
     if((codecs & RUST_CODEC_BER) && rust_write_boolean_ber(stream)) return -1;
+    if((codecs & RUST_CODEC_APER)
+       && rust_write_per_oer(stream, "aper", "boolean", NULL, NULL)) return -1;
+    if((codecs & RUST_CODEC_OER)
+       && rust_write_per_oer(stream, "oer", "boolean", NULL, NULL)) return -1;
     if(fputs("}\n\n", stream) == EOF) return -1;
     return 0;
 }
@@ -1128,6 +1140,10 @@ rust_write_null(FILE *stream, const char *name, uint64_t codecs) {
             return -1;
     }
     if((codecs & RUST_CODEC_BER) && rust_write_null_ber(stream)) return -1;
+    if((codecs & RUST_CODEC_APER)
+       && rust_write_per_oer(stream, "aper", "null", NULL, NULL)) return -1;
+    if((codecs & RUST_CODEC_OER)
+       && rust_write_per_oer(stream, "oer", "null", NULL, NULL)) return -1;
     if(fputs("}\n\n", stream) == EOF) return -1;
     return 0;
 }
@@ -1271,6 +1287,10 @@ rust_write_integer(FILE *stream, const char *name, int64_t lower,
     }
     if((codecs & RUST_CODEC_BER)
        && rust_write_integer_ber(stream, low, high)) return -1;
+    if((codecs & RUST_CODEC_APER)
+       && rust_write_per_oer(stream, "aper", "integer", low, high)) return -1;
+    if((codecs & RUST_CODEC_OER)
+       && rust_write_per_oer(stream, "oer", "integer", low, high)) return -1;
     if(fputs("}\n\n", stream) == EOF) return -1;
     return 0;
 }
@@ -1313,6 +1333,87 @@ rust_write_integer_ber(FILE *stream, const char *low, const char *high) {
         "        ::asn1c_runtime::decode_integer_ber(input, %s, %s, limits)\n"
         "            .map(|decoded| decoded.map(Self))\n    }\n", low, high) < 0)
         return -1;
+    return 0;
+}
+
+/*
+ * Emit one complete primitive APER or OER method pair.
+ * Parameters: stream receives Rust; codec is "aper" or "oer"; kind is one of
+ * "boolean", "null", or "integer"; low and high are required INTEGER bounds.
+ * Returns zero or -1 for invalid arguments or output failure; no exception is
+ * thrown. Original source: asn1c Rust backend. Version/date: 0.2.0,
+ * 2026-10-30. Responsible party: asn1c maintainers. History: added primitive
+ * APER/OER generation. Example: rust_write_per_oer(out, "oer", "null", NULL,
+ * NULL) emits the NULL codec pair.
+ */
+static int
+rust_write_per_oer(FILE *stream, const char *codec, const char *kind,
+                   const char *low, const char *high) {
+    char encode_args[192];
+    char decode_args[192];
+    char purpose[96];
+    char example[96];
+    const char *mapping;
+    const char *label;
+    int written;
+
+    if(!stream || !codec || !kind
+       || (strcmp(codec, "aper") && strcmp(codec, "oer"))) return -1;
+    label = !strcmp(codec, "aper") ? "APER" : "OER";
+    if(!strcmp(kind, "integer")) {
+        if(!low || !high) return -1;
+        written = snprintf(encode_args, sizeof(encode_args),
+                           "self.0, %s, %s, limits", low, high);
+        if(written < 0 || (size_t)written >= sizeof(encode_args)) return -1;
+        written = snprintf(decode_args, sizeof(decode_args),
+                           "input, %s, %s, limits", low, high);
+        if(written < 0 || (size_t)written >= sizeof(decode_args)) return -1;
+        mapping = "Self";
+    } else if(!strcmp(kind, "boolean")) {
+        strcpy(encode_args, "self.0, limits");
+        strcpy(decode_args, "input, limits");
+        mapping = "Self";
+    } else if(!strcmp(kind, "null")) {
+        strcpy(encode_args, "limits");
+        strcpy(decode_args, "input, limits");
+        mapping = "|()| Self";
+    } else {
+        return -1;
+    }
+
+    written = snprintf(purpose, sizeof(purpose), "Encode this value using %s.", label);
+    if(written < 0 || (size_t)written >= sizeof(purpose)) return -1;
+    written = snprintf(example, sizeof(example),
+                       "`let encoded = value.encode_%s(&Default::default())?;", codec);
+    if(written < 0 || (size_t)written >= sizeof(example)) return -1;
+    if(rust_write_method_doc(stream, purpose,
+            "`self` is the value; `limits` bounds output and work.",
+            "Returns encoded bytes and meaningful bit length.",
+            "Returns an error for an invalid value or exhausted resources.",
+            example)) return -1;
+    if(fprintf(stream,
+        "    pub fn encode_%s(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, "
+        "::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::encode_%s_%s(%s)\n    }\n",
+        codec, kind, codec, encode_args) < 0) return -1;
+    written = snprintf(purpose, sizeof(purpose), "Decode one %s value.", label);
+    if(written < 0 || (size_t)written >= sizeof(purpose)) return -1;
+    written = snprintf(example, sizeof(example),
+                       "`let decoded = Type::decode_%s(input, &Default::default())?;", codec);
+    if(written < 0 || (size_t)written >= sizeof(example)) return -1;
+    if(rust_write_method_doc(stream, purpose,
+            "`input` is the encoded prefix; `limits` bounds input and work.",
+            "Returns the value and consumed bit and byte counts.",
+            "Returns an error for incomplete, malformed, or over-limit input.",
+            example)) return -1;
+    if(fprintf(stream,
+        "    pub fn decode_%s(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, "
+        "::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::decode_%s_%s(%s)\n"
+        "            .map(|decoded| decoded.map(%s))\n    }\n",
+        codec, kind, codec, decode_args, mapping) < 0) return -1;
     return 0;
 }
 
@@ -1409,7 +1510,8 @@ static int
 rust_write_manifest(asn1p_t *asn, const char *stage) {
     static const char *const fixed[] = {
         "Cargo.toml", "src/lib.rs", "runtime/Cargo.toml", "runtime/README.md",
-        "runtime/LICENSE", "runtime/src/lib.rs"
+        "runtime/LICENSE", "runtime/src/lib.rs", "runtime/src/aper.rs",
+        "runtime/src/oer.rs"
     };
     char path[PATH_MAX];
     FILE *stream;
