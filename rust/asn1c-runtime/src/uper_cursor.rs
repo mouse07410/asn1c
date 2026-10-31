@@ -1612,6 +1612,78 @@ pub fn read_containing_uper(
     Ok(value)
 }
 
+/// Write a selected primitive in a UPER open-type octet envelope.
+///
+/// # Parameters and returns
+/// `writer` supplies the shared cursor; `value`, `lower`, and `upper` describe
+/// the selected INTEGER or BOOLEAN (0..1). Returns success on completion.
+///
+/// # Errors
+/// Returns invalid bounds or values and resource errors. The cursor may be
+/// partially advanced on failure.
+///
+/// # Source, version, history, and example
+/// Source: `skeletons/uper_opentype.c`. Version: 2026-10-30.
+/// Responsible: asn1c maintainers. History: selected primitive OPEN TYPE.
+/// Example: `write_open_primitive_uper(writer, 1, 0, 2)?`.
+pub fn write_open_primitive_uper(
+    writer: &mut UperWriter,
+    value: i64,
+    lower: i64,
+    upper: i64,
+) -> Result<(), Error> {
+    let (_, width) = integer_shape(lower, upper)?;
+    if width != 0 {
+        return write_containing_uper(writer, value, lower, upper, true);
+    }
+    writer.write_integer(value, lower, upper)?;
+    writer.write_integer(1, 0, 255)?;
+    writer.write_integer(0, 0, 255)
+}
+
+/// Read a selected primitive from a UPER open-type octet envelope.
+///
+/// # Parameters and returns
+/// `reader` supplies the shared cursor; `lower` and `upper` constrain the
+/// selected value. Returns the validated INTEGER or BOOLEAN as an integer.
+///
+/// # Errors
+/// Returns malformed envelope, invalid value, bounds, or resource errors.
+/// The cursor may be partially advanced on failure.
+///
+/// # Source, version, history, and example
+/// Source: `skeletons/uper_opentype.c`. Version: 2026-10-30.
+/// Responsible: asn1c maintainers. History: selected primitive OPEN TYPE.
+/// Example: `read_open_primitive_uper(reader, 0, 2)?`.
+pub fn read_open_primitive_uper(
+    reader: &mut UperReader<'_>,
+    lower: i64,
+    upper: i64,
+) -> Result<i64, Error> {
+    let (_, width) = integer_shape(lower, upper)?;
+    if width != 0 {
+        return read_containing_uper(reader, lower, upper, true);
+    }
+    let first = reader.read_integer(0, 255)?;
+    let length = if first == 0x80 {
+        reader.read_integer(0, 255)?
+    } else {
+        first
+    };
+    if length != 1 {
+        return Err(Error::InvalidEncoding {
+            reason: "invalid zero-width open type",
+        });
+    }
+    let filler = reader.read_integer(0, 255)?;
+    if filler != 0 {
+        return Err(Error::InvalidEncoding {
+            reason: "invalid zero-width open type",
+        });
+    }
+    reader.read_integer(lower, upper)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

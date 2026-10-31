@@ -17,7 +17,13 @@ cat > input.asn <<'ASN'
 TestModule DEFINITIONS AUTOMATIC TAGS ::= BEGIN
 TESTCLASS ::= CLASS { &id INTEGER UNIQUE, &Extension }
     WITH SYNTAX { ID &id EXTENSION &Extension }
-MyExtIEs TESTCLASS ::= { { ID 1 EXTENSION INTEGER (0..255) }, ... }
+Payload ::= OCTET STRING (SIZE(2))
+MyExtIEs TESTCLASS ::= { { ID 1 EXTENSION INTEGER (0..255) } |
+                         { ID 2 EXTENSION Payload }, ... }
+Reference ::= SEQUENCE {
+    id TESTCLASS.&id({MyExtIEs}),
+    extension TESTCLASS.&Extension({MyExtIEs}{@id})
+}
 RootContainer ::= SET {
     extension TESTCLASS.&Extension({MyExtIEs}{@id}),
     id TESTCLASS.&id({MyExtIEs})
@@ -38,12 +44,15 @@ cat > test_program.c <<'C_EOF'
 #include <stdlib.h>
 #include <string.h>
 #include "RootContainer.h"
+#include "Reference.h"
 #include "ExtContainer.h"
 #include "InlineAny.h"
 #include "aper_decoder.h"
 #include "aper_encoder.h"
 #include "oer_decoder.h"
 #include "oer_encoder.h"
+#include "jer_decoder.h"
+#include "jer_encoder.h"
 
 /*
  * Purpose: Round-trip a generated SET with an open root preceding its ID.
@@ -156,11 +165,124 @@ check_inline_any(void) {
     ASN_STRUCT_FREE(asn_DEF_InlineAny, decoded);
 }
 
+/* Bounded JER output storage for generated round-trip tests. */
+typedef struct jer_test_output_s {
+    char bytes[128]; /* Captured output. */
+    size_t size;     /* Output length state variable. */
+} jer_test_output_t;
+
+/*
+ * Purpose: Capture encoded JER without overflowing the test buffer.
+ * Source: Encoder callback contract. Version: 2026-10-30.
+ * Inputs: data/size are bytes; key is output state. Returns: zero or -1.
+ * Errors: Oversized output fails. Author: maintainers.
+ * History: Added for SET IOC interoperability tests. Example: Capture JSON.
+ */
+static int
+jer_test_collect(const void *data, size_t size, void *key) {
+    jer_test_output_t *out = key;
+    if(size > sizeof(out->bytes) - out->size) return -1;
+    memcpy(out->bytes + out->size, data, size);
+    out->size += size;
+    return 0;
+}
+
+/*
+ * Purpose: Verify selected SET JER values, ordering, streaming and duplicates.
+ * Source: SET IOC JER interoperability regression. Version: 2026-10-30.
+ * Inputs: none. Returns: nothing. Errors: assertions abort. Author: maintainers.
+ * History: Covers two-pass SET JER selection without owned staging buffers.
+ * Example: ID can precede or follow the encoded selected INTEGER.
+ */
+static void
+check_jer(void) {
+    static const char before[] = "{\"id\":1,\"extension\":42}";
+    static const char after[] = "{\"extension\":42,\"id\":1}";
+    static const char duplicate[] = "{\"id\":1,\"extension\":42,\"extension\":42}";
+    static const char unknown[] = "{\"extension\":42,\"id\":3}";
+    static const char octets[] = "{\"extension\":\"A1B2\",\"id\":2}";
+    static const char ext_before[] = "{\"fixed\":true,\"id\":1,\"extension\":42}";
+    static const char ext_after[] = "{\"fixed\":true,\"extension\":42,\"id\":1}";
+    RootContainer_t value = {0}, *decoded = 0;
+    Reference_t reference = {0};
+    ExtContainer_t absent = {0}, *decoded_ext = 0;
+    jer_test_output_t output = {{0}, 0};
+    asn_dec_rval_t result;
+    asn_enc_rval_t encoded;
+    size_t i;
+    value.id = 1;
+    value.extension.present = RootContainer__extension_PR_INTEGER_0_255_;
+    value.extension.choice.INTEGER_0_255_ = 42;
+    reference.id = 1;
+    reference.extension.present = Reference__extension_PR_INTEGER_0_255_;
+    reference.extension.choice.INTEGER_0_255_ = 42;
+    encoded = jer_encode(&asn_DEF_Reference, &reference, JER_F_MINIFIED, jer_test_collect, &output);
+    assert(encoded.encoded > 0);
+    result = jer_decode(0, &asn_DEF_RootContainer, (void **)&decoded, output.bytes, output.size);
+    assert(result.code == RC_OK && decoded->id == 1 && decoded->extension.choice.INTEGER_0_255_ == 42);
+    ASN_STRUCT_FREE(asn_DEF_RootContainer, decoded);
+    decoded = 0;
+    output.size = 0;
+    encoded = jer_encode(&asn_DEF_RootContainer, &value, JER_F_MINIFIED, jer_test_collect, &output);
+    assert(encoded.encoded == (ssize_t)(sizeof(after) - 1));
+    assert(output.size == sizeof(after) - 1 && !memcmp(output.bytes, after, output.size));
+    result = jer_decode(0, &asn_DEF_RootContainer, (void **)&decoded, output.bytes, output.size);
+    assert(result.code == RC_OK && decoded->id == 1 && decoded->extension.choice.INTEGER_0_255_ == 42);
+    ASN_STRUCT_FREE(asn_DEF_RootContainer, decoded);
+    decoded = 0;
+    result = jer_decode(0, &asn_DEF_RootContainer, (void **)&decoded, before, sizeof(before) - 1);
+    assert(result.code == RC_OK && decoded->id == 1 && decoded->extension.choice.INTEGER_0_255_ == 42);
+    ASN_STRUCT_FREE(asn_DEF_RootContainer, decoded);
+    decoded = 0;
+    for(i = 1; i < sizeof(after) - 1; i++) {
+        result = jer_decode(0, &asn_DEF_RootContainer, (void **)&decoded, after, i);
+        assert(result.code == RC_WMORE && result.consumed == 0 && !decoded);
+    }
+    result = jer_decode(0, &asn_DEF_RootContainer, (void **)&decoded, after, sizeof(after) - 1);
+    assert(result.code == RC_OK && decoded->id == 1 && decoded->extension.choice.INTEGER_0_255_ == 42);
+    ASN_STRUCT_FREE(asn_DEF_RootContainer, decoded);
+    decoded = 0;
+    result = jer_decode(0, &asn_DEF_RootContainer, (void **)&decoded, duplicate, sizeof(duplicate) - 1);
+    assert(result.code == RC_FAIL);
+    if(decoded) ASN_STRUCT_FREE(asn_DEF_RootContainer, decoded);
+    decoded = 0;
+    result = jer_decode(0, &asn_DEF_RootContainer, (void **)&decoded, unknown, sizeof(unknown) - 1);
+    assert(result.code == RC_FAIL);
+    if(decoded) ASN_STRUCT_FREE(asn_DEF_RootContainer, decoded);
+    value.extension.present = RootContainer__extension_PR_asn1cUnknown;
+    output.size = 0;
+    encoded = jer_encode(&asn_DEF_RootContainer, &value, JER_F_MINIFIED, jer_test_collect, &output);
+    assert(encoded.encoded == -1);
+    decoded = 0;
+    result = jer_decode(0, &asn_DEF_RootContainer, (void **)&decoded, octets, sizeof(octets) - 1);
+    assert(result.code == RC_OK && decoded->id == 2);
+    assert(decoded->extension.present == RootContainer__extension_PR_Payload);
+    assert(decoded->extension.choice.Payload.size == 2);
+    assert(decoded->extension.choice.Payload.buf[0] == 0xa1 && decoded->extension.choice.Payload.buf[1] == 0xb2);
+    ASN_STRUCT_FREE(asn_DEF_RootContainer, decoded);
+    result = jer_decode(0, &asn_DEF_ExtContainer, (void **)&decoded_ext,
+                        ext_before, sizeof(ext_before) - 1);
+    assert(result.code == RC_OK && decoded_ext->id && *decoded_ext->id == 1);
+    assert(decoded_ext->extension && decoded_ext->extension->choice.INTEGER_0_255_ == 42);
+    ASN_STRUCT_FREE(asn_DEF_ExtContainer, decoded_ext);
+    decoded_ext = 0;
+    result = jer_decode(0, &asn_DEF_ExtContainer, (void **)&decoded_ext,
+                        ext_after, sizeof(ext_after) - 1);
+    assert(result.code == RC_OK && decoded_ext->id && *decoded_ext->id == 1);
+    assert(decoded_ext->extension && decoded_ext->extension->choice.INTEGER_0_255_ == 42);
+    ASN_STRUCT_FREE(asn_DEF_ExtContainer, decoded_ext);
+    absent.fixed = 1;
+    output.size = 0;
+    encoded = jer_encode(&asn_DEF_ExtContainer, &absent, JER_F_MINIFIED, jer_test_collect, &output);
+    assert(encoded.encoded > 0);
+}
+
 /* Execute both generated IOC layouts. */
 int main(void) {
     check_root();
     check_additions();
     check_inline_any();
+    check_jer();
     return 0;
 }
 C_EOF

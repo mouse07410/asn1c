@@ -6,6 +6,7 @@
 #include <string.h>
 #include <JerGroupSet.h>
 #include <JerPlainSet.h>
+#include <JerAllOptional.h>
 #include <JerRecursive.h>
 #include <jer_decoder.h>
 #include <jer_encoder.h>
@@ -348,6 +349,90 @@ check_cbor(const JerGroupSet_t *source) {
 }
 
 /*
+ * Purpose: verify SET CBOR required fields, duplicates, and malformed inputs.
+ * Source: generated SET presence and CBOR map contracts. Version: 2026-10-30.
+ * Inputs: none. Returns: nothing. Errors: assertions detect regressions.
+ * Author: asn1c maintainers. History: added strict SET map validation.
+ * Example: an empty map cannot omit the required root member.
+ */
+static void
+check_cbor_plain_inputs(void) {
+    static const uint8_t valid[] = {0xa1, 0x64, 'r', 'o', 'o', 't', 0x01};
+    static const uint8_t both[] = {0xa2, 0x64, 'f', 'l', 'a', 'g', 0xf5,
+                                  0x64, 'r', 'o', 'o', 't', 0x01};
+    static const uint8_t empty[] = {0xa0};
+    static const uint8_t duplicate[] = {0xa2, 0x64, 'r', 'o', 'o', 't', 1,
+                                       0x64, 'r', 'o', 'o', 't', 2};
+    static const uint8_t unknown_duplicate[] = {0xa3, 0x61, 'x', 1, 0x61, 'x', 2,
+                                               0x64, 'r', 'o', 'o', 't', 1};
+    const uint8_t *inputs[] = {empty, duplicate, unknown_duplicate};
+    size_t lengths[] = {sizeof(empty), sizeof(duplicate), sizeof(unknown_duplicate)};
+    JerPlainSet_t *value = 0;
+    asn_dec_rval_t result;
+    size_t i;
+    JerAllOptional_t *optional = 0;
+
+    result = cbor_decode(0, &asn_DEF_JerAllOptional, (void **)&optional, empty, sizeof(empty));
+    assert(result.code == RC_OK && optional && !optional->flag);
+    ASN_STRUCT_FREE(asn_DEF_JerAllOptional, optional);
+    result = cbor_decode(0, &asn_DEF_JerPlainSet, (void **)&value, valid, sizeof(valid));
+    assert(result.code == RC_OK && value->root == 1 && !value->flag);
+    ASN_STRUCT_FREE(asn_DEF_JerPlainSet, value);
+    value = 0;
+    result = cbor_decode(0, &asn_DEF_JerPlainSet, (void **)&value, both, sizeof(both));
+    assert(result.code == RC_OK && value->root == 1 && value->flag && *value->flag);
+    ASN_STRUCT_FREE(asn_DEF_JerPlainSet, value);
+    for(i = 0; i < sizeof(inputs) / sizeof(inputs[0]); i++) {
+        value = 0;
+        result = cbor_decode(0, &asn_DEF_JerPlainSet, (void **)&value, inputs[i], lengths[i]);
+        assert(result.code == RC_FAIL);
+        if(value) ASN_STRUCT_FREE(asn_DEF_JerPlainSet, value);
+    }
+    for(i = 0; i < sizeof(valid); i++) {
+        value = 0;
+        result = cbor_decode(0, &asn_DEF_JerPlainSet, (void **)&value, valid, i);
+        assert(result.code != RC_OK);
+        if(value) ASN_STRUCT_FREE(asn_DEF_JerPlainSet, value);
+    }
+}
+
+/*
+ * Purpose: reject invalid CBOR input and malformed SET member descriptors.
+ * Source: SET decoder argument contracts. Version: 2026-10-30.
+ * Inputs: none. Returns: nothing. Errors: assertions detect invalid acceptance.
+ * Author: asn1c maintainers. History: added descriptor guards.
+ * Example: a missing member type must fail before dereference.
+ */
+static void
+check_cbor_bad_descriptor(void) {
+    static const uint8_t wire[] = {0xa1, 0x64, 'r', 'o', 'o', 't', 1};
+    asn_TYPE_descriptor_t td = asn_DEF_JerPlainSet;
+    asn_TYPE_member_t members[2];
+    JerPlainSet_t *value = 0;
+    asn_dec_rval_t result;
+    memcpy(members, td.elements, sizeof(members));
+    td.elements = members;
+    members[0].type = 0;
+    result = cbor_decode(0, &td, (void **)&value, wire, sizeof(wire));
+    assert(result.code == RC_FAIL && !value);
+    members[0] = asn_DEF_JerPlainSet.elements[0];
+    members[0].name = 0;
+    result = cbor_decode(0, &td, (void **)&value, wire, sizeof(wire));
+    assert(result.code == RC_FAIL && !value);
+    members[0] = asn_DEF_JerPlainSet.elements[0];
+    members[0].memb_offset = sizeof(JerPlainSet_t);
+    result = cbor_decode(0, &td, (void **)&value, wire, sizeof(wire));
+    assert(result.code == RC_FAIL && !value);
+    result = SET_decode_cbor(0, &asn_DEF_JerPlainSet, (void **)&value, 0, 1);
+    assert(result.code == RC_FAIL && !value);
+    members[0] = asn_DEF_JerPlainSet.elements[0];
+    members[1].flags |= ATF_OPEN_TYPE;
+    result = cbor_decode(0, &td, (void **)&value, wire, sizeof(wire));
+    assert(result.code == RC_OK && value && !value->flag);
+    ASN_STRUCT_FREE(asn_DEF_JerPlainSet, value);
+}
+
+/*
  * Purpose: run grouped JER and unsupported grouped CBOR regressions.
  * Source: the 601 generated-C fixture.
  * Version/date: 1.0, 2026-10-30. Inputs: none. Returns: zero on success.
@@ -369,6 +454,8 @@ main(void) {
     check_pretty(&source);
     check_inputs();
     check_cbor(&source);
+    check_cbor_plain_inputs();
+    check_cbor_bad_descriptor();
     ASN_STRUCT_FREE_CONTENTS_ONLY(asn_DEF_JerGroupSet, &source);
     return 0;
 }

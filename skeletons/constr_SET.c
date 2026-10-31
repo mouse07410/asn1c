@@ -1112,10 +1112,20 @@ SET_free(const asn_TYPE_descriptor_t *td, void *ptr,
     }
 }
 
+/*
+ * Purpose: check every present SET member and reject missing mandatory members.
+ * Source: SEQUENCE_constraint and generated SET member descriptors.
+ * Version/date: 1.1, 2026-10-30. Inputs: td/sptr identify the SET;
+ * ctfailcb/app_key receive constraint errors. Returns: zero or child failure.
+ * Exceptions: none. Author: asn1c maintainers. History: check all members.
+ * Example: a failing second member rejects the complete SET.
+ */
 int
 SET_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
                asn_app_constraint_failed_f *ctfailcb, void *app_key) {
     size_t edx;
+
+	if(!td || (td->elements_count && !td->elements)) return -1;
 
 	if(!sptr) {
 		ASN__CTFAIL(app_key, td, sptr,
@@ -1130,6 +1140,10 @@ SET_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 	for(edx = 0; edx < td->elements_count; edx++) {
 		asn_TYPE_member_t *elm = &td->elements[edx];
 		const void *memb_ptr;
+		asn_constr_check_f *constr;
+		int ret;
+
+		if(!elm->type || !elm->name) return -1;
 
 		if(elm->flags & ATF_POINTER) {
 			memb_ptr = *(const void * const *)((const char *)sptr + elm->memb_offset);
@@ -1145,13 +1159,12 @@ SET_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 			memb_ptr = (const void *)((const char *)sptr + elm->memb_offset);
 		}
 
-		if(elm->encoding_constraints.general_constraints) {
-			return elm->encoding_constraints.general_constraints(
-					elm->type, memb_ptr, ctfailcb, app_key);
-		} else {
-			return elm->type->encoding_constraints.general_constraints(
-					elm->type, memb_ptr, ctfailcb, app_key);
-		}
+		/* A successful child does not exempt later members from validation. */
+		constr = elm->encoding_constraints.general_constraints;
+		if(!constr) constr = elm->type->encoding_constraints.general_constraints;
+		if(!constr) return -1;
+		ret = constr(elm->type, memb_ptr, ctfailcb, app_key);
+		if(ret) return ret;
 	}
 
 	return 0;

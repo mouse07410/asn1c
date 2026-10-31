@@ -14,3 +14,8 @@ the old C0 00 and 80 00 contents omitted the mantissa and are rejection cases.
 The test also checks truncated inputs and malformed tags and wrapper lengths.
 The fixture was corrected after the issue #585 decoder hardening exposed it.
 
+
+check-601 exercises SET CBOR maps with required and optional members, duplicate
+known and unknown keys, truncated input, and malformed descriptors. Synthetic
+SET extension groups and present table-selected SET open values remain
+unsupported by the SET CBOR codec and are rejected.

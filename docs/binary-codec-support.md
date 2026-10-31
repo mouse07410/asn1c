@@ -188,8 +188,12 @@ additions, including selectors carried in later additions. Extension additions
 use a nested open-type envelope; OER retains the encoded value across partial
 input until its selector is available. The [generated SET IOC regression](../tests/tests-asn1c-smoke/check-SET-open-type.sh)
 covers open roots and additions with selectors in later canonical or extension
-order. OER rejects selected values that leave trailing bytes inside their
-open-type envelopes. Constructed storage validation permits pointer-recursive
+order. Direct SET OPEN TYPE members also support JER with the selector before
+or after the value; duplicate keys and mismatched selectors are rejected. For
+such SETs, incomplete JER objects return `RC_WMORE` with zero bytes consumed,
+so callers must retain and replay the complete object. OPEN TYPE leaves inside
+SET extension groups remain unsupported in JER. OER rejects selected values
+that leave trailing bytes inside their open-type envelopes. Constructed storage validation permits pointer-recursive
 layouts and rejects graphs beyond 64 nested levels, 1024 distinct cached types,
 or 16384 descriptor visits.
 
@@ -198,8 +202,10 @@ SEQUENCE subset, including inline nonextensible ENUMERATED, opaque `ANY`, and
 primitive `CONTAINING` values. Direct `ANY` supports UPER, APER, OER, and JER.
 UPER `CONTAINING` supports unconstrained BIT/OCTET STRING containing a local
 direct BOOLEAN or non-singleton bounded INTEGER, at top level or as a required
-or OPTIONAL SEQUENCE field. Other forms and IOC-selected `OPEN TYPE` are
-rejected before output publication. See the
+or OPTIONAL SEQUENCE field. A narrow UPER IOC-selected `OPEN TYPE` subset
+supports one local nonextensible object set with bounded INTEGER selectors and
+primitive BOOLEAN or bounded INTEGER rows in a two-field required SEQUENCE.
+Other forms are rejected before output publication. See the
 [Rust implementation boundary](rust/implementation.md#implemented-boundary).
 
 ### C SET support in OER and APER
@@ -259,6 +265,15 @@ covers flat SET group members in JER, split input, defaults, renamed and
 duplicate keys, malformed metadata, and explicit rejection of grouped CBOR
 SET values. CBOR group representation is not specified by this repository;
 rejecting it avoids silently emitting synthetic nested wrappers.
+
+SET constraint checking visits each present member, including OPTIONAL members,
+and rejects absent mandatory pointers. CER permits an absent OPTIONAL ANY
+member in SEQUENCE or SET, producing the usual empty component encoding when
+no other members are present. A present opaque ANY remains unsupported in CER.
+SET CBOR decoding rejects missing required members and duplicate map keys,
+including duplicate unknown keys. CBOR encoding and decoding reject a present
+IOC-selected SET OPEN TYPE until the selector-aware mapping is implemented;
+an absent OPTIONAL open field is accepted.
 
 The generic binary selectors map to their implemented codec families.
 Basic/canonical OER and PER decode selectors share

@@ -11,27 +11,44 @@
 #include <cbor_decoder.h>
 #include <cbor_support.h>
 #include <string.h>
+#include <stdlib.h>
 
 /*
- * Purpose: Detect SET descriptors containing synthetic extension-group members.
+ * Purpose: Validate basic SET layout and reject synthetic extension groups.
  * Source: Compiler-emitted ATF_EXTENSION_GROUP metadata in constr_TYPE.h.
  * Version: 1.0, 2026-10-30.
  * Parameters: td is the SET type descriptor to inspect.
  * Returns: Nonzero for invalid descriptors or descriptors with a group member.
  * Exceptions: None; this C helper reports rejection through its return value.
  * Responsible party: ASN.1 compiler runtime maintainers.
- * History: Added to prevent unsupported CBOR group handling from partially
- *          encoding or allocating decoder state.
+ * History: Added group rejection, then basic pre-allocation layout validation.
  * Example: if(SET_cbor_has_extension_groups(td)) ASN__ENCODE_FAILED;
  */
 static int
 SET_cbor_has_extension_groups(const asn_TYPE_descriptor_t *td) {
-    size_t edx;
+    size_t edx, presence_words, presence_bytes;
+    const asn_SET_specifics_t *specs;
 
-    if(!td || !td->specifics || (td->elements_count && !td->elements)) return 1;
+    if(!td || !td->op || td->op->kind != ASN_KIND_SET || !td->specifics
+       || (td->elements_count && !td->elements)) return 1;
+    specs = td->specifics;
+    presence_words = td->elements_count / (8 * sizeof(unsigned int));
+    if(td->elements_count % (8 * sizeof(unsigned int))) presence_words++;
+    if(presence_words > SIZE_MAX / sizeof(unsigned int)) return 1;
+    presence_bytes = presence_words * sizeof(unsigned int);
+    if(!specs->struct_size || specs->ctx_offset > specs->struct_size
+       || sizeof(asn_struct_ctx_t) > specs->struct_size - specs->ctx_offset
+       || specs->pres_offset > specs->struct_size
+       || presence_bytes > specs->struct_size - specs->pres_offset
+       || (td->elements_count && !specs->_mandatory_elements)) return 1;
 
     for(edx = 0; edx < td->elements_count; edx++) {
-        if(td->elements[edx].flags & ATF_EXTENSION_GROUP) return 1;
+        const asn_TYPE_member_t *member = &td->elements[edx];
+        size_t minimum = (member->flags & ATF_POINTER) ? sizeof(void *) : 1;
+        if((member->flags & ATF_EXTENSION_GROUP)
+           || !member->name || !member->type || !member->type->op
+           || member->memb_offset > specs->struct_size
+           || minimum > specs->struct_size - member->memb_offset) return 1;
     }
 
     return 0;
@@ -57,7 +74,15 @@ SET_encode_cbor(const asn_TYPE_descriptor_t *td, const void *sptr,
     size_t count = 0;
     ssize_t ret;
 
-    if(SET_cbor_has_extension_groups(td) || !sptr) ASN__ENCODE_FAILED;
+    if(SET_cbor_has_extension_groups(td) || !sptr || !cb) ASN__ENCODE_FAILED;
+
+    /* Validate all member storage before reading any value or writing output. */
+    for(edx = 0; edx < td->elements_count; edx++) {
+        asn_SET_member_view_t view;
+        if(SET_member_view(td, sptr, (unsigned)edx, ASN_SET_DIRECT_MEMBER, &view)
+           || (view.present && ((view.member->flags & ATF_OPEN_TYPE)
+                                || !view.member->type->op->cbor_encoder))) ASN__ENCODE_FAILED;
+    }
 
     /* Count present members */
     for(edx = 0; edx < td->elements_count; edx++) {
@@ -106,30 +131,56 @@ SET_encode_cbor(const asn_TYPE_descriptor_t *td, const void *sptr,
     ASN__ENCODED_OK(er);
 }
 
+/* A borrowed input key used to detect duplicate map entries after decoding. */
+typedef struct SET_cbor_key_s {
+    const uint8_t *data; /* Start of key bytes in the input. */
+    size_t size; /* Number of key bytes. */
+} SET_cbor_key_t;
+
 /*
- * Purpose: decode or skip one CBOR value selected by a SET map key.
- * Source: SET member descriptors and CBOR recursive-skip contract.
- * Version/date: 1.0, 2026-10-30. Inputs: codec/td/st describe the value;
- * key/key_len identify the member; buf/size bound the encoded value.
- * Returns: consumed bytes or -1. Exceptions: none; malformed input fails.
- * Author: asn1c maintainers. History: extracted to bound decoder complexity.
- * Example: an unknown key skips its complete CBOR value.
+ * Purpose: compare borrowed map keys for deterministic duplicate detection.
+ * Source: CBOR text key bytes. Version: 2026-10-30.
+ * Inputs: left/right point to keys. Returns: qsort ordering. Errors: none.
+ * Author: asn1c maintainers. History: added for duplicate key rejection.
+ * Example: equal text byte strings compare equal regardless of encoding length.
+ */
+static int
+SET_cbor_key_compare(const void *left, const void *right) {
+    const SET_cbor_key_t *a = left, *b = right;
+    size_t common = a->size < b->size ? a->size : b->size;
+    int order = memcmp(a->data, b->data, common);
+    if(order) return order;
+    return (a->size > b->size) - (a->size < b->size);
+}
+
+/*
+ * Purpose: decode a known SET member or skip an unknown map value.
+ * Source: SET member descriptors and CBOR skip contract. Version: 2026-10-30.
+ * Inputs: codec/td/st describe the value; seen tracks decoded members;
+ * key/key_len and buf/size bound the key and encoded value.
+ * Returns: consumed bytes or -1. Errors: malformed or duplicate members fail.
+ * Author: asn1c maintainers. History: added mandatory and duplicate tracking.
+ * Example: a second root key is rejected before decoding its value.
  */
 static ssize_t
 SET_cbor_decode_member(const asn_codec_ctx_t *codec, const asn_TYPE_descriptor_t *td, void *st,
-                       const char *key, size_t key_len, const uint8_t *buf, size_t size) {
+                       uint8_t *seen, const char *key, size_t key_len, const uint8_t *buf, size_t size) {
     size_t edx;
     for(edx = 0; edx < td->elements_count; edx++) {
         const asn_TYPE_member_t *elm = &td->elements[edx];
+        asn_SET_member_view_t view;
         void *member;
         void **slot;
         asn_dec_rval_t result;
         if(strlen(elm->name) != key_len || memcmp(elm->name, key, key_len)) continue;
+        if(seen[edx] || SET_member_view(td, st, (unsigned)edx, ASN_SET_DIRECT_MEMBER, &view)) return -1;
+        if((elm->flags & ATF_OPEN_TYPE) || !elm->type->op->cbor_decoder) return -1;
         if(elm->flags & ATF_POINTER) slot = (void **)((char *)st + elm->memb_offset);
         else { member = (char *)st + elm->memb_offset; slot = &member; }
-        if(!elm->type->op->cbor_decoder) return -1;
         result = elm->type->op->cbor_decoder(codec, elm->type, slot, buf, size);
         if(result.code != RC_OK || result.consumed > size || result.consumed > SSIZE_MAX) return -1;
+        seen[edx] = 1;
+        ASN_SET_MKPRESENT((char *)st + view.owner_specs->pres_offset, edx);
         return (ssize_t)result.consumed;
     }
     if(!size) return -1;
@@ -137,79 +188,93 @@ SET_cbor_decode_member(const asn_codec_ctx_t *codec, const asn_TYPE_descriptor_t
 }
 
 /*
- * Purpose: Decode a CBOR map into a SET value using member names as keys.
- * Source: This SET CBOR runtime skeleton.
- * Version: 1.0, 2026-10-30.
- * Parameters: opt_codec_ctx controls decoder limits; td is the SET descriptor;
- *             sptr receives the value; buf_ptr and size describe input bytes.
- * Returns: Decode status and the number of consumed bytes.
- * Exceptions: None; invalid input or unsupported descriptors return RC_FAIL.
- * Responsible party: ASN.1 compiler runtime maintainers.
- * History: Rejects unsupported extension-group descriptors before allocation.
- * Example: rval = SET_decode_cbor(ctx, td, &value, bytes, length);
+ * Purpose: validate required SET members and duplicate unknown map keys.
+ * Source: SET optional metadata and CBOR map key uniqueness. Version: 2026-10-30.
+ * Inputs: td/seen describe decoded fields; keys/count contain borrowed keys.
+ * Returns: zero for valid input, otherwise -1. Errors: none.
+ * Author: asn1c maintainers. History: added strict SET map validation.
+ * Example: an empty map cannot represent a SET with a required member.
+ */
+static int
+SET_cbor_validate_members(const asn_TYPE_descriptor_t *td, const uint8_t *seen,
+                          SET_cbor_key_t *keys, size_t count) {
+    size_t i;
+    for(i = 0; i < td->elements_count; i++) {
+        const asn_TYPE_member_t *member = &td->elements[i];
+        if(!seen[i] && !member->optional && !member->default_value_set) return -1;
+    }
+    if(count > 1) qsort(keys, count, sizeof(*keys), SET_cbor_key_compare);
+    for(i = 1; i < count; i++) {
+        if(!SET_cbor_key_compare(&keys[i - 1], &keys[i])) return -1;
+    }
+    return 0;
+}
+
+/*
+ * Purpose: decode a CBOR map into a SET with unique keys and required members.
+ * Source: SET metadata and CBOR map framing. Version: 2026-10-30.
+ * Inputs: codec controls limits, td describes SET, sptr receives the value,
+ * buf_ptr/size bound the input. Returns: decode status and consumed bytes.
+ * Errors: invalid inputs, metadata, malformed keys or child failures return RC_FAIL.
+ * Author: asn1c maintainers. History: reject duplicates and missing members.
+ * Example: an empty map is accepted only when all members are optional.
  */
 asn_dec_rval_t
-SET_decode_cbor(const asn_codec_ctx_t *opt_codec_ctx,
-                const asn_TYPE_descriptor_t *td,
+SET_decode_cbor(const asn_codec_ctx_t *codec, const asn_TYPE_descriptor_t *td,
                 void **sptr, const void *buf_ptr, size_t size) {
     const asn_SET_specifics_t *specs;
+    const uint8_t *buf = buf_ptr;
+    SET_cbor_key_t *keys = 0;
+    uint8_t *seen = 0, major;
+    uint64_t map_count, i;
+    size_t consumed = 0, edx;
+    ssize_t used;
     void *st;
-    const uint8_t *buf = (const uint8_t *)buf_ptr;
-    uint8_t major;
-    uint64_t map_count;
-    ssize_t hlen;
-    size_t consumed = 0;
-    uint64_t i;
     asn_dec_rval_t rval = {RC_FAIL, 0};
 
-    if(SET_cbor_has_extension_groups(td) || !sptr || !td->specifics) {
-        ASN__DECODE_FAILED;
-    }
-    specs = (const asn_SET_specifics_t *)td->specifics;
+    if(SET_cbor_has_extension_groups(td) || !sptr || !buf || size > SSIZE_MAX
+       || ASN__STACK_OVERFLOW_CHECK(codec)) return rval;
+    specs = td->specifics;
+    if(!specs->struct_size) return rval;
     st = *sptr;
-
     if(!st) {
         st = *sptr = CALLOC(1, specs->struct_size);
-        if(!st) ASN__DECODE_FAILED;
+        if(!st) return rval;
     }
-
-    if(ASN__STACK_OVERFLOW_CHECK(opt_codec_ctx)) ASN__DECODE_FAILED;
-
-    /* Skip any leading CBOR tags (RFC 8949 §3.4) */
-    {
-        ssize_t tag_skip = cbor_skip_tags(buf, size);
-        if(tag_skip < 0) ASN__DECODE_FAILED;
-        consumed += (size_t)tag_skip;
+    /* Validate each member layout before decoding any incoming map values. */
+    for(edx = 0; edx < td->elements_count; edx++) {
+        asn_SET_member_view_t view;
+        if(SET_member_view(td, st, (unsigned)edx, ASN_SET_DIRECT_MEMBER, &view)) return rval;
     }
-
-    hlen = cbor_decode_head(buf + consumed, size - consumed, &major, &map_count);
-    if(hlen < 0 || major != CBOR_MAJOR_MAP) ASN__DECODE_FAILED;
-    consumed += (size_t)hlen;
-
+    used = cbor_skip_tags(buf, size);
+    if(used < 0 || (size_t)used > size) return rval;
+    consumed = (size_t)used;
+    used = cbor_decode_head(buf + consumed, size - consumed, &major, &map_count);
+    if(used < 0 || (size_t)used > size - consumed || major != CBOR_MAJOR_MAP) return rval;
+    consumed += (size_t)used;
+    /* Every pair needs at least a key header and a value, bounding allocations. */
+    if(map_count > (size - consumed) / 2 || map_count > SIZE_MAX / sizeof(*keys)) return rval;
+    if(map_count && !(keys = CALLOC((size_t)map_count, sizeof(*keys)))) return rval;
+    if(td->elements_count && !(seen = CALLOC(td->elements_count, 1))) goto done;
     for(i = 0; i < map_count; i++) {
-        uint8_t key_major;
         uint64_t key_len;
-        ssize_t key_hlen;
-        const char *key_str;
-
-        if(consumed >= size) ASN__DECODE_FAILED;
-        key_hlen = cbor_decode_head(buf + consumed, size - consumed,
-                                    &key_major, &key_len);
-        if(key_hlen < 0 || key_major != CBOR_MAJOR_TEXT) ASN__DECODE_FAILED;
-        consumed += (size_t)key_hlen;
-        if(size - consumed < key_len) ASN__DECODE_FAILED;
-        key_str = (const char *)(buf + consumed);
+        used = cbor_decode_head(buf + consumed, size - consumed, &major, &key_len);
+        if(used < 0 || (size_t)used > size - consumed || major != CBOR_MAJOR_TEXT) goto done;
+        consumed += (size_t)used;
+        if(key_len > size - consumed) goto done;
+        keys[i].data = buf + consumed;
+        keys[i].size = (size_t)key_len;
         consumed += (size_t)key_len;
-
-        {
-            ssize_t used = SET_cbor_decode_member(opt_codec_ctx, td, st, key_str, (size_t)key_len,
-                                                  buf + consumed, size - consumed);
-            if(used < 0 || (size_t)used > size - consumed) ASN__DECODE_FAILED;
-            consumed += (size_t)used;
-        }
+        used = SET_cbor_decode_member(codec, td, st, seen, (const char *)keys[i].data,
+                                      keys[i].size, buf + consumed, size - consumed);
+        if(used < 0 || (size_t)used > size - consumed) goto done;
+        consumed += (size_t)used;
     }
-
-    rval.consumed = consumed;
+    if(SET_cbor_validate_members(td, seen, keys, (size_t)map_count)) goto done;
     rval.code = RC_OK;
+    rval.consumed = consumed;
+done:
+    FREEMEM(seen);
+    FREEMEM(keys);
     return rval;
 }

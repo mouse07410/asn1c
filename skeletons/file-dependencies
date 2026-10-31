@@ -339,7 +339,7 @@ constr_CHOICE.h constr_CHOICE_jer.c
 constr_SEQUENCE_OF.h constr_SEQUENCE_OF_jer.c
 constr_SEQUENCE.h constr_SEQUENCE_jer.c
 constr_SET_OF.h constr_SET_OF_jer.c
-constr_SET.h constr_SET_jer.c
+constr_SET.h constr_SET_jer.c OPEN_TYPE.h
 
 CODEC-CBOR:# THIS IS A SPECIAL SECTION
 cbor_support.h

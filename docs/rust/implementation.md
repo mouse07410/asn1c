@@ -90,8 +90,9 @@ fresh directory after adding application code or running Cargo there.
 | Direct ENUMERATED | Opt-in JER quoted-name encode/decode; complete input, JSON whitespace, unknown-name and resource-limit checks |
 | XER, CBOR, and nonprimitive JER | Planned; unavailable in Rust mode |
 | SET, collections, extensible, unbounded, fragmented or disjoint strings, named-bit strings, extensible ENUMERATED, aliases, imports, top-level tagged types | Planned; rejected in this slice |
-| Encoding controls, information objects, parameterized types | Planned; rejected in this slice |
-| Other CONTAINING forms and IOC-selected OPEN TYPE | Unsupported; rejected before output publication |
+| Encoding controls, other information-object forms, parameterized types | Planned; rejected in this slice |
+| IOC-selected OPEN TYPE | UPER only; one local nonextensible object set, bounded INTEGER selector, direct BOOLEAN or bounded INTEGER rows, and a two-field required SEQUENCE |
+| Other CONTAINING and OPEN TYPE forms | Unsupported; rejected before output publication |
 | ANY in SEQUENCE outside UPER, and ANY under BER/DER, CER, XER, or CBOR | Require codec-specific opaque-value semantics; rejected before output publication |
 
 BOOLEAN and INTEGER wrappers expose constructors, value getters, and the
@@ -224,4 +225,4 @@ types outside the listed primitive, string, and ENUMERATED slices remain unimple
 The CER encoder is also only a first slice and does not establish whole-runtime
 parity.
 
-The [OPEN TYPE plan](open-type-plan.md) describes future selector-driven Rust support.
+The [OPEN TYPE boundary and plan](open-type-plan.md) describes the current selector-driven subset and future work.

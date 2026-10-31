@@ -48,6 +48,27 @@ typedef struct rust_output_s {
     int target_moved;      /* Backup-rename state variable. */
 } rust_output_t;
 
+/* Bounded, nonextensible IOC-selected primitive row. */
+typedef struct rust_open_row_s {
+    int64_t key;   /* Selector key state variable. */
+    int64_t lower; /* Inclusive value lower bound state variable. */
+    int64_t upper; /* Inclusive value upper bound state variable. */
+    int boolean;   /* BOOLEAN row state variable. */
+} rust_open_row_t;
+
+/* Validated one-record IOC OPEN TYPE generation plan. */
+typedef struct rust_open_plan_s {
+    asn1p_expr_t *sequence; /* Containing record state variable. */
+    asn1p_expr_t *selector; /* Required selector member state variable. */
+    asn1p_expr_t *member;   /* Required selected member state variable. */
+    int64_t lower;         /* Selector lower bound state variable. */
+    int64_t upper;         /* Selector upper bound state variable. */
+    size_t rows;           /* Validated row count state variable. */
+    rust_open_row_t row[32]; /* Bounded row state variables. */
+} rust_open_plan_t;
+
+static int rust_open_module_plan(asn1p_module_t *, rust_open_plan_t *);
+static int rust_write_open_module(FILE *, const rust_open_plan_t *);
 static char *rust_identifier(const char *, int);
 static char *rust_enum_variant(const char *);
 static int rust_check_tree(asn1p_t *, uint64_t);
@@ -301,6 +322,17 @@ rust_check_module_name(asn1p_t *asn, asn1p_module_t *module) {
 static int
 rust_check_module_types(asn1p_module_t *module, int *emitted, uint64_t codecs) {
     asn1p_expr_t *expr;
+    {
+        rust_open_plan_t open_plan;
+        if(!rust_open_module_plan(module, &open_plan)) {
+            if(codecs != RUST_CODEC_UPER) {
+                rust_diagnostic(module, open_plan.sequence, "selected OPEN TYPE requires UPER only");
+                return -1;
+            }
+            (*emitted)++;
+            return 0;
+        }
+    }
     if(rust_check_module_nested_names(module)) return -1;
     TQ_FOR(expr, &module->members, next) {
         if(expr->meta_type != AMT_TYPE) {
@@ -313,6 +345,239 @@ rust_check_module_types(asn1p_module_t *module, int *emitted, uint64_t codecs) {
         (*emitted)++;
     }
     return 0;
+}
+
+/* Locate an uncombined component relation constraint.
+ * Inputs: node is a constraint tree; depth bounds recursion. Returns the
+ * relation or NULL; no exceptions. Source: fixed IOC tree. Version: 2026-10-30.
+ * Responsible: asn1c maintainers. History: narrow OPEN TYPE gate.
+ * Example: a sole ({Set}{@id}) constraint returns its relation.
+ */
+static const asn1p_constraint_t *
+rust_open_relation(const asn1p_constraint_t *node, unsigned depth) {
+    if(!node || depth > RUST_CONSTRAINT_DEPTH_LIMIT) return NULL;
+    if(node->type == ACT_CA_CRC) return node;
+    if(node->type == ACT_CA_SET && node->el_count == 1)
+        return rust_open_relation(node->elements[0], depth + 1);
+    return NULL;
+}
+
+/* Match a direct object-set or selector reference in an IOC relation.
+ * Inputs: relation, element index, and expected name. Returns one on match;
+ * no exceptions. Source: ASN.1 component relation AST. Version: 2026-10-30.
+ * Responsible: asn1c maintainers. History: narrow OPEN TYPE gate.
+ * Example: rust_open_ref(relation, 0, "Set").
+ */
+static int
+rust_open_ref(const asn1p_constraint_t *relation, size_t index, const char *name) {
+    const asn1p_constraint_t *item;
+    const asn1p_ref_t *ref;
+    if(!relation || !name || index >= relation->el_count || !(item = relation->elements[index])
+       || item->type != ACT_EL_VALUE || !item->value || item->value->type != ATV_REFERENCED
+       || !(ref = item->value->value.reference) || ref->comp_count != 1 || !ref->components[0].name) return 0;
+    return !strcmp(ref->components[0].name, name);
+}
+
+/* Extract selector and type cells from a two-column IOC row.
+ * Inputs: row and column names identify the cells; key and value receive them.
+ * Returns zero or -1; no exceptions. Source: fixed IOC table. Version:
+ * 2026-10-30. Responsible: asn1c maintainers. History: selected primitive rows.
+ * Example: extract &id and &Type from one row.
+ */
+static int
+rust_open_cells(const asn1p_ioc_row_t *row, const char *selector, const char *type,
+                asn1p_expr_t **key, asn1p_expr_t **value) {
+    size_t i;
+    *key = NULL;
+    *value = NULL;
+    if(!row || !row->column || row->columns != 2) return -1;
+    for(i = 0; i < row->columns; i++) {
+        const struct asn1p_ioc_cell_s *cell = &row->column[i];
+        if(!cell->field || !cell->field->Identifier || !cell->value) return -1;
+        if(!strcmp(cell->field->Identifier, selector)) *key = cell->value;
+        else if(!strcmp(cell->field->Identifier, type)) *value = cell->value;
+        else return -1;
+    }
+    return *key && *value ? 0 : -1;
+}
+
+/* Extract and validate a selected IOC row.
+ * Inputs: row is one class row, selector/type names identify its columns,
+ * output receives bounds and key. Returns zero or -1; no exceptions.
+ * Source: fixed IOC table. Version: 2026-10-30. Responsible: asn1c maintainers.
+ * History: selected primitive rows. Example: BOOLEAN selected by integer 1.
+ */
+static int
+rust_open_row(const asn1p_ioc_row_t *row, const char *selector, const char *type,
+              rust_open_row_t *out) {
+    asn1p_expr_t *key, *value;
+    if(rust_open_cells(row, selector, type, &key, &value)
+       || !key->value || key->value->type != ATV_INTEGER
+       || value->meta_type != AMT_TYPE || value->tag.tag_class != TC_NOCLASS
+       || value->lhs_params || value->rhs_pspecs || value->members.tq_head || value->ioc_table) return -1;
+    if(key->value->value.v_integer < -(asn1c_integer_t)INT64_MAX - 1
+       || key->value->value.v_integer > (asn1c_integer_t)INT64_MAX) return -1;
+    out->key = (int64_t)key->value->value.v_integer;
+    if(value->expr_type == ASN_BASIC_BOOLEAN && !value->constraints && !value->combined_constraints) {
+        out->boolean = 1; out->lower = 0; out->upper = 1;
+        return 0;
+    }
+    if(value->expr_type != ASN_BASIC_INTEGER || !value->combined_constraints
+       || !rust_constraint_supported(value->combined_constraints, 0)
+       || rust_integer_bounds(value, &out->lower, &out->upper)) return -1;
+    out->boolean = 0;
+    return 0;
+}
+
+/* Reject encoding controls and parameters on an OPEN TYPE record member.
+ * Input: expr is one fixed record or member. Returns one if unsupported
+ * attributes are absent, zero otherwise; no exceptions. Source: fixed tree.
+ * Version: 2026-10-30. Responsible: asn1c maintainers. History: UPER gate.
+ * Example: a direct unparameterized member is accepted.
+ */
+static int
+rust_open_plain_expr(const asn1p_expr_t *expr) {
+    return expr && expr->encoding_control.encoding_type == EC_NONE
+        && !expr->lhs_params && !expr->rhs_pspecs && !expr->ioc_table;
+}
+
+/* Validate the two required ordered OPEN TYPE record members.
+ * Input: plan points to the candidate sequence. Returns zero or -1; no
+ * exceptions. Source: fixed tree. Version: 2026-10-30. Responsible: asn1c
+ * maintainers. History: selected UPER gate. Example: inspect id and value.
+ */
+static int
+rust_open_member_shape(rust_open_plan_t *out) {
+    out->selector = TQ_FIRST(&out->sequence->members);
+    out->member = out->selector ? TQ_NEXT(out->selector, next) : NULL;
+    if(!out->selector || !out->member || TQ_NEXT(out->member, next)
+       || !out->selector->Identifier || !out->member->Identifier
+       || out->selector->marker.flags != EM_NOMARK || out->member->marker.flags != EM_NOMARK
+       || out->selector->tag.tag_class != TC_NOCLASS || out->member->tag.tag_class != TC_NOCLASS
+       || out->sequence->tag.tag_class != TC_NOCLASS || out->sequence->constraints
+       || out->sequence->combined_constraints) return -1;
+    if(!rust_open_plain_expr(out->sequence) || !rust_open_plain_expr(out->selector)
+       || !rust_open_plain_expr(out->member)) return -1;
+    return 0;
+}
+
+/* Match one direct class field reference.
+ * Inputs: member supplies reference; class_name is the local class. Returns one
+ * on match, zero otherwise; no exceptions. Source: fixed tree. Version:
+ * 2026-10-30. Responsible: asn1c maintainers. History: selected UPER gate.
+ * Example: CLASS.&id matches CLASS.
+ */
+static int
+rust_open_class_ref(const asn1p_expr_t *member, const char *class_name) {
+    const asn1p_ref_t *ref = member->reference;
+    return member->meta_type == AMT_TYPEREF && ref && ref->comp_count == 2
+        && ref->components[0].name && ref->components[1].name
+        && !strcmp(ref->components[0].name, class_name);
+}
+
+/* Match the direct selector and selected member component relations.
+ * Inputs: plan, class and set are fixed declarations. Returns zero on match,
+ * -1 otherwise; no exceptions. Source: fixed IOC tree. Version: 2026-10-30.
+ * Responsible: asn1c maintainers. History: selected UPER gate.
+ * Example: selector id precedes value with relation {@id}.
+ */
+static int
+rust_open_members(rust_open_plan_t *out, asn1p_expr_t *class_def, asn1p_expr_t *set) {
+    const asn1p_constraint_t *selector_relation, *value_relation;
+    char selector_name[128];
+    if(rust_open_member_shape(out)
+       || !rust_open_class_ref(out->selector, class_def->Identifier)
+       || !rust_open_class_ref(out->member, class_def->Identifier)) return -1;
+    selector_relation = rust_open_relation(out->selector->constraints, 0);
+    value_relation = rust_open_relation(out->member->constraints, 0);
+    if(!selector_relation || selector_relation->el_count != 1 || !value_relation || value_relation->el_count != 2
+       || !rust_open_ref(selector_relation, 0, set->Identifier) || !rust_open_ref(value_relation, 0, set->Identifier)
+       || strlen(out->selector->Identifier) >= sizeof(selector_name) - 1
+       || snprintf(selector_name, sizeof(selector_name), "@%s", out->selector->Identifier) < 0
+       || !rust_open_ref(value_relation, 1, selector_name)) return -1;
+    return 0;
+}
+
+/* Resolve class columns and validate the bounded INTEGER selector.
+ * Inputs: plan and class are fixed declarations; columns are output pointers.
+ * Returns zero or -1; no exceptions. Source: IOC fixed tree. Version: 2026-10-30.
+ * Responsible: asn1c maintainers. History: selector-based Rust support.
+ * Example: extract &id and &Type from a two-field class.
+ */
+static int
+rust_open_columns(rust_open_plan_t *out, asn1p_expr_t *class_def,
+                  asn1p_expr_t **selector_field, asn1p_expr_t **type_field) {
+    asn1p_expr_t *item, *inner;
+    *selector_field = NULL;
+    *type_field = NULL;
+    TQ_FOR(item, &class_def->members, next) {
+        if(!item->Identifier) return -1;
+        if(!strcmp(item->Identifier, out->selector->reference->components[1].name)) *selector_field = item;
+        else if(!strcmp(item->Identifier, out->member->reference->components[1].name)) *type_field = item;
+        else return -1;
+    }
+    if(!*selector_field || !*type_field || (*selector_field)->expr_type != A1TC_CLASSFIELD_FTVFS
+       || !(*selector_field)->unique || (*type_field)->expr_type != A1TC_CLASSFIELD_TFS) return -1;
+    inner = TQ_FIRST(&(*selector_field)->members);
+    if(!inner || TQ_NEXT(inner, next) || inner->expr_type != ASN_BASIC_INTEGER
+       || !inner->combined_constraints || !rust_constraint_supported(inner->combined_constraints, 0)
+       || rust_integer_bounds(inner, &out->lower, &out->upper)) return -1;
+    return 0;
+}
+
+/* Validate a bounded, nonextensible local object set and its class.
+ * Inputs: class_def and set identify declarations. Returns one when supported;
+ * no exceptions. Source: IOC fixed tree. Version: 2026-10-30. Responsible:
+ * asn1c maintainers. History: selected UPER gate. Example: a two-row local set.
+ */
+static int
+rust_open_set_valid(const asn1p_expr_t *class_def, const asn1p_expr_t *set) {
+    return class_def && set && class_def->Identifier && set->Identifier && set->ioc_table
+        && set->ioc_table->row && set->ioc_table->rows && set->ioc_table->rows <= 32
+        && !set->ioc_table->extensible && set->reference && set->reference->comp_count == 1
+        && set->reference->components[0].name
+        && !strcmp(set->reference->components[0].name, class_def->Identifier);
+}
+
+/* Validate IOC row types, selector ranges, and key uniqueness.
+ * Inputs: out is the plan, set and fields identify the table. Returns zero or
+ * -1; no exceptions. Source: IOC fixed tree. Version: 2026-10-30. Responsible:
+ * asn1c maintainers. History: selected UPER gate. Example: two unique rows.
+ */
+static int
+rust_open_rows(rust_open_plan_t *out, asn1p_expr_t *set,
+               asn1p_expr_t *selector_field, asn1p_expr_t *type_field) {
+    size_t i, j;
+    out->rows = set->ioc_table->rows;
+    for(i = 0; i < out->rows; i++) {
+        if(rust_open_row(set->ioc_table->row[i], selector_field->Identifier, type_field->Identifier, &out->row[i])
+           || out->row[i].key < out->lower || out->row[i].key > out->upper) return -1;
+        for(j = 0; j < i; j++) if(out->row[j].key == out->row[i].key) return -1;
+    }
+    return 0;
+}
+
+/* Validate a local class, object set, and direct two-field UPER SEQUENCE.
+ * Inputs: module owns declarations; out receives a bounded generation plan.
+ * Returns zero on supported shape, otherwise -1; no exceptions. Source: IOC
+ * fixed tree. Version: 2026-10-30. Responsible: asn1c maintainers.
+ * History: first selector-driven Rust slice. Example: id then &Type({Set}{@id}).
+ */
+static int
+rust_open_module_plan(asn1p_module_t *module, rust_open_plan_t *out) {
+    asn1p_expr_t *item, *class_def = NULL, *set = NULL, *selector_field, *type_field;
+    memset(out, 0, sizeof(*out));
+    TQ_FOR(item, &module->members, next) {
+        if(item->meta_type == AMT_OBJECTCLASS && !class_def) class_def = item;
+        else if(item->meta_type == AMT_VALUESET && item->ioc_table && !set) set = item;
+        else if(item->meta_type == AMT_TYPE && item->expr_type == ASN_CONSTR_SEQUENCE && !out->sequence)
+            out->sequence = item;
+        else return -1;
+    }
+    if(!out->sequence || !out->sequence->Identifier || !rust_open_set_valid(class_def, set)
+       || rust_open_members(out, class_def, set)
+       || rust_open_columns(out, class_def, &selector_field, &type_field)) return -1;
+    return rust_open_rows(out, set, selector_field, type_field);
 }
 
 /*
@@ -1740,10 +2005,135 @@ rust_write_module(FILE *stream, asn1p_module_t *module, uint64_t codecs) {
     asn1p_expr_t *expr;
     if(fputs("//! Generated bindings for ASN.1 module.\n\n", stream) == EOF)
         return -1;
+    {
+        rust_open_plan_t open_plan;
+        if(!rust_open_module_plan(module, &open_plan)) return rust_write_open_module(stream, &open_plan);
+    }
     TQ_FOR(expr, &module->members, next) {
         if(rust_write_type(stream, module, expr, codecs)) return -1;
     }
     return ferror(stream) ? -1 : 0;
+}
+
+/* Emit selected variants and the selector-driven record declaration.
+ * Inputs: stream is output; plan supplies rows; names identify Rust items.
+ * Returns zero or -1; no exceptions. Source: fixed IOC plan. Version:
+ * 2026-10-30. Responsible: asn1c maintainers. History: selected OPEN TYPE.
+ * Example: emit Packet and its PacketValue variants.
+ */
+static int
+rust_open_write_declarations(FILE *stream, const rust_open_plan_t *plan,
+                             const char *record, const char *choice,
+                             const char *selector, const char *member) {
+    size_t i;
+    if(fprintf(stream, "/// Selected ASN.1 OPEN TYPE alternatives.\n"
+        "#[derive(Clone, Debug, Eq, PartialEq)]\npub enum %s {\n", choice) < 0) return -1;
+    for(i = 0; i < plan->rows; i++) {
+        if(fprintf(stream, "    /// Object-set row %zu selected by %" PRId64 ".\n"
+                   "    Row%zu(%s),\n", i + 1, plan->row[i].key, i + 1,
+                   plan->row[i].boolean ? "bool" : "i64") < 0) return -1;
+    }
+    return fprintf(stream, "}\n\n/// SEQUENCE with a selector-driven OPEN TYPE.\n"
+        "#[derive(Clone, Debug, Eq, PartialEq)]\npub struct %s {\n"
+        "    /// Object-set selector state variable.\n    pub %s: i64,\n"
+        "    /// Selected OPEN TYPE state variable.\n    pub %s: %s,\n}\n\nimpl %s {\n",
+        record, selector, member, choice, record) < 0 ? -1 : 0;
+}
+
+/* Emit UPER encoding and selector/variant agreement checks.
+ * Inputs: stream is output, plan supplies constraints, names identify fields.
+ * Returns zero or -1; no exceptions. Source: X.691 open-type encoding.
+ * Version: 2026-10-30. Responsible: asn1c maintainers. History: selected UPER.
+ * Example: emit a BOOLEAN row and bounded INTEGER row.
+ */
+static int
+rust_open_write_encode(FILE *stream, const rust_open_plan_t *plan, const char *choice,
+                       const char *selector, const char *member) {
+    char low[64], high[64];
+    size_t i;
+    if(rust_format_bound(low, sizeof(low), plan->lower)
+       || rust_format_bound(high, sizeof(high), plan->upper)) return -1;
+    if(rust_write_method_doc(stream, "Encode the selected OPEN TYPE with UPER.",
+        "`self` supplies selector and value; `limits` bounds resources.", "Returns the UPER encoding.",
+        "Returns an error for a selector mismatch, invalid value, or limits.",
+        "`value.encode_uper(&Default::default())?;")) return -1;
+    if(fprintf(stream, "    pub fn encode_uper(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+        "        let mut writer = ::asn1c_runtime::UperWriter::new(limits)?;\n"
+        "        writer.write_integer(self.%s, %s, %s)?;\n"
+        "        match (self.%s, &self.%s) {\n", selector, low, high, selector, member) < 0) return -1;
+    for(i = 0; i < plan->rows; i++) {
+        if(rust_format_bound(low, sizeof(low), plan->row[i].lower)
+           || rust_format_bound(high, sizeof(high), plan->row[i].upper)) return -1;
+        if(fprintf(stream, "            (%" PRId64 ", %s::Row%zu(value)) =>\n"
+            "                ::asn1c_runtime::uper_cursor::write_open_primitive_uper(\n"
+            "                    &mut writer, %s, %s, %s)?,\n", plan->row[i].key, choice, i + 1,
+            plan->row[i].boolean ? "i64::from(*value)" : "*value", low, high) < 0) return -1;
+    }
+    return fputs("            _ => return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+        "                reason: \"OPEN TYPE selector and value do not match\",\n"
+        "            }),\n        }\n        writer.finish()\n    }\n", stream) == EOF ? -1 : 0;
+}
+
+/* Emit selector-directed UPER decoding with strict inner envelope checks.
+ * Inputs: stream receives Rust, plan supplies rows, names identify fields.
+ * Returns zero or -1; no exceptions. Source: X.691 open-type decoding.
+ * Version: 2026-10-30. Responsible: asn1c maintainers. History: selected UPER.
+ * Example: decode a bounded selected INTEGER.
+ */
+static int
+rust_open_write_decode(FILE *stream, const rust_open_plan_t *plan, const char *choice,
+                       const char *selector, const char *member) {
+    char low[64], high[64];
+    size_t i;
+    if(rust_write_method_doc(stream, "Decode the selected OPEN TYPE with UPER.",
+        "`input` supplies the prefix; `limits` bounds resources.", "Returns the record and prefix consumption.",
+        "Returns an error for an unknown selector, invalid envelope, or limits.",
+        "`Type::decode_uper(input, &Default::default())?;")) return -1;
+    if(rust_format_bound(low, sizeof(low), plan->lower)
+       || rust_format_bound(high, sizeof(high), plan->upper)) return -1;
+    if(fprintf(stream, "    pub fn decode_uper(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+        "        let mut reader = ::asn1c_runtime::UperReader::new(input, limits)?;\n"
+        "        let selector = reader.read_integer(%s, %s)?;\n"
+        "        let __asn1c_value = match selector {\n", low, high) < 0) return -1;
+    for(i = 0; i < plan->rows; i++) {
+        if(rust_format_bound(low, sizeof(low), plan->row[i].lower)
+           || rust_format_bound(high, sizeof(high), plan->row[i].upper)) return -1;
+        if(fprintf(stream, "            %" PRId64 " => %s::Row%zu(\n"
+            "                ::asn1c_runtime::uper_cursor::read_open_primitive_uper(\n"
+            "                    &mut reader, %s, %s)?%s),\n", plan->row[i].key, choice, i + 1,
+            low, high, plan->row[i].boolean ? " != 0" : "") < 0) return -1;
+    }
+    return fprintf(stream, "            _ => return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+        "                reason: \"unknown OPEN TYPE selector\",\n"
+        "            }),\n        };\n        let consumed = reader.finish()?;\n"
+        "        Ok(::asn1c_runtime::Decoded { value: Self { %s: selector, %s: __asn1c_value },\n"
+        "            consumed_bits: consumed.consumed_bits, consumed_bytes: consumed.consumed_bytes })\n"
+        "    }\n}\n", selector, member) < 0 ? -1 : 0;
+}
+
+/* Emit a selector-driven UPER record from a validated IOC plan.
+ * Inputs: stream receives Rust source; plan describes validated IOC rows.
+ * Returns zero or -1 for write/allocation errors; no exceptions. Source:
+ * X.691 open type framing. Version: 2026-10-30. Responsible: asn1c maintainers.
+ * History: narrow selected OPEN TYPE. Example: emit a two-row record.
+ */
+static int
+rust_write_open_module(FILE *stream, const rust_open_plan_t *plan) {
+    char *record = rust_identifier(plan->sequence->Identifier, 0);
+    char *selector = rust_identifier(plan->selector->Identifier, 1);
+    char *member = rust_identifier(plan->member->Identifier, 1);
+    char *choice = rust_nested_type_name(record, plan->member);
+    int ret = -1;
+    if(!record || !selector || !member || !choice || !strcmp(selector, member)) goto done;
+    if(rust_open_write_declarations(stream, plan, record, choice, selector, member)
+       || rust_open_write_encode(stream, plan, choice, selector, member)
+       || rust_open_write_decode(stream, plan, choice, selector, member)) goto done;
+    ret = 0;
+done:
+    free(record); free(selector); free(member); free(choice);
+    return ret;
 }
 
 /*

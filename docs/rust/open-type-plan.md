@@ -1,26 +1,22 @@
-# Rust information-object OPEN TYPE implementation plan
+# Rust information-object OPEN TYPE
 
-The Rust backend currently rejects information-object class and object-set
-declarations and selector-driven OPEN TYPE fields. This plan describes future
-work; it does not claim that these schemas or codecs are supported today.
+The Rust backend supports one narrow UPER subset: a module containing one
+local class, one nonextensible object set of at most 32 rows, and one SEQUENCE
+with exactly two required fields. A bounded INTEGER selector precedes the
+selected OPEN TYPE field. The class has one UNIQUE INTEGER selector column and
+one type column. Rows contain direct BOOLEAN or bounded INTEGER types, including
+singleton INTEGERs. The generated enum uses object-set row order for its
+variant names. Encoding verifies the selector matches the variant; decoding
+rejects unknown selectors, malformed envelopes, spare values, and nonzero
+padding. Both operations use the shared UPER cursor and resource budget.
 
-1. Resolve each component-relation constraint to its object set, selector
-   field, class selector column, and type column. Validate unique selector
-   values, supported row types, selector ordering, references, and extension
-   markers before publishing generated output. Start with one direct integer
-   selector and one nonextensible, local object set in a UPER SEQUENCE.
-2. Generate a typed enum whose variants correspond to the selected row types.
-   Define how encoding rejects disagreement between a selector and variant.
-   Define an explicit opaque unknown variant before accepting extensible sets.
-3. Encode the selected inner value using the correct UPER open-type octet
-   envelope. Decode within that bounded envelope, check inner constraints,
-   exact consumption and padding, and charge inner and outer work to the same
-   caller-provided resource budget. Handle fragmentation and length overflow.
-4. Add generated C interoperability vectors for each selector, nested values,
-   present and absent OPTIONAL fields, and unknown selectors. Test malformed
-   lengths, truncation, invalid padding, spare codes, conflicting selectors,
-   limits, and allocation failures. Run the required all-target, all-feature
-   strict Clippy command on runtime and generated crates.
-5. Expand only after the preceding subset is validated: additional selector
-   shapes, constructed selected types, extensibility, other encodings, nested
-   relations and imported object sets each require separate semantics and tests.
+C interoperability tests cover BOOLEAN, bounded INTEGER, and zero-width
+singleton rows. Rust tests cover selector mismatch, unknown values, truncation,
+invalid length and padding, spare codes, and work limits. This is a limited
+implementation, not complete OPEN TYPE or codec conformance.
+
+Future work includes extensible object sets with an explicit opaque unknown
+variant; OPTIONAL fields and additional SEQUENCE members; nested, aliased and
+imported selected types; other selector forms and ordering; fragmentation for
+larger inner encodings; and APER, OER, JER and other codec support. Each needs
+independent validation, resource accounting, and C interoperability vectors.

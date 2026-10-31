@@ -1095,8 +1095,100 @@ SET_oer_test_missing_open_selector(void) {
  * History: Added with initial SET APER support.
  * Example: Invoked by make check-APER-SET.
  */
+/* Constraint test storage models two required values and two pointer fields. */
+typedef struct SET_constraint_test_value_s {
+    long first;                 /* First mandatory INTEGER. */
+    long second;                /* Second mandatory INTEGER. */
+    long *optional;             /* Optional INTEGER. */
+    long *required;             /* Mandatory pointer INTEGER. */
+} SET_constraint_test_value_t;
+
+/*
+ * Purpose: reject INTEGER values outside the test range of zero through ten.
+ * Source: Generated member constraint callback contract.
+ * Version/date: 1.0, 2026-10-30. Inputs: td names the INTEGER; sptr points
+ * to its value; cb/app_key are unused. Returns: zero or -1. Exceptions: none.
+ * Author: asn1c maintainers. History: added for complete SET traversal.
+ * Example: a value of eleven is rejected.
+ */
+static int
+SET_constraint_test_integer(const asn_TYPE_descriptor_t *td, const void *sptr,
+                            asn_app_constraint_failed_f *cb, void *app_key) {
+    long value;
+    (void)td;
+    (void)cb;
+    (void)app_key;
+    if(!sptr) return -1;
+    value = *(const long *)sptr;
+    return value >= 0 && value <= 10 ? 0 : -1;
+}
+
+/*
+ * Purpose: verify SET constraints visit every present member and pointer.
+ * Source: SET_constraint regression for later-member validation.
+ * Version/date: 1.0, 2026-10-30. Inputs: none. Returns: nothing; assertions
+ * abort on failure. Exceptions: none. Author: asn1c maintainers.
+ * History: added after discovering first-member-only checking.
+ * Example: an invalid second or present optional INTEGER fails.
+ */
+static void
+SET_test_all_member_constraints(void) {
+    asn_TYPE_member_t members[4];
+    asn_TYPE_descriptor_t descriptor = test_descriptor;
+    SET_constraint_test_value_t value;
+    long optional = 3;
+    long required = 4;
+    size_t i;
+
+    memset(members, 0, sizeof(members));
+    memset(&value, 0, sizeof(value));
+    for(i = 0; i < 4; i++) {
+        members[i].type = &asn_DEF_NativeInteger;
+        members[i].encoding_constraints.general_constraints = SET_constraint_test_integer;
+    }
+    members[0].name = "first";
+    members[0].memb_offset = offsetof(SET_constraint_test_value_t, first);
+    members[1].name = "second";
+    members[1].memb_offset = offsetof(SET_constraint_test_value_t, second);
+    members[2].name = "optional";
+    members[2].flags = ATF_POINTER;
+    members[2].optional = 1;
+    members[2].memb_offset = offsetof(SET_constraint_test_value_t, optional);
+    members[3].name = "required";
+    members[3].flags = ATF_POINTER;
+    members[3].memb_offset = offsetof(SET_constraint_test_value_t, required);
+    descriptor.elements = members;
+    descriptor.elements_count = 4;
+
+    value.first = 1;
+    value.second = 2;
+    value.required = &required;
+    assert(SET_constraint(&descriptor, &value, 0, 0) == 0);
+    value.first = -1;
+    assert(SET_constraint(&descriptor, &value, 0, 0) != 0);
+    value.first = 1;
+    value.second = 11;
+    assert(SET_constraint(&descriptor, &value, 0, 0) != 0);
+    value.second = 2;
+    value.optional = &optional;
+    assert(SET_constraint(&descriptor, &value, 0, 0) == 0);
+    optional = 11;
+    assert(SET_constraint(&descriptor, &value, 0, 0) != 0);
+    value.optional = 0;
+    value.required = 0;
+    assert(SET_constraint(&descriptor, &value, 0, 0) != 0);
+    value.required = &required;
+    assert(SET_constraint(0, &value, 0, 0) != 0);
+    descriptor.elements = 0;
+    assert(SET_constraint(&descriptor, &value, 0, 0) != 0);
+    descriptor.elements = members;
+    members[2].type = 0;
+    assert(SET_constraint(&descriptor, &value, 0, 0) != 0);
+}
+
 int
 main(void) {
+    SET_test_all_member_constraints();
     SET_oer_test_empty_null_input();
     SET_oer_test_missing_open_selector();
     SET_aper_test_missing_open_selector();

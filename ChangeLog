@@ -1,4 +1,15 @@
 Changes since v1.5.3:
+	* Generate a bounded UPER IOC-selected OPEN TYPE Rust slice with typed
+	  variants, selector checks, shared resource limits and C parity tests.
+	* Added C SET JER direct OPEN TYPE support with selector-order-independent
+	  decoding, duplicate and selected-arm validation, and generated wire tests.
+	* Validate C SET CBOR map members before encoding or decoding, reject
+	  missing mandatory fields and duplicate known or unknown keys, and cover
+	  all-optional SETs and malformed input in generated tests.
+	* Check every present C SET member constraint, including later required and
+	  OPTIONAL fields, and reject missing mandatory pointer fields. CER now
+	  omits absent OPTIONAL ANY members in SEQUENCE and SET while continuing
+	  to reject present opaque ANY values.
 	* Reject malformed APER and OER SET OPEN TYPE members without a selector
 	  before consuming input, except valid opaque APER fallback wrappers.
 	* Validate selected OER OPEN TYPE descriptors and full storage spans, and

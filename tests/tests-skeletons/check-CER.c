@@ -1486,6 +1486,48 @@ cer_check_short_buffers(void) {
 }
 
 /*
+ * Purpose: verify absent OPTIONAL ANY members are omitted in CER composites.
+ * Source: CER member-presence and unsupported opaque ANY contracts.
+ * Version/date: 1.0, 2026-10-30. Inputs: none. Returns: zero or test failure.
+ * Exceptions: none. Author: asn1c maintainers. History: added for OPTIONAL ANY.
+ * Example: an empty SEQUENCE emits 30 80 00 00; a present ANY fails.
+ */
+static int
+cer_check_optional_any(void) {
+    static const uint8_t empty_sequence[] = {0x30, 0x80, 0x00, 0x00};
+    static const uint8_t empty_set[] = {0x31, 0x80, 0x00, 0x00};
+    asn_TYPE_member_t member = cer_any_container_members[0];
+    asn_TYPE_descriptor_t sequence = asn_DEF_CER_AnyContainer;
+    asn_TYPE_descriptor_t set = asn_DEF_CER_TestSet;
+    asn_SET_specifics_t set_specifics = cer_test_set_specifics;
+    cer_any_container_t value = {NULL};
+    ANY_t present;
+    int failed = 0;
+
+    member.optional = 1;
+    sequence.elements = &member;
+    set.elements = &member;
+    set.elements_count = 1;
+    set_specifics.struct_size = sizeof(value);
+    set.specifics = &set_specifics;
+    failed |= cer_check_vector(&sequence, &value, empty_sequence,
+                               sizeof(empty_sequence), "absent OPTIONAL ANY in SEQUENCE");
+    failed |= cer_check_vector(&set, &value, empty_set,
+                               sizeof(empty_set), "absent OPTIONAL ANY in SET");
+    failed |= cer_check_callback_error(&sequence, &value,
+                                       "absent OPTIONAL ANY callback failure in SEQUENCE");
+    failed |= cer_check_callback_error(&set, &value,
+                                       "absent OPTIONAL ANY callback failure in SET");
+    memset(&present, 0, sizeof(present));
+    value.value = &present;
+    failed |= cer_check_error(&sequence, &value, ENOENT,
+                              "present OPTIONAL ANY in SEQUENCE remains unsupported");
+    failed |= cer_check_error(&set, &value, ENOENT,
+                              "present OPTIONAL ANY in SET remains unsupported");
+    return failed;
+}
+
+/*
  * Reject malformed metadata/values and stop excessive or cyclic recursion.
  * Original source: New asn1c CER regression fixture.
  * Version/date: 1.0, 2026-10-11.
@@ -2899,6 +2941,7 @@ main(void) {
     failed |= cer_check_constructed_vectors();
     failed |= cer_check_short_buffers();
     failed |= cer_check_invalid_inputs();
+    failed |= cer_check_optional_any();
     failed |= cer_check_callbacks();
     failed |= cer_check_explicit_primitive_decoding();
     failed |= cer_check_named_explicit_decoding();

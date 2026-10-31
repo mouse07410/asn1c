@@ -173,6 +173,53 @@ cc -I"$test_tmp/any-extra-c" "$test_tmp/any-extra-c"/*.c "$test_srcdir/c_any_add
     -lm -o "$test_tmp/c-any-additional"
 "$test_tmp/c-any-additional"
 
+# Nonextensible local IOC OPEN TYPE rows select bounded UPER primitives.
+"$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$test_tmp/open-selected-rust" \
+    "$test_srcdir/OpenSelected.asn1"
+mkdir -p "$test_tmp/open-selected-rust/tests" "$test_tmp/open-selected-c"
+cp "$test_srcdir/open_selected.rs" "$test_tmp/open-selected-rust/tests/"
+cargo test --offline --manifest-path "$test_tmp/open-selected-rust/Cargo.toml"
+cargo clippy --offline --manifest-path "$test_tmp/open-selected-rust/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings
+"$asn1c_bin" -no-gen-CER -S "$skeletons" -D "$test_tmp/open-selected-c" \
+    "$test_srcdir/OpenSelected.asn1"
+rm -f "$test_tmp/open-selected-c/converter-example.c" "$test_tmp/open-selected-c/pdu_collection.c"
+cc -I"$test_tmp/open-selected-c" "$test_tmp/open-selected-c"/*.c "$test_srcdir/c_open_selected.c" \
+    -lm -o "$test_tmp/c-open-selected"
+"$test_tmp/c-open-selected"
+
+# Extensible object sets and other codecs remain outside this slice.
+sed 's/INTEGER (5..5) } }/INTEGER (5..5) }, ... }/' "$test_srcdir/OpenSelected.asn1" \
+    >"$test_tmp/OpenExtensible.asn1"
+if "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$test_tmp/rejected-open-extensible" \
+    "$test_tmp/OpenExtensible.asn1" >"$test_tmp/open-extensible.log" 2>&1; then
+    echo "FAIL: Rust backend accepted extensible selected OPEN TYPE" >&2
+    exit 1
+fi
+test ! -e "$test_tmp/rejected-open-extensible"
+if "$asn1c_bin" --rust -gen-APER -no-gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/rejected-open-aper" "$test_srcdir/OpenSelected.asn1" \
+    >"$test_tmp/open-aper.log" 2>&1; then
+    echo "FAIL: Rust backend accepted APER selected OPEN TYPE" >&2
+    exit 1
+fi
+test ! -e "$test_tmp/rejected-open-aper"
+
+# Reject unsupported relation shapes and selected types before publication.
+sed 's/value CLASS1.\&Type({SET1}{@id})/value CLASS1.\&Type({SET1}{@id}) OPTIONAL/' \
+    "$test_srcdir/OpenSelected.asn1" >"$test_tmp/OpenOptional.asn1"
+sed 's/TYPE BOOLEAN/TYPE NULL/' "$test_srcdir/OpenSelected.asn1" >"$test_tmp/OpenNull.asn1"
+sed 's/INTEGER (0..255) UNIQUE/INTEGER UNIQUE/' "$test_srcdir/OpenSelected.asn1" \
+    >"$test_tmp/OpenUnbounded.asn1"
+for fixture in OpenOptional OpenNull OpenUnbounded; do
+    if "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$test_tmp/rejected-$fixture" \
+        "$test_tmp/$fixture.asn1" >"$test_tmp/$fixture.log" 2>&1; then
+        echo "FAIL: Rust backend accepted unsupported $fixture" >&2
+        exit 1
+    fi
+    test ! -e "$test_tmp/rejected-$fixture"
+done
+
 # An incomplete runtime beside explicit skeletons must fail before output.
 missing_skeletons="$test_tmp/missing-runtime/skeletons"
 missing_runtime="$missing_skeletons/rust/asn1c-runtime"

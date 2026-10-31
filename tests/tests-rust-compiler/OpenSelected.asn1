@@ -1,0 +1,5 @@
+OpenModule DEFINITIONS ::= BEGIN
+CLASS1 ::= CLASS { &id INTEGER (0..255) UNIQUE, &Type } WITH SYNTAX { ID &id TYPE &Type }
+SET1 CLASS1 ::= { { ID 1 TYPE BOOLEAN } | { ID 2 TYPE INTEGER (0..2) } | { ID 3 TYPE INTEGER (5..5) } }
+Packet ::= SEQUENCE { id CLASS1.&id({SET1}), value CLASS1.&Type({SET1}{@id}) }
+END
