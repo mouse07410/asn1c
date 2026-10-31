@@ -218,15 +218,17 @@ sibling to be present before selector invocation, so an omitted unrelated
 OPTIONAL or DEFAULT sibling is conservatively rejected. Untagged, colliding,
 multiple, and extension-group open members remain unsupported in this path.
 
-The Rust backend supports `OPTIONAL` fields only within its documented UPER
-SEQUENCE subset, including inline nonextensible ENUMERATED, opaque `ANY`, and
-primitive `CONTAINING` values. Direct `ANY` supports UPER, APER, OER, JER,
-and CBOR. Direct BOOLEAN, NULL, and bounded INTEGER also have opt-in CBOR
-codecs. Rust CBOR selected open types, constructed values, and indefinite
-byte strings remain unsupported.
+The Rust backend supports `OPTIONAL` fields in its documented UPER and CBOR
+flat SEQUENCE subsets. UPER includes inline nonextensible ENUMERATED, opaque
+`ANY`, and primitive `CONTAINING` values. Direct `ANY` supports UPER, APER,
+OER, JER, and CBOR. Opt-in CBOR adds direct BOOLEAN, NULL, bounded INTEGER,
+fixed/bounded BIT and OCTET STRING, flat SEQUENCE maps, narrow CHOICE maps,
+IOC-selected OPEN TYPE, and top-level typed primitive CONTAINING values.
+Rust CBOR SET/collections, nested constructed fields, wider selected object
+sets, and indefinite items remain unsupported.
 UPER `CONTAINING` supports unconstrained BIT/OCTET STRING containing a local
 direct BOOLEAN or non-singleton bounded INTEGER, at top level or as a required
-or OPTIONAL SEQUENCE field. A narrow UPER, APER, and OER IOC-selected
+or OPTIONAL SEQUENCE field. A narrow UPER, APER, OER, and CBOR IOC-selected
 `OPEN TYPE` subset supports one local nonextensible object set with bounded
 INTEGER selectors and primitive BOOLEAN or bounded INTEGER rows in a two-field
 required SEQUENCE. APER requires selector bounds 0..255 and selected INTEGER
@@ -287,9 +289,12 @@ groups, DEFAULT restoration, older-schema skipping, malformed v3 metadata,
 and OER streaming and payload validation.
 [Check-601](../tests/tests-c-compiler/check-src/check-601.-fcompound-names.-gen-JER.-gen-CBOR.c)
 covers flat SET group members in JER, split input, defaults, renamed and
-duplicate keys, malformed metadata, and explicit rejection of grouped CBOR
-SET values. CBOR group representation is not specified by this repository;
-rejecting it avoids silently emitting synthetic nested wrappers.
+duplicate keys, and malformed metadata. CBOR now flattens SET extension-group
+leaves into the same name-keyed map as JER: a group leaf appears beside direct
+SET members, and an absent group contributes no map entries. This is a
+repository-specific CBOR mapping. Duplicate names across direct and grouped
+members fail before encoding or decoder allocation; group OPEN TYPE leaves
+remain unsupported.
 
 SET constraint checking visits each present member, including OPTIONAL members,
 and rejects absent mandatory pointers. CER permits an absent OPTIONAL ANY
@@ -300,7 +305,45 @@ including duplicate unknown keys. Direct IOC-selected CBOR SET open members
 are resolved against their selector regardless of map-key order. An absent
 OPTIONAL open member is accepted; malformed selections, wrappers, and repeated
 keys fail. Open leaves inside SET extension groups remain unsupported in CBOR
-and UPER. CBOR selection from another deferred open member is unsupported.
+and UPER. Opaque selector callbacks require every other flat SET member to be
+present, so a present open value with an absent unrelated OPTIONAL sibling is
+rejected. CBOR selection from another deferred open member is unsupported.
+
+SEQUENCE CBOR uses the same direct member-name map: the encoder writes members
+in declaration order, while the decoder accepts any key order. Decoding rejects
+missing required members and repeated known or unknown keys. A direct
+IOC-selected OPEN TYPE may precede its selector in the map; the decoder stages
+the value until the parent is complete and preserves a preallocated parent on
+failure. Omitted pointer-backed and inline generated DEFAULT values are
+restored in staged storage. Opaque selector callbacks require every other
+sibling to be present, so a present open value with an absent unrelated
+OPTIONAL sibling is rejected.
+SEQUENCE extension groups remain unsupported in CBOR.
+CBOR map text keys and skipped text items are checked for valid UTF-8.
+
+C CBOR CHOICE uses a one-entry text-key map. The encoder validates its active
+arm before output. The decoder checks the key, complete child item and active
+arm in staged storage, preserving a preallocated CHOICE on failure. Unknown or
+malformed keys and incomplete child values fail.
+
+CBOR `SEQUENCE OF` and `SET OF` use definite arrays in list order. The C
+encoder rejects null element holes and inconsistent list counts before writing
+the array header. The decoder bounds the declared count by available input,
+checks each child consumes a nonempty item, and stages the whole array so a
+failure preserves a preallocated caller value. The shared CBOR item skipper
+also rejects malformed UTF-8 text inside nested unknown values.
+The UTF8String adapter validates text and compatible byte-string input as
+UTF-8 and preserves preallocated values when a malformed length is rejected.
+
+CBOR BIT STRING and OCTET STRING remain byte strings; a CONTAINING constraint
+does not introduce another CBOR wrapper. The C CBOR codec carries the contained
+bytes; `asn_check_constraints` with CBOR syntax checks that those bytes form a
+complete value of the contained type. BIT STRING uses an initial unused-bit
+count octet and rejects nonzero padding. Byte-string decoders reject truncated
+or overflowing lengths without replacing an existing value. INTEGER decoding
+preserves existing values on failure and converts negative major-one values
+below `INT64_MIN` into BER bytes without host-endian dependence. Unknown-item
+skipping checks nested lengths and accumulated byte counts before advancing.
 
 The generic binary selectors map to their implemented codec families.
 Basic/canonical OER and PER decode selectors share

@@ -70,6 +70,10 @@ typedef struct rust_open_plan_s {
 
 static int rust_open_module_plan(asn1p_module_t *, rust_open_plan_t *);
 static int rust_write_open_module(FILE *, const rust_open_plan_t *, uint64_t);
+static int rust_open_write_cbor_encode(FILE *, const rust_open_plan_t *, const char *,
+                                       const char *, const char *);
+static int rust_open_write_cbor_decode(FILE *, const rust_open_plan_t *, const char *,
+                                       const char *, const char *);
 static char *rust_identifier(const char *, int);
 static char *rust_enum_variant(const char *);
 static int rust_check_tree(asn1p_t *, uint64_t);
@@ -79,9 +83,11 @@ static int rust_check_module_types(asn1p_module_t *, int *, uint64_t);
 static int rust_check_type_name(asn1p_module_t *, asn1p_expr_t *);
 static asn1p_expr_t *rust_contained_primitive(asn1p_module_t *, asn1p_expr_t *);
 static const asn1p_constraint_t *rust_containing_node(const asn1p_constraint_t *, unsigned);
-static int rust_write_containing(FILE *, const char *, asn1p_expr_t *, asn1p_expr_t *);
+static int rust_write_containing(FILE *, const char *, asn1p_expr_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_type(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_sequence(asn1p_module_t *, asn1p_expr_t *, uint64_t);
+static int rust_check_cbor_sequence(asn1p_module_t *, asn1p_expr_t *);
+static int rust_check_cbor_choice(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_sequence_tree(asn1p_module_t *, asn1p_expr_t *,
                                    asn1p_expr_t **, size_t, size_t *, size_t *);
 static int rust_check_module_nested_names(asn1p_module_t *);
@@ -132,14 +138,22 @@ static int rust_write_bounded_octets(FILE *, const char *, size_t, size_t,
                                     uint64_t);
 static int rust_write_bounded_octets_uper(FILE *, size_t, size_t);
 static int rust_write_bounded_octets_jer(FILE *, size_t, size_t);
+static int rust_write_octet_cbor(FILE *, size_t, size_t);
+static int rust_write_bit_cbor(FILE *, size_t, size_t, int);
 static int rust_write_bounded_bits(FILE *, const char *, size_t, size_t,
                                   uint64_t);
 static int rust_write_enumerated(FILE *, const char *, asn1p_expr_t *, uint64_t);
 static int rust_write_inline_enum(FILE *, const char *, asn1p_expr_t *);
 static int rust_write_enumerated_jer(FILE *, asn1p_expr_t *);
 static int rust_write_integer_ber(FILE *, const char *, const char *);
-static int rust_write_sequence(FILE *, const char *, asn1p_expr_t *, int);
-static int rust_write_all_sequences(FILE *, const char *, asn1p_expr_t *, int);
+static int rust_write_sequence(FILE *, const char *, asn1p_expr_t *, int, uint64_t);
+static int rust_write_all_sequences(FILE *, const char *, asn1p_expr_t *, int, uint64_t);
+static int rust_write_sequence_cbor(FILE *, asn1p_expr_t *);
+static int rust_write_sequence_cbor_encode_field(FILE *, asn1p_expr_t *);
+static int rust_write_sequence_cbor_decode_field(FILE *, asn1p_expr_t *);
+static int rust_write_cbor_choice(FILE *, const char *, asn1p_expr_t *);
+static int rust_write_cbor_choice_encode_arm(FILE *, asn1p_expr_t *);
+static int rust_write_cbor_choice_decode_arm(FILE *, asn1p_expr_t *);
 static int rust_write_sequence_field(FILE *, const char *, asn1p_expr_t *);
 static int rust_write_sequence_encode_field(FILE *, asn1p_expr_t *);
 static int rust_write_sequence_encode_string_field(FILE *, asn1p_expr_t *,
@@ -327,8 +341,9 @@ rust_check_module_types(asn1p_module_t *module, int *emitted, uint64_t codecs) {
         rust_open_plan_t open_plan;
         if(!rust_open_module_plan(module, &open_plan)) {
             size_t i;
-            if(!codecs || (codecs & ~(RUST_CODEC_UPER | RUST_CODEC_APER | RUST_CODEC_OER))) {
-                rust_diagnostic(module, open_plan.sequence, "selected OPEN TYPE needs UPER, APER, or OER");
+            if(!codecs || (codecs & ~(RUST_CODEC_UPER | RUST_CODEC_APER | RUST_CODEC_OER
+                                     | RUST_CODEC_CBOR))) {
+                rust_diagnostic(module, open_plan.sequence, "selected OPEN TYPE needs UPER, APER, OER, or CBOR");
                 return -1;
             }
             if(codecs & RUST_CODEC_APER) {
@@ -706,8 +721,9 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
     if((expr->expr_type == ASN_BASIC_OCTET_STRING || expr->expr_type == ASN_BASIC_BIT_STRING)
        && rust_containing_node(expr->combined_constraints, 0)) {
         asn1p_expr_t *inner = rust_contained_primitive(module, expr);
-        if(codecs != RUST_CODEC_UPER || !inner) {
-            rust_diagnostic(module, expr, "CONTAINING requires a supported UPER primitive");
+        if((codecs != RUST_CODEC_UPER && codecs != RUST_CODEC_CBOR
+            && codecs != (RUST_CODEC_UPER | RUST_CODEC_CBOR)) || !inner) {
+            rust_diagnostic(module, expr, "CONTAINING requires supported UPER or CBOR primitive codecs");
             return -1;
         }
         return 0;
@@ -725,6 +741,8 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
     }
     if(expr->expr_type == ASN_CONSTR_SEQUENCE)
         return rust_check_sequence(module, expr, codecs);
+    if(expr->expr_type == ASN_CONSTR_CHOICE)
+        return rust_check_cbor_choice(module, expr, codecs);
     if(expr->expr_type == ASN_BASIC_ENUMERATED)
         return rust_check_enumerated(module, expr, codecs);
     if(expr->lhs_params || expr->ioc_table || expr->members.tq_head) {
@@ -752,27 +770,27 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
     }
     if(expr->expr_type == ASN_BASIC_OCTET_STRING) {
         size_t lower, upper;
-        if((!codecs || (codecs & ~(RUST_CODEC_UPER | RUST_CODEC_JER)))
+        if((!codecs || (codecs & ~(RUST_CODEC_UPER | RUST_CODEC_JER | RUST_CODEC_CBOR)))
            || !expr->combined_constraints
            || !rust_size_constraint_supported(expr->combined_constraints, 0)) {
             rust_diagnostic(module, expr,
-                "OCTET STRING needs UPER and/or JER with finite SIZE constraints");
+                "OCTET STRING needs UPER, JER, and/or CBOR with finite SIZE constraints");
             return -1;
         }
         if(!rust_fixed_size(expr, &(size_t){0})) return 0;
-        if(!(codecs & ~(RUST_CODEC_UPER | RUST_CODEC_JER))
+        if(!(codecs & ~(RUST_CODEC_UPER | RUST_CODEC_JER | RUST_CODEC_CBOR))
            && !rust_bounded_size(expr, &lower, &upper)) return 0;
         rust_diagnostic(module, expr,
-            "OCTET STRING needs fixed UPER/JER or bounded UPER/JER SIZE below 65536");
+            "OCTET STRING needs fixed or bounded SIZE below 65536");
         return -1;
     }
     if(expr->expr_type == ASN_BASIC_BIT_STRING) {
         size_t lower, upper;
-        if(!codecs || (codecs & ~(RUST_CODEC_UPER | RUST_CODEC_JER))
+        if(!codecs || (codecs & ~(RUST_CODEC_UPER | RUST_CODEC_JER | RUST_CODEC_CBOR))
            || !expr->combined_constraints
            || !rust_size_constraint_supported(expr->combined_constraints, 0)) {
             rust_diagnostic(module, expr,
-                "BIT STRING needs UPER and/or JER with finite SIZE constraints");
+                "BIT STRING needs UPER, JER, and/or CBOR with finite SIZE constraints");
             return -1;
         }
         if(!rust_fixed_size(expr, &(size_t){0})) return 0;
@@ -800,14 +818,107 @@ rust_check_sequence(asn1p_module_t *module, asn1p_expr_t *expr,
     asn1p_expr_t *stack[RUST_SEQUENCE_DEPTH_LIMIT + 1];
     size_t nodes = 0;
     size_t work = 0;
-    if(codecs != RUST_CODEC_UPER || expr->constraints
+    if(!codecs || (codecs & ~(RUST_CODEC_UPER | RUST_CODEC_CBOR))
+       || expr->constraints
        || expr->combined_constraints || expr->lhs_params || expr->ioc_table
        || expr->marker.flags || expr->rhs_pspecs) {
         rust_diagnostic(module, expr,
-                        "SEQUENCE needs UPER-only selection and direct fields");
+                        "SEQUENCE needs UPER and/or CBOR with direct fields");
         return -1;
     }
-    return rust_check_sequence_tree(module, expr, stack, 0, &nodes, &work);
+    if(rust_check_sequence_tree(module, expr, stack, 0, &nodes, &work)) return -1;
+    return (codecs & RUST_CODEC_CBOR) ? rust_check_cbor_sequence(module, expr) : 0;
+}
+
+/*
+ * Purpose: gate CBOR SEQUENCE generation to direct primitive map fields.
+ * Source: C SEQUENCE CBOR text-key map and the Rust primitive CBOR slice.
+ * Version/date: 2026-10-30. Inputs: module supplies diagnostics; expr owns
+ * the validated record. Returns zero for a supported flat shape, -1 otherwise.
+ * Errors: nested, selected, CONTAINING and unavailable primitive codecs fail.
+ * Author: asn1c maintainers. History: first constructed CBOR Rust slice.
+ * Example: required BOOLEAN plus OPTIONAL ANY is accepted.
+ */
+static int
+rust_check_cbor_sequence(asn1p_module_t *module, asn1p_expr_t *expr) {
+    asn1p_expr_t *member;
+    TQ_FOR(member, &expr->members, next) {
+        if(member->expr_type == ASN_BASIC_BOOLEAN || member->expr_type == ASN_BASIC_NULL
+           || member->expr_type == ASN_BASIC_INTEGER
+           || member->expr_type == ASN_BASIC_OCTET_STRING
+           || member->expr_type == ASN_BASIC_BIT_STRING) {
+            if((member->expr_type == ASN_BASIC_OCTET_STRING
+                || member->expr_type == ASN_BASIC_BIT_STRING)
+               && rust_containing_node(member->combined_constraints, 0)) {
+                rust_diagnostic(module, member, "CBOR SEQUENCE CONTAINING is unsupported");
+                return -1;
+            }
+            continue;
+        }
+        if(member->expr_type == ASN_TYPE_ANY && !member->reference
+           && !member->constraints && !member->combined_constraints) continue;
+        rust_diagnostic(module, member,
+                        "CBOR SEQUENCE supports direct primitives, bounded strings, and ANY only");
+        return -1;
+    }
+    return 0;
+}
+
+/*
+ * Purpose: validate a bounded direct-alternative CHOICE for CBOR generation.
+ * Source: C one-pair CHOICE CBOR text-key map. Version/date: 2026-10-30.
+ * Inputs: module supplies diagnostics; expr owns alternatives; codecs is mask.
+ * Returns zero for supported shape, -1 otherwise. Errors: extensions, aliases,
+ * unsupported alternatives and post-sanitization collisions fail closed.
+ * Author: maintainers. History: first Rust CBOR CHOICE slice.
+ * Example: BOOLEAN or bounded INTEGER alternatives are accepted.
+ */
+static int
+rust_check_cbor_choice(asn1p_module_t *module, asn1p_expr_t *expr,
+                       uint64_t codecs) {
+    asn1p_expr_t *item;
+    size_t count = 0;
+    if(codecs != RUST_CODEC_CBOR || expr->constraints || expr->combined_constraints
+       || expr->lhs_params || expr->rhs_pspecs || expr->ioc_table || expr->marker.flags) {
+        rust_diagnostic(module, expr, "CHOICE requires CBOR-only direct alternatives");
+        return -1;
+    }
+    TQ_FOR(item, &expr->members, next) {
+        asn1p_expr_t *prior;
+        char *name;
+        if(++count > 8 || !rust_sequence_member_shape_valid(item)
+           || item->marker.flags != EM_NOMARK || !rust_enum_name_safe(item->Identifier)
+           || (item->expr_type != ASN_BASIC_BOOLEAN
+               && item->expr_type != ASN_BASIC_NULL
+               && item->expr_type != ASN_BASIC_INTEGER
+               && item->expr_type != ASN_TYPE_ANY)
+           || rust_check_sequence_member(module, item)) {
+            rust_diagnostic(module, item, "CBOR CHOICE needs at most eight direct supported alternatives");
+            return -1;
+        }
+        name = rust_enum_variant(item->Identifier);
+        if(!name) return -1;
+        TQ_FOR(prior, &expr->members, next) {
+            char *previous;
+            int collision;
+            if(prior == item) break;
+            previous = rust_enum_variant(prior->Identifier);
+            collision = !previous || !strcmp(name, previous)
+                || !strcmp(item->Identifier, prior->Identifier);
+            free(previous);
+            if(collision) {
+                free(name);
+                rust_diagnostic(module, item, "CBOR CHOICE alternative names collide");
+                return -1;
+            }
+        }
+        free(name);
+    }
+    if(!count) {
+        rust_diagnostic(module, expr, "CBOR CHOICE needs at least one alternative");
+        return -1;
+    }
+    return 0;
 }
 
 /*
@@ -2203,6 +2314,104 @@ rust_open_write_oer_decode(FILE *stream, const rust_open_plan_t *plan, const cha
         "            consumed_bytes: __asn1c_decoded.consumed_bytes })\n    }\n", selector, member) < 0 ? -1 : 0;
 }
 
+/* Emit a selector-checked CBOR SEQUENCE map with a directly encoded selected arm.
+ * Inputs: stream receives Rust; plan and names describe validated IOC rows.
+ * Returns zero or -1; errors: write failures. Source: C SEQUENCE/OPEN_TYPE CBOR.
+ * Version: 2026-10-30. Responsible: maintainers. History: selected CBOR slice.
+ * Example: a selected BOOLEAN becomes map key "value" with CBOR true/false.
+ */
+static int
+rust_open_write_cbor_encode(FILE *stream, const rust_open_plan_t *plan, const char *choice,
+                            const char *selector, const char *member) {
+    char low[64], high[64];
+    size_t i;
+    if(rust_format_bound(low, sizeof(low), plan->lower)
+       || rust_format_bound(high, sizeof(high), plan->upper)) return -1;
+    if(rust_write_method_doc(stream, "Encode the selected OPEN TYPE as a CBOR map.",
+        "`self` supplies selector and selected value; `limits` bounds resources.",
+        "Returns the encoded map.", "Returns an error for mismatched selectors, values, or limits.",
+        "`value.encode_cbor(&Default::default())?;")) return -1;
+    if(fprintf(stream, "    pub fn encode_cbor(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+        "        let id = ::asn1c_runtime::cbor::encode_integer_cbor(self.%s, %s, %s, limits)?;\n"
+        "        let value = match (self.%s, &self.%s) {\n",
+        selector, low, high, selector, member) < 0) return -1;
+    for(i = 0; i < plan->rows; i++) {
+        if(rust_format_bound(low, sizeof(low), plan->row[i].lower)
+           || rust_format_bound(high, sizeof(high), plan->row[i].upper)) return -1;
+        if(fprintf(stream, "            (%" PRId64 ", %s::Row%zu(value)) =>\n"
+            "                ::asn1c_runtime::cbor::encode_%s_cbor(*value, ",
+            plan->row[i].key, choice, i + 1,
+            plan->row[i].boolean ? "boolean" : "integer") < 0) return -1;
+        if(plan->row[i].boolean) {
+            if(fputs("limits)?,\n", stream) == EOF) return -1;
+        } else if(fprintf(stream, "%s, %s, limits)?,\n", low, high) < 0) return -1;
+    }
+    return fprintf(stream, "            _ => return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+        "                reason: \"OPEN TYPE selector and value do not match\" }),\n"
+        "        };\n        ::asn1c_runtime::cbor::encode_map(&[(\"%s\", id), (\"%s\", value)], limits)\n"
+        "    }\n", plan->selector->Identifier, plan->member->Identifier) < 0 ? -1 : 0;
+}
+
+/* Emit order-independent CBOR map decoding for one selector-directed arm.
+ * Inputs: stream receives Rust; plan and names describe validated IOC rows.
+ * Returns zero or -1; errors: write failures. Source: C CBOR SEQUENCE OPEN TYPE.
+ * Version: 2026-10-30. Responsible: maintainers. History: selected CBOR slice.
+ * Example: decode id after value by retaining a borrowed encoded value slice.
+ */
+static int
+rust_open_write_cbor_decode(FILE *stream, const rust_open_plan_t *plan, const char *choice,
+                            const char *selector, const char *member) {
+    char low[64], high[64];
+    size_t i;
+    if(rust_format_bound(low, sizeof(low), plan->lower)
+       || rust_format_bound(high, sizeof(high), plan->upper)) return -1;
+    if(rust_write_method_doc(stream, "Decode a selector-directed CBOR SEQUENCE map.",
+        "`input` supplies the map prefix; `limits` bounds resources.",
+        "Returns the selected record and prefix consumption.",
+        "Returns an error for missing, duplicate, unknown, or mismatched fields.",
+        "`Type::decode_cbor(input, &Default::default())?;")) return -1;
+    if(fprintf(stream, "    pub fn decode_cbor(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+        "        let map = ::asn1c_runtime::cbor::decode_map(input, limits)?;\n"
+        "        let mut id = None;\n        let mut raw = None;\n"
+        "        for entry in &map.value {\n            match entry.key {\n"
+        "                b\"%s\" => {\n"
+        "                    let decoded = ::asn1c_runtime::cbor::decode_integer_cbor(\n"
+        "                        entry.value, %s, %s, limits)?;\n"
+        "                    id = Some(::asn1c_runtime::cbor::complete_value(decoded, entry.value.len())?);\n"
+        "                },\n                b\"%s\" => raw = Some(entry.value),\n"
+        "                _ => {},\n"
+        "            }\n        }\n"
+        "        let id = id.ok_or(::asn1c_runtime::Error::InvalidEncoding {\n"
+        "            reason: \"missing OPEN TYPE selector\" })?;\n"
+        "        let raw = raw.ok_or(::asn1c_runtime::Error::InvalidEncoding {\n"
+        "            reason: \"missing OPEN TYPE value\" })?;\n"
+        "        let value = match id {\n",
+        plan->selector->Identifier, low, high, plan->member->Identifier) < 0) return -1;
+    for(i = 0; i < plan->rows; i++) {
+        if(rust_format_bound(low, sizeof(low), plan->row[i].lower)
+           || rust_format_bound(high, sizeof(high), plan->row[i].upper)) return -1;
+        if(fprintf(stream, "            %" PRId64 " => {\n"
+            "                let decoded = ::asn1c_runtime::cbor::decode_%s_cbor(raw, ",
+            plan->row[i].key, plan->row[i].boolean ? "boolean" : "integer") < 0) return -1;
+        if(plan->row[i].boolean) {
+            if(fputs("limits)?;\n", stream) == EOF) return -1;
+        } else if(fprintf(stream, "%s, %s, limits)?;\n", low, high) < 0) return -1;
+        if(fprintf(stream, "                %s::Row%zu(\n"
+            "                    ::asn1c_runtime::cbor::complete_value(decoded, raw.len())?)\n"
+            "            },\n", choice, i + 1) < 0) return -1;
+    }
+    return fprintf(stream, "            _ => return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+        "                reason: \"unknown OPEN TYPE selector\" }),\n"
+        "        };\n        let selected_id = id;\n"
+        "        let selected_value = value;\n"
+        "        Ok(::asn1c_runtime::Decoded {\n"
+        "            value: Self { %s: selected_id, %s: selected_value },\n"
+        "            consumed_bits: map.consumed_bits, consumed_bytes: map.consumed_bytes })\n"
+        "    }\n", selector, member) < 0 ? -1 : 0;
+}
+
 /* Emit a selector-driven UPER record from a validated IOC plan.
  * Inputs: stream receives Rust source; plan describes validated IOC rows.
  * Returns zero or -1 for write/allocation errors; no exceptions. Source:
@@ -2227,6 +2436,9 @@ rust_write_open_module(FILE *stream, const rust_open_plan_t *plan, uint64_t code
     if((codecs & RUST_CODEC_OER)
        && (rust_open_write_oer_encode(stream, plan, choice, selector, member)
            || rust_open_write_oer_decode(stream, plan, choice, selector, member))) goto done;
+    if((codecs & RUST_CODEC_CBOR)
+       && (rust_open_write_cbor_encode(stream, plan, choice, selector, member)
+           || rust_open_write_cbor_decode(stream, plan, choice, selector, member))) goto done;
     if(fputs("}\n", stream) == EOF) goto done;
     ret = 0;
 done:
@@ -2254,7 +2466,9 @@ rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
         return -1;
     }
     if(expr->expr_type == ASN_CONSTR_SEQUENCE) {
-        ret = rust_write_all_sequences(stream, name, expr, 1);
+        ret = rust_write_all_sequences(stream, name, expr, 1, codecs);
+    } else if(expr->expr_type == ASN_CONSTR_CHOICE) {
+        ret = rust_write_cbor_choice(stream, name, expr);
     } else if(expr->expr_type == ASN_TYPE_ANY) {
         ret = rust_write_any(stream, name, codecs);
     } else if(expr->expr_type == ASN_BASIC_BOOLEAN) {
@@ -2263,7 +2477,7 @@ rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
         ret = rust_write_null(stream, name, codecs);
     } else if((expr->expr_type == ASN_BASIC_OCTET_STRING || expr->expr_type == ASN_BASIC_BIT_STRING)
               && rust_containing_node(expr->combined_constraints, 0)) {
-        ret = rust_write_containing(stream, name, expr, rust_contained_primitive(module, expr));
+        ret = rust_write_containing(stream, name, expr, rust_contained_primitive(module, expr), codecs);
     } else if(expr->expr_type == ASN_BASIC_OCTET_STRING
               || expr->expr_type == ASN_BASIC_BIT_STRING) {
         ret = rust_write_string(stream, name, expr, codecs);
@@ -2347,7 +2561,8 @@ rust_write_any_codec(FILE *stream, const char *codec, const char *encode, const 
  * maintainers. History: first typed primitive subset. Example: emit an integer.
  */
 static int
-rust_write_containing(FILE *stream, const char *name, asn1p_expr_t *expr, asn1p_expr_t *inner) {
+rust_write_containing(FILE *stream, const char *name, asn1p_expr_t *expr, asn1p_expr_t *inner,
+                      uint64_t codecs) {
     int is_boolean = inner && inner->expr_type == ASN_BASIC_BOOLEAN;
     int64_t lower = 0, upper = 1;
     char low[64], high[64];
@@ -2361,25 +2576,74 @@ rust_write_containing(FILE *stream, const char *name, asn1p_expr_t *expr, asn1p_
         "#[derive(Clone, Debug, Eq, PartialEq)]\n"
         "pub struct %s(\n    /// Contained primitive state variable.\n    pub %s\n);\n\nimpl %s {\n",
         name, type, name) < 0) return -1;
-    if(rust_write_method_doc(stream, "Encode this contained value with UPER.",
+    if((codecs & RUST_CODEC_UPER) && rust_write_method_doc(stream, "Encode this contained value with UPER.",
         "`self` supplies the primitive; `limits` bounds resources.", "Returns the outer encoding.",
         "Returns an error for invalid values or exhausted resources.", "`value.encode_uper(&Default::default())?;"))
         return -1;
-    if(fprintf(stream, "    pub fn encode_uper(&self, limits: &::asn1c_runtime::Limits) ->\n"
+    if((codecs & RUST_CODEC_UPER)
+       && fprintf(stream, "    pub fn encode_uper(&self, limits: &::asn1c_runtime::Limits) ->\n"
         "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
         "        ::asn1c_runtime::uper_cursor::encode_containing_uper(%s, %s, %s, %s, limits)\n    }\n",
         value, low, high, octets) < 0) return -1;
-    if(rust_write_method_doc(stream, "Decode a contained UPER value.",
+    if((codecs & RUST_CODEC_UPER) && rust_write_method_doc(stream, "Decode a contained UPER value.",
         "`input` supplies the outer prefix; `limits` bounds resources.", "Returns the inner value and consumption.",
         "Returns an error for malformed contents or exhausted resources.",
         "`Type::decode_uper(input, &Default::default())?;"))
         return -1;
-    return fprintf(stream, "    pub fn decode_uper(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+    if((codecs & RUST_CODEC_UPER) && fprintf(stream,
+        "    pub fn decode_uper(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
         "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
         "        let decoded = ::asn1c_runtime::uper_cursor::decode_containing_uper(input, %s, %s, %s, limits)?;\n"
         "        Ok(::asn1c_runtime::Decoded { value: Self(%s),\n"
         "            consumed_bits: decoded.consumed_bits, consumed_bytes: decoded.consumed_bytes })\n"
-        "    }\n}\n\n", low, high, octets, decoded) < 0 ? -1 : 0;
+        "    }\n", low, high, octets, decoded) < 0) return -1;
+    if(codecs & RUST_CODEC_CBOR) {
+        if(rust_write_method_doc(stream, "Encode the contained CBOR primitive in a CBOR byte string.",
+            "`self` supplies the primitive; `limits` bounds resources.", "Returns the outer encoding.",
+            "Returns an error for invalid values or exhausted resources.",
+            "`value.encode_cbor(&Default::default())?;")) return -1;
+        if(fputs("    pub fn encode_cbor(&self, limits: &::asn1c_runtime::Limits) ->\n"
+                 "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n",
+                 stream) == EOF) return -1;
+        if(is_boolean) {
+            if(fputs("        let inner = ::asn1c_runtime::cbor::encode_boolean_cbor(self.0, limits)?;\n",
+                     stream) == EOF) return -1;
+        } else if(fprintf(stream,
+                         "        let inner = ::asn1c_runtime::cbor::encode_integer_cbor(self.0, %s, %s, limits)?;\n",
+                         low, high) < 0) return -1;
+        if(fprintf(stream, "        ::asn1c_runtime::cbor::encode_%s_cbor(&inner.bytes, %s0, usize::MAX, limits)\n"
+                           "    }\n",
+                   octets[0] == 't' ? "octet_string" : "bit_string",
+                   octets[0] == 't' ? "" : "inner.bit_len, ") < 0) return -1;
+        if(rust_write_method_doc(stream, "Decode one contained CBOR primitive from a CBOR byte string.",
+            "`input` supplies the outer prefix; `limits` bounds resources.",
+            "Returns the inner value and outer consumption.",
+            "Returns an error for invalid outer bits or incomplete inner CBOR.",
+            "`Type::decode_cbor(input, &Default::default())?;")) return -1;
+        if(fprintf(stream, "    pub fn decode_cbor(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+                           "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+                           "        let outer = ::asn1c_runtime::cbor::decode_%s_cbor(\n"
+                           "            input, 0, usize::MAX, limits)?;\n",
+                   octets[0] == 't' ? "octet_string" : "bit_string") < 0) return -1;
+        if(octets[0] != 't'
+           && fputs("        if outer.value.bit_len() % 8 != 0 {\n"
+                    "            return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+                    "                reason: \"contained CBOR is not octet aligned\" });\n"
+                    "        }\n", stream) == EOF) return -1;
+        if(fprintf(stream, "        let inner = outer.value%s;\n",
+                   octets[0] == 't' ? "" : ".into_bytes()") < 0) return -1;
+        if(is_boolean) {
+            if(fputs("        let decoded = ::asn1c_runtime::cbor::decode_boolean_cbor(&inner, limits)?;\n",
+                     stream) == EOF) return -1;
+        } else if(fprintf(stream,
+                         "        let decoded = ::asn1c_runtime::cbor::decode_integer_cbor(&inner, %s, %s, limits)?;\n",
+                         low, high) < 0) return -1;
+        if(fputs("        let value = ::asn1c_runtime::cbor::complete_value(decoded, inner.len())?;\n"
+                 "        Ok(::asn1c_runtime::Decoded { value: Self(value),\n"
+                 "            consumed_bits: outer.consumed_bits, consumed_bytes: outer.consumed_bytes })\n"
+                 "    }\n", stream) == EOF) return -1;
+    }
+    return fputs("}\n\n", stream) == EOF ? -1 : 0;
 }
 
 /*
@@ -2441,7 +2705,7 @@ rust_write_inline_enum(FILE *stream, const char *name, asn1p_expr_t *expr) {
  */
 static int
 rust_write_sequence(FILE *stream, const char *name, asn1p_expr_t *expr,
-                    int top_level) {
+                    int top_level, uint64_t codecs) {
     asn1p_expr_t *member;
     if(fprintf(stream,
         "/// ASN.1 SEQUENCE record with direct inline fields.\n"
@@ -2451,6 +2715,7 @@ rust_write_sequence(FILE *stream, const char *name, asn1p_expr_t *expr,
         if(rust_write_sequence_field(stream, name, member)) return -1;
     }
     if(fprintf(stream, "}\n\nimpl %s {\n", name) < 0) return -1;
+    if(codecs & RUST_CODEC_UPER) {
     if(rust_write_method_doc(stream,
             "Write this record's presence map and payload into the shared UPER cursor.",
             "`self` supplies this record; `writer` belongs to the complete value.",
@@ -2487,7 +2752,10 @@ rust_write_sequence(FILE *stream, const char *name, asn1p_expr_t *expr,
     }
     if(fputs("        };\n        Ok(value)\n    }\n\n", stream) == EOF)
         return -1;
-    if(!top_level) return fputs("}\n\n", stream) == EOF ? -1 : 0;
+    if(!top_level) {
+        if(fputs("}\n\n", stream) == EOF) return -1;
+        return 0;
+    }
     if(rust_write_method_doc(stream,
             "Encode the complete SEQUENCE with one shared UPER budget.",
             "`self` supplies the record; `limits` bounds the whole operation.",
@@ -2516,8 +2784,390 @@ rust_write_sequence(FILE *stream, const char *name, asn1p_expr_t *expr,
              "            consumed_bits: consumed.consumed_bits,\n"
              "            consumed_bytes: consumed.consumed_bytes,\n"
              "        })\n"
-             "    }\n}\n\n", stream) == EOF) return -1;
+             "    }\n", stream) == EOF) return -1;
+    }
+    if((codecs & RUST_CODEC_CBOR) && rust_write_sequence_cbor(stream, expr)) return -1;
+    if(fputs("}\n\n", stream) == EOF) return -1;
     return 0;
+}
+
+/*
+ * Purpose: emit one CBOR map entry from a validated direct SEQUENCE field.
+ * Source: C SEQUENCE CBOR member-name mapping. Version/date: 2026-10-30.
+ * Inputs: stream receives Rust; member supplies name, type and OPTIONAL flag.
+ * Returns zero or -1 on output error. Errors: unsupported field shapes fail.
+ * Author: asn1c maintainers. History: Rust constructed CBOR slice.
+ * Example: an absent OPTIONAL BOOLEAN emits no map pair.
+ */
+static int
+rust_write_sequence_cbor_encode_field(FILE *stream, asn1p_expr_t *member) {
+    char *name = rust_identifier(member->Identifier, 1);
+    const char *value = member->marker.flags == EM_OPTIONAL ? "value" : NULL;
+    char expression[256];
+    int ret;
+    if(!name) return -1;
+    if(member->marker.flags == EM_OPTIONAL
+       && fprintf(stream, "        if let Some(value) = &self.%s {\n", name) < 0) {
+        free(name);
+        return -1;
+    }
+    if(!value) {
+        int written = snprintf(expression, sizeof(expression), "self.%s", name);
+        if(written < 0 || (size_t)written >= sizeof(expression)) {
+            free(name);
+            return -1;
+        }
+        value = expression;
+    }
+    if(member->expr_type == ASN_BASIC_BOOLEAN)
+        ret = fprintf(stream, "            entries.push((\"%s\", ::asn1c_runtime::encode_boolean_cbor("
+                      "%s%s, limits)?));\n", member->Identifier,
+                      member->marker.flags == EM_OPTIONAL ? "*" : "", value);
+    else if(member->expr_type == ASN_BASIC_NULL)
+        ret = fprintf(stream, "            entries.push((\"%s\", "
+                      "::asn1c_runtime::encode_null_cbor(limits)?));\n", member->Identifier);
+    else if(member->expr_type == ASN_BASIC_INTEGER) {
+        int64_t lower, upper;
+        char low[64], high[64];
+        if(rust_integer_bounds(member, &lower, &upper)
+           || rust_format_bound(low, sizeof(low), lower)
+           || rust_format_bound(high, sizeof(high), upper)) ret = -1;
+        else ret = fprintf(stream, "            entries.push((\"%s\", "
+                           "::asn1c_runtime::encode_integer_cbor(%s%s, %s, %s, limits)?));\n",
+                           member->Identifier, member->marker.flags == EM_OPTIONAL ? "*" : "",
+                           value, low, high);
+    } else if(member->expr_type == ASN_TYPE_ANY)
+        ret = fprintf(stream, "            entries.push((\"%s\", "
+                      "::asn1c_runtime::cbor::encode_any_cbor(%s.as_slice(), limits)?));\n",
+                      member->Identifier, value);
+    else if(member->expr_type == ASN_BASIC_OCTET_STRING
+            || member->expr_type == ASN_BASIC_BIT_STRING) {
+        size_t lower, upper;
+        int fixed = !rust_fixed_size(member, &lower);
+        if(fixed) upper = lower;
+        else if(rust_bounded_size(member, &lower, &upper)) {
+            free(name);
+            return -1;
+        }
+        if(member->expr_type == ASN_BASIC_OCTET_STRING)
+            ret = fprintf(stream,
+                "            entries.push((\"%s\", ::asn1c_runtime::cbor::"
+                "encode_octet_string_cbor(%s.as_slice(), %zu, %zu, limits)?));\n",
+                member->Identifier, value, lower, upper);
+        else if(fixed)
+            ret = fprintf(stream,
+                "            entries.push((\"%s\", ::asn1c_runtime::cbor::"
+                "encode_bit_string_cbor(%s.as_slice(), %zu, %zu, %zu, limits)?));\n",
+                member->Identifier, value, lower, lower, upper);
+        else ret = fprintf(stream,
+                "            entries.push((\"%s\", ::asn1c_runtime::cbor::"
+                "encode_bit_string_cbor(%s.as_bytes(), %s.bit_len(), %zu, %zu, limits)?));\n",
+                member->Identifier, value, value, lower, upper);
+    }
+    else ret = -1;
+    if(ret >= 0 && member->marker.flags == EM_OPTIONAL)
+        ret = fputs("        }\n", stream) == EOF ? -1 : 0;
+    free(name);
+    return ret < 0 ? -1 : 0;
+}
+
+/*
+ * Purpose: emit one CBOR map decode arm with full-value validation.
+ * Source: C SEQUENCE CBOR text-key dispatch. Version/date: 2026-10-30.
+ * Inputs: stream receives Rust; member supplies name and primitive codec.
+ * Returns zero or -1 on output error. Errors: unsupported field shape fails.
+ * Author: asn1c maintainers. History: Rust constructed CBOR slice.
+ * Example: a duplicate key fails before overwriting the first value.
+ */
+static int
+rust_write_sequence_cbor_decode_field(FILE *stream, asn1p_expr_t *member) {
+    char *name = rust_identifier(member->Identifier, 1);
+    int ret;
+    if(!name) return -1;
+    ret = fprintf(stream, "                b\"%s\" => {\n", member->Identifier);
+    if(ret >= 0 && member->expr_type == ASN_BASIC_BOOLEAN)
+        ret = fputs("                    let item = ::asn1c_runtime::decode_boolean_cbor(entry.value, limits)?;\n",
+                    stream) == EOF ? -1 : 0;
+    else if(ret >= 0 && member->expr_type == ASN_BASIC_NULL)
+        ret = fputs("                    let item = ::asn1c_runtime::decode_null_cbor(entry.value, limits)?;\n",
+                    stream) == EOF ? -1 : 0;
+    else if(ret >= 0 && member->expr_type == ASN_BASIC_INTEGER) {
+        int64_t lower, upper;
+        char low[64], high[64];
+        if(rust_integer_bounds(member, &lower, &upper)
+           || rust_format_bound(low, sizeof(low), lower)
+           || rust_format_bound(high, sizeof(high), upper)) ret = -1;
+        else ret = fprintf(stream,
+            "                    let item = ::asn1c_runtime::decode_integer_cbor("
+            "entry.value, %s, %s, limits)?;\n", low, high);
+    } else if(ret >= 0 && member->expr_type == ASN_TYPE_ANY)
+        ret = fputs("                    let item = ::asn1c_runtime::cbor::decode_any_cbor(entry.value, limits)?;\n",
+                    stream) == EOF ? -1 : 0;
+    else if(ret >= 0 && (member->expr_type == ASN_BASIC_OCTET_STRING
+                         || member->expr_type == ASN_BASIC_BIT_STRING)) {
+        size_t lower, upper;
+        if(!rust_fixed_size(member, &lower)) upper = lower;
+        else if(rust_bounded_size(member, &lower, &upper)) ret = -1;
+        if(ret >= 0) ret = fprintf(stream,
+            "                    let item = ::asn1c_runtime::cbor::decode_%s_cbor("
+            "entry.value, %zu, %zu, limits)?;\n",
+            member->expr_type == ASN_BASIC_OCTET_STRING ? "octet_string" : "bit_string",
+            lower, upper);
+    }
+    if(ret >= 0 && member->expr_type == ASN_BASIC_NULL)
+        ret = fprintf(stream,
+            "                    let _: () = ::asn1c_runtime::cbor::complete_value("
+            "item, entry.value.len())?;\n"
+            "                    __asn1c_%s = Some(());\n                }\n", name);
+    else if(ret >= 0) ret = fprintf(stream,
+        "                    __asn1c_%s = Some(::asn1c_runtime::cbor::complete_value("
+        "item, entry.value.len())?%s);\n                }\n", name,
+        member->expr_type == ASN_BASIC_BIT_STRING
+          && !rust_fixed_size(member, &(size_t){0}) ? ".into_bytes()" : "");
+    free(name);
+    return ret < 0 ? -1 : 0;
+}
+
+/*
+ * Purpose: emit CBOR map encoder and decoder methods for one flat SEQUENCE.
+ * Source: repository C CBOR SEQUENCE mapping. Version/date: 2026-10-30.
+ * Inputs: stream receives Rust; expr owns checked members. Returns zero or -1.
+ * Errors: output failure or invalid default literal. Author: maintainers.
+ * History: added direct primitive, OPTIONAL and ANY CBOR record support.
+ * Example: encode a record as a definite map with declaration-order keys.
+ */
+static int
+rust_write_sequence_cbor(FILE *stream, asn1p_expr_t *expr) {
+    asn1p_expr_t *member;
+    size_t count = 0;
+    TQ_FOR(member, &expr->members, next) count++;
+    if(rust_write_method_doc(stream, "Encode this SEQUENCE as a CBOR text-key map.",
+        "`self` supplies fields; `limits` bounds the whole map.",
+        "Returns declaration-order map bytes.",
+        "Returns an error for invalid fields, allocation, or resource exhaustion.",
+        "`let bytes = value.encode_cbor(&Default::default())?;")) return -1;
+    if(fprintf(stream,
+        "    pub fn encode_cbor(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+        "        let mut entries = ::std::vec::Vec::new();\n"
+        "        entries.try_reserve_exact(%zu).map_err(|_| "
+        "::asn1c_runtime::Error::AllocationFailed { requested_bytes: %zu })?;\n",
+        count, count) < 0) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        if(rust_write_sequence_cbor_encode_field(stream, member)) return -1;
+    }
+    if(fputs("        ::asn1c_runtime::cbor::encode_map(&entries, limits)\n    }\n", stream) == EOF)
+        return -1;
+    if(rust_write_method_doc(stream, "Decode one CBOR SEQUENCE map prefix.",
+        "`input` supplies encoded bytes; `limits` bounds the complete map.",
+        "Returns validated fields and prefix consumption.",
+        "Returns an error for malformed, duplicate, or missing fields and resource exhaustion.",
+        "`let value = Type::decode_cbor(input, &Default::default())?;")) return -1;
+    if(fputs(
+        "    pub fn decode_cbor(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+        "        let decoded = ::asn1c_runtime::cbor::decode_map(input, limits)?;\n"
+        "        let consumed_bits = decoded.consumed_bits;\n"
+        "        let consumed_bytes = decoded.consumed_bytes;\n", stream) == EOF) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        char *name = rust_identifier(member->Identifier, 1);
+        const char *type = member->expr_type == ASN_BASIC_BOOLEAN ? "bool"
+                           : member->expr_type == ASN_BASIC_NULL ? "()"
+                           : member->expr_type == ASN_BASIC_INTEGER ? "i64"
+                           : member->expr_type == ASN_BASIC_BIT_STRING
+                             && rust_fixed_size(member, &(size_t){0})
+                             ? "::asn1c_runtime::BitStringValue"
+                           : "::std::vec::Vec<u8>";
+        int ret = name ? fprintf(stream, "        let mut __asn1c_%s: Option<%s> = None;\n", name, type) : -1;
+        free(name);
+        if(ret < 0) return -1;
+    }
+    if(count) {
+        if(fputs("        for entry in decoded.value {\n            match entry.key {\n", stream) == EOF) return -1;
+        TQ_FOR(member, &expr->members, next) {
+            if(rust_write_sequence_cbor_decode_field(stream, member)) return -1;
+        }
+        if(fputs("                _ => {}\n            }\n        }\n", stream) == EOF) return -1;
+    } else if(fputs("        let _ = decoded.value;\n", stream) == EOF) return -1;
+    if(fputs("        let value = Self {\n", stream) == EOF) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        char *name = rust_identifier(member->Identifier, 1);
+        int ret = -1;
+        if(!name) return -1;
+        if(member->marker.flags == EM_OPTIONAL)
+            ret = fprintf(stream, "            %s: __asn1c_%s,\n", name, name);
+        else if(member->marker.flags == EM_DEFAULT) {
+            char literal[64];
+            if(!rust_sequence_default_literal(member, literal, sizeof(literal)))
+                ret = fprintf(stream, "            %s: __asn1c_%s.unwrap_or(%s),\n",
+                              name, name, literal);
+        } else ret = fprintf(stream,
+            "            %s: __asn1c_%s.ok_or(::asn1c_runtime::Error::InvalidEncoding {\n"
+            "                reason: \"missing required CBOR SEQUENCE field\",\n"
+            "            })?,\n", name, name);
+        free(name);
+        if(ret < 0) return -1;
+    }
+    return fputs("        };\n        Ok(::asn1c_runtime::Decoded {\n"
+                 "            value, consumed_bits, consumed_bytes,\n"
+                 "        })\n    }\n", stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Purpose: emit one typed CHOICE alternative encoder arm.
+ * Source: C one-pair CBOR CHOICE map. Version/date: 2026-10-30.
+ * Inputs: stream receives Rust; item is one validated direct alternative.
+ * Returns zero or -1 on output failure. Errors: unsupported item fails.
+ * Author: maintainers. History: bounded CBOR CHOICE generation.
+ * Example: a BOOLEAN choice maps to one named CBOR pair.
+ */
+static int
+rust_write_cbor_choice_encode_arm(FILE *stream, asn1p_expr_t *item) {
+    char *variant = rust_enum_variant(item->Identifier);
+    int ret = -1;
+    if(!variant) return -1;
+    if(item->expr_type == ASN_BASIC_BOOLEAN)
+        ret = fprintf(stream,
+            "            Self::%s(value) => (\"%s\", "
+            "::asn1c_runtime::encode_boolean_cbor(*value, limits)?),\n",
+            variant, item->Identifier);
+    else if(item->expr_type == ASN_BASIC_NULL)
+        ret = fprintf(stream,
+            "            Self::%s => (\"%s\", ::asn1c_runtime::encode_null_cbor(limits)?),\n",
+            variant, item->Identifier);
+    else if(item->expr_type == ASN_BASIC_INTEGER) {
+        int64_t lower, upper;
+        char low[64], high[64];
+        if(!rust_integer_bounds(item, &lower, &upper)
+           && !rust_format_bound(low, sizeof(low), lower)
+           && !rust_format_bound(high, sizeof(high), upper))
+            ret = fprintf(stream,
+                "            Self::%s(value) => (\"%s\", "
+                "::asn1c_runtime::encode_integer_cbor(*value, %s, %s, limits)?),\n",
+                variant, item->Identifier, low, high);
+    } else if(item->expr_type == ASN_TYPE_ANY)
+        ret = fprintf(stream,
+            "            Self::%s(value) => (\"%s\", "
+            "::asn1c_runtime::cbor::encode_any_cbor(value, limits)?),\n",
+            variant, item->Identifier);
+    free(variant);
+    return ret < 0 ? -1 : 0;
+}
+
+/*
+ * Purpose: emit one typed CHOICE alternative decoder arm.
+ * Source: C one-pair CBOR CHOICE map. Version/date: 2026-10-30.
+ * Inputs: stream receives Rust; item is one validated direct alternative.
+ * Returns zero or -1 on output failure. Errors: unsupported item fails.
+ * Author: maintainers. History: bounded CBOR CHOICE generation.
+ * Example: unknown names fail without selecting an alternative.
+ */
+static int
+rust_write_cbor_choice_decode_arm(FILE *stream, asn1p_expr_t *item) {
+    char *variant = rust_enum_variant(item->Identifier);
+    int ret = -1;
+    if(!variant) return -1;
+    if(item->expr_type == ASN_BASIC_BOOLEAN)
+        ret = fprintf(stream,
+            "            b\"%s\" => Self::%s(::asn1c_runtime::cbor::complete_value(\n"
+            "                ::asn1c_runtime::decode_boolean_cbor(entry.value, limits)?, "
+            "entry.value.len())?),\n", item->Identifier, variant);
+    else if(item->expr_type == ASN_BASIC_NULL)
+        ret = fprintf(stream,
+            "            b\"%s\" => {\n"
+            "                let _: () = ::asn1c_runtime::cbor::complete_value(\n"
+            "                    ::asn1c_runtime::decode_null_cbor(entry.value, limits)?, "
+            "entry.value.len())?;\n"
+            "                Self::%s\n            },\n", item->Identifier, variant);
+    else if(item->expr_type == ASN_BASIC_INTEGER) {
+        int64_t lower, upper;
+        char low[64], high[64];
+        if(!rust_integer_bounds(item, &lower, &upper)
+           && !rust_format_bound(low, sizeof(low), lower)
+           && !rust_format_bound(high, sizeof(high), upper))
+            ret = fprintf(stream,
+                "            b\"%s\" => Self::%s(::asn1c_runtime::cbor::complete_value(\n"
+                "                ::asn1c_runtime::decode_integer_cbor("
+                "entry.value, %s, %s, limits)?, entry.value.len())?),\n",
+                item->Identifier, variant, low, high);
+    } else if(item->expr_type == ASN_TYPE_ANY)
+        ret = fprintf(stream,
+            "            b\"%s\" => Self::%s(::asn1c_runtime::cbor::complete_value(\n"
+            "                ::asn1c_runtime::cbor::decode_any_cbor(entry.value, limits)?, "
+            "entry.value.len())?),\n", item->Identifier, variant);
+    free(variant);
+    return ret < 0 ? -1 : 0;
+}
+
+/*
+ * Purpose: emit a typed direct-alternative CHOICE and its CBOR map methods.
+ * Source: C CHOICE CBOR one-entry map. Version/date: 2026-10-30.
+ * Inputs: stream receives Rust; name is type; expr owns checked alternatives.
+ * Returns zero or -1 on output failure. Errors: unsupported item or write.
+ * Author: maintainers. History: bounded CHOICE CBOR slice.
+ * Example: `Choice::Flag(true)` emits `{ "flag": true }` in CBOR mapping.
+ */
+static int
+rust_write_cbor_choice(FILE *stream, const char *name, asn1p_expr_t *expr) {
+    asn1p_expr_t *item;
+    if(fprintf(stream,
+        "/// ASN.1 CHOICE with direct CBOR alternatives.\n"
+        "#[derive(Clone, Debug, Eq, PartialEq)]\n"
+        "pub enum %s {\n", name) < 0) return -1;
+    TQ_FOR(item, &expr->members, next) {
+        char *variant = rust_enum_variant(item->Identifier);
+        const char *type = item->expr_type == ASN_BASIC_BOOLEAN ? "bool"
+                           : item->expr_type == ASN_BASIC_INTEGER ? "i64"
+                           : "::std::vec::Vec<u8>";
+        int ret = variant ? (item->expr_type == ASN_BASIC_NULL
+            ? fprintf(stream, "    /// ASN.1 %s alternative.\n    %s,\n", item->Identifier, variant)
+            : fprintf(stream, "    /// ASN.1 %s alternative.\n    %s(%s),\n",
+                      item->Identifier, variant, type)) : -1;
+        free(variant);
+        if(ret < 0) return -1;
+    }
+    if(fprintf(stream, "}\n\nimpl %s {\n", name) < 0) return -1;
+    if(rust_write_method_doc(stream, "Encode this CHOICE as a one-pair CBOR map.",
+        "`self` selects one alternative; `limits` bounds resources.",
+        "Returns one named encoded alternative.",
+        "Returns an error for invalid value, allocation, or exhausted limits.",
+        "`let encoded = value.encode_cbor(&Default::default())?;")) return -1;
+    if(fputs(
+        "    pub fn encode_cbor(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+        "        let entry = match self {\n", stream) == EOF) return -1;
+    TQ_FOR(item, &expr->members, next) {
+        if(rust_write_cbor_choice_encode_arm(stream, item)) return -1;
+    }
+    if(fputs("        };\n        ::asn1c_runtime::cbor::encode_map(&[entry], limits)\n    }\n", stream) == EOF)
+        return -1;
+    if(rust_write_method_doc(stream, "Decode one CBOR CHOICE map prefix.",
+        "`input` is one encoded prefix; `limits` bounds resources.",
+        "Returns the selected value and prefix consumption.",
+        "Returns an error for unknown/multiple alternatives, malformed values, or limits.",
+        "`let decoded = Type::decode_cbor(input, &Default::default())?;")) return -1;
+    if(fputs(
+        "    pub fn decode_cbor(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+        "        let decoded = ::asn1c_runtime::cbor::decode_map(input, limits)?;\n"
+        "        if decoded.value.len() != 1 {\n"
+        "            return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+        "                reason: \"CBOR CHOICE requires one map entry\",\n"
+        "            });\n        }\n"
+        "        let entry = &decoded.value[0];\n"
+        "        let value = match entry.key {\n", stream) == EOF) return -1;
+    TQ_FOR(item, &expr->members, next) {
+        if(rust_write_cbor_choice_decode_arm(stream, item)) return -1;
+    }
+    return fputs(
+        "            _ => return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+        "                reason: \"unknown CBOR CHOICE alternative\",\n"
+        "            }),\n"
+        "        };\n"
+        "        Ok(::asn1c_runtime::Decoded {\n"
+        "            value, consumed_bits: decoded.consumed_bits,\n"
+        "            consumed_bytes: decoded.consumed_bytes,\n"
+        "        })\n    }\n}\n\n", stream) == EOF ? -1 : 0;
 }
 
 /*
@@ -2529,7 +3179,7 @@ rust_write_sequence(FILE *stream, const char *name, asn1p_expr_t *expr,
  */
 static int
 rust_write_all_sequences(FILE *stream, const char *name, asn1p_expr_t *expr,
-                         int top_level) {
+                         int top_level, uint64_t codecs) {
     asn1p_expr_t *member;
     TQ_FOR(member, &expr->members, next) {
         char *nested_name;
@@ -2538,14 +3188,14 @@ rust_write_all_sequences(FILE *stream, const char *name, asn1p_expr_t *expr,
         nested_name = rust_nested_type_name(name, member);
         if(!nested_name) return -1;
         if((member->expr_type == ASN_CONSTR_SEQUENCE
-            ? rust_write_all_sequences(stream, nested_name, member, 0)
+            ? rust_write_all_sequences(stream, nested_name, member, 0, codecs)
             : rust_write_inline_enum(stream, nested_name, member))) {
             free(nested_name);
             return -1;
         }
         free(nested_name);
     }
-    return rust_write_sequence(stream, name, expr, top_level);
+    return rust_write_sequence(stream, name, expr, top_level, codecs);
 }
 
 /*
@@ -3156,6 +3806,82 @@ rust_write_string_jer(FILE *stream, size_t length, int octets) {
 }
 
 /*
+ * Purpose: emit direct fixed or bounded OCTET STRING CBOR methods.
+ * Source: C OCTET_STRING CBOR byte-string mapping. Version: 2026-10-30.
+ * Inputs: stream receives Rust; lower/upper are inclusive octet bounds.
+ * Returns zero or -1 on output failure. Errors: no exception is thrown.
+ * Author: asn1c maintainers. History: direct Rust string CBOR slice.
+ * Example: one octet emits `41 XX`.
+ */
+static int
+rust_write_octet_cbor(FILE *stream, size_t lower, size_t upper) {
+    if(rust_write_method_doc(stream,
+        "Encode this OCTET STRING as a CBOR byte string.",
+        "`self` supplies octets; `limits` bounds resources.",
+        "Returns definite byte-string encoding.",
+        "Returns an error for invalid SIZE, allocation, or resource exhaustion.",
+        "`let encoded = value.encode_cbor(&Default::default())?;")) return -1;
+    if(fprintf(stream,
+        "    pub fn encode_cbor(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::cbor::encode_octet_string_cbor(&self.0, %zu, %zu, limits)\n"
+        "    }\n", lower, upper) < 0) return -1;
+    if(rust_write_method_doc(stream,
+        "Decode one OCTET STRING CBOR prefix.",
+        "`input` supplies bytes; `limits` bounds resources.",
+        "Returns validated octets and consumed prefix lengths.",
+        "Returns an error for malformed, truncated, out-of-range, or over-limit input.",
+        "`let decoded = Type::decode_cbor(input, &Default::default())?;")) return -1;
+    return fprintf(stream,
+        "    pub fn decode_cbor(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::cbor::decode_octet_string_cbor(input, %zu, %zu, limits)\n"
+        "            .map(|decoded| decoded.map(Self))\n    }\n",
+        lower, upper) < 0 ? -1 : 0;
+}
+
+/*
+ * Purpose: emit direct fixed or bounded BIT STRING CBOR methods.
+ * Source: C BIT_STRING CBOR unused-bit-octet mapping. Version: 2026-10-30.
+ * Inputs: stream receives Rust; bounds count meaningful bits; bounded chooses
+ * the validated BitStringValue representation. Returns zero or -1.
+ * Errors: output failures are reported; no exception is thrown.
+ * Author: maintainers. History: direct Rust string CBOR slice.
+ * Example: one set bit emits `42 07 80`.
+ */
+static int
+rust_write_bit_cbor(FILE *stream, size_t lower, size_t upper, int bounded) {
+    char bit_text[32];
+    int written = snprintf(bit_text, sizeof(bit_text), "%zu", lower);
+    if(written < 0 || (size_t)written >= sizeof(bit_text)) return -1;
+    if(rust_write_method_doc(stream,
+        "Encode this BIT STRING with a CBOR unused-bit octet.",
+        "`self` supplies packed bits; `limits` bounds resources.",
+        "Returns definite byte-string encoding.",
+        "Returns an error for invalid SIZE, padding, allocation, or limits.",
+        "`let encoded = value.encode_cbor(&Default::default())?;")) return -1;
+    if(fprintf(stream,
+        "    pub fn encode_cbor(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::cbor::encode_bit_string_cbor(\n"
+        "            %s, %s, %zu, %zu, limits)\n    }\n",
+        bounded ? "self.0.as_bytes()" : "&self.0",
+        bounded ? "self.0.bit_len()" : bit_text, lower, upper) < 0) return -1;
+    if(rust_write_method_doc(stream,
+        "Decode one BIT STRING CBOR prefix.",
+        "`input` supplies bytes; `limits` bounds resources.",
+        "Returns validated packed bits and consumed prefix lengths.",
+        "Returns an error for malformed, truncated, out-of-range, or over-limit input.",
+        "`let decoded = Type::decode_cbor(input, &Default::default())?;")) return -1;
+    return fprintf(stream,
+        "    pub fn decode_cbor(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::cbor::decode_bit_string_cbor(input, %zu, %zu, limits)\n"
+        "            .map(|decoded| decoded.map(%s))\n    }\n",
+        lower, upper, bounded ? "Self" : "|value| Self(value.into_bytes())") < 0 ? -1 : 0;
+}
+
+/*
  * Emit a bounded OCTET STRING wrapper with selected UPER and JER methods.
  * Parameters: stream receives Rust; name is the generated type; lower and
  * upper are validated inclusive bounds; codecs selects emitted methods.
@@ -3211,6 +3937,8 @@ rust_write_bounded_octets(FILE *stream, const char *name,
        && rust_write_bounded_octets_uper(stream, lower, upper)) return -1;
     if((codecs & RUST_CODEC_JER)
        && rust_write_bounded_octets_jer(stream, lower, upper)) return -1;
+    if((codecs & RUST_CODEC_CBOR)
+       && rust_write_octet_cbor(stream, lower, upper)) return -1;
     if(fputs("}\n\n", stream) == EOF) return -1;
     return 0;
 }
@@ -3324,14 +4052,20 @@ rust_write_bounded_bits(FILE *stream, const char *name,
             "Returns the validated value.",
             "Returns an error when its bit length is outside the ASN.1 SIZE range.",
             "`let bits = BitStringValue::new(vec![0xA0], 3)?;")) return -1;
-    if(fprintf(stream,
+    if(fputs(
         "    pub fn new(value: ::asn1c_runtime::BitStringValue) ->\n"
-        "        ::core::result::Result<Self, ::asn1c_runtime::Error> {\n"
-        "        if value.bit_len() < %zu || value.bit_len() > %zu {\n"
+        "        ::core::result::Result<Self, ::asn1c_runtime::Error> {\n",
+        stream) == EOF) return -1;
+    if(lower == 0) {
+        if(fprintf(stream, "        if value.bit_len() > %zu {\n", upper) < 0) return -1;
+    } else if(fprintf(stream,
+        "        if value.bit_len() < %zu || value.bit_len() > %zu {\n",
+        lower, upper) < 0) return -1;
+    if(fputs(
         "            return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
         "                reason: \"BIT STRING length is outside its SIZE range\",\n"
         "            });\n        }\n        Ok(Self(value))\n    }\n",
-        lower, upper) < 0) return -1;
+        stream) == EOF) return -1;
     if(rust_write_method_doc(stream,
             "Return the packed BIT STRING contents.",
             "`self` is a validated bounded BIT STRING.",
@@ -3410,6 +4144,8 @@ rust_write_bounded_bits(FILE *stream, const char *name,
             "            consumed_bytes: decoded.consumed_bytes,\n"
             "        })\n    }\n", lower, upper) < 0) return -1;
     }
+    if((codecs & RUST_CODEC_CBOR)
+       && rust_write_bit_cbor(stream, lower, upper, 1)) return -1;
     if(fputs("}\n\n", stream) == EOF) return -1;
     return 0;
 }
@@ -3443,6 +4179,10 @@ rust_write_string(FILE *stream, const char *name, asn1p_expr_t *expr,
        && rust_write_string_uper(stream, length, octets)) return -1;
     if((codecs & RUST_CODEC_JER)
        && rust_write_string_jer(stream, length, octets)) return -1;
+    if(codecs & RUST_CODEC_CBOR) {
+        if(octets ? rust_write_octet_cbor(stream, length, length)
+                  : rust_write_bit_cbor(stream, length, length, 0)) return -1;
+    }
     return fputs("}\n\n", stream) == EOF ? -1 : 0;
 }
 

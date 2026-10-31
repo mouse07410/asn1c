@@ -1,4 +1,4 @@
-/* Verify transparent SET JER groups and fail-closed SET CBOR groups. */
+/* Verify transparent SET groups in the repository's JER and CBOR mappings. */
 #undef NDEBUG
 #include <assert.h>
 #include <stdint.h>
@@ -324,28 +324,107 @@ check_pretty(const JerGroupSet_t *source) {
 }
 
 /*
- * Purpose: reject grouped CBOR before emitting bytes or allocating a value.
- * Source: explicit unsupported group mapping and CBOR codec contracts.
+ * Purpose: verify flat CBOR group keys, absent groups, and malformed maps.
+ * Source: SET JER transparent groups and CBOR's name-keyed map mapping.
  * Version/date: 1.0, 2026-10-30. Input: source is an initialized grouped SET.
- * Returns: nothing. Exceptions: none; assertions detect unexpected success.
- * Author: asn1c maintainers. History: added pending a defined CBOR mapping.
- * Example: even an empty map must fail for a group-bearing descriptor.
+ * Returns: nothing. Exceptions: none; assertions detect codec regressions.
+ * Author: asn1c maintainers. History: added flat CBOR group interoperability.
+ * Example: first and flag appear beside root in one CBOR map.
  */
 static void
 check_cbor(const JerGroupSet_t *source) {
-    static const uint8_t empty_map[] = {0xa0};
+    static const uint8_t wire[] = {0xa5, 0x64, 'r', 'o', 'o', 't', 0x01,
+        0x65, 'f', 'i', 'r', 's', 't', 0x02,
+        0x64, 'f', 'l', 'a', 'g', 0xf5,
+        0x66, 's', 'e', 'c', 'o', 'n', 'd', 0x03,
+        0x65, 'e', 'x', 't', 'r', 'a', 0x04};
+    static const uint8_t reversed[] = {0xa5, 0x65, 'e', 'x', 't', 'r', 'a', 0x04,
+        0x66, 's', 'e', 'c', 'o', 'n', 'd', 0x03,
+        0x64, 'f', 'l', 'a', 'g', 0xf5,
+        0x65, 'f', 'i', 'r', 's', 't', 0x02,
+        0x64, 'r', 'o', 'o', 't', 0x01};
+    static const uint8_t root_only[] = {0xa1, 0x64, 'r', 'o', 'o', 't', 0x01};
+    static const uint8_t missing_first[] = {0xa2, 0x64, 'r', 'o', 'o', 't', 0x01,
+        0x64, 'f', 'l', 'a', 'g', 0xf5};
+    static const uint8_t duplicate[] = {0xa3, 0x64, 'r', 'o', 'o', 't', 0x01,
+        0x65, 'f', 'i', 'r', 's', 't', 0x02,
+        0x65, 'f', 'i', 'r', 's', 't', 0x02};
+    static const char invalid_name[] = {(char)0xff, 0};
     JerGroupSet_t *decoded = 0;
-    JerPlainSet_t plain = {0};
     JerGroupSet_t absent = {0};
+    asn_TYPE_member_t *group_leaf = &asn_DEF_JerGroupSet.elements[1].type->elements[0];
+    const char *saved_name = group_leaf->name;
+    int saved_flags = group_leaf->flags;
+    JerGroupSet_t *existing = calloc(1, sizeof(*existing));
+    size_t prefix;
     output_t output = {{0}, 0};
     asn_enc_rval_t encoded = cbor_encode(&asn_DEF_JerGroupSet, source, append_output, &output);
-    asn_dec_rval_t result = cbor_decode(0, &asn_DEF_JerGroupSet, (void **)&decoded, empty_map, sizeof(empty_map));
-    assert(encoded.encoded == -1 && output.used == 0);
-    assert(result.code == RC_FAIL && !decoded);
+    asn_dec_rval_t result;
+    assert(encoded.encoded == (ssize_t)sizeof(wire) && output.used == sizeof(wire));
+    assert(!memcmp(output.bytes, wire, sizeof(wire)));
+    result = cbor_decode(0, &asn_DEF_JerGroupSet, (void **)&decoded, wire, sizeof(wire));
+    assert(result.code == RC_OK && result.consumed == sizeof(wire));
+    check_value(decoded);
+    ASN_STRUCT_FREE(asn_DEF_JerGroupSet, decoded);
+    decoded = 0;
+    result = cbor_decode(0, &asn_DEF_JerGroupSet, (void **)&decoded, reversed, sizeof(reversed));
+    assert(result.code == RC_OK && result.consumed == sizeof(reversed));
+    check_value(decoded);
+    ASN_STRUCT_FREE(asn_DEF_JerGroupSet, decoded);
+    for(prefix = 0; prefix < sizeof(wire); prefix++) {
+        decoded = 0;
+        result = cbor_decode(0, &asn_DEF_JerGroupSet, (void **)&decoded, wire, prefix);
+        assert(result.code != RC_OK && !decoded);
+    }
+    absent.root = 1;
+    output.used = 0;
     encoded = cbor_encode(&asn_DEF_JerGroupSet, &absent, append_output, &output);
+    assert(encoded.encoded == (ssize_t)sizeof(root_only) && output.used == sizeof(root_only));
+    assert(!memcmp(output.bytes, root_only, sizeof(root_only)));
+    result = cbor_decode(0, &asn_DEF_JerGroupSet, (void **)&decoded, root_only, sizeof(root_only));
+    assert(result.code == RC_OK && decoded && !decoded->ext1 && !decoded->ext2);
+    ASN_STRUCT_FREE(asn_DEF_JerGroupSet, decoded);
+    decoded = 0;
+    result = cbor_decode(0, &asn_DEF_JerGroupSet, (void **)&decoded,
+                         missing_first, sizeof(missing_first));
+    assert(result.code == RC_FAIL);
+    if(decoded) ASN_STRUCT_FREE(asn_DEF_JerGroupSet, decoded);
+    decoded = 0;
+    result = cbor_decode(0, &asn_DEF_JerGroupSet, (void **)&decoded, duplicate, sizeof(duplicate));
+    assert(result.code == RC_FAIL);
+    if(decoded) ASN_STRUCT_FREE(asn_DEF_JerGroupSet, decoded);
+    decoded = 0;
+    group_leaf->name = "root";
+    output.used = 0;
+    encoded = cbor_encode(&asn_DEF_JerGroupSet, source, append_output, &output);
     assert(encoded.encoded == -1 && output.used == 0);
-    encoded = cbor_encode(&asn_DEF_JerPlainSet, &plain, append_output, &output);
-    assert(encoded.encoded > 0 && output.used > 0);
+    result = cbor_decode(0, &asn_DEF_JerGroupSet, (void **)&decoded, root_only, sizeof(root_only));
+    assert(result.code == RC_FAIL && !decoded);
+    group_leaf->name = saved_name;
+    group_leaf->name = invalid_name;
+    output.used = 0;
+    encoded = cbor_encode(&asn_DEF_JerGroupSet, source, append_output, &output);
+    assert(encoded.encoded == -1 && output.used == 0);
+    result = cbor_decode(0, &asn_DEF_JerGroupSet, (void **)&decoded, root_only, sizeof(root_only));
+    assert(result.code == RC_FAIL && !decoded);
+    group_leaf->name = saved_name;
+    group_leaf->flags |= ATF_OPEN_TYPE;
+    output.used = 0;
+    encoded = cbor_encode(&asn_DEF_JerGroupSet, source, append_output, &output);
+    assert(encoded.encoded == -1 && output.used == 0);
+    result = cbor_decode(0, &asn_DEF_JerGroupSet, (void **)&decoded, root_only, sizeof(root_only));
+    assert(result.code == RC_FAIL && !decoded);
+    group_leaf->flags = saved_flags;
+    assert(existing);
+    init_value(existing);
+    result = cbor_decode(0, &asn_DEF_JerGroupSet, (void **)&existing, duplicate, sizeof(duplicate));
+    assert(result.code == RC_FAIL);
+    assert(existing->root == 1 && existing->ext1 && existing->ext1->first == 2);
+    assert(existing->ext2 && existing->ext2->second && *existing->ext2->second == 3);
+    assert(existing->extra && *existing->extra == 4);
+    result = cbor_decode(0, &asn_DEF_JerGroupSet, (void **)&existing, root_only, sizeof(root_only));
+    assert(result.code == RC_OK && existing->root == 1 && !existing->ext1 && !existing->ext2);
+    ASN_STRUCT_FREE(asn_DEF_JerGroupSet, existing);
 }
 
 /*
@@ -365,8 +444,10 @@ check_cbor_plain_inputs(void) {
                                        0x64, 'r', 'o', 'o', 't', 2};
     static const uint8_t unknown_duplicate[] = {0xa3, 0x61, 'x', 1, 0x61, 'x', 2,
                                                0x64, 'r', 'o', 'o', 't', 1};
-    const uint8_t *inputs[] = {empty, duplicate, unknown_duplicate};
-    size_t lengths[] = {sizeof(empty), sizeof(duplicate), sizeof(unknown_duplicate)};
+    static const uint8_t invalid_utf8[] = {0xa2, 0x64, 'r', 'o', 'o', 't', 1,
+                                           0x61, 0xff, 0x00};
+    const uint8_t *inputs[] = {empty, duplicate, unknown_duplicate, invalid_utf8};
+    size_t lengths[] = {sizeof(empty), sizeof(duplicate), sizeof(unknown_duplicate), sizeof(invalid_utf8)};
     JerPlainSet_t *value = 0;
     asn_dec_rval_t result;
     size_t i;
@@ -394,6 +475,50 @@ check_cbor_plain_inputs(void) {
         assert(result.code != RC_OK);
         if(value) ASN_STRUCT_FREE(asn_DEF_JerPlainSet, value);
     }
+}
+
+static int selector_called; /* State variable recording an unsafe selector call. */
+
+/*
+ * Purpose: detect whether SET CBOR invokes a selector with an absent sibling.
+ * Source: generated IOC selector callback contract. Version: 2026-10-30.
+ * Inputs: td names the parent and sptr is its staged value.
+ * Returns: an empty selection. Errors: none. Author: asn1c maintainers.
+ * History: added conservative OPEN TYPE sibling regression.
+ * Example: an absent OPTIONAL sibling leaves selector_called at zero.
+ */
+static asn_type_selector_result_t
+count_selector(const asn_TYPE_descriptor_t *td, const void *sptr) {
+    asn_type_selector_result_t result = {0, 0};
+    (void)td;
+    (void)sptr;
+    selector_called++;
+    return result;
+}
+
+/*
+ * Purpose: reject a present SET OPEN TYPE before calling an opaque selector
+ * when an unrelated OPTIONAL member is absent.
+ * Source: SET CBOR deferred selector safety boundary. Version: 2026-10-30.
+ * Inputs: none. Returns: none. Errors: assertions detect unsafe dispatch.
+ * Author: asn1c maintainers. History: added missing sibling regression.
+ * Example: root is present while the OPTIONAL flag is omitted.
+ */
+static void
+check_cbor_open_absent_sibling(void) {
+    static const uint8_t wire[] = {0xa1, 0x64, 'r', 'o', 'o', 't', 1};
+    asn_TYPE_descriptor_t td = asn_DEF_JerPlainSet;
+    asn_TYPE_member_t members[2];
+    JerPlainSet_t *value = 0;
+    asn_dec_rval_t decoded;
+    assert(td.elements_count == 2);
+    memcpy(members, td.elements, sizeof(members));
+    members[0].flags |= ATF_OPEN_TYPE;
+    members[0].type_selector = count_selector;
+    td.elements = members;
+    selector_called = 0;
+    decoded = cbor_decode(0, &td, (void **)&value, wire, sizeof(wire));
+    assert(decoded.code == RC_FAIL && !value && selector_called == 0);
 }
 
 /*
@@ -455,6 +580,7 @@ main(void) {
     check_inputs();
     check_cbor(&source);
     check_cbor_plain_inputs();
+    check_cbor_open_absent_sibling();
     check_cbor_bad_descriptor();
     ASN_STRUCT_FREE_CONTENTS_ONLY(asn_DEF_JerGroupSet, &source);
     return 0;

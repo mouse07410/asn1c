@@ -1,0 +1,10 @@
+CborChoice DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+Value ::= CHOICE {
+    flag BOOLEAN,
+    empty NULL,
+    count INTEGER (-2..5),
+    data ANY
+}
+
+END

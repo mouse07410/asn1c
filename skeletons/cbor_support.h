@@ -80,6 +80,9 @@ ssize_t cbor_encode_head(uint8_t major, uint64_t argument,
 ssize_t cbor_decode_head(const uint8_t *buf, size_t size,
                          uint8_t *major_out, uint64_t *argument_out);
 
+/* Validate strict RFC 3629 UTF-8 for a CBOR text string; 1 valid, 0 invalid. */
+int cbor_utf8_valid(const uint8_t *data, size_t length);
+
 /*
  * Encode a CBOR unsigned integer (canonical: shortest encoding).
  */

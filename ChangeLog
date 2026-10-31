@@ -1,4 +1,22 @@
 Changes since v1.5.3:
+	* Extend C CBOR SEQUENCE decoding with duplicate/required-member checks,
+	  deferred direct selected OPEN TYPE resolution, and transactional output.
+	  Flatten SET extension-group leaves into its repository-defined name-keyed
+	  map, validate duplicate names, and preserve existing SET values on errors.
+	* Validate C CBOR SEQUENCE OF and SET OF array counts, list storage, and child
+	  consumption before accepting values; stage decoded lists so malformed
+	  input preserves a preallocated value.
+	* Validate C CBOR CHOICE descriptors and active arms before encoding, then
+	  decode a complete one-entry map into staged storage with UTF-8 key and
+	  full child-consumption checks. Add generated sanitizer and fuzz regressions.
+	* Harden C CBOR byte strings, BIT STRING padding, negative large INTEGER
+	  conversion, UTF-8 text and UTF8String validation, recursive unknown-item
+	  skipping, and public codec argument validation. Add malformed-length,
+	  CONTAINING, fuzz corpus, and preallocated-value regressions.
+	* Expand opt-in Rust CBOR encoding and decoding for direct BIT/OCTET STRING,
+	  flat SEQUENCE with OPTIONAL/default fields, narrow CHOICE alternatives,
+	  selected OPEN TYPE, and typed primitive CONTAINING values. Add bounded map
+	  parsing, C interoperability vectors, and unsupported-shape gates.
 	* Add bounded C SET BER/DER direct OPEN TYPE support for one unambiguous
 	  explicitly tagged member, with two-pass unordered decoding, canonical
 	  DER sorting, selector checks, and generated sanitizer regressions.

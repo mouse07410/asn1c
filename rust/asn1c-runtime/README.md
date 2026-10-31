@@ -119,3 +119,25 @@ ANY. They decode one definite prefix, accept leading semantic tags and
 nonminimal definite heads, and reject INTEGER bignum tags and indefinite byte
 strings. ANY is represented as a definite CBOR byte string and is limited to
 `INT32_MAX` octets for compatibility with the C `ANY_t` size field.
+
+`cbor::encode_map` and `cbor::decode_map` support generated flat SEQUENCE
+values as definite text-key maps. The encoder preserves entry order and rejects
+duplicate keys or non-complete CBOR values. The decoder accepts leading tags
+and nonminimal definite heads, rejects duplicate keys, and returns borrowed
+complete value spans. Unknown definite nested values can be skipped up to 64
+levels; indefinite items and invalid UTF-8 text keys remain unsupported. The
+generated decoder validates
+each known value consumes its entire span and checks required members.
+
+Direct fixed or bounded OCTET STRING values use definite CBOR byte strings.
+BIT STRING values add one leading payload octet for the unused-bit count,
+matching C; the decoder checks exact meaningful bit length and zero padding.
+Both paths enforce the declared SIZE range and caller resource limits.
+
+Generated CBOR CHOICE values use one-entry text-key maps. Top-level typed
+CONTAINING wrappers place complete inner BOOLEAN or bounded INTEGER CBOR bytes
+inside those BIT/OCTET string encodings; BIT contents must be octet aligned.
+The narrow IOC-selected OPEN TYPE uses a two-field SEQUENCE map with the
+selector and a direct selected CBOR value. Decoding accepts either field order,
+skips unique unknown keys, rejects duplicates and missing fields, and checks
+the selected value consumes its full encoded span.

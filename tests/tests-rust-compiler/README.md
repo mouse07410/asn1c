@@ -136,3 +136,36 @@ CBOR. Definite byte strings represent ANY. Decoding accepts semantic tags and
 nonminimal definite heads, but rejects INTEGER bignum tags, indefinite strings,
 invalid or truncated data, and exhausted resource budgets. C interoperability
 tests cover primitive boundaries and opaque byte-string lengths.
+
+`CborSequence.asn1` exercises flat CBOR SEQUENCE maps with required and
+OPTIONAL primitive fields, OPTIONAL ANY, and a bounded INTEGER DEFAULT. Rust
+and generated C compare the same declaration-order wire vector. Rust decoding
+also checks unordered keys, omitted OPTIONAL/default fields, unknown definite
+nested values, duplicate and missing keys, malformed values, and resource
+limits. CBOR nested SEQUENCE, SET, SEQUENCE CONTAINING, and
+extension groups remain gated before Rust output is published.
+
+`CborStrings.asn1` covers fixed and bounded BIT/OCTET STRING values, zero
+lengths, exact bit length, unused-bit padding, malformed heads, SIZE checks,
+and resource limits. Generated C and Rust compare the same byte-string vectors.
+`CborSequenceStrings.asn1` puts those strings in required and OPTIONAL fields
+of a CBOR SEQUENCE map, with generated C/Rust wire parity and malformed-field
+checks.
+
+`CborChoice.asn1` covers the bounded direct CHOICE subset. Each alternative
+uses the same one-entry text-key map as generated C. Tests cover BOOLEAN,
+NULL, bounded INTEGER, and opaque ANY alternatives, plus unknown, duplicate,
+multiple, malformed, truncated, and over-limit inputs.
+
+`CborContaining.asn1` checks top-level local BOOLEAN and bounded INTEGER
+contents. The Rust wrapper places a complete inner CBOR primitive inside the
+ordinary C BIT/OCTET CBOR byte string. Decoding rejects non-octet BIT contents,
+extra inner bytes, out-of-range integers, malformed inner types, and limits.
+Generated C confirms the raw outer wire vectors; C constraint validation can
+also parse the inner value with `ATS_CBOR`.
+
+`OpenSelected.asn1` also exercises CBOR for the existing two-field
+IOC-selected OPEN TYPE shape. The parent map contains the selector and direct
+selected CBOR primitive. Generated Rust accepts either key order, rejects
+missing, duplicate, or out-of-range fields, skips unique unknown fields, and requires the selected
+primitive to consume its complete map value. Generated C confirms wire parity.

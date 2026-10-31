@@ -11,7 +11,13 @@ The matching runtime uses `std`, forbids unsafe Rust, and has no dependencies.
 with typed Rust bindings and a local copy of the Rust runtime. The current
 defaults are UPER and CER. `-gen-APER` and `-gen-OER` add paired primitive
 encoders and decoders; `-gen-BER` adds BER decoding and DER encoding.
-`-gen-CBOR` adds direct BOOLEAN, NULL, bounded INTEGER, and opaque ANY codecs.
+`-gen-CBOR` adds direct BOOLEAN, NULL, bounded INTEGER, opaque ANY, fixed or
+bounded BIT/OCTET STRING, and flat SEQUENCE map codecs for these direct field
+types. A bounded direct CHOICE subset uses one-pair text-key maps. SEQUENCE
+supports required, OPTIONAL, and literal BOOLEAN or bounded
+INTEGER DEFAULT fields in this mode. Top-level local primitive CONTAINING
+uses complete inner CBOR bytes inside an outer BIT/OCTET byte string. The narrow
+IOC-selected OPEN TYPE record also supports direct selected CBOR map values.
 -gen-JER adds compact JSON encoding and complete-input decoding for top-level
 BOOLEAN, NULL, bounded INTEGER, direct ANY, direct nonextensible ENUMERATED, direct
 fixed-size or bounded nonextensible OCTET STRING, and direct fixed-size or
@@ -80,9 +86,14 @@ fresh directory after adding application code or running Cargo there.
 | Direct bounded BIT STRING | One nonextensible SIZE(l..u), 0 <= l < u < 65536; JER `value`/`length` object, JER alone or with UPER |
 | Direct ENUMERATED | Nonextensible root values fitting i64, up to 64 items; UPER or opt-in JER encode/decode |
 | Primitive CONTAINING | UPER top-level and required/OPTIONAL SEQUENCE fields; unconstrained BIT/OCTET STRING containing a same-module direct BOOLEAN or non-singleton bounded INTEGER; validates inner range, length, and octet padding |
+| Top-level primitive CONTAINING under CBOR | Unconstrained BIT/OCTET STRING containing a same-module direct BOOLEAN or non-singleton bounded INTEGER; complete inner CBOR value, octet-aligned BIT contents, and C-compatible outer byte string |
 | Direct ANY and required/OPTIONAL ANY SEQUENCE fields | Opaque octets under UPER with C-compatible length framing and shared cursor budgets |
 | Direct ANY | Opt-in APER/OER octet framing, JER hexadecimal strings, and CBOR byte strings; C interoperability vectors and malformed-input checks |
 | Direct BOOLEAN, NULL, bounded INTEGER | Opt-in CBOR prefix encode/decode, including semantic tags and nonminimal heads; bignum tags are rejected |
+| Direct fixed/bounded BIT or OCTET STRING | Opt-in CBOR definite byte-string encode/decode with SIZE checks; BIT STRING includes an unused-bit count octet and validates zero padding |
+| Flat SEQUENCE of CBOR primitives, strings, or ANY | Opt-in definite text-key map; declaration-order encoding, unordered prefix decoding, required/OPTIONAL/DEFAULT fields, duplicate-key checks and unknown definite-item skip |
+| Direct CHOICE of BOOLEAN, NULL, bounded INTEGER or ANY | CBOR-only one-entry text-key map with at most eight alternatives; unknown, duplicate or multiple keys fail |
+| IOC-selected OPEN TYPE under CBOR | Narrow existing two-field required SEQUENCE and local object-set rows; direct BOOLEAN or bounded INTEGER selected value in a text-key map; selector agreement and complete selected value checked; unique unknown keys skipped and duplicate keys rejected |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Strict CER decoding; canonical short-form TLV only |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in BER prefix decoding and DER encoding with `-gen-BER` |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in APER and OER encode/decode; each call begins at an octet boundary |
@@ -90,12 +101,17 @@ fresh directory after adding application code or running Cargo there.
 | Direct fixed OCTET/BIT STRING | Opt-in JER uppercase-hex encoding, case-insensitive complete-input decoding, exact packed size and zero-padding checks, and resource limits |
 | Direct bounded BIT STRING | Opt-in JER minified `{"value":"HEX","length":N}` encoding and complete-input decoding with range, padding, and resource-limit checks |
 | Direct ENUMERATED | Opt-in JER quoted-name encode/decode; complete input, JSON whitespace, unknown-name and resource-limit checks |
-| XER and nonprimitive CBOR/JER | Planned; unavailable in Rust mode |
-| SET, collections, extensible, unbounded, fragmented or disjoint strings, named-bit strings, extensible ENUMERATED, aliases, imports, top-level tagged types | Planned; rejected in this slice |
+| XER and CBOR/JER outside the listed slices | Planned; unavailable in Rust mode |
+| SET, collections, CHOICE outside the listed CBOR slice, extensible, unbounded, fragmented or disjoint strings, named-bit strings, extensible ENUMERATED, aliases, imports, top-level tagged types | Planned; rejected in this slice |
 | Encoding controls, other information-object forms, parameterized types | Planned; rejected in this slice |
-| IOC-selected OPEN TYPE | UPER, APER, OER; one local nonextensible set, bounded INTEGER selector, BOOLEAN or bounded INTEGER rows, and a two-field required SEQUENCE; APER selector 0..255 and row spans <=255 |
+| IOC-selected OPEN TYPE | UPER, APER, OER, CBOR; one local nonextensible set, bounded INTEGER selector, BOOLEAN or bounded INTEGER rows, and a two-field required SEQUENCE; APER selector 0..255 and row spans <=255 |
 | Other CONTAINING and OPEN TYPE forms | Unsupported; rejected before output publication |
-| ANY in SEQUENCE outside UPER, and ANY under BER/DER, CER, or XER | Require codec-specific opaque-value semantics; rejected before output publication |
+| ANY in SEQUENCE outside UPER/CBOR, and ANY under BER/DER, CER, or XER | Require codec-specific opaque-value semantics; rejected before output publication |
+
+For CBOR SEQUENCE, an omitted literal DEFAULT decodes to the default value.
+The Rust record does not retain whether that field appeared on the wire, so
+encoding that record includes the value explicitly. Generated C emits a DEFAULT
+member when its pointer is populated and omits it when absent.
 
 BOOLEAN and INTEGER wrappers expose constructors, value getters, and the
 methods selected during generation. UPER methods encode and prefix-decode the

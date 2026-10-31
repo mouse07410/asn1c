@@ -1,0 +1,12 @@
+CborSequence DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+Packet ::= SEQUENCE {
+    flag BOOLEAN,
+    empty NULL,
+    amount INTEGER (-2..5),
+    maybe BOOLEAN OPTIONAL,
+    opaque ANY OPTIONAL,
+    usual INTEGER (0..3) DEFAULT 2
+}
+
+END

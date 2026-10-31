@@ -9,9 +9,13 @@
 #include <cbor_support.h>
 
 /*
- * Encode BIT STRING as CBOR byte string.
- * Format: [unused_bits_count] + [bit data bytes]
- * For 0-bit BIT STRING: encode as 1-byte byte string containing 0x00.
+ * Purpose: encode BIT STRING as a byte string with one unused-bit octet.
+ * Source: repository CBOR mapping. Version: 2026-10-30.
+ * Inputs: td identifies the type; sptr is the BIT STRING; cb/app_key consume
+ * output. Returns: encoded bytes or failure. Errors: invalid length, padding,
+ * or callback fail. Author: asn1c maintainers.
+ * History: added padding and overflow validation.
+ * Example: a one-bit 0x80 value emits 0x42 0x07 0x80.
  */
 asn_enc_rval_t
 BIT_STRING_encode_cbor(const asn_TYPE_descriptor_t *td, const void *sptr,
@@ -23,8 +27,12 @@ BIT_STRING_encode_cbor(const asn_TYPE_descriptor_t *td, const void *sptr,
 
     (void)td;
 
-    if(!st) ASN__ENCODE_FAILED;
-    if(st->size > 0 && !st->buf) ASN__ENCODE_FAILED;
+    if(!st || !cb || st->size > (size_t)SSIZE_MAX - 10
+       || (st->size > 0 && !st->buf)
+       || st->bits_unused < 0 || st->bits_unused > 7
+       || (st->size == 0 && st->bits_unused != 0)) ASN__ENCODE_FAILED;
+    if(st->size && st->bits_unused
+       && (st->buf[st->size - 1] & ((1u << st->bits_unused) - 1u))) ASN__ENCODE_FAILED;
 
     /* The encoded byte string has length = 1 + st->size */
     /* First byte = unused bits count (0-7), rest = bit data */
@@ -49,66 +57,82 @@ BIT_STRING_encode_cbor(const asn_TYPE_descriptor_t *td, const void *sptr,
 }
 
 /*
- * Decode CBOR byte string into BIT STRING.
- * Format: first byte = unused bits, remaining = bit data.
+ * Purpose: decode a definite CBOR byte string into BIT STRING storage.
+ * Source: repository CBOR mapping. Version: 2026-10-30.
+ * Inputs: opt_codec_ctx limits nesting; td identifies type; sptr owns output;
+ * buf_ptr/size bound input. Returns: status and consumed bytes.
+ * Errors: malformed length/padding and allocation failures preserve an
+ * existing value. Author: asn1c maintainers.
+ * History: added checked lengths and canonical padding validation.
+ * Example: 0x42 0x07 0x80 decodes to one set bit.
  */
 asn_dec_rval_t
 BIT_STRING_decode_cbor(const asn_codec_ctx_t *opt_codec_ctx,
                        const asn_TYPE_descriptor_t *td,
                        void **sptr, const void *buf_ptr, size_t size) {
-    BIT_STRING_t *st = (BIT_STRING_t *)*sptr;
+    BIT_STRING_t *st;
     const uint8_t *buf = (const uint8_t *)buf_ptr;
     ssize_t tag_skip;
     uint8_t major;
     uint64_t bstr_len;
     ssize_t hlen;
+    size_t prefix, data_len;
+    const uint8_t *data;
+    uint8_t bits_unused;
+    uint8_t *p = NULL;
     asn_dec_rval_t rval = {RC_FAIL, 0};
 
     (void)opt_codec_ctx;
     (void)td;
 
-    if(!st) {
-        st = (BIT_STRING_t *)CALLOC(1, sizeof(*st));
-        if(!st) ASN__DECODE_FAILED;
-        *sptr = st;
-    }
-
-    if(size < 1) ASN__DECODE_FAILED;
+    if(!sptr || !buf || size < 1) ASN__DECODE_FAILED;
 
     /* Skip any leading CBOR tags (RFC 8949 §3.4) */
     tag_skip = cbor_skip_tags(buf, size);
-    if(tag_skip < 0) ASN__DECODE_FAILED;
+    if(tag_skip < 0 || (size_t)tag_skip >= size) ASN__DECODE_FAILED;
 
     hlen = cbor_decode_head(buf + tag_skip, size - (size_t)tag_skip,
                             &major, &bstr_len);
     if(hlen < 0 || major != CBOR_MAJOR_BYTES) ASN__DECODE_FAILED;
-    if(size - (size_t)tag_skip - (size_t)hlen < bstr_len) ASN__DECODE_FAILED;
+    prefix = (size_t)tag_skip + (size_t)hlen;
+    if(bstr_len > SIZE_MAX || bstr_len > size - prefix) ASN__DECODE_FAILED;
 
     /* Minimum 1 byte for unused bits indicator */
     if(bstr_len < 1) ASN__DECODE_FAILED;
 
-    const uint8_t *data = buf + tag_skip + hlen;
-    uint8_t bits_unused = data[0];
-    size_t data_len = (size_t)bstr_len - 1;
+    data = buf + prefix;
+    bits_unused = data[0];
+    data_len = (size_t)bstr_len - 1;
 
     if(bits_unused > 7) ASN__DECODE_FAILED;
     if(data_len == 0 && bits_unused != 0) ASN__DECODE_FAILED;
+    if(data_len && bits_unused
+       && (data[data_len] & ((1u << bits_unused) - 1u))) ASN__DECODE_FAILED;
 
     /* Allocate bit data */
-    uint8_t *p = NULL;
     if(data_len > 0) {
+        if(data_len == SIZE_MAX) ASN__DECODE_FAILED;
         p = (uint8_t *)MALLOC(data_len + 1);
         if(!p) ASN__DECODE_FAILED;
         memcpy(p, data + 1, data_len);
         p[data_len] = '\0';
     }
 
+    st = (BIT_STRING_t *)*sptr;
+    if(!st) {
+        st = (BIT_STRING_t *)CALLOC(1, sizeof(*st));
+        if(!st) {
+            FREEMEM(p);
+            ASN__DECODE_FAILED;
+        }
+        *sptr = st;
+    }
     FREEMEM(st->buf);
     st->buf = p;
-    st->size = (int)data_len;
+    st->size = data_len;
     st->bits_unused = bits_unused;
 
-    rval.consumed = (size_t)tag_skip + (size_t)hlen + (size_t)bstr_len;
+    rval.consumed = prefix + (size_t)bstr_len;
     rval.code = RC_OK;
     return rval;
 }

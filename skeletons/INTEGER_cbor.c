@@ -134,13 +134,20 @@ INTEGER_encode_cbor(const asn_TYPE_descriptor_t *td, const void *sptr,
 }
 
 /*
- * Decode CBOR integer into INTEGER_t.
+ * Purpose: decode one CBOR integer or bignum into fresh BER-backed storage.
+ * Source: repository CBOR mapping. Version: 2026-10-30.
+ * Inputs: opt_codec_ctx limits nesting; td identifies the type; sptr receives
+ * allocated output; buf_ptr/size bound the CBOR item. Returns: status and bytes.
+ * Errors: malformed heads, truncated bignums, and allocation failures fail.
+ * Author: asn1c maintainers. History: fixed host-independent negative values
+ * below INT64_MIN and checked bignum lengths. Caller frees partial output.
+ * Example: major-one argument 2^63 becomes BER FF 7F FF FF FF FF FF FF FF.
  */
-asn_dec_rval_t
-INTEGER_decode_cbor(const asn_codec_ctx_t *opt_codec_ctx,
-                    const asn_TYPE_descriptor_t *td,
-                    void **sptr, const void *buf_ptr, size_t size) {
-    INTEGER_t *st = (INTEGER_t *)*sptr;
+static asn_dec_rval_t
+INTEGER_decode_cbor_value(const asn_codec_ctx_t *opt_codec_ctx,
+                          const asn_TYPE_descriptor_t *td,
+                          void **sptr, const void *buf_ptr, size_t size) {
+    INTEGER_t *st;
     const uint8_t *buf = (const uint8_t *)buf_ptr;
     uint8_t major;
     uint64_t argument;
@@ -150,13 +157,13 @@ INTEGER_decode_cbor(const asn_codec_ctx_t *opt_codec_ctx,
     (void)opt_codec_ctx;
     (void)td;
 
+    if(!sptr || !buf || size < 1) ASN__DECODE_FAILED;
+    st = (INTEGER_t *)*sptr;
     if(!st) {
         st = (INTEGER_t *)CALLOC(1, sizeof(*st));
         if(!st) ASN__DECODE_FAILED;
         *sptr = st;
     }
-
-    if(size < 1) ASN__DECODE_FAILED;
 
     /*
      * Skip any leading CBOR tags that are NOT bignum tags (2/3).
@@ -218,53 +225,14 @@ INTEGER_decode_cbor(const asn_codec_ctx_t *opt_codec_ctx,
              *   This is -2^64 which needs 9 bytes in BER.
              */
             uint8_t ber[9];
-            size_t ber_len;
-            if(argument == UINT64_MAX) {
-                /* -(2^64): BER needs sign byte 0xFF followed by 8 zero bytes */
-                ber[0] = 0xFF;
-                memset(ber + 1, 0x00, 8);
-                ber_len = 9;
-            } else {
-                /*
-                 * argument > INT64_MAX but < UINT64_MAX
-                 * value = -(argument+1), fits in 9 bytes max.
-                 * magnitude = argument + 1 (positive, fits in uint64_t)
-                 * BER negative: take two's complement of magnitude.
-                 * Store as big-endian with sign extension.
-                 */
-                uint64_t mag = argument + 1;  /* always > 0 here */
-                /* Put as big-endian unsigned first */
-                uint8_t tmp[8];
-                tmp[0] = (uint8_t)(mag >> 56);
-                tmp[1] = (uint8_t)(mag >> 48);
-                tmp[2] = (uint8_t)(mag >> 40);
-                tmp[3] = (uint8_t)(mag >> 32);
-                tmp[4] = (uint8_t)(mag >> 24);
-                tmp[5] = (uint8_t)(mag >> 16);
-                tmp[6] = (uint8_t)(mag >> 8);
-                tmp[7] = (uint8_t)(mag);
-                /* Negate: two's complement */
-                uint64_t neg_val;
-                memcpy(&neg_val, tmp, 8);
-                neg_val = (~neg_val) + 1;  /* two's complement negate */
-                /* This is the negated 8-byte pattern */
-                ber[0] = (uint8_t)(neg_val >> 56);
-                ber[1] = (uint8_t)(neg_val >> 48);
-                ber[2] = (uint8_t)(neg_val >> 40);
-                ber[3] = (uint8_t)(neg_val >> 32);
-                ber[4] = (uint8_t)(neg_val >> 24);
-                ber[5] = (uint8_t)(neg_val >> 16);
-                ber[6] = (uint8_t)(neg_val >> 8);
-                ber[7] = (uint8_t)(neg_val);
-                /* The high bit must be set (it's negative), add prefix if needed */
-                if(ber[0] & 0x80) {
-                    ber_len = 8;
-                } else {
-                    /* Need sign extension byte */
-                    memmove(ber + 1, ber, 8);
-                    ber[0] = 0xFF;
-                    ber_len = 9;
-                }
+            size_t ber_len = sizeof(ber);
+            size_t octet;
+            uint64_t pattern = ~argument;
+
+            /* A value below INT64_MIN needs 0xFF plus eight big-endian bytes. */
+            ber[0] = 0xFF;
+            for(octet = 0; octet < 8; octet++) {
+                ber[octet + 1] = (uint8_t)(pattern >> (56 - 8 * octet));
             }
             /* Store in INTEGER_t */
             void *p = MALLOC(ber_len);
@@ -292,7 +260,8 @@ INTEGER_decode_cbor(const asn_codec_ctx_t *opt_codec_ctx,
                                      &tag_major, &bstr_len);
         if(bstr_hlen < 0 || tag_major != CBOR_MAJOR_BYTES)
             ASN__DECODE_FAILED;
-        if(size - (size_t)hlen - (size_t)bstr_hlen < bstr_len)
+        if(bstr_len > SIZE_MAX - 1
+           || bstr_len > size - (size_t)hlen - (size_t)bstr_hlen)
             ASN__DECODE_FAILED;
 
         bstr_buf = buf + hlen + bstr_hlen;
@@ -337,7 +306,8 @@ INTEGER_decode_cbor(const asn_codec_ctx_t *opt_codec_ctx,
             if(bstr_len == 0) {
                 ber[0] = 0xFF;  /* -1 */
             } else {
-                for(size_t i = 0; i < bstr_len; i++) {
+                size_t i;
+                for(i = 0; i < bstr_len; i++) {
                     ber[i] = (uint8_t)(~bstr_buf[i]);
                 }
                 /* If high bit not set, need to prepend 0xFF for sign */
@@ -362,4 +332,44 @@ INTEGER_decode_cbor(const asn_codec_ctx_t *opt_codec_ctx,
     }
 
     ASN__DECODE_FAILED;
+}
+
+/*
+ * Purpose: decode CBOR INTEGER transactionally into caller-owned storage.
+ * Source: repository CBOR mapping. Version: 2026-10-30.
+ * Inputs: opt_codec_ctx limits nesting; td identifies the type; sptr owns
+ * output; buf_ptr/size bound the item. Returns: status and consumed bytes.
+ * Errors: malformed input and allocation failures preserve prior output.
+ * Author: asn1c maintainers. History: isolated partial-value cleanup.
+ * Example: an invalid bignum leaves a preallocated INTEGER unchanged.
+ */
+asn_dec_rval_t
+INTEGER_decode_cbor(const asn_codec_ctx_t *opt_codec_ctx,
+                    const asn_TYPE_descriptor_t *td,
+                    void **sptr, const void *buf_ptr, size_t size) {
+    INTEGER_t *fresh = NULL;
+    asn_dec_rval_t result;
+
+    if(!sptr) ASN__DECODE_FAILED;
+    result = INTEGER_decode_cbor_value(opt_codec_ctx, td, (void **)&fresh,
+                                       buf_ptr, size);
+    if(result.code != RC_OK) {
+        if(fresh) {
+            FREEMEM(fresh->buf);
+            FREEMEM(fresh);
+        }
+        return result;
+    }
+
+    /* Commit only after the whole item and all bounds have passed. */
+    if(*sptr) {
+        INTEGER_t *prior = (INTEGER_t *)*sptr;
+        FREEMEM(prior->buf);
+        prior->buf = fresh->buf;
+        prior->size = fresh->size;
+        FREEMEM(fresh);
+    } else {
+        *sptr = fresh;
+    }
+    return result;
 }

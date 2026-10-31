@@ -7,9 +7,12 @@
 #include <string.h>
 
 /*
- * Encode a CBOR item header: major type (0-7) and argument.
- * Uses the canonical shortest encoding per RFC 7049.
- * Returns total bytes written, or -1 on callback error.
+ * Purpose: encode a shortest-form CBOR item head.
+ * Source: repository CBOR mapping. Version: 2026-10-30.
+ * Inputs: major is 0..7; argument is the head value; cb/app_key receive bytes.
+ * Returns: written byte count or -1. Errors: invalid major or callback fail.
+ * Author: asn1c maintainers. History: added argument validation.
+ * Example: major 2, argument 1 emits 0x41.
  */
 ssize_t
 cbor_encode_head(uint8_t major, uint64_t argument,
@@ -17,6 +20,8 @@ cbor_encode_head(uint8_t major, uint64_t argument,
     uint8_t buf[9];
     size_t len;
     uint8_t prefix = (major & 0x07) << 5;
+
+    if(major > 7 || !cb) return -1;
 
     if(argument <= 23) {
         buf[0] = prefix | (uint8_t)argument;
@@ -56,13 +61,17 @@ cbor_encode_head(uint8_t major, uint64_t argument,
 }
 
 /*
- * Decode a CBOR item header from buffer.
- * Returns bytes consumed (1..9), or -1 on error/truncation.
+ * Purpose: decode one definite CBOR item head.
+ * Source: repository CBOR mapping. Version: 2026-10-30.
+ * Inputs: buf/size bound input; major_out/argument_out receive the result.
+ * Returns: consumed header bytes or -1. Errors: invalid pointers, reserved
+ * additional information, and truncation fail. Author: asn1c maintainers.
+ * History: added pointer validation. Example: 0x41 means one-byte byte string.
  */
 ssize_t
 cbor_decode_head(const uint8_t *buf, size_t size,
                  uint8_t *major_out, uint64_t *argument_out) {
-    if(size < 1) return -1;
+    if(!buf || !major_out || !argument_out || size < 1) return -1;
 
     uint8_t first = buf[0];
     uint8_t major = first >> 5;
@@ -99,6 +108,46 @@ cbor_decode_head(const uint8_t *buf, size_t size,
     }
 }
 
+/*
+ * Purpose: validate the UTF-8 scalar-value encoding of CBOR text bytes.
+ * Source: RFC 3629 UTF-8 byte ranges. Version: 2026-10-30.
+ * Inputs: data/length bound the text. Returns: 1 for valid UTF-8, else 0.
+ * Errors: overlong forms, surrogates, truncation, and values above U+10FFFF
+ * return 0. Author: asn1c maintainers. History: added CBOR key validation.
+ * Example: C2 A2 is valid, while C0 80 is not.
+ */
+int
+cbor_utf8_valid(const uint8_t *data, size_t length) {
+    size_t offset = 0;
+    if(length && !data) return 0;
+    while(offset < length) {
+        uint8_t first = data[offset];
+        uint8_t minimum = 0x80, maximum = 0xbf;
+        size_t needed, follow;
+
+        if(first <= 0x7f) {
+            offset++;
+            continue;
+        }
+        if(first >= 0xc2 && first <= 0xdf) needed = 1;
+        else if(first == 0xe0) { needed = 2; minimum = 0xa0; }
+        else if(first == 0xed) { needed = 2; maximum = 0x9f; }
+        else if((first >= 0xe1 && first <= 0xec) || (first >= 0xee && first <= 0xef)) needed = 2;
+        else if(first == 0xf0) { needed = 3; minimum = 0x90; }
+        else if(first == 0xf4) { needed = 3; maximum = 0x8f; }
+        else if(first >= 0xf1 && first <= 0xf3) needed = 3;
+        else return 0;
+
+        if(needed > length - offset - 1) return 0;
+        if(data[offset + 1] < minimum || data[offset + 1] > maximum) return 0;
+        for(follow = 2; follow <= needed; follow++) {
+            if(data[offset + follow] < 0x80 || data[offset + follow] > 0xbf) return 0;
+        }
+        offset += needed + 1;
+    }
+    return 1;
+}
+
 ssize_t
 cbor_encode_uint(uint64_t value, asn_app_consume_bytes_f *cb, void *app_key) {
     return cbor_encode_head(CBOR_MAJOR_UINT, value, cb, app_key);
@@ -109,9 +158,18 @@ cbor_encode_negint(uint64_t value, asn_app_consume_bytes_f *cb, void *app_key) {
     return cbor_encode_head(CBOR_MAJOR_NEGINT, value, cb, app_key);
 }
 
+/*
+ * Purpose: encode an opaque byte payload as one definite CBOR byte string.
+ * Source: repository CBOR mapping. Version: 2026-10-30.
+ * Inputs: data/len describe bytes; cb/app_key consume output.
+ * Returns: encoded byte count or -1. Errors: invalid input, length overflow,
+ * and callback failures. Author: asn1c maintainers.
+ * History: added signed-size bounds. Example: one octet emits 0x41 then data.
+ */
 ssize_t
 cbor_encode_bytes(const void *data, size_t len,
                   asn_app_consume_bytes_f *cb, void *app_key) {
+    if(!cb || (len && !data) || len > (size_t)SSIZE_MAX - 9) return -1;
     ssize_t hlen = cbor_encode_head(CBOR_MAJOR_BYTES, len, cb, app_key);
     if(hlen < 0) return -1;
     if(len > 0) {
@@ -120,9 +178,19 @@ cbor_encode_bytes(const void *data, size_t len,
     return hlen + (ssize_t)len;
 }
 
+/*
+ * Purpose: encode a UTF-8 byte sequence as one definite CBOR text string.
+ * Source: repository CBOR mapping. Version: 2026-10-30.
+ * Inputs: str/len describe bytes; cb/app_key consume output.
+ * Returns: encoded byte count or -1. Errors: invalid input, length overflow,
+ * and callback failures. Author: asn1c maintainers.
+ * History: added signed-size bounds. Example: "A" emits 0x61 0x41.
+ */
 ssize_t
 cbor_encode_text(const char *str, size_t len,
                  asn_app_consume_bytes_f *cb, void *app_key) {
+    if(!cb || (len && !str) || len > (size_t)SSIZE_MAX - 9
+       || !cbor_utf8_valid((const uint8_t *)str, len)) return -1;
     ssize_t hlen = cbor_encode_head(CBOR_MAJOR_TEXT, len, cb, app_key);
     if(hlen < 0) return -1;
     if(len > 0) {
@@ -148,6 +216,8 @@ cbor_encode_tag(uint64_t tag, asn_app_consume_bytes_f *cb, void *app_key) {
 ssize_t
 cbor_skip_tags(const uint8_t *buf, size_t size) {
     size_t total = 0;
+
+    if((size && !buf) || size > (size_t)SSIZE_MAX) return -1;
 
     for(;;) {
         uint8_t major;
@@ -221,10 +291,13 @@ cbor_decode_float64(const uint8_t *buf, size_t size, double *value_out) {
 }
 
 /*
- * Skip a complete CBOR data item.
- * Handles all CBOR major types recursively so that unknown extension
- * fields (arrays, maps, integers, tags, floats, etc.) are fully consumed.
- * Returns total bytes consumed, or -1 on error/truncation.
+ * Purpose: skip one complete CBOR item, including nested arrays and maps.
+ * Source: repository CBOR extension handling. Version: 2026-10-30.
+ * Inputs: opt_codec_ctx bounds recursion; buf/size bound the input.
+ * Returns: consumed bytes or -1. Errors: malformed or truncated items,
+ * oversized input, and arithmetic overflow fail. Author: asn1c maintainers.
+ * History: replaced signed accumulation with bounded size arithmetic.
+ * Example: a two-item array skips its head and both nested items.
  */
 ssize_t
 cbor_skip_item_with_ctx(const asn_codec_ctx_t *opt_codec_ctx,
@@ -232,15 +305,15 @@ cbor_skip_item_with_ctx(const asn_codec_ctx_t *opt_codec_ctx,
     uint8_t major;
     uint64_t arg;
     ssize_t hlen;
-    ssize_t total;
+    size_t total;
     uint64_t i;
 
-    if(size < 1) return -1;
+    if(!buf || size < 1 || size > (size_t)SSIZE_MAX) return -1;
     if(ASN__STACK_OVERFLOW_CHECK(opt_codec_ctx)) return -1;
 
     hlen = cbor_decode_head(buf, size, &major, &arg);
     if(hlen < 0) return -1;
-    total = hlen;
+    total = (size_t)hlen;
 
     switch(major) {
     case CBOR_MAJOR_UINT:    /* 0: unsigned integer — header only */
@@ -249,18 +322,19 @@ cbor_skip_item_with_ctx(const asn_codec_ctx_t *opt_codec_ctx,
 
     case CBOR_MAJOR_BYTES:   /* 2: byte string — arg bytes follow */
     case CBOR_MAJOR_TEXT:    /* 3: text string — arg bytes follow */
-        if((size_t)total + (size_t)arg > size) return -1;
-        total += (ssize_t)arg;
+        if(arg > size - total) return -1;
+        if(major == CBOR_MAJOR_TEXT && !cbor_utf8_valid(buf + total, (size_t)arg)) return -1;
+        total += (size_t)arg;
         break;
 
     case CBOR_MAJOR_ARRAY:   /* 4: array of arg items */
         for(i = 0; i < arg; i++) {
             ssize_t n;
-            if((size_t)total >= size) return -1;
+            if(total >= size) return -1;
             n = cbor_skip_item_with_ctx(opt_codec_ctx, buf + total,
-                                        size - (size_t)total);
-            if(n < 0) return -1;
-            total += n;
+                                        size - total);
+            if(n <= 0 || (size_t)n > size - total) return -1;
+            total += (size_t)n;
         }
         break;
 
@@ -268,28 +342,28 @@ cbor_skip_item_with_ctx(const asn_codec_ctx_t *opt_codec_ctx,
         for(i = 0; i < arg; i++) {
             ssize_t n;
             /* key */
-            if((size_t)total >= size) return -1;
+            if(total >= size) return -1;
             n = cbor_skip_item_with_ctx(opt_codec_ctx, buf + total,
-                                        size - (size_t)total);
-            if(n < 0) return -1;
-            total += n;
+                                        size - total);
+            if(n <= 0 || (size_t)n > size - total) return -1;
+            total += (size_t)n;
             /* value */
-            if((size_t)total >= size) return -1;
+            if(total >= size) return -1;
             n = cbor_skip_item_with_ctx(opt_codec_ctx, buf + total,
-                                        size - (size_t)total);
-            if(n < 0) return -1;
-            total += n;
+                                        size - total);
+            if(n <= 0 || (size_t)n > size - total) return -1;
+            total += (size_t)n;
         }
         break;
 
     case CBOR_MAJOR_TAG:     /* 6: tag number + one tagged item */
         {
             ssize_t n;
-            if((size_t)total >= size) return -1;
+            if(total >= size) return -1;
             n = cbor_skip_item_with_ctx(opt_codec_ctx, buf + total,
-                                        size - (size_t)total);
-            if(n < 0) return -1;
-            total += n;
+                                        size - total);
+            if(n <= 0 || (size_t)n > size - total) return -1;
+            total += (size_t)n;
         }
         break;
 
@@ -305,7 +379,7 @@ cbor_skip_item_with_ctx(const asn_codec_ctx_t *opt_codec_ctx,
         return -1;
     }
 
-    return total;
+    return (ssize_t)total;
 }
 
 ssize_t

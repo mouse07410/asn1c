@@ -12,6 +12,11 @@ $(ASN1C):
 $(TEST_LOGS): $(ASN1C)
 
 EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
+    $(srcdir)/CborSequence.asn1 \
+    $(srcdir)/CborStrings.asn1 \
+    $(srcdir)/CborSequenceStrings.asn1 \
+    $(srcdir)/CborChoice.asn1 \
+    $(srcdir)/CborContaining.asn1 \
     $(srcdir)/OpenSelected.asn1 \
     $(srcdir)/FirstSlice.asn1 \
     $(srcdir)/SequenceSlice.asn1 \
@@ -67,6 +72,18 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/c_any.c \
     $(srcdir)/cbor_conformance.rs \
     $(srcdir)/c_cbor.c \
+    $(srcdir)/cbor_sequence.rs \
+    $(srcdir)/c_cbor_sequence.c \
+    $(srcdir)/cbor_strings.rs \
+    $(srcdir)/c_cbor_strings.c \
+    $(srcdir)/cbor_sequence_strings.rs \
+    $(srcdir)/c_cbor_sequence_strings.c \
+    $(srcdir)/cbor_choice.rs \
+    $(srcdir)/cbor_containing.rs \
+    $(srcdir)/cbor_open_selected.rs \
+    $(srcdir)/c_cbor_choice.c \
+    $(srcdir)/c_cbor_containing.c \
+    $(srcdir)/c_cbor_open_selected.c \
     $(srcdir)/conformance.rs \
     $(srcdir)/additional_codecs.rs \
     $(srcdir)/jer_conformance.rs \

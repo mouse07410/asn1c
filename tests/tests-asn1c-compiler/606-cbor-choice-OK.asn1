@@ -1,0 +1,15 @@
+-- CBOR CHOICE one-entry map and nested partial-value regression.
+CborChoice DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+Record ::= SEQUENCE {
+    label UTF8String,
+    active BOOLEAN OPTIONAL
+}
+
+Variant ::= CHOICE {
+    truth BOOLEAN,
+    record Record,
+    opaque ANY
+}
+
+END

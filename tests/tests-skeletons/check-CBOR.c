@@ -17,7 +17,10 @@
 #include <INTEGER.h>
 #include <NativeInteger.h>
 #include <OCTET_STRING.h>
+#include <UTF8String.h>
 #include <BIT_STRING.h>
+#include <constr_SEQUENCE_OF.h>
+#include <constr_SET_OF.h>
 #include <OBJECT_IDENTIFIER.h>
 #include <cbor_encoder.h>
 #include <cbor_decoder.h>
@@ -159,6 +162,13 @@ test_integer_cbor_edge_cases(void) {
             fprintf(stderr, "FAIL: decode negint 2^63 (code=%d)\n", dr.code);
             exit(1);
         }
+        {
+            static const uint8_t expected[] = {
+                0xff, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
+            };
+            assert(decoded->size == sizeof(expected));
+            assert(memcmp(decoded->buf, expected, sizeof(expected)) == 0);
+        }
         printf("  ✓ INTEGER decode: CBOR negint argument=2^63 (bignum path)\n");
         ASN_STRUCT_FREE(asn_DEF_INTEGER, decoded);
     }
@@ -177,6 +187,13 @@ test_integer_cbor_edge_cases(void) {
         if(dr.code != RC_OK || !decoded) {
             fprintf(stderr, "FAIL: decode negint UINT64_MAX (code=%d)\n", dr.code);
             exit(1);
+        }
+        {
+            static const uint8_t expected[] = {
+                0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+            };
+            assert(decoded->size == sizeof(expected));
+            assert(memcmp(decoded->buf, expected, sizeof(expected)) == 0);
         }
         printf("  ✓ INTEGER decode: CBOR negint argument=UINT64_MAX (bignum -2^64)\n");
         ASN_STRUCT_FREE(asn_DEF_INTEGER, decoded);
@@ -1326,6 +1343,258 @@ test_c509_draft_vectors(void) {
 /* ------------------------------------------------------------------ */
 /* main                                                                 */
 /* ------------------------------------------------------------------ */
+/*
+ * Purpose: exercise malformed and extreme CBOR byte-string inputs.
+ * Source: repository CBOR string mapping. Version: 2026-10-30.
+ * Inputs: none. Returns: none; exits on a failed assertion.
+ * Errors: malformed lengths, padding, and null dispatch inputs must fail.
+ * Author: asn1c maintainers. History: added primitive decoder hardening tests.
+ * Example: an eight-byte all-ones length cannot allocate or replace a value.
+ */
+static void
+test_cbor_string_validation(void) {
+    static const uint8_t huge[] = {
+        0x5b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
+    };
+    static const uint8_t huge_bignum[] = {
+        0xc2, 0x5b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
+    };
+    static const uint8_t invalid_unused[] = {0x42, 0x08, 0x00};
+    static const uint8_t invalid_padding[] = {0x42, 0x07, 0x81};
+    static const uint8_t empty_bits[] = {0x40};
+    static const uint8_t valid_utf8[] = {0xf4, 0x8f, 0xbf, 0xbf};
+    static const uint8_t overlong_utf8[] = {0xc0, 0x80};
+    static const uint8_t invalid_text_item[] = {0x62, 0xc0, 0x80};
+    static const uint8_t surrogate_utf8[] = {0xed, 0xa0, 0x80};
+    static const uint8_t high_utf8[] = {0xf4, 0x90, 0x80, 0x80};
+    static const uint8_t truncated_utf8[] = {0xe2, 0x82};
+    uint8_t original_octet[] = {0x2a};
+    uint8_t original_bits[] = {0x80};
+    uint8_t original_integer[] = {0x2a};
+    uint8_t invalid_bit_data[] = {0x81};
+    OCTET_STRING_t octets = {0};
+    BIT_STRING_t bits = {0};
+    INTEGER_t integer = {0};
+    OCTET_STRING_t *octet_ptr = &octets;
+    BIT_STRING_t *bit_ptr = &bits;
+    INTEGER_t *integer_ptr = &integer;
+    struct buffer_acc output = {0};
+    asn_dec_rval_t decoded;
+    asn_enc_rval_t encoded;
+    uint8_t major = 0;
+    uint64_t argument = 0;
+
+    /* Existing caller-owned storage must survive rejected input. */
+    octets.buf = original_octet;
+    octets.size = sizeof(original_octet);
+    bits.buf = original_bits;
+    bits.size = sizeof(original_bits);
+    bits.bits_unused = 7;
+    integer.buf = original_integer;
+    integer.size = sizeof(original_integer);
+    decoded = cbor_decode(NULL, &asn_DEF_OCTET_STRING, (void **)&octet_ptr,
+                          huge, sizeof(huge));
+    assert(decoded.code == RC_FAIL && octet_ptr == &octets);
+    assert(octets.buf == original_octet && octets.size == 1);
+
+    decoded = cbor_decode(NULL, &asn_DEF_BIT_STRING, (void **)&bit_ptr,
+                          huge, sizeof(huge));
+    assert(decoded.code == RC_FAIL && bit_ptr == &bits);
+    assert(bits.buf == original_bits && bits.size == 1 && bits.bits_unused == 7);
+    decoded = cbor_decode(NULL, &asn_DEF_INTEGER, (void **)&integer_ptr,
+                          huge_bignum, sizeof(huge_bignum));
+    assert(decoded.code == RC_FAIL && integer_ptr == &integer);
+    assert(integer.buf == original_integer && integer.size == 1);
+    decoded = cbor_decode(NULL, &asn_DEF_BIT_STRING, (void **)&bit_ptr,
+                          invalid_unused, sizeof(invalid_unused));
+    assert(decoded.code == RC_FAIL && bits.buf == original_bits);
+    decoded = cbor_decode(NULL, &asn_DEF_BIT_STRING, (void **)&bit_ptr,
+                          invalid_padding, sizeof(invalid_padding));
+    assert(decoded.code == RC_FAIL && bits.buf == original_bits);
+    decoded = cbor_decode(NULL, &asn_DEF_BIT_STRING, (void **)&bit_ptr,
+                          empty_bits, sizeof(empty_bits));
+    assert(decoded.code == RC_FAIL && bits.buf == original_bits);
+
+    /* Encoders reject nonzero padding and inconsistent empty values. */
+    bits.buf = invalid_bit_data;
+    encoded = cbor_encode(&asn_DEF_BIT_STRING, &bits, buf_append, &output);
+    assert(encoded.encoded < 0 && output.len == 0);
+    bits.buf = original_bits;
+    bits.size = 0;
+    encoded = cbor_encode(&asn_DEF_BIT_STRING, &bits, buf_append, &output);
+    assert(encoded.encoded < 0 && output.len == 0);
+
+    /* Public entry points reject missing descriptors, callbacks and buffers. */
+    decoded = cbor_decode(NULL, NULL, (void **)&octet_ptr, huge, sizeof(huge));
+    assert(decoded.code == RC_FAIL);
+    decoded = cbor_decode(NULL, &asn_DEF_OCTET_STRING, (void **)&octet_ptr, NULL, 1);
+    assert(decoded.code == RC_FAIL);
+    encoded = cbor_encode(NULL, &octets, buf_append, &output);
+    assert(encoded.encoded < 0);
+    encoded = cbor_encode(&asn_DEF_OCTET_STRING, &octets, NULL, &output);
+    assert(encoded.encoded < 0);
+    assert(cbor_decode_head(NULL, 1, &major, &argument) < 0);
+    assert(cbor_decode_head(huge, sizeof(huge), NULL, &argument) < 0);
+    assert(cbor_encode_bytes(NULL, 1, buf_append, &output) < 0);
+    assert(cbor_skip_item(huge, sizeof(huge)) < 0);
+    assert(cbor_skip_item(invalid_text_item, sizeof(invalid_text_item)) < 0);
+    assert(cbor_utf8_valid(valid_utf8, sizeof(valid_utf8)));
+    assert(!cbor_utf8_valid(overlong_utf8, sizeof(overlong_utf8)));
+    assert(!cbor_utf8_valid(surrogate_utf8, sizeof(surrogate_utf8)));
+    assert(!cbor_utf8_valid(high_utf8, sizeof(high_utf8)));
+    assert(!cbor_utf8_valid(truncated_utf8, sizeof(truncated_utf8)));
+    assert(cbor_encode_text((const char *)overlong_utf8, sizeof(overlong_utf8),
+                            buf_append, &output) < 0);
+    buf_free(&output);
+    printf("PASSED: test_cbor_string_validation\n\n");
+}
+
+/*
+ * Purpose: check the CBOR UTF8String adapter's lengths and UTF-8 validation.
+ * Source: UTF8String CBOR text/compatible-byte mapping. Version: 2026-10-30.
+ * Inputs: none. Returns: none; assertions detect regressions.
+ * Errors: malformed input must preserve preallocated output storage.
+ * Author: asn1c maintainers. History: added adapter overflow and UTF-8 tests.
+ * Example: a valid two-byte scalar decodes from text and byte strings.
+ */
+static void
+test_cbor_utf8_adapter(void) {
+    static const uint8_t valid_text[] = {0x62, 0xc2, 0xa2};
+    static const uint8_t valid_bytes[] = {0x42, 0xc2, 0xa2};
+    static const uint8_t bad_text[] = {0x62, 0xc0, 0x80};
+    static const uint8_t huge_text[] = {
+        0x7b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
+    };
+    uint8_t bad_payload[] = {0xc0, 0x80};
+    UTF8String_t value = {0};
+    UTF8String_t *ptr = &value;
+    UTF8String_t bad = {0};
+    struct buffer_acc output = {0};
+    uint8_t *original = malloc(1);
+    asn_dec_rval_t decoded;
+    asn_enc_rval_t encoded;
+    assert(original);
+    original[0] = 'x';
+    value.buf = original;
+    value.size = 1;
+
+    /* Invalid sizes and scalars leave the caller-owned value intact. */
+    decoded = cbor_decode(NULL, &asn_DEF_UTF8String, (void **)&ptr, huge_text, sizeof(huge_text));
+    assert(decoded.code == RC_FAIL && ptr == &value && value.buf == original && value.size == 1);
+    decoded = cbor_decode(NULL, &asn_DEF_UTF8String, (void **)&ptr, bad_text, sizeof(bad_text));
+    assert(decoded.code == RC_FAIL && value.buf == original && value.size == 1);
+    bad.buf = bad_payload;
+    bad.size = sizeof(bad_payload);
+    encoded = cbor_encode(&asn_DEF_UTF8String, &bad, buf_append, &output);
+    assert(encoded.encoded < 0 && output.len == 0);
+
+    /* Both documented wire forms replace an existing value on success. */
+    decoded = cbor_decode(NULL, &asn_DEF_UTF8String, (void **)&ptr, valid_text, sizeof(valid_text));
+    assert(decoded.code == RC_OK && value.size == 2 && !memcmp(value.buf, valid_text + 1, 2));
+    decoded = cbor_decode(NULL, &asn_DEF_UTF8String, (void **)&ptr, valid_bytes, sizeof(valid_bytes));
+    assert(decoded.code == RC_OK && value.size == 2 && !memcmp(value.buf, valid_bytes + 1, 2));
+    encoded = cbor_encode(&asn_DEF_UTF8String, &value, buf_append, &output);
+    assert(encoded.encoded == (ssize_t)sizeof(valid_text) && output.len == sizeof(valid_text));
+    assert(!memcmp(output.data, valid_text, sizeof(valid_text)));
+    free(value.buf);
+    buf_free(&output);
+    printf("PASSED: test_cbor_utf8_adapter\n");
+}
+
+/* Test collection storage with the list first and decoder context last. */
+typedef struct cbor_collection_s {
+    A_SET_OF(INTEGER_t) list; /* Owned INTEGER elements. */
+    asn_struct_ctx_t context; /* Decoder context state variable. */
+} cbor_collection_t;
+
+/*
+ * Purpose: exercise both CBOR collection codecs with a concrete descriptor.
+ * Source: generated SET OF and SEQUENCE OF descriptor layout. Version: 2026-10-30.
+ * Inputs: operation selects the collection kind. Returns: none.
+ * Errors: assertions detect malformed decode, mutation, and count mismatches.
+ * Author: asn1c maintainers. History: added staged CBOR array regressions.
+ * Example: a malformed second item preserves an existing list element.
+ */
+static void
+test_cbor_collection_one(asn_TYPE_operation_t *operation) {
+    static const uint8_t wire[] = {0x82, 0x01, 0x02};
+    static const uint8_t truncated[] = {0x82, 0x01};
+    static const uint8_t inflated[] = {0x83, 0x01, 0x02};
+    static const uint8_t enormous[] = {0x9b, 0xff, 0xff, 0xff, 0xff,
+                                      0xff, 0xff, 0xff, 0xff};
+    asn_SET_OF_specifics_t specifics = {0};
+    asn_TYPE_member_t member = {0};
+    asn_TYPE_descriptor_t td = asn_DEF_SET_OF;
+    cbor_collection_t source = {0};
+    cbor_collection_t *decoded = 0;
+    INTEGER_t *first = calloc(1, sizeof(*first));
+    struct buffer_acc output = {0};
+    asn_enc_rval_t encoded;
+    asn_dec_rval_t result;
+    int capacity;
+    assert(first && !asn_imax2INTEGER(first, 1));
+    specifics.struct_size = sizeof(source);
+    specifics.ctx_offset = offsetof(cbor_collection_t, context);
+    member.type = &asn_DEF_INTEGER;
+    td.op = operation;
+    td.elements = &member;
+    td.elements_count = 1;
+    td.specifics = &specifics;
+    assert(!ASN_SET_ADD(&source.list, first));
+    assert(source.list.size > 1);
+    capacity = source.list.size;
+    source.list.array[1] = 0;
+    source.list.count = 2;
+    encoded = cbor_encode(&td, &source, buf_append, &output);
+    assert(encoded.encoded < 0 && output.len == 0);
+    source.list.count = 1;
+    encoded = cbor_encode(&td, &source, buf_append, &output);
+    assert(encoded.encoded == 2 && output.len == 2);
+    buf_free(&output);
+    source.list.count = -1;
+    encoded = cbor_encode(&td, &source, buf_append, &output);
+    assert(encoded.encoded < 0 && output.len == 0);
+    source.list.count = 1;
+    source.list.size = 0;
+    encoded = cbor_encode(&td, &source, buf_append, &output);
+    assert(encoded.encoded < 0 && output.len == 0);
+    source.list.size = capacity;
+    td.specifics = 0;
+    result = cbor_decode(NULL, &td, (void **)&decoded, wire, sizeof(wire));
+    assert(result.code == RC_FAIL && !decoded);
+    td.specifics = &specifics;
+    result = cbor_decode(NULL, &td, (void **)&decoded, wire, sizeof(wire));
+    assert(result.code == RC_OK && result.consumed == sizeof(wire));
+    assert(decoded && decoded->list.count == 2);
+    result = cbor_decode(NULL, &td, (void **)&decoded, truncated, sizeof(truncated));
+    assert(result.code == RC_FAIL && decoded->list.count == 2);
+    result = cbor_decode(NULL, &td, (void **)&decoded, inflated, sizeof(inflated));
+    assert(result.code == RC_FAIL && decoded->list.count == 2);
+    result = cbor_decode(NULL, &td, (void **)&decoded, enormous, sizeof(enormous));
+    assert(result.code == RC_FAIL && decoded->list.count == 2);
+    result = cbor_decode(NULL, &td, (void **)&decoded, wire, sizeof(wire));
+    assert(result.code == RC_OK && decoded->list.count == 2);
+    ASN_STRUCT_FREE(td, decoded);
+    ASN_STRUCT_RESET(td, &source);
+}
+
+/*
+ * Purpose: run SET OF and SEQUENCE OF CBOR malformed-array regressions.
+ * Source: repository CBOR collection mapping. Version: 2026-10-30.
+ * Inputs: none. Returns: none. Errors: assertions report codec failures.
+ * Author: asn1c maintainers. History: added collection decoder coverage.
+ * Example: `check-CBOR` verifies both collection operation tables.
+ */
+static void
+test_cbor_collections(void) {
+    static const uint8_t invalid_nested_text[] = {0xa1, 0x61, 0xff, 0x00};
+    test_cbor_collection_one(&asn_OP_SEQUENCE_OF);
+    test_cbor_collection_one(&asn_OP_SET_OF);
+    assert(cbor_skip_item_with_ctx(NULL, invalid_nested_text,
+                                   sizeof(invalid_nested_text)) < 0);
+    printf("PASSED: test_cbor_collections\n");
+}
+
 int
 main(void) {
     printf("=== CBOR Codec Tests ===\n\n");
@@ -1334,6 +1603,9 @@ main(void) {
     test_native_integer_cbor_edge_cases();
     test_bit_string_cbor_edge_cases();
     test_octet_string_cbor_edge_cases();
+    test_cbor_string_validation();
+    test_cbor_utf8_adapter();
+    test_cbor_collections();
     test_asn_encode_decode_cbor_dispatch();
     test_oid_cbor_roundtrip();
     test_cbor_tag_encoding();

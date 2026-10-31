@@ -15,45 +15,68 @@
 #include <string.h>
 #include <stdlib.h>
 
+/* One flattened CBOR map entry from a direct SET member or a group leaf. */
+typedef struct SET_cbor_leaf_s {
+    unsigned outer; /* Index of the direct member or owning extension group. */
+    unsigned child; /* Group leaf index, or ASN_SET_DIRECT_MEMBER. */
+    const asn_TYPE_member_t *member; /* Descriptor used for the map key and value. */
+} SET_cbor_leaf_t;
+
 /*
- * Purpose: Validate basic SET layout and reject synthetic extension groups.
- * Source: Compiler-emitted ATF_EXTENSION_GROUP metadata in constr_TYPE.h.
- * Version: 1.0, 2026-10-30.
- * Parameters: td is the SET type descriptor to inspect.
- * Returns: Nonzero for invalid descriptors or descriptors with a group member.
- * Exceptions: None; this C helper reports rejection through its return value.
- * Responsible party: ASN.1 compiler runtime maintainers.
- * History: Added group rejection, then basic pre-allocation layout validation.
- * Example: if(SET_cbor_has_extension_groups(td)) ASN__ENCODE_FAILED;
+ * Purpose: Build a bounded, unambiguous list of flat SET CBOR map entries.
+ * Source: SET group layout and JER's transparent group-name mapping.
+ * Version: 2026-10-30. Inputs: td describes the SET; output receives entries.
+ * Returns: zero and allocated entries, or -1 on invalid metadata/allocation.
+ * Errors: duplicate names, nested groups and group OPEN TYPE leaves fail closed.
+ * Author: asn1c maintainers. History: replaced the group-wide rejection.
+ * Example: group { x, y } contributes the map keys "x" and "y".
  */
 static int
-SET_cbor_has_extension_groups(const asn_TYPE_descriptor_t *td) {
-    size_t edx, presence_words, presence_bytes;
-    const asn_SET_specifics_t *specs;
-
-    if(!td || !td->op || td->op->kind != ASN_KIND_SET || !td->specifics
-       || (td->elements_count && !td->elements)) return 1;
-    specs = td->specifics;
-    presence_words = td->elements_count / (8 * sizeof(unsigned int));
-    if(td->elements_count % (8 * sizeof(unsigned int))) presence_words++;
-    if(presence_words > SIZE_MAX / sizeof(unsigned int)) return 1;
-    presence_bytes = presence_words * sizeof(unsigned int);
-    if(!specs->struct_size || specs->ctx_offset > specs->struct_size
-       || sizeof(asn_struct_ctx_t) > specs->struct_size - specs->ctx_offset
-       || specs->pres_offset > specs->struct_size
-       || presence_bytes > specs->struct_size - specs->pres_offset
-       || (td->elements_count && !specs->_mandatory_elements)) return 1;
-
-    for(edx = 0; edx < td->elements_count; edx++) {
-        const asn_TYPE_member_t *member = &td->elements[edx];
-        size_t minimum = (member->flags & ATF_POINTER) ? sizeof(void *) : 1;
-        if((member->flags & ATF_EXTENSION_GROUP)
-           || !member->name || !member->type || !member->type->op
-           || member->memb_offset > specs->struct_size
-           || minimum > specs->struct_size - member->memb_offset) return 1;
+SET_cbor_leaves(const asn_TYPE_descriptor_t *td, SET_cbor_leaf_t **output, size_t *count) {
+    SET_cbor_leaf_t *leaves;
+    size_t total = 0, i, j, used = 0;
+    if(!output || !count || !td || !td->op || !td->op->free_struct
+       || SET_descriptor_valid(td) || SET_group_metadata_valid(td)) return -1;
+    *output = 0;
+    *count = 0;
+    for(i = 0; i < td->elements_count; i++) {
+        const asn_TYPE_member_t *outer = &td->elements[i];
+        size_t width = (outer->flags & ATF_EXTENSION_GROUP) ? outer->type->elements_count : 1;
+        if((outer->flags & ATF_EXTENSION_GROUP)
+           && (!(outer->flags & ATF_POINTER) || !outer->type->op->free_struct
+               || ((const asn_SET_specifics_t *)td->specifics)->extensible != 3)) return -1;
+        if(!width || width > 16384 - total) return -1;
+        total += width;
     }
-
+    leaves = CALLOC(total ? total : 1, sizeof(*leaves));
+    if(!leaves) return -1;
+    for(i = 0; i < td->elements_count; i++) {
+        const asn_TYPE_member_t *outer = &td->elements[i];
+        size_t width = (outer->flags & ATF_EXTENSION_GROUP) ? outer->type->elements_count : 1;
+        for(j = 0; j < width; j++) {
+            const asn_TYPE_member_t *member = (outer->flags & ATF_EXTENSION_GROUP)
+                ? &outer->type->elements[j] : outer;
+            size_t prior;
+            if(!member->name || !member->type || !member->type->op || !member->type->op->free_struct
+               || (member->flags & ATF_EXTENSION_GROUP)
+               || (member->default_value_set && !(member->flags & ATF_POINTER))
+               || !cbor_utf8_valid((const uint8_t *)member->name, strlen(member->name))
+               || ((outer->flags & ATF_EXTENSION_GROUP) && (member->flags & ATF_OPEN_TYPE))) goto invalid;
+            for(prior = 0; prior < used; prior++) {
+                if(!strcmp(leaves[prior].member->name, member->name)) goto invalid;
+            }
+            leaves[used].outer = (unsigned)i;
+            leaves[used].child = (outer->flags & ATF_EXTENSION_GROUP)
+                ? (unsigned)j : ASN_SET_DIRECT_MEMBER;
+            leaves[used++].member = member;
+        }
+    }
+    *output = leaves;
+    *count = total;
     return 0;
+invalid:
+    FREEMEM(leaves);
+    return -1;
 }
 
 /*
@@ -130,68 +153,60 @@ asn_enc_rval_t
 SET_encode_cbor(const asn_TYPE_descriptor_t *td, const void *sptr,
                 asn_app_consume_bytes_f *cb, void *app_key) {
     asn_enc_rval_t er = {0, 0, 0};
-    size_t edx;
-    size_t count = 0;
+    SET_cbor_leaf_t *leaves = 0;
+    size_t edx, leaf_count = 0, count = 0;
     ssize_t ret;
 
-    if(SET_cbor_has_extension_groups(td) || !sptr || !cb) ASN__ENCODE_FAILED;
+    if(!sptr || !cb || SET_cbor_leaves(td, &leaves, &leaf_count)) ASN__ENCODE_FAILED;
 
-    /* Validate all member storage before reading any value or writing output. */
-    for(edx = 0; edx < td->elements_count; edx++) {
+    /* Preflight every flattened member before writing the map header. */
+    for(edx = 0; edx < leaf_count; edx++) {
         asn_SET_member_view_t view;
-        if(SET_member_view(td, sptr, (unsigned)edx, ASN_SET_DIRECT_MEMBER, &view)
-           || (view.present && ((view.member->flags & ATF_OPEN_TYPE)
-                                ? SET_cbor_open_valid(td, sptr, view.member, 1)
-                                : !view.member->type->op->cbor_encoder))) ASN__ENCODE_FAILED;
-    }
-
-    /* Count present members */
-    for(edx = 0; edx < td->elements_count; edx++) {
-        const asn_TYPE_member_t *elm = &td->elements[edx];
-        if(elm->flags & ATF_POINTER) {
-            const void *memb_ptr =
-                *(const void *const *)((const char *)sptr + elm->memb_offset);
-            if(!memb_ptr) {
-                if(elm->optional || elm->default_value_set) continue;
-                ASN__ENCODE_FAILED;
+        const SET_cbor_leaf_t *leaf = &leaves[edx];
+        const asn_TYPE_member_t *outer = &td->elements[leaf->outer];
+        if(SET_member_view(td, sptr, leaf->outer, leaf->child, &view)) goto failed;
+        if(leaf->child != ASN_SET_DIRECT_MEMBER) {
+            if(!view.owner) {
+                if(!outer->optional && !outer->default_value_set) goto failed;
+                continue;
             }
+            if(SET_group_is_populated(outer->type, view.owner) != 1) goto failed;
         }
+        if(!view.present) {
+            if(!view.member->optional && !view.member->default_value_set) goto failed;
+            continue;
+        }
+        if((view.member->flags & ATF_OPEN_TYPE)
+           ? SET_cbor_open_valid(td, sptr, view.member, 1)
+           : !view.member->type->op->cbor_encoder) goto failed;
         count++;
     }
 
     ret = cbor_encode_head(CBOR_MAJOR_MAP, count, cb, app_key);
-    if(ret < 0) ASN__ENCODE_FAILED;
+    if(ret < 0) goto failed;
     er.encoded += ret;
 
-    for(edx = 0; edx < td->elements_count; edx++) {
-        const asn_TYPE_member_t *elm = &td->elements[edx];
-        const void *memb_ptr;
+    /* Emit group leaves in their descriptor positions, like the JER map. */
+    for(edx = 0; edx < leaf_count; edx++) {
+        asn_SET_member_view_t view;
         asn_enc_rval_t tmper;
-
-        if(elm->flags & ATF_POINTER) {
-            memb_ptr =
-                *(const void *const *)((const char *)sptr + elm->memb_offset);
-            if(!memb_ptr) {
-                if(elm->optional || elm->default_value_set) continue;
-                ASN__ENCODE_FAILED;
-            }
-        } else {
-            memb_ptr = (const char *)sptr + elm->memb_offset;
-        }
-
-        ret = cbor_encode_text(elm->name, strlen(elm->name), cb, app_key);
-        if(ret < 0) ASN__ENCODE_FAILED;
+        if(SET_member_view(td, sptr, leaves[edx].outer, leaves[edx].child, &view)) goto failed;
+        if(!view.present) continue;
+        ret = cbor_encode_text(view.member->name, strlen(view.member->name), cb, app_key);
+        if(ret < 0) goto failed;
         er.encoded += ret;
-
-        if(elm->flags & ATF_OPEN_TYPE)
-            tmper = OPEN_TYPE_cbor_put(td, sptr, elm, cb, app_key);
+        if(view.member->flags & ATF_OPEN_TYPE)
+            tmper = OPEN_TYPE_cbor_put(td, sptr, view.member, cb, app_key);
         else
-            tmper = elm->type->op->cbor_encoder(elm->type, memb_ptr, cb, app_key);
-        if(tmper.encoded < 0) return tmper;
+            tmper = view.member->type->op->cbor_encoder(view.member->type, view.value, cb, app_key);
+        if(tmper.encoded < 0) goto failed;
         er.encoded += tmper.encoded;
     }
-
+    FREEMEM(leaves);
     ASN__ENCODED_OK(er);
+failed:
+    FREEMEM(leaves);
+    ASN__ENCODE_FAILED;
 }
 
 /* A borrowed input key used to detect duplicate map entries after decoding. */
@@ -227,17 +242,30 @@ SET_cbor_key_compare(const void *left, const void *right) {
  */
 static ssize_t
 SET_cbor_decode_member(const asn_codec_ctx_t *codec, const asn_TYPE_descriptor_t *td, void *st,
-                       uint8_t *seen, SET_cbor_key_t *pending, const char *key, size_t key_len,
+                       const SET_cbor_leaf_t *leaves, size_t leaf_count, uint8_t *seen,
+                       SET_cbor_key_t *pending, const char *key, size_t key_len,
                        const uint8_t *buf, size_t size) {
     size_t edx;
-    for(edx = 0; edx < td->elements_count; edx++) {
-        const asn_TYPE_member_t *elm = &td->elements[edx];
+    for(edx = 0; edx < leaf_count; edx++) {
+        const SET_cbor_leaf_t *leaf = &leaves[edx];
+        const asn_TYPE_member_t *elm = leaf->member;
         asn_SET_member_view_t view;
         void *member;
+        void *owner = st;
         void **slot;
         asn_dec_rval_t result;
         if(strlen(elm->name) != key_len || memcmp(elm->name, key, key_len)) continue;
-        if(seen[edx] || SET_member_view(td, st, (unsigned)edx, ASN_SET_DIRECT_MEMBER, &view)) return -1;
+        if(seen[edx] || SET_member_view(td, st, leaf->outer, leaf->child, &view)) return -1;
+        if(leaf->child != ASN_SET_DIRECT_MEMBER && !view.owner) {
+            const asn_TYPE_member_t *group = &td->elements[leaf->outer];
+            void **group_slot = (void **)((char *)st + group->memb_offset);
+            *group_slot = CALLOC(1, view.owner_specs->struct_size);
+            if(!*group_slot || SET_member_view(td, st, leaf->outer, leaf->child, &view)) return -1;
+        }
+        if(leaf->child != ASN_SET_DIRECT_MEMBER) {
+            const asn_TYPE_member_t *group = &td->elements[leaf->outer];
+            owner = *(void **)((char *)st + group->memb_offset);
+        }
         if(elm->flags & ATF_OPEN_TYPE) {
             ssize_t length = cbor_skip_item_with_ctx(codec, buf, size);
             if(length <= 0 || (size_t)length > size) return -1;
@@ -247,12 +275,17 @@ SET_cbor_decode_member(const asn_codec_ctx_t *codec, const asn_TYPE_descriptor_t
             return length;
         }
         if(!elm->type->op->cbor_decoder) return -1;
-        if(elm->flags & ATF_POINTER) slot = (void **)((char *)st + elm->memb_offset);
-        else { member = (char *)st + elm->memb_offset; slot = &member; }
+        if(elm->flags & ATF_POINTER) slot = (void **)((char *)owner + elm->memb_offset);
+        else { member = (char *)owner + elm->memb_offset; slot = &member; }
         result = elm->type->op->cbor_decoder(codec, elm->type, slot, buf, size);
-        if(result.code != RC_OK || result.consumed > size || result.consumed > SSIZE_MAX) return -1;
+        if(result.code != RC_OK || !result.consumed || result.consumed > size
+           || result.consumed > SSIZE_MAX) return -1;
         seen[edx] = 1;
-        ASN_SET_MKPRESENT((char *)st + view.owner_specs->pres_offset, edx);
+        ASN_SET_MKPRESENT((char *)owner + view.owner_specs->pres_offset, view.owner_index);
+        if(leaf->child != ASN_SET_DIRECT_MEMBER) {
+            const asn_SET_specifics_t *specs = td->specifics;
+            ASN_SET_MKPRESENT((char *)st + specs->pres_offset, leaf->outer);
+        }
         return (ssize_t)result.consumed;
     }
     if(!size) return -1;
@@ -268,12 +301,32 @@ SET_cbor_decode_member(const asn_codec_ctx_t *codec, const asn_TYPE_descriptor_t
  * Example: an empty map cannot represent a SET with a required member.
  */
 static int
-SET_cbor_validate_members(const asn_TYPE_descriptor_t *td, const uint8_t *seen,
-                          SET_cbor_key_t *keys, size_t count) {
-    size_t i;
+SET_cbor_validate_members(const asn_TYPE_descriptor_t *td, const void *st,
+                          const SET_cbor_leaf_t *leaves, size_t leaf_count,
+                          const uint8_t *seen, SET_cbor_key_t *keys, size_t count) {
+    size_t i, offset = 0;
     for(i = 0; i < td->elements_count; i++) {
-        const asn_TYPE_member_t *member = &td->elements[i];
-        if(!seen[i] && !member->optional && !member->default_value_set) return -1;
+        const asn_TYPE_member_t *outer = &td->elements[i];
+        size_t start = offset, j;
+        int group_seen = 0;
+        while(offset < leaf_count && leaves[offset].outer == i) offset++;
+        if(!(outer->flags & ATF_EXTENSION_GROUP)) {
+            if(!seen[start] && !outer->optional && !outer->default_value_set) return -1;
+            continue;
+        }
+        for(j = start; j < offset; j++) if(seen[j]) group_seen = 1;
+        if(!group_seen) {
+            if(!outer->optional && !outer->default_value_set) return -1;
+            continue;
+        }
+        {
+            const void *group = *(const void *const *)((const char *)st + outer->memb_offset);
+            if(!group || SET_group_is_populated(outer->type, group) != 1) return -1;
+        }
+        for(j = start; j < offset; j++) {
+            const asn_TYPE_member_t *member = leaves[j].member;
+            if(!seen[j] && !member->optional && !member->default_value_set) return -1;
+        }
     }
     if(count > 1) qsort(keys, count, sizeof(*keys), SET_cbor_key_compare);
     for(i = 1; i < count; i++) {
@@ -285,7 +338,8 @@ SET_cbor_validate_members(const asn_TYPE_descriptor_t *td, const uint8_t *seen,
 /*
  * Purpose: decode saved open members after all selector fields are available.
  * Source: OPEN_TYPE_cbor_get and SET presence metadata. Version: 2026-10-30.
- * Inputs: codec/td/st describe the parent; pending stores bounded value slices.
+ * Inputs: codec/td/st describe the parent; seen records available siblings;
+ * pending stores bounded value slices.
  * Returns: zero on success, -1 on invalid selector or malformed child.
  * Errors: malformed values and incomplete child consumption fail.
  * Author: asn1c maintainers. History: added selector-independent map decoding.
@@ -293,17 +347,59 @@ SET_cbor_validate_members(const asn_TYPE_descriptor_t *td, const uint8_t *seen,
  */
 static int
 SET_cbor_decode_open(const asn_codec_ctx_t *codec, const asn_TYPE_descriptor_t *td,
-                     void *st, const SET_cbor_key_t *pending) {
+                     void *st, const SET_cbor_leaf_t *leaves, size_t leaf_count,
+                     const uint8_t *seen, const SET_cbor_key_t *pending) {
     const asn_SET_specifics_t *specs = td->specifics;
-    size_t i;
-    for(i = 0; i < td->elements_count; i++) {
+    size_t i, j;
+    for(i = 0; i < leaf_count; i++) {
         asn_dec_rval_t result;
-        const asn_TYPE_member_t *member = &td->elements[i];
+        const asn_TYPE_member_t *member = leaves[i].member;
         if(!pending[i].data) continue;
+        if(leaves[i].child != ASN_SET_DIRECT_MEMBER) return -1;
+        /* Generated selectors are opaque and may dereference any sibling. */
+        for(j = 0; j < leaf_count; j++) {
+            asn_SET_member_view_t view;
+            if(j == i) continue;
+            if(!seen[j] || SET_member_view(td, st, leaves[j].outer,
+                                           leaves[j].child, &view) || !view.present) return -1;
+        }
         if(SET_cbor_open_valid(td, st, member, 0)) return -1;
         result = OPEN_TYPE_cbor_get(codec, td, st, member, pending[i].data, pending[i].size);
         if(result.code != RC_OK || result.consumed != pending[i].size) return -1;
-        ASN_SET_MKPRESENT((char *)st + specs->pres_offset, i);
+        ASN_SET_MKPRESENT((char *)st + specs->pres_offset, leaves[i].outer);
+    }
+    return 0;
+}
+
+/*
+ * Purpose: restore omitted pointer-backed DEFAULT values after map decoding.
+ * Source: SET OER default restoration and transparent group storage views.
+ * Version: 2026-10-30. Inputs: td/st identify the SET; leaves and seen track
+ * wire entries. Returns: zero or -1 on invalid storage or setter failure.
+ * Errors: inline defaults are rejected because setters own pointer storage.
+ * Author: asn1c maintainers. History: added CBOR group DEFAULT restoration.
+ * Example: a present group omitting its DEFAULT five receives a value of five.
+ */
+static int
+SET_cbor_defaults(const asn_TYPE_descriptor_t *td, void *st,
+                  const SET_cbor_leaf_t *leaves, size_t leaf_count, const uint8_t *seen) {
+    size_t i;
+    for(i = 0; i < leaf_count; i++) {
+        const SET_cbor_leaf_t *leaf = &leaves[i];
+        asn_SET_member_view_t view;
+        void *owner = st;
+        void **slot;
+        if(seen[i] || !leaf->member->default_value_set) continue;
+        if(SET_member_view(td, st, leaf->outer, leaf->child, &view)) return -1;
+        if(!view.owner) continue;
+        if(!(view.member->flags & ATF_POINTER)) return -1;
+        if(leaf->child != ASN_SET_DIRECT_MEMBER) {
+            const asn_TYPE_member_t *group = &td->elements[leaf->outer];
+            owner = *(void **)((char *)st + group->memb_offset);
+        }
+        slot = (void **)((char *)owner + view.member->memb_offset);
+        if(!*slot && view.member->default_value_set(slot)) return -1;
+        ASN_SET_MKPRESENT((char *)owner + view.owner_specs->pres_offset, view.owner_index);
     }
     return 0;
 }
@@ -322,58 +418,64 @@ SET_decode_cbor(const asn_codec_ctx_t *codec, const asn_TYPE_descriptor_t *td,
                 void **sptr, const void *buf_ptr, size_t size) {
     const asn_SET_specifics_t *specs;
     const uint8_t *buf = buf_ptr;
+    SET_cbor_leaf_t *leaves = 0;
     SET_cbor_key_t *keys = 0, *pending = 0;
     uint8_t *seen = 0, major;
     uint64_t map_count, i;
-    size_t consumed = 0, edx;
+    size_t consumed = 0, leaf_count = 0;
     ssize_t used;
     void *st;
     asn_dec_rval_t rval = {RC_FAIL, 0};
 
-    if(SET_cbor_has_extension_groups(td) || !sptr || !buf || size > SSIZE_MAX
-       || ASN__STACK_OVERFLOW_CHECK(codec)) return rval;
+    if(!sptr || !buf || size > SSIZE_MAX || ASN__STACK_OVERFLOW_CHECK(codec)
+       || SET_cbor_leaves(td, &leaves, &leaf_count)) return rval;
     specs = td->specifics;
-    if(!specs->struct_size) return rval;
-    st = *sptr;
-    if(!st) {
-        st = *sptr = CALLOC(1, specs->struct_size);
-        if(!st) return rval;
-    }
-    /* Validate each member layout before decoding any incoming map values. */
-    for(edx = 0; edx < td->elements_count; edx++) {
-        asn_SET_member_view_t view;
-        if(SET_member_view(td, st, (unsigned)edx, ASN_SET_DIRECT_MEMBER, &view)) return rval;
-    }
+    /* Decode into fresh storage so failures preserve preallocated callers. */
+    st = CALLOC(1, specs->struct_size);
+    if(!st) goto done;
     used = cbor_skip_tags(buf, size);
-    if(used < 0 || (size_t)used > size) return rval;
+    if(used < 0 || (size_t)used > size) goto done;
     consumed = (size_t)used;
     used = cbor_decode_head(buf + consumed, size - consumed, &major, &map_count);
-    if(used < 0 || (size_t)used > size - consumed || major != CBOR_MAJOR_MAP) return rval;
+    if(used < 0 || (size_t)used > size - consumed || major != CBOR_MAJOR_MAP) goto done;
     consumed += (size_t)used;
     /* Every pair needs at least a key header and a value, bounding allocations. */
-    if(map_count > (size - consumed) / 2 || map_count > SIZE_MAX / sizeof(*keys)) return rval;
-    if(map_count && !(keys = CALLOC((size_t)map_count, sizeof(*keys)))) return rval;
-    if(td->elements_count && !(seen = CALLOC(td->elements_count, 1))) goto done;
-    if(td->elements_count && !(pending = CALLOC(td->elements_count, sizeof(*pending)))) goto done;
+    if(map_count > (size - consumed) / 2 || map_count > SIZE_MAX / sizeof(*keys)) goto done;
+    if(map_count && !(keys = CALLOC((size_t)map_count, sizeof(*keys)))) goto done;
+    if(leaf_count && !(seen = CALLOC(leaf_count, 1))) goto done;
+    if(leaf_count && !(pending = CALLOC(leaf_count, sizeof(*pending)))) goto done;
     for(i = 0; i < map_count; i++) {
         uint64_t key_len;
         used = cbor_decode_head(buf + consumed, size - consumed, &major, &key_len);
         if(used < 0 || (size_t)used > size - consumed || major != CBOR_MAJOR_TEXT) goto done;
         consumed += (size_t)used;
-        if(key_len > size - consumed) goto done;
+        if(key_len > size - consumed
+           || !cbor_utf8_valid(buf + consumed, (size_t)key_len)) goto done;
         keys[i].data = buf + consumed;
         keys[i].size = (size_t)key_len;
         consumed += (size_t)key_len;
-        used = SET_cbor_decode_member(codec, td, st, seen, pending, (const char *)keys[i].data,
-                                      keys[i].size, buf + consumed, size - consumed);
+        used = SET_cbor_decode_member(codec, td, st, leaves, leaf_count, seen, pending,
+                                      (const char *)keys[i].data, keys[i].size,
+                                      buf + consumed, size - consumed);
         if(used < 0 || (size_t)used > size - consumed) goto done;
         consumed += (size_t)used;
     }
-    if(SET_cbor_validate_members(td, seen, keys, (size_t)map_count)
-       || SET_cbor_decode_open(codec, td, st, pending)) goto done;
+    if(SET_cbor_defaults(td, st, leaves, leaf_count, seen)
+       || SET_cbor_validate_members(td, st, leaves, leaf_count, seen, keys, (size_t)map_count)
+       || SET_cbor_decode_open(codec, td, st, leaves, leaf_count, seen, pending)) goto done;
+    if(*sptr) {
+        ASN_STRUCT_RESET(*td, *sptr);
+        memcpy(*sptr, st, specs->struct_size);
+        FREEMEM(st);
+    } else {
+        *sptr = st;
+    }
+    st = 0;
     rval.code = RC_OK;
     rval.consumed = consumed;
 done:
+    if(st) ASN_STRUCT_FREE(*td, st);
+    FREEMEM(leaves);
     FREEMEM(pending);
     FREEMEM(seen);
     FREEMEM(keys);

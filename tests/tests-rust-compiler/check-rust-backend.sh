@@ -478,8 +478,103 @@ rm -f "$test_tmp/cbor-c/converter-example.c" "$test_tmp/cbor-c/pdu_collection.c"
 cc -I"$test_tmp/cbor-c" "$test_tmp/cbor-c"/*.c "$test_srcdir/c_cbor.c" -lm -o "$test_tmp/c-cbor"
 "$test_tmp/c-cbor"
 
-# Constructed records, CONTAINING, and selected OPEN TYPE stay unsupported.
-for fixture in "$test_srcdir/SequenceSlice.asn1" "$test_srcdir/OpenSelected.asn1" \
+# CBOR SEQUENCE maps cover direct primitives, OPTIONAL ANY, and DEFAULT fields.
+"$asn1c_bin" --rust -gen-CBOR -no-gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/cbor-sequence-rust" "$test_srcdir/CborSequence.asn1"
+mkdir -p "$test_tmp/cbor-sequence-rust/tests" "$test_tmp/cbor-sequence-c"
+cp "$test_srcdir/cbor_sequence.rs" "$test_tmp/cbor-sequence-rust/tests/"
+cargo test --offline --manifest-path "$test_tmp/cbor-sequence-rust/Cargo.toml"
+cargo clippy --offline --manifest-path "$test_tmp/cbor-sequence-rust/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings
+"$asn1c_bin" -gen-CBOR -S "$skeletons" -D "$test_tmp/cbor-sequence-c" \
+    "$test_srcdir/CborSequence.asn1"
+rm -f "$test_tmp/cbor-sequence-c/converter-example.c" \
+    "$test_tmp/cbor-sequence-c/pdu_collection.c"
+cc -I"$test_tmp/cbor-sequence-c" "$test_tmp/cbor-sequence-c"/*.c \
+    "$test_srcdir/c_cbor_sequence.c" -lm -o "$test_tmp/c-cbor-sequence"
+"$test_tmp/c-cbor-sequence"
+
+# Direct fixed and bounded CBOR strings preserve C's byte-string mapping.
+"$asn1c_bin" --rust -gen-CBOR -no-gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/cbor-strings-rust" "$test_srcdir/CborStrings.asn1"
+mkdir -p "$test_tmp/cbor-strings-rust/tests" "$test_tmp/cbor-strings-c"
+cp "$test_srcdir/cbor_strings.rs" "$test_tmp/cbor-strings-rust/tests/"
+cargo test --offline --manifest-path "$test_tmp/cbor-strings-rust/Cargo.toml"
+cargo clippy --offline --manifest-path "$test_tmp/cbor-strings-rust/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings
+"$asn1c_bin" -gen-CBOR -S "$skeletons" -D "$test_tmp/cbor-strings-c" \
+    "$test_srcdir/CborStrings.asn1"
+rm -f "$test_tmp/cbor-strings-c/converter-example.c" \
+    "$test_tmp/cbor-strings-c/pdu_collection.c"
+cc -I"$test_tmp/cbor-strings-c" "$test_tmp/cbor-strings-c"/*.c \
+    "$test_srcdir/c_cbor_strings.c" -lm -o "$test_tmp/c-cbor-strings"
+"$test_tmp/c-cbor-strings"
+
+# Flat CBOR SEQUENCE fields include direct fixed/bounded BIT/OCTET STRING.
+"$asn1c_bin" --rust -gen-CBOR -no-gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/cbor-sequence-strings-rust" "$test_srcdir/CborSequenceStrings.asn1"
+mkdir -p "$test_tmp/cbor-sequence-strings-rust/tests" "$test_tmp/cbor-sequence-strings-c"
+cp "$test_srcdir/cbor_sequence_strings.rs" "$test_tmp/cbor-sequence-strings-rust/tests/"
+cargo test --offline --manifest-path "$test_tmp/cbor-sequence-strings-rust/Cargo.toml"
+cargo clippy --offline --manifest-path "$test_tmp/cbor-sequence-strings-rust/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings
+"$asn1c_bin" -gen-CBOR -S "$skeletons" -D "$test_tmp/cbor-sequence-strings-c" \
+    "$test_srcdir/CborSequenceStrings.asn1"
+rm -f "$test_tmp/cbor-sequence-strings-c/converter-example.c" \
+    "$test_tmp/cbor-sequence-strings-c/pdu_collection.c"
+cc -I"$test_tmp/cbor-sequence-strings-c" "$test_tmp/cbor-sequence-strings-c"/*.c \
+    "$test_srcdir/c_cbor_sequence_strings.c" -lm -o "$test_tmp/c-cbor-sequence-strings"
+"$test_tmp/c-cbor-sequence-strings"
+
+# Direct CBOR CHOICE alternatives use the C one-entry text-key map.
+"$asn1c_bin" --rust -gen-CBOR -no-gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/cbor-choice-rust" "$test_srcdir/CborChoice.asn1"
+mkdir -p "$test_tmp/cbor-choice-rust/tests" "$test_tmp/cbor-choice-c"
+cp "$test_srcdir/cbor_choice.rs" "$test_tmp/cbor-choice-rust/tests/"
+cargo test --offline --manifest-path "$test_tmp/cbor-choice-rust/Cargo.toml"
+cargo clippy --offline --manifest-path "$test_tmp/cbor-choice-rust/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings
+"$asn1c_bin" -gen-CBOR -S "$skeletons" -D "$test_tmp/cbor-choice-c" \
+    "$test_srcdir/CborChoice.asn1"
+rm -f "$test_tmp/cbor-choice-c/converter-example.c" \
+    "$test_tmp/cbor-choice-c/pdu_collection.c"
+cc -I"$test_tmp/cbor-choice-c" "$test_tmp/cbor-choice-c"/*.c \
+    "$test_srcdir/c_cbor_choice.c" -lm -o "$test_tmp/c-cbor-choice"
+"$test_tmp/c-cbor-choice"
+
+# Typed local primitive CONTAINING uses inner CBOR bytes in an outer C-compatible string.
+"$asn1c_bin" --rust -gen-CBOR -no-gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/cbor-containing-rust" "$test_srcdir/CborContaining.asn1"
+mkdir -p "$test_tmp/cbor-containing-rust/tests" "$test_tmp/cbor-containing-c"
+cp "$test_srcdir/cbor_containing.rs" "$test_tmp/cbor-containing-rust/tests/"
+cargo test --offline --manifest-path "$test_tmp/cbor-containing-rust/Cargo.toml"
+cargo clippy --offline --manifest-path "$test_tmp/cbor-containing-rust/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings
+"$asn1c_bin" -gen-CBOR -S "$skeletons" -D "$test_tmp/cbor-containing-c" \
+    "$test_srcdir/CborContaining.asn1"
+rm -f "$test_tmp/cbor-containing-c/converter-example.c" \
+    "$test_tmp/cbor-containing-c/pdu_collection.c"
+cc -I"$test_tmp/cbor-containing-c" "$test_tmp/cbor-containing-c"/*.c \
+    "$test_srcdir/c_cbor_containing.c" -lm -o "$test_tmp/c-cbor-containing"
+"$test_tmp/c-cbor-containing"
+
+# The narrow IOC-selected OPEN TYPE uses direct selected CBOR map values.
+"$asn1c_bin" --rust -gen-CBOR -no-gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/cbor-open-rust" "$test_srcdir/OpenSelected.asn1"
+mkdir -p "$test_tmp/cbor-open-rust/tests" "$test_tmp/cbor-open-c"
+cp "$test_srcdir/cbor_open_selected.rs" "$test_tmp/cbor-open-rust/tests/"
+cargo test --offline --manifest-path "$test_tmp/cbor-open-rust/Cargo.toml"
+cargo clippy --offline --manifest-path "$test_tmp/cbor-open-rust/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings
+"$asn1c_bin" -gen-CBOR -S "$skeletons" -D "$test_tmp/cbor-open-c" \
+    "$test_srcdir/OpenSelected.asn1"
+rm -f "$test_tmp/cbor-open-c/converter-example.c" "$test_tmp/cbor-open-c/pdu_collection.c"
+cc -I"$test_tmp/cbor-open-c" "$test_tmp/cbor-open-c"/*.c \
+    "$test_srcdir/c_cbor_open_selected.c" -lm -o "$test_tmp/c-cbor-open"
+"$test_tmp/c-cbor-open"
+
+# Nested records and SEQUENCE CONTAINING stay unsupported.
+for fixture in "$test_srcdir/SequenceNested.asn1" \
     "$test_tmp/ContainingSupported.asn1"; do
     rejected_out="$test_tmp/rejected-cbor-$(basename "$fixture" .asn1)"
     if "$asn1c_bin" --rust -gen-CBOR -no-gen-UPER -no-gen-CER -S "$skeletons" \

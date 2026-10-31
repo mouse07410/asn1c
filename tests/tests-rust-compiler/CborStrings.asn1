@@ -1,0 +1,8 @@
+CborStrings DEFINITIONS ::= BEGIN
+
+FixedOctets ::= OCTET STRING (SIZE(2))
+BoundedOctets ::= OCTET STRING (SIZE(0..3))
+FixedBits ::= BIT STRING (SIZE(3))
+BoundedBits ::= BIT STRING (SIZE(0..9))
+
+END

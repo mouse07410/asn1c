@@ -147,3 +147,9 @@ clean-local:
 
 TESTS += check-src/check-604.-findirect-choice.-fcompound-names.-gen-XER.c
 EXTRA_DIST += check-src/check-604.-findirect-choice.-fcompound-names.-gen-XER.c
+TESTS += check-src/check-605.-findirect-choice.-fcompound-names.-gen-CBOR.c
+EXTRA_DIST += check-src/check-605.-findirect-choice.-fcompound-names.-gen-CBOR.c
+EXTRA_DIST += data-605
+TESTS += check-src/check-606.-gen-CBOR.c
+EXTRA_DIST += check-src/check-606.-gen-CBOR.c
+EXTRA_DIST += data-606

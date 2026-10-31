@@ -92,6 +92,16 @@ impl BitStringValue {
         &self.bytes
     }
 
+    /// Consume the validated BIT STRING and return its packed octets.
+    /// Inputs: `self` is the owned value. Returns its bytes without allocation.
+    /// Errors: none. Source: packed BIT STRING representation.
+    /// Version: 2026-10-30. Responsible: asn1c maintainers.
+    /// History: fixed-size CBOR decoding. Example: `let bytes = bits.into_bytes();`.
+    #[must_use]
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.bytes
+    }
+
     /// Return the exact number of meaningful bits.
     ///
     /// # Parameters and returns

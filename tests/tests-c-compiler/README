@@ -16,8 +16,8 @@ The fixture was corrected after the issue #585 decoder hardening exposed it.
 
 
 check-601 exercises SET CBOR maps with required and optional members, duplicate
-known and unknown keys, truncated input, and malformed descriptors. Synthetic
-SET extension groups remain unsupported by the SET CBOR codec and are rejected.
+known and unknown keys, truncated input, malformed descriptors, and flat
+extension-group leaves beside direct map members. Duplicate names fail closed.
 The indirect-choice 601 test covers CBOR table-selected SET open values in both
 map orders, unknown selectors, optional omission, malformed selected data, and
 generated SET/SEQUENCE cross-decoding of the same CBOR map.
@@ -29,3 +29,18 @@ open member unless its canonical order follows every sibling. An incomplete open
 RC_WMORE without consuming that element; callers retain those bytes for replay.
 A selected named NULL uses a nested self-closing type element; a self-closing <value/> is
 rejected. Open leaves inside SET extension groups are unsupported and rejected.
+
+check-605 covers C SEQUENCE CBOR maps with OPTIONAL and opaque ANY values,
+deferred IOC-selected OPEN TYPE decoding in either key order, duplicate known
+and unknown keys, missing required members, every truncated prefix, and
+preservation of a preallocated value after a later map error. It also checks
+restoration of an omitted DEFAULT value, unknown-key skipping, malformed UTF-8
+key rejection, and a small deterministic fuzz seed corpus. An open member
+requires all its sibling members to be present before the generated selector is
+called because the selector API does not reveal which siblings it reads. The
+SEQUENCE CBOR path rejects extension groups and multiple direct open members.
+
+check-606 covers the one-entry CBOR CHOICE map, exact selected-child consumption,
+UTF-8 text-key validation, unknown and malformed keys, truncated input,
+nested child failure, preallocated value preservation, malformed descriptors,
+and arbitrary-input decode cleanup through its fuzz entry.

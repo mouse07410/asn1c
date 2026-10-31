@@ -166,7 +166,7 @@ END
 EOF
 "${ASN1C}" -S "${SKELETONS_DIR}" -fcompound-names -pdu=Outer \
     -fgen-only-pdu-deps \
-    -no-gen-BER -no-gen-JER -no-gen-OER -no-gen-CBOR repro.asn
+    -no-gen-BER -no-gen-JER -no-gen-OER repro.asn
 ${MAKE:-make} -f converter-example.mk
 printf '\001\200' > valid.uper
 printf '\001\201' > bad-padding.uper
@@ -184,6 +184,43 @@ done
 for input in bad-padding.uper trailing.uper empty.uper spare.uper; do
     if ./converter-example -iaper -c -onull "$input"; then
         echo "Invalid APER OCTET STRING CONTAINING content accepted: $input" >&2
+        exit 1
+    fi
+done
+# CBOR carries the complete inner encoding as OCTET STRING bytes.
+printf '\241\141\143\101\001' > valid.cbor
+printf '\241\141\143\101\377' > invalid.cbor
+./converter-example -icbor -c -onull valid.cbor
+./converter-example -icbor -c -ocbor valid.cbor > roundtrip.cbor
+cmp valid.cbor roundtrip.cbor
+if ./converter-example -icbor -c -onull invalid.cbor; then
+    echo "Invalid CBOR OCTET STRING CONTAINING content accepted" >&2
+    exit 1
+fi
+cd ..
+rm -rf "${WORKDIR}"
+
+# BIT STRING CONTAINING carries complete CBOR octets after its unused-bit byte.
+mkdir -p "${WORKDIR}"
+cd "${WORKDIR}"
+cat > bit-cbor.asn <<'EOF'
+Repro DEFINITIONS ::= BEGIN
+Inner ::= INTEGER (0..2)
+Outer ::= BIT STRING (CONTAINING Inner)
+END
+EOF
+"${ASN1C}" -S "${SKELETONS_DIR}" -fcompound-names -pdu=Outer \
+    -fgen-only-pdu-deps -no-gen-BER -no-gen-JER -no-gen-OER bit-cbor.asn
+${MAKE:-make} -f converter-example.mk
+printf '\102\000\001' > valid.cbor
+printf '\102\000\377' > invalid.cbor
+printf '\102\001\000' > spare.cbor
+./converter-example -icbor -c -onull valid.cbor
+./converter-example -icbor -c -ocbor valid.cbor > roundtrip.cbor
+cmp valid.cbor roundtrip.cbor
+for input in invalid.cbor spare.cbor; do
+    if ./converter-example -icbor -c -onull "$input"; then
+        echo "Invalid CBOR BIT STRING CONTAINING content accepted: $input" >&2
         exit 1
     fi
 done

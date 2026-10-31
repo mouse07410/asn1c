@@ -1,0 +1,40 @@
+-- CBOR SEQUENCE map, OPTIONAL, ANY and IOC-selected OPEN TYPE regression.
+CborSequenceOpen DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+CONTENT-TYPE ::= CLASS {
+    &id OBJECT IDENTIFIER UNIQUE,
+    &Type
+} WITH SYNTAX {
+    &Type IDENTIFIED BY &id
+}
+
+id-person OBJECT IDENTIFIER ::= { 1 2 3 4 1 }
+
+PersonInfo ::= SEQUENCE {
+    name UTF8String,
+    age INTEGER (0..127),
+    email UTF8String OPTIONAL
+}
+
+personContent CONTENT-TYPE ::= {
+    PersonInfo IDENTIFIED BY id-person
+}
+
+SupportedContentTypes CONTENT-TYPE ::= { personContent }
+
+ContentWrapper ::= SEQUENCE {
+    contentType CONTENT-TYPE.&id({SupportedContentTypes}),
+    content CONTENT-TYPE.&Type({SupportedContentTypes}{@contentType})
+}
+
+OpaqueRecord ::= SEQUENCE {
+    enabled BOOLEAN,
+    raw ANY OPTIONAL
+}
+
+DefaultRecord ::= SEQUENCE {
+    enabled BOOLEAN DEFAULT TRUE,
+    raw ANY OPTIONAL
+}
+
+END

@@ -1,0 +1,10 @@
+CborSequenceStrings DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+Record ::= SEQUENCE {
+    bits BIT STRING (SIZE(1..9)),
+    octets OCTET STRING (SIZE(2)),
+    maybeBits BIT STRING (SIZE(3)) OPTIONAL,
+    maybeOctets OCTET STRING (SIZE(0..3)) OPTIONAL
+}
+
+END

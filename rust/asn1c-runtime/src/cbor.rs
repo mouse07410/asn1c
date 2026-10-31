@@ -1,9 +1,21 @@
 //! Bounded CBOR codecs for direct primitives and opaque ANY.
 //! Source: C CBOR skeletons. Version: 2026-10-30. Responsible: asn1c maintainers.
 use crate::{
-    allocate_zeroed, check_input_limit, check_work_limit, require_bytes, validate_integer, Decoded,
-    Encoded, Error, Limits,
+    allocate_zeroed, check_input_limit, check_work_limit, require_bytes, validate_integer,
+    BitStringValue, Decoded, Encoded, Error, Limits,
 };
+use std::collections::HashSet;
+
+/// Borrowed key and complete encoded value from a definite CBOR map.
+///
+/// The key is the raw text-string payload. The value includes its CBOR head.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MapEntry<'a> {
+    /// Raw bytes of one text-string map key.
+    pub key: &'a [u8],
+    /// Complete encoded CBOR item associated with the key.
+    pub value: &'a [u8],
+}
 
 /// Encode a shortest-form CBOR head. Inputs: major type and argument. Returns
 /// fixed storage and used length; no errors. Source: `cbor_encode_head`.
@@ -300,4 +312,499 @@ pub fn decode_any_cbor(input: &[u8], limits: &Limits) -> Result<Decoded<Vec<u8>>
         consumed_bits: bits,
         consumed_bytes: end,
     })
+}
+
+/// Validate one direct string's inclusive ASN.1 SIZE range.
+/// Inputs: actual size, lower and upper bounds. Returns unit on success.
+/// Errors: malformed bounds or out-of-range values. Source: Rust bounded
+/// string runtimes. Version: 2026-10-30. Responsible: asn1c maintainers.
+/// History: CBOR string support. Example: `check_size(2, 1, 3)?`.
+const fn check_size(actual: usize, lower: usize, upper: usize) -> Result<(), Error> {
+    if lower > upper || actual < lower || actual > upper {
+        return Err(Error::InvalidEncoding {
+            reason: "CBOR string length is outside its SIZE range",
+        });
+    }
+    Ok(())
+}
+
+/// Encode a bounded OCTET STRING as a definite CBOR byte string.
+///
+/// Inputs: octets, inclusive SIZE bounds and limits. Returns encoded bytes.
+/// Source: `OCTET_STRING_encode_cbor`. Version: 2026-10-30.
+/// Responsible: asn1c maintainers. History: direct string CBOR slice.
+/// Example: `[0xa5]` emits `[0x41, 0xa5]`.
+///
+/// # Errors
+/// Returns an error for invalid SIZE, allocation or resource exhaustion.
+pub fn encode_octet_string_cbor(
+    value: &[u8],
+    lower: usize,
+    upper: usize,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    check_size(value.len(), lower, upper)?;
+    encode_any_cbor(value, limits)
+}
+
+/// Decode a bounded OCTET STRING from one definite CBOR byte-string prefix.
+///
+/// Inputs: bytes, inclusive SIZE bounds and limits. Returns octets and prefix
+/// consumption. Source: `OCTET_STRING_decode_cbor`. Version: 2026-10-30.
+/// Responsible: asn1c maintainers. History: direct string CBOR slice.
+/// Example: `[0x41, 0xa5]` yields `[0xa5]`.
+///
+/// # Errors
+/// Returns an error for malformed or truncated input, SIZE, or resource limits.
+pub fn decode_octet_string_cbor(
+    input: &[u8],
+    lower: usize,
+    upper: usize,
+    limits: &Limits,
+) -> Result<Decoded<Vec<u8>>, Error> {
+    let decoded = decode_any_cbor(input, limits)?;
+    check_size(decoded.value.len(), lower, upper)?;
+    Ok(decoded)
+}
+
+/// Encode a bounded packed BIT STRING with an unused-bit count byte.
+///
+/// Inputs: packed octets, exact bit length, inclusive SIZE bounds and limits.
+/// Returns definite CBOR byte-string encoding. Source: `BIT_STRING_encode_cbor`.
+/// Version: 2026-10-30. Responsible: asn1c maintainers.
+/// History: direct bit-string CBOR slice. Example: one set bit emits `42 07 80`.
+///
+/// # Errors
+/// Returns an error for invalid length or padding, overflow, allocation or limits.
+pub fn encode_bit_string_cbor(
+    value: &[u8],
+    bit_len: usize,
+    lower: usize,
+    upper: usize,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    check_size(bit_len, lower, upper)?;
+    let storage = bit_len.checked_add(7).ok_or(Error::SizeOverflow)? / 8;
+    let unused = (8 - bit_len % 8) % 8;
+    if storage != value.len()
+        || (unused != 0
+            && value
+                .last()
+                .is_some_and(|byte| byte & ((1_u8 << unused) - 1) != 0))
+    {
+        return Err(Error::InvalidEncoding {
+            reason: "invalid CBOR BIT STRING storage or padding",
+        });
+    }
+    let payload_len = value.len().checked_add(1).ok_or(Error::SizeOverflow)?;
+    let mut payload = allocate_zeroed(payload_len, limits)?;
+    payload[0] = u8::try_from(unused).map_err(|_| Error::SizeOverflow)?;
+    payload[1..].copy_from_slice(value);
+    encode_head_payload(
+        2,
+        u64::try_from(payload_len).map_err(|_| Error::SizeOverflow)?,
+        &payload,
+        limits,
+    )
+}
+
+/// Decode a bounded packed BIT STRING with exact bit count and zero padding.
+///
+/// Inputs: bytes, inclusive SIZE bounds and limits. Returns validated packed
+/// bits and prefix consumption. Source: `BIT_STRING_decode_cbor`.
+/// Version: 2026-10-30. Responsible: asn1c maintainers.
+/// History: direct bit-string CBOR slice. Example: `42 07 80` yields one bit.
+///
+/// # Errors
+/// Returns an error for malformed or truncated input, SIZE, padding or limits.
+pub fn decode_bit_string_cbor(
+    input: &[u8],
+    lower: usize,
+    upper: usize,
+    limits: &Limits,
+) -> Result<Decoded<BitStringValue>, Error> {
+    let decoded = decode_any_cbor(input, limits)?;
+    if decoded.value.is_empty() {
+        return Err(Error::InvalidEncoding {
+            reason: "CBOR BIT STRING lacks unused-bit count",
+        });
+    }
+    let mut payload = decoded.value;
+    let unused = usize::from(payload.remove(0));
+    if unused > 7 {
+        return Err(Error::InvalidEncoding {
+            reason: "invalid CBOR BIT STRING unused-bit count",
+        });
+    }
+    let bit_len = payload
+        .len()
+        .checked_mul(8)
+        .and_then(|bits| bits.checked_sub(unused))
+        .ok_or(Error::InvalidEncoding {
+            reason: "invalid CBOR BIT STRING bit length",
+        })?;
+    check_size(bit_len, lower, upper)?;
+    Ok(Decoded {
+        value: BitStringValue::new(payload, bit_len)?,
+        consumed_bits: decoded.consumed_bits,
+        consumed_bytes: decoded.consumed_bytes,
+    })
+}
+
+/// Skip one definite CBOR item, including nested arrays, maps, and tags.
+/// Inputs are the whole remaining slice, resource limits, and recursion depth.
+/// Returns the item length. Errors: malformed input, truncation, depth, or limits.
+/// Source: `cbor_skip_item_with_ctx`. Version: 2026-10-30.
+/// Responsible: asn1c maintainers. History: constructed CBOR map support.
+/// Example: a two-element array consumes its head and both children.
+fn skip_item(input: &[u8], limits: &Limits, depth: usize) -> Result<usize, Error> {
+    if depth > 64 {
+        return Err(Error::InvalidEncoding {
+            reason: "CBOR nesting depth exceeded",
+        });
+    }
+    let (major, argument, header) = parse_head(input)?;
+    let mut end = header;
+    match major {
+        0 | 1 | 7 => {}
+        2 | 3 => {
+            let length = usize::try_from(argument).map_err(|_| Error::SizeOverflow)?;
+            end = end.checked_add(length).ok_or(Error::SizeOverflow)?;
+            require_bytes(input, end)?;
+            if major == 3 && std::str::from_utf8(&input[header..end]).is_err() {
+                return Err(Error::InvalidEncoding {
+                    reason: "CBOR text value is not UTF-8",
+                });
+            }
+        }
+        4 | 5 => {
+            let count = if major == 5 {
+                argument.checked_mul(2).ok_or(Error::SizeOverflow)?
+            } else {
+                argument
+            };
+            if count > u64::try_from(input.len()).map_err(|_| Error::SizeOverflow)? {
+                return Err(Error::NeedMoreBytes {
+                    required_bytes: usize::try_from(count).unwrap_or(usize::MAX),
+                    available_bytes: input.len(),
+                });
+            }
+            for _ in 0..count {
+                let child = skip_item(&input[end..], limits, depth + 1)?;
+                end = end.checked_add(child).ok_or(Error::SizeOverflow)?;
+            }
+        }
+        6 => {
+            let child = skip_item(&input[end..], limits, depth + 1)?;
+            end = end.checked_add(child).ok_or(Error::SizeOverflow)?;
+        }
+        _ => unreachable!(),
+    }
+    check_work_limit(end.checked_mul(8).ok_or(Error::SizeOverflow)?, limits)?;
+    Ok(end)
+}
+
+/// Encode a definite CBOR text-key map in entry order.
+///
+/// Each value must be one complete octet-aligned CBOR item. Keys are unique.
+/// Source: C `SEQUENCE_encode_cbor`. Version: 2026-10-30.
+/// Responsible: asn1c maintainers. History: generated SEQUENCE CBOR support.
+/// Example: `encode_map(&[("flag", encoded)], &Limits::default())?`.
+///
+/// # Errors
+/// Returns an error for duplicate keys, malformed values, size overflow,
+/// exhausted resources, or failed allocation.
+pub fn encode_map(entries: &[(&str, Encoded)], limits: &Limits) -> Result<Encoded, Error> {
+    let (map_head, map_head_len) = head(
+        5,
+        u64::try_from(entries.len()).map_err(|_| Error::SizeOverflow)?,
+    );
+    let mut length = map_head_len;
+    let mut keys = HashSet::new();
+    keys.try_reserve(entries.len())
+        .map_err(|_| Error::AllocationFailed {
+            requested_bytes: entries.len(),
+        })?;
+    for (key, value) in entries {
+        if !keys.insert(*key)
+            || value.bytes.is_empty()
+            || skip_item(&value.bytes, limits, 0)? != value.bytes.len()
+        {
+            return Err(Error::InvalidEncoding {
+                reason: "duplicate CBOR key or invalid map value",
+            });
+        }
+        if value.bit_len
+            != value
+                .bytes
+                .len()
+                .checked_mul(8)
+                .ok_or(Error::SizeOverflow)?
+        {
+            return Err(Error::InvalidEncoding {
+                reason: "CBOR map value is not octet aligned",
+            });
+        }
+        let (_, key_head_len) = head(
+            3,
+            u64::try_from(key.len()).map_err(|_| Error::SizeOverflow)?,
+        );
+        length = length
+            .checked_add(key_head_len)
+            .and_then(|sum| sum.checked_add(key.len()))
+            .and_then(|sum| sum.checked_add(value.bytes.len()))
+            .ok_or(Error::SizeOverflow)?;
+    }
+    let bits = length.checked_mul(8).ok_or(Error::SizeOverflow)?;
+    check_work_limit(bits, limits)?;
+    let mut bytes = allocate_zeroed(length, limits)?;
+    bytes[..map_head_len].copy_from_slice(&map_head[..map_head_len]);
+    let mut offset = map_head_len;
+    for (key, value) in entries {
+        let (key_head, key_head_len) = head(
+            3,
+            u64::try_from(key.len()).map_err(|_| Error::SizeOverflow)?,
+        );
+        bytes[offset..offset + key_head_len].copy_from_slice(&key_head[..key_head_len]);
+        offset += key_head_len;
+        bytes[offset..offset + key.len()].copy_from_slice(key.as_bytes());
+        offset += key.len();
+        bytes[offset..offset + value.bytes.len()].copy_from_slice(&value.bytes);
+        offset += value.bytes.len();
+    }
+    Ok(Encoded {
+        bytes,
+        bit_len: bits,
+    })
+}
+
+/// Decode a definite CBOR text-key map into borrowed complete value items.
+///
+/// Leading semantic tags and nonminimal definite heads are accepted. Duplicate
+/// keys, indefinite lengths, and malformed or incomplete values are rejected.
+/// Source: C `SEQUENCE_decode_cbor` and `cbor_skip_item_with_ctx`.
+/// Version: 2026-10-30. Responsible: asn1c maintainers.
+/// History: generated SEQUENCE CBOR support.
+/// Example: `decode_map(&[0xa1, 0x61, b'x', 0xf5], &Limits::default())?`.
+///
+/// # Errors
+/// Returns an error for malformed input, duplicate keys, excessive nesting,
+/// exhausted resources, or failed allocation.
+pub fn decode_map<'a>(
+    input: &'a [u8],
+    limits: &Limits,
+) -> Result<Decoded<Vec<MapEntry<'a>>>, Error> {
+    let offset = item_offset(input, limits, false)?;
+    let (major, count, header) = parse_head(&input[offset..])?;
+    if major != 5 {
+        return Err(Error::InvalidEncoding {
+            reason: "CBOR SEQUENCE is not a map",
+        });
+    }
+    let count = usize::try_from(count).map_err(|_| Error::SizeOverflow)?;
+    if count > input.len() / 2 {
+        return Err(Error::NeedMoreBytes {
+            required_bytes: count.checked_mul(2).ok_or(Error::SizeOverflow)?,
+            available_bytes: input.len(),
+        });
+    }
+    let mut entries = Vec::new();
+    entries
+        .try_reserve(count)
+        .map_err(|_| Error::AllocationFailed {
+            requested_bytes: count,
+        })?;
+    let mut keys = HashSet::new();
+    keys.try_reserve(count)
+        .map_err(|_| Error::AllocationFailed {
+            requested_bytes: count,
+        })?;
+    let mut end = offset.checked_add(header).ok_or(Error::SizeOverflow)?;
+    for _ in 0..count {
+        let (key_major, key_length, key_header) = parse_head(&input[end..])?;
+        if key_major != 3 {
+            return Err(Error::InvalidEncoding {
+                reason: "CBOR map key is not text",
+            });
+        }
+        let key_length = usize::try_from(key_length).map_err(|_| Error::SizeOverflow)?;
+        let key_start = end.checked_add(key_header).ok_or(Error::SizeOverflow)?;
+        let key_end = key_start
+            .checked_add(key_length)
+            .ok_or(Error::SizeOverflow)?;
+        require_bytes(input, key_end)?;
+        let key = &input[key_start..key_end];
+        std::str::from_utf8(key).map_err(|_| Error::InvalidEncoding {
+            reason: "CBOR text key is not UTF-8",
+        })?;
+        if !keys.insert(key) {
+            return Err(Error::InvalidEncoding {
+                reason: "duplicate CBOR map key",
+            });
+        }
+        let value_length = skip_item(&input[key_end..], limits, 0)?;
+        end = key_end
+            .checked_add(value_length)
+            .ok_or(Error::SizeOverflow)?;
+        entries.push(MapEntry {
+            key,
+            value: &input[key_end..end],
+        });
+    }
+    let bits = end.checked_mul(8).ok_or(Error::SizeOverflow)?;
+    check_work_limit(bits, limits)?;
+    Ok(Decoded {
+        value: entries,
+        consumed_bits: bits,
+        consumed_bytes: end,
+    })
+}
+
+/// Require a field decoder to consume its complete CBOR map value.
+///
+/// Inputs: decoded prefix and exact entry span. Returns its validated value.
+/// Errors: trailing data. Source: C member CBOR dispatch. Version: 2026-10-30.
+/// Responsible: asn1c maintainers. History: flat SEQUENCE field validation.
+/// Example: `complete_value(decode_boolean_cbor(bytes, limits)?, bytes.len())?`.
+///
+/// # Errors
+/// Returns `InvalidEncoding` when the decoded prefix is shorter than the entry.
+pub fn complete_value<T>(decoded: Decoded<T>, exact_bytes: usize) -> Result<T, Error> {
+    if decoded.consumed_bytes != exact_bytes {
+        return Err(Error::InvalidEncoding {
+            reason: "trailing CBOR map field data",
+        });
+    }
+    Ok(decoded.value)
+}
+
+#[cfg(test)]
+mod map_tests {
+    use super::{decode_map, encode_boolean_cbor, encode_map};
+    use crate::{Error, Limits};
+
+    /// Check map ordering, tags, nonminimal heads, and borrowed entry spans.
+    /// Source: C SEQUENCE CBOR mapping. Version: 2026-10-30.
+    /// Inputs: none. Returns: unit. Errors: assertion panic on failure.
+    /// Responsible: asn1c maintainers. History: CBOR map regression.
+    /// Example: `cargo test map_round_trip`.
+    #[test]
+    fn map_round_trip() {
+        let limits = Limits::default();
+        let flag = encode_boolean_cbor(true, &limits).unwrap();
+        let encoded = encode_map(&[("flag", flag)], &limits).unwrap();
+        assert_eq!(encoded.bytes, [0xa1, 0x64, b'f', b'l', b'a', b'g', 0xf5]);
+        let tagged = [0xc0, 0xb8, 1, 0x78, 4, b'f', b'l', b'a', b'g', 0xf5, 0xff];
+        let decoded = decode_map(&tagged, &limits).unwrap();
+        assert_eq!(decoded.consumed_bytes, tagged.len() - 1);
+        assert_eq!(decoded.value[0].key, b"flag");
+        assert_eq!(decoded.value[0].value, [0xf5]);
+    }
+
+    /// Reject duplicate keys, bad nested items, and budget excess.
+    /// Source: C CBOR map decoder. Version: 2026-10-30.
+    /// Inputs: none. Returns: unit. Errors: assertion panic on failure.
+    /// Responsible: asn1c maintainers. History: malformed-map regression.
+    /// Example: `cargo test bad_maps`.
+    #[test]
+    fn bad_maps() {
+        let limits = Limits::default();
+        for wire in [
+            &[][..],
+            &[0xbf][..],
+            &[0xa1, 0x01, 0xf5][..],
+            &[0xa1, 0x61, b'x'][..],
+            &[0xa1, 0x61, b'x', 0x9f][..],
+            &[0xa1, 0x61, 0xff, 0xf5][..],
+            &[0xa1, 0x61, b'x', 0x81, 0x61, 0xff][..],
+            &[0xa2, 0x61, b'x', 0xf5, 0x61, b'x', 0xf4][..],
+            &[0xa1, 0x61, b'x', 0x81][..],
+        ] {
+            assert!(decode_map(wire, &limits).is_err(), "{wire:?}");
+        }
+        let tiny = Limits {
+            max_work_bits: 8,
+            ..limits
+        };
+        assert!(decode_map(&[0xa0], &tiny).is_ok());
+        assert!(decode_map(&[0xa1, 0x61, b'x', 0xf5], &tiny).is_err());
+        let value = encode_boolean_cbor(true, &limits).unwrap();
+        assert!(matches!(
+            encode_map(&[("x", value.clone()), ("x", value)], &limits),
+            Err(Error::InvalidEncoding { .. })
+        ));
+    }
+}
+
+#[cfg(test)]
+mod string_tests {
+    use super::{
+        decode_bit_string_cbor, decode_octet_string_cbor, encode_bit_string_cbor,
+        encode_octet_string_cbor,
+    };
+    use crate::Limits;
+
+    /// Compare direct string encodings with C's byte-string mapping.
+    /// Source: C BIT/OCTET STRING CBOR codecs. Version: 2026-10-30.
+    /// Inputs: none. Returns: unit. Errors: assertion panic.
+    /// Responsible: maintainers. History: CBOR string support.
+    /// Example: `cargo test string_vectors`.
+    #[test]
+    fn string_vectors() {
+        let limits = Limits::default();
+        assert_eq!(
+            encode_octet_string_cbor(&[0xa5, 0x5a], 2, 2, &limits)
+                .unwrap()
+                .bytes,
+            [0x42, 0xa5, 0x5a]
+        );
+        assert_eq!(
+            decode_octet_string_cbor(&[0xc0, 0x58, 2, 0xa5, 0x5a], 2, 2, &limits)
+                .unwrap()
+                .value,
+            [0xa5, 0x5a]
+        );
+        assert_eq!(
+            encode_bit_string_cbor(&[0xa0], 3, 3, 3, &limits)
+                .unwrap()
+                .bytes,
+            [0x42, 5, 0xa0]
+        );
+        let bits = decode_bit_string_cbor(&[0xc0, 0x42, 5, 0xa0], 3, 3, &limits).unwrap();
+        assert_eq!(bits.value.bit_len(), 3);
+        assert_eq!(bits.value.as_bytes(), [0xa0]);
+        assert_eq!(bits.consumed_bytes, 4);
+        assert_eq!(
+            encode_bit_string_cbor(&[], 0, 0, 9, &limits).unwrap().bytes,
+            [0x41, 0]
+        );
+    }
+
+    /// Reject malformed lengths, padding, indefinite input and limits.
+    /// Source: C BIT/OCTET STRING CBOR validation. Version: 2026-10-30.
+    /// Inputs: none. Returns: unit. Errors: assertion panic.
+    /// Responsible: maintainers. History: CBOR string hardening.
+    /// Example: `cargo test malformed_strings`.
+    #[test]
+    fn malformed_strings() {
+        let limits = Limits::default();
+        assert!(encode_octet_string_cbor(&[], 1, 2, &limits).is_err());
+        assert!(decode_octet_string_cbor(&[0x5f], 0, 3, &limits).is_err());
+        assert!(decode_octet_string_cbor(&[0x41], 0, 3, &limits).is_err());
+        assert!(encode_bit_string_cbor(&[0xa1], 3, 3, 3, &limits).is_err());
+        for wire in [
+            &[0x40][..],
+            &[0x41, 8][..],
+            &[0x41, 1][..],
+            &[0x42, 7, 0x81][..],
+            &[0x5f][..],
+        ] {
+            assert!(decode_bit_string_cbor(wire, 0, 9, &limits).is_err());
+        }
+        let tiny = Limits {
+            max_output_bytes: 1,
+            ..limits
+        };
+        assert!(encode_bit_string_cbor(&[0x80], 1, 1, 1, &tiny).is_err());
+    }
 }
