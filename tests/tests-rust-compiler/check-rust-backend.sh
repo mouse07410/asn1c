@@ -56,6 +56,8 @@ EOF
 cat >"$test_tmp/Any.asn1" <<'EOF'
 AnyModule DEFINITIONS ::= BEGIN
 Value ::= ANY
+Packet ::= SEQUENCE { flag BOOLEAN, payload ANY OPTIONAL }
+Required ::= SEQUENCE { flag BOOLEAN, payload ANY }
 END
 EOF
 cat >"$test_tmp/Open.asn1" <<'EOF'
@@ -69,7 +71,7 @@ MyContainer ::= SEQUENCE {
 }
 END
 EOF
-for fixture in Containing Any Open; do
+for fixture in Open; do
     rejected_out="$test_tmp/rejected-$fixture"
     if "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$rejected_out" \
         "$test_tmp/$fixture.asn1" >"$test_tmp/$fixture.log" 2>&1; then
@@ -79,6 +81,97 @@ for fixture in Containing Any Open; do
     grep -F 'Rust backend does not support' "$test_tmp/$fixture.log" >/dev/null
     test ! -e "$rejected_out"
 done
+
+# UPER CONTAINING supports direct local BOOLEAN and bounded INTEGER contents.
+cat >"$test_tmp/ContainingSupported.asn1" <<'EOF'
+Containing DEFINITIONS ::= BEGIN
+Inner ::= INTEGER (0..2)
+Bool ::= BOOLEAN
+Oct ::= OCTET STRING (CONTAINING Inner)
+Bits ::= BIT STRING (CONTAINING Inner)
+BoolOct ::= OCTET STRING (CONTAINING Bool)
+BoolBits ::= BIT STRING (CONTAINING BOOLEAN)
+Packet ::= SEQUENCE { x BOOLEAN, i OCTET STRING (CONTAINING Inner) OPTIONAL, b BIT STRING (CONTAINING Bool) }
+END
+EOF
+"$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$test_tmp/containing-rust" \
+    "$test_tmp/ContainingSupported.asn1"
+mkdir -p "$test_tmp/containing-rust/tests" "$test_tmp/containing-c"
+cp "$test_srcdir/containing_conformance.rs" "$test_tmp/containing-rust/tests/"
+cargo test --offline --manifest-path "$test_tmp/containing-rust/Cargo.toml"
+cargo clippy --offline --manifest-path "$test_tmp/containing-rust/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings
+"$asn1c_bin" -no-gen-CER -S "$skeletons" -D "$test_tmp/containing-c" \
+    "$test_tmp/ContainingSupported.asn1"
+rm -f "$test_tmp/containing-c/converter-example.c" "$test_tmp/containing-c/pdu_collection.c"
+cc -I"$test_tmp/containing-c" "$test_tmp/containing-c"/*.c "$test_srcdir/c_containing.c" \
+    -lm -o "$test_tmp/c-containing"
+"$test_tmp/c-containing"
+
+# Reject unsupported contents shapes before publishing a Rust crate.
+cat >"$test_tmp/ContainingSingleton.asn1" <<'EOF'
+ContainingSingleton DEFINITIONS ::= BEGIN
+Inner ::= INTEGER (1..1)
+Outer ::= OCTET STRING (CONTAINING Inner)
+END
+EOF
+cat >"$test_tmp/ContainingSized.asn1" <<'EOF'
+ContainingSized DEFINITIONS ::= BEGIN
+Inner ::= INTEGER (0..2)
+Outer ::= OCTET STRING (SIZE(1)) (CONTAINING Inner)
+END
+EOF
+for fixture in ContainingSingleton ContainingSized; do
+    if "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$test_tmp/rejected-$fixture" \
+        "$test_tmp/$fixture.asn1" >"$test_tmp/$fixture.log" 2>&1; then
+        echo "FAIL: Rust backend accepted unsupported $fixture" >&2
+        exit 1
+    fi
+    test ! -e "$test_tmp/rejected-$fixture"
+done
+if "$asn1c_bin" --rust -gen-APER -no-gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/rejected-containing-aper" "$test_tmp/ContainingSupported.asn1" \
+    >"$test_tmp/containing-aper.log" 2>&1; then
+    echo "FAIL: Rust backend accepted unsupported APER CONTAINING" >&2
+    exit 1
+fi
+test ! -e "$test_tmp/rejected-containing-aper"
+
+# ANY preserves opaque bytes in a UPER envelope, including fragmented lengths.
+"$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$test_tmp/any-rust" \
+    "$test_tmp/Any.asn1"
+mkdir -p "$test_tmp/any-rust/tests"
+cp "$test_srcdir/any_conformance.rs" "$test_tmp/any-rust/tests/any_conformance.rs"
+cargo test --offline --manifest-path "$test_tmp/any-rust/Cargo.toml"
+cargo clippy --offline --manifest-path "$test_tmp/any-rust/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings
+
+# Cross-check matching boundary vectors with generated C ANY codecs.
+mkdir -p "$test_tmp/any-c"
+"$asn1c_bin" -no-gen-CER -S "$skeletons" -D "$test_tmp/any-c" "$test_tmp/Any.asn1"
+rm -f "$test_tmp/any-c/converter-example.c" "$test_tmp/any-c/pdu_collection.c"
+cc -I"$test_tmp/any-c" "$test_tmp/any-c"/*.c "$test_srcdir/c_any.c" -lm -o "$test_tmp/c-any"
+"$test_tmp/c-any"
+
+# Standalone ANY supports APER, OER, and JER opaque framing as well.
+cat >"$test_tmp/AnyAdditional.asn1" <<'EOF'
+AnyModule DEFINITIONS ::= BEGIN
+Value ::= ANY
+END
+EOF
+"$asn1c_bin" --rust -gen-APER -gen-OER -gen-JER -no-gen-UPER -no-gen-CER \
+    -S "$skeletons" -D "$test_tmp/any-extra" "$test_tmp/AnyAdditional.asn1"
+mkdir -p "$test_tmp/any-extra/tests" "$test_tmp/any-extra-c"
+cp "$test_srcdir/any_additional.rs" "$test_tmp/any-extra/tests/"
+cargo test --offline --manifest-path "$test_tmp/any-extra/Cargo.toml"
+cargo clippy --offline --manifest-path "$test_tmp/any-extra/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings
+"$asn1c_bin" -gen-APER -gen-OER -gen-JER -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/any-extra-c" "$test_tmp/AnyAdditional.asn1"
+rm -f "$test_tmp/any-extra-c/converter-example.c" "$test_tmp/any-extra-c/pdu_collection.c"
+cc -I"$test_tmp/any-extra-c" "$test_tmp/any-extra-c"/*.c "$test_srcdir/c_any_additional.c" \
+    -lm -o "$test_tmp/c-any-additional"
+"$test_tmp/c-any-additional"
 
 # An incomplete runtime beside explicit skeletons must fail before output.
 missing_skeletons="$test_tmp/missing-runtime/skeletons"

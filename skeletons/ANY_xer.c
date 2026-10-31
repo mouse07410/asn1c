@@ -17,6 +17,11 @@ ANY_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr, int ilevel,
         ASN__ENCODE_FAILED;
     }
 
-    /* Dump as binary */
-    return OCTET_STRING_encode_xer(td, sptr, ilevel, flags, cb, app_key);
+    /* Use a normalized view: ANY's size field is not size_t. */
+    {
+        OCTET_STRING_t view;
+        if(!td || !cb || ANY_to_octet_view((const ANY_t *)sptr, &view))
+            ASN__ENCODE_FAILED;
+        return OCTET_STRING_encode_xer(td, &view, ilevel, flags, cb, app_key);
+    }
 }

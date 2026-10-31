@@ -1317,6 +1317,301 @@ fn encoded_byte_len(bit_len: usize) -> Result<usize, Error> {
         .ok_or(Error::SizeOverflow)
 }
 
+/// Encode opaque ANY octets with the UPER length envelope.
+///
+/// # Parameters and returns
+/// `value` supplies octets; `limits` bounds resources. Returns the encoding.
+///
+/// # Errors
+/// Returns resource, allocation, or arithmetic errors.
+///
+/// # Source, version, history, and example
+/// Source: `skeletons/ANY_uper.c`. Version: 2026-10-30.
+/// Responsible: asn1c maintainers. History: initial ANY framing.
+/// Example: `encode_any_uper(&[], &Limits::default())?`.
+pub fn encode_any_uper(value: &[u8], limits: &Limits) -> Result<Encoded, Error> {
+    let mut writer = UperWriter::new(limits)?;
+    write_any_uper(&mut writer, value)?;
+    writer.finish()
+}
+
+/// Append opaque ANY octets to a shared UPER cursor.
+///
+/// # Parameters and returns
+/// `writer` is the cursor; `value` supplies octets. Returns success on completion.
+///
+/// # Errors
+/// Returns resource, allocation, or arithmetic errors; the cursor may be partially advanced.
+///
+/// # Source, version, history, and example
+/// Source: `skeletons/ANY_uper.c`. Version: 2026-10-30.
+/// Responsible: asn1c maintainers. History: composable ANY framing.
+/// Example: `write_any_uper(&mut writer, &[])?`.
+pub fn write_any_uper(writer: &mut UperWriter, value: &[u8]) -> Result<(), Error> {
+    let mut rest = value;
+    loop {
+        let length = rest.len();
+        let fragment = if length < 128 {
+            writer.write_integer(
+                i64::try_from(length).map_err(|_| Error::SizeOverflow)?,
+                0,
+                255,
+            )?;
+            length
+        } else if length < 16384 {
+            let header = 0x8000 | length;
+            writer.write_integer(
+                i64::try_from(header).map_err(|_| Error::SizeOverflow)?,
+                0,
+                65535,
+            )?;
+            length
+        } else {
+            let units = (length / 16384).min(4);
+            writer.write_integer(
+                i64::try_from(0xc0 | units).map_err(|_| Error::SizeOverflow)?,
+                0,
+                255,
+            )?;
+            units * 16384
+        };
+        writer.write_octets(&rest[..fragment], fragment)?;
+        rest = &rest[fragment..];
+        if length < 16384 {
+            break;
+        }
+    }
+    Ok(())
+}
+
+/// Decode an opaque ANY value from a UPER prefix.
+///
+/// # Parameters and returns
+/// `input` supplies the encoded prefix; `limits` bounds resources. Returns
+/// the octets and consumed prefix lengths.
+///
+/// # Errors
+/// Returns an error for truncation, invalid lengths, exhausted resources,
+/// allocation failure, or arithmetic overflow.
+///
+/// # Source, version, history, and example
+/// Source: `skeletons/ANY_uper.c`. Version: 2026-10-30.
+/// Responsible: asn1c maintainers. History: initial ANY framing.
+/// Example: `decode_any_uper(&[0], &Limits::default())?`.
+pub fn decode_any_uper(input: &[u8], limits: &Limits) -> Result<Decoded<Vec<u8>>, Error> {
+    let mut reader = UperReader::new(input, limits)?;
+    let value = read_any_uper(&mut reader)?;
+    let consumed = reader.finish()?;
+    Ok(Decoded {
+        value,
+        consumed_bits: consumed.consumed_bits,
+        consumed_bytes: consumed.consumed_bytes,
+    })
+}
+
+/// Read opaque ANY octets from a shared UPER cursor.
+///
+/// # Parameters and returns
+/// `reader` supplies the cursor. Returns the decoded opaque octets.
+///
+/// # Errors
+/// Returns an error for malformed or truncated input, limits, or allocation failure;
+/// the cursor may be partially advanced.
+///
+/// # Source, version, history, and example
+/// Source: `skeletons/ANY_uper.c`. Version: 2026-10-30.
+/// Responsible: asn1c maintainers. History: composable ANY framing.
+/// Example: `read_any_uper(&mut reader)?`.
+pub fn read_any_uper(reader: &mut UperReader<'_>) -> Result<Vec<u8>, Error> {
+    let mut value = Vec::new();
+    loop {
+        let first =
+            usize::try_from(reader.read_integer(0, 255)?).map_err(|_| Error::SizeOverflow)?;
+        let (length, fragmented) = if first < 128 {
+            (first, false)
+        } else if first < 192 {
+            let second =
+                usize::try_from(reader.read_integer(0, 255)?).map_err(|_| Error::SizeOverflow)?;
+            (((first & 0x3f) << 8) | second, false)
+        } else {
+            let units = first & 0x3f;
+            if !(1..=4).contains(&units) {
+                return Err(Error::InvalidEncoding {
+                    reason: "invalid UPER fragment length",
+                });
+            }
+            (units * 16384, true)
+        };
+        let fragment = reader.read_octets(length)?;
+        let new_len = value.len().checked_add(length).ok_or(Error::SizeOverflow)?;
+        value
+            .try_reserve(length)
+            .map_err(|_| Error::AllocationFailed {
+                requested_bytes: new_len,
+            })?;
+        value.extend_from_slice(&fragment);
+        if !fragmented {
+            break;
+        }
+    }
+    Ok(value)
+}
+
+/// Encode a bounded primitive inside an unconstrained UPER string.
+///
+/// # Parameters and returns
+/// `value` and inclusive `lower`/`upper` describe the inner integer;
+/// `octets` selects OCTET STRING (otherwise BIT STRING); `limits` bounds work.
+/// Returns the outer encoding with a short length determinant.
+///
+/// # Errors
+/// Returns invalid bounds, out-of-range values, resource or allocation errors.
+///
+/// # Source, version, history, and example
+/// Source: X.691 contents constraints and string length encoding.
+/// Version: 2026-10-30. Responsible: asn1c maintainers.
+/// History: bounded primitive CONTAINING support. Example: encode value 2 in 0..2.
+pub fn encode_containing_uper(
+    value: i64,
+    lower: i64,
+    upper: i64,
+    octets: bool,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    let mut writer = UperWriter::new(limits)?;
+    write_containing_uper(&mut writer, value, lower, upper, octets)?;
+    writer.finish()
+}
+
+/// Append a primitive CONTAINING value to a shared UPER cursor.
+///
+/// # Parameters and returns
+/// `writer` is the cursor; `value`, `lower`, and `upper` describe the inner
+/// integer; `octets` selects OCTET STRING. Returns success when appended.
+///
+/// # Errors
+/// Returns invalid bounds or value, resource, or allocation errors. The cursor
+/// may be partially advanced on failure.
+///
+/// # Source, version, history, and example
+/// Source: X.691 contents constraints. Version: 2026-10-30.
+/// Responsible: asn1c maintainers. History: composed UPER values.
+/// Example: `write_containing_uper(&mut writer, 1, 0, 2, true)?`.
+pub fn write_containing_uper(
+    writer: &mut UperWriter,
+    value: i64,
+    lower: i64,
+    upper: i64,
+    octets: bool,
+) -> Result<(), Error> {
+    let (_, width) = integer_shape(lower, upper)?;
+    if width == 0 {
+        return Err(Error::InvalidEncoding {
+            reason: "zero-width contained value",
+        });
+    }
+    let length = if octets { width.div_ceil(8) } else { width };
+    writer.write_integer(
+        i64::try_from(length).map_err(|_| Error::SizeOverflow)?,
+        0,
+        255,
+    )?;
+    writer.write_integer(value, lower, upper)?;
+    if octets && width % 8 != 0 {
+        let padding = 8 - width % 8;
+        writer.write_integer(0, 0, (1_i64 << padding) - 1)?;
+    }
+    Ok(())
+}
+
+/// Decode a bounded primitive contained in an unconstrained UPER string.
+///
+/// # Parameters and returns
+/// `input` supplies the outer prefix; `lower`/`upper` constrain the inner value;
+/// `octets` selects OCTET STRING and `limits` bounds work. Returns the inner
+/// value and outer prefix consumption.
+///
+/// # Errors
+/// Rejects truncation, incorrect outer length, spare inner values, nonzero
+/// octet padding, invalid bounds, and resource or allocation errors.
+///
+/// # Source, version, history, and example
+/// Source: X.691 contents constraints and string length encoding.
+/// Version: 2026-10-30. Responsible: asn1c maintainers.
+/// History: bounded primitive CONTAINING support. Example: decode the value 2.
+pub fn decode_containing_uper(
+    input: &[u8],
+    lower: i64,
+    upper: i64,
+    octets: bool,
+    limits: &Limits,
+) -> Result<Decoded<i64>, Error> {
+    let mut reader = UperReader::new(input, limits)?;
+    let value = read_containing_uper(&mut reader, lower, upper, octets)?;
+    let consumed = reader.finish()?;
+    Ok(Decoded {
+        value,
+        consumed_bits: consumed.consumed_bits,
+        consumed_bytes: consumed.consumed_bytes,
+    })
+}
+
+/// Read a primitive CONTAINING value from a shared UPER cursor.
+///
+/// # Parameters and returns
+/// `reader` supplies the cursor; `lower` and `upper` constrain the inner value;
+/// `octets` selects OCTET STRING. Returns the validated inner integer.
+///
+/// # Errors
+/// Returns malformed input, bounds, allocation, or resource errors. The cursor
+/// may be partially advanced on failure.
+///
+/// # Source, version, history, and example
+/// Source: X.691 contents constraints. Version: 2026-10-30.
+/// Responsible: asn1c maintainers. History: composed UPER values.
+/// Example: `read_containing_uper(&mut reader, 0, 2, true)?`.
+pub fn read_containing_uper(
+    reader: &mut UperReader<'_>,
+    lower: i64,
+    upper: i64,
+    octets: bool,
+) -> Result<i64, Error> {
+    let (_, width) = integer_shape(lower, upper)?;
+    if width == 0 {
+        return Err(Error::InvalidEncoding {
+            reason: "zero-width contained value",
+        });
+    }
+    let expected = if octets { width.div_ceil(8) } else { width };
+    let first = usize::try_from(reader.read_integer(0, 255)?).map_err(|_| Error::SizeOverflow)?;
+    let length = if first < 128 {
+        first
+    } else if first < 192 {
+        let second =
+            usize::try_from(reader.read_integer(0, 255)?).map_err(|_| Error::SizeOverflow)?;
+        ((first & 0x3f) << 8) | second
+    } else {
+        return Err(Error::InvalidEncoding {
+            reason: "invalid contained length",
+        });
+    };
+    if length != expected {
+        return Err(Error::InvalidEncoding {
+            reason: "invalid contained length",
+        });
+    }
+    let value = reader.read_integer(lower, upper)?;
+    if octets && width % 8 != 0 {
+        let padding = 8 - width % 8;
+        if reader.read_integer(0, (1_i64 << padding) - 1)? != 0 {
+            return Err(Error::InvalidEncoding {
+                reason: "nonzero contained padding",
+            });
+        }
+    }
+    Ok(value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -137,7 +137,7 @@ main(void) {
         decoded = 0;
     }
 
-    /* A table-selected member is rejected until selector-order buffering exists. */
+    /* An OPEN TYPE without its table selector is malformed. */
     {
         asn_TYPE_member_t *first = &asn_DEF_OerSet.elements[2];
         int original_flags = first->flags;

@@ -5,6 +5,7 @@
 #include "asn1c_ioc.h"
 #include "asn1c_naming.h"
 #include "asn1c_encoding.h"
+#include "asn1c_constraint.h"
 #include "asn1c_rust.h"
 #include <asn1fix_export.h>
 
@@ -577,6 +578,13 @@ asn1c_mark_expr_dependencies(arg_t *arg, asn1p_expr_t *expr) {
 
 	/* Mark recursion to avoid infinite loops */
 	expr->_mark |= TM_RECURSION;
+
+	/* A CONTAINING type is a generated descriptor dependency even when the
+	 * outer BIT/OCTET STRING has no ordinary type-reference member. */
+	if(expr->combined_constraints) {
+		asn1p_expr_t *contained = asn1c_find_contained_type(arg, expr);
+		if(contained) asn1c_mark_expr_dependencies(arg, contained);
+	}
 
 	/* For type references, find and mark the referenced type */
 	if(expr->expr_type == A1TC_REFERENCE && expr->reference) {

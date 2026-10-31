@@ -101,6 +101,19 @@ open_type_unknown_variant(const asn_TYPE_descriptor_t *type) {
 }
 
 /*
+ * Purpose: Report whether a wrapper can retain an unknown APER open value.
+ * Source: Validated opaque fallback descriptor. Version: 2026-10-30.
+ * Inputs: td describes the wrapper. Returns: nonzero for a valid fallback.
+ * Errors: Invalid descriptors return zero. Author: asn1c maintainers.
+ * History: Used to validate deferred SET members before reading input.
+ * Example: A direct INTEGER descriptor has no unknown fallback.
+ */
+int
+OPEN_TYPE_aper_has_fallback(const asn_TYPE_descriptor_t *td) {
+    return open_type_unknown_variant(td) != NULL;
+}
+
+/*
  * Purpose: Clear a CHOICE only when its stored presence index is valid.
  * Original source: Runtime helper added for APER open-type cleanup.
  * Version: 2026-10-22.

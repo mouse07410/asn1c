@@ -1,10 +1,44 @@
 Changes since v1.5.3:
+	* Reject malformed APER and OER SET OPEN TYPE members without a selector
+	  before consuming input, except valid opaque APER fallback wrappers.
+	* Validate selected OER OPEN TYPE descriptors and full storage spans, and
+	  preserve preallocated values on failed envelope decoding. SET supports
+	  the smaller inline ANY layout with validated parsing-context metadata.
+	  Constructed children validate parser contexts, presence fields and list
+	  storage before decoding or cleanup, with bounded cycle-aware validation
+	  of constructed member tables and full storage slots.
+	* Generate IOC-selected C SET members as open-type wrappers with selectors,
+	  including pointer-backed extension IDs and additions. Selected OER values
+	  must consume their complete envelope and retain inline arm constraints.
+	* Added C SET APER and OER extension-addition OPEN TYPE encoding and
+	  deferred decoding, including selectors in later additions and streaming
+	  OER nested-envelope validation.
+	* Adapted C ANY BER/DER, OER, CBOR, XER and JER byte handling to its
+	  signed-size ABI, including bounds checks and safe buffer conversion.
+	  Complete-value codec tests and split BER/JER decoding cover the adapters.
+	* Added Rust UPER opaque ANY values as top-level assignments and required
+	  or OPTIONAL SEQUENCE fields, with fragmented length handling, resource
+	  limits, malformed-input tests, and generated C wire comparisons.
+	  Direct ANY also supports APER, OER, and JER with C interoperability
+	  vectors and malformed-input checks.
+	* Added Rust UPER BIT/OCTET STRING CONTAINING a direct BOOLEAN or bounded
+	  INTEGER at top level and in required or OPTIONAL SEQUENCE fields, with
+	  shared cursor budgets, embedded-value validation, and C wire comparisons.
+	* Promoted inline C BIT/OCTET STRING CONTAINING types into generated
+	  descriptors, preserving INTEGER bounds and constructed-type metadata.
+	  Marked contained descriptors as PDU-only generation dependencies and
+	  added primitive, constructed, multi-module, and malformed-value tests.
+	* Decode C SET APER and OER root OPEN TYPE fields after their table
+	  selectors, including fields preceding selectors in canonical wire order.
+	  OER retains deferred envelopes across incremental reads and frees them
+	  when a partial SET is released.
+	* Hardened C ANY APER and UPER decoding against malformed storage and
+	  integer overflow, and fixed clearing APER conversion buffers.
 	* Added C OCTET STRING (CONTAINING named Type) constraint checks for complete
 	  embedded values. PER padding and spare values are validated, while
 	  non-PER syntax uses complete-byte consumption. Added UPER and APER
-	  negative cases to the CONTAINING smoke test. Inline contained types
-	  fail generation until their specialized descriptors can be emitted;
-	  syntax-aware recursive constraint checks now have a depth bound.
+	  negative cases to the CONTAINING smoke test. Syntax-aware recursive
+	  constraint checks now have a depth bound.
 	* Corrected C JER IOC-selected OPEN TYPE cleanup for incomplete and
 	  malformed selected values. Added generated present/absent OPTIONAL
 	  round trips, truncation and malformed-input regressions. JER text-string
@@ -12,8 +46,8 @@ Changes since v1.5.3:
 	  Unicode surrogates while accepting valid surrogate pairs.
 	* Extended Rust UPER SEQUENCE fields to required and OPTIONAL inline
 	  nonextensible ENUMERATED values, with C wire comparisons and malformed
-	  rank tests. Rust CONTAINING, ANY, and IOC OPEN TYPE schemas still fail
-	  before output publication while their type resolution remains pending.
+	  rank tests. Unsupported Rust CONTAINING forms and IOC OPEN TYPE schemas
+	  still fail before output publication while type resolution remains pending.
 	* Encoded and decoded C SET extension-group leaves as flat JER object
 	  members. Added key routing across input splits, duplicate and malformed
 	  descriptor checks, DEFAULT and renamed-leaf regressions, and pretty

@@ -90,8 +90,13 @@ oer_open_type_get(const asn_codec_ctx_t *opt_codec_ctx,
     asn_dec_rval_t dr;
     size_t container_len = 0;
     ssize_t len_len;
-    enum asn_struct_free_method dispose_method =
-        (*struct_ptr) ? ASFM_FREE_UNDERLYING_AND_RESET : ASFM_FREE_EVERYTHING;
+    enum asn_struct_free_method dispose_method;
+
+    /* Validate the descriptor and destination before inspecting their storage. */
+    if(!td || !td->op || !td->op->oer_decoder || !td->op->free_struct
+    || !struct_ptr || (!bufptr && size)) return -1;
+    dispose_method = *struct_ptr ? ASFM_FREE_UNDERLYING_AND_RESET
+                                 : ASFM_FREE_EVERYTHING;
 
     /* Get the size of a length determinant */
     len_len = oer_fetch_length(bufptr, size, &container_len);
@@ -108,19 +113,16 @@ oer_open_type_get(const asn_codec_ctx_t *opt_codec_ctx,
         return 0;
     }
 
-    if(!td->op->oer_decoder) {
-        ASN_DEBUG("No OER decoder for open type %s", td->name);
-        return -1;
-    }
+    if(container_len > (size_t)SSIZE_MAX - (size_t)len_len) return -1;
 
     dr = td->op->oer_decoder(opt_codec_ctx, td, constraints, struct_ptr,
                          (const uint8_t *)bufptr + len_len, container_len);
-    if(dr.code == RC_OK) {
-        return len_len + container_len;
+    if(dr.code == RC_OK && dr.consumed == container_len) {
+        return len_len + (ssize_t)container_len;
     } else {
-        /* Even if RC_WMORE, we can't get more data into a closed container. */
-        td->op->free_struct(td, *struct_ptr, dispose_method);
-        *struct_ptr = NULL;
+        /* A closed envelope must contain exactly one complete selected value. */
+        if(*struct_ptr) td->op->free_struct(td, *struct_ptr, dispose_method);
+        if(dispose_method == ASFM_FREE_EVERYTHING) *struct_ptr = NULL;
         return -1;
     }
 }

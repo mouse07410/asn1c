@@ -7,6 +7,9 @@ typedef struct resolver_arg {
 	asn1p_paramlist_t *lhs_params;
 	asn1p_expr_t	  *rhs_pspecs;
 	char		  *resolved_name;
+	asn1p_expr_t	 **containing_pending;
+	size_t		   containing_used;
+	size_t		   containing_capacity;
 } resolver_arg_t;
 
 static asn1p_expr_t *resolve_expr(asn1p_expr_t *, void *resolver_arg);
@@ -14,6 +17,10 @@ static int compare_specializations(const asn1p_expr_t *a, const asn1p_expr_t *b)
 static asn1p_expr_t *find_target_specialization_byvalueset(resolver_arg_t *rarg, asn1p_constraint_t *ct);
 static asn1p_expr_t *find_target_specialization_byref(resolver_arg_t *rarg, asn1p_ref_t *ref);
 static asn1p_expr_t *find_target_specialization_bystr(resolver_arg_t *rarg, char *str);
+static int resolve_containing_exprs(asn1p_expr_t *root, resolver_arg_t *rarg);
+static int resolve_containing_constraints(asn1p_constraint_t *root,
+		resolver_arg_t *rarg);
+static int enqueue_containing_expr(resolver_arg_t *rarg, asn1p_expr_t *expr);
 
 asn1p_expr_t *
 asn1f_parameterization_fork(arg_t *arg, asn1p_expr_t *expr, asn1p_expr_t *rhs_pspecs) {
@@ -54,13 +61,26 @@ asn1f_parameterization_fork(arg_t *arg, asn1p_expr_t *expr, asn1p_expr_t *rhs_ps
 	rarg.lhs_params = expr->lhs_params;
 	rarg.rhs_pspecs = rhs_pspecs;
 	rarg.resolved_name = NULL;
+	rarg.containing_pending = NULL;
+	rarg.containing_used = 0;
+	rarg.containing_capacity = 0;
 	exc = asn1p_expr_clone_with_resolver(expr, resolve_expr, &rarg);
 	if(!exc) return NULL;
+	/* Clones require their own phase-I work even if the source was processed. */
+	exc->_mark &= ~ASN1F_PHASE1_DONE;
 	if(rarg.resolved_name) {
 		free(exc->Identifier);
 		exc->Identifier = rarg.resolved_name;
 		exc->_lineno = 0;
 	}
+	rarg.resolved_name = NULL;
+	if(resolve_containing_exprs(exc, &rarg)) {
+		free(rarg.resolved_name);
+		asn1p_expr_free(exc);
+		return NULL;
+	}
+	free(rarg.resolved_name);
+	rarg.resolved_name = NULL;
 	rpc = asn1p_expr_clone(rhs_pspecs, 0);
 	assert(rpc);
 
@@ -97,6 +117,129 @@ asn1f_parameterization_fork(arg_t *arg, asn1p_expr_t *expr, asn1p_expr_t *rhs_ps
 	/* Commit */
 	expr->specializations.pspecs_count = npspecs + 1;
 	return exc;
+}
+
+/*
+ * Purpose: substitute formal types inside cloned CONTAINING constraints.
+ * Source: parameterized expression resolver. Version/date: 2026-10-30.
+ * Inputs: root is a cloned constraint and rarg identifies actual parameters.
+ * Returns zero on success or -1 on malformed input/allocation failure; no exceptions.
+ * Author: asn1c maintainers. History: added parameterized contents support.
+ * Example: CONTAINING SEQUENCE { x T } binds T to an actual INTEGER type.
+ */
+static int
+resolve_containing_constraints(asn1p_constraint_t *root, resolver_arg_t *rarg) {
+	asn1p_constraint_t **pending;
+	size_t used = 0, capacity = 32;
+	if(!root) return 0;
+	if(!rarg) return -1;
+	pending = malloc(capacity * sizeof(*pending));
+	if(!pending) return -1;
+	pending[used++] = root;
+	while(used) {
+		asn1p_constraint_t *current = pending[--used];
+		unsigned i;
+		if(current->type == ACT_CT_CTNG && current->value
+		   && current->value->type == ATV_TYPE) {
+			asn1p_expr_t *source = current->value->value.v_type;
+			asn1p_expr_t *copy;
+			asn1p_value_t *replacement;
+			if(!source) { free(pending); return -1; }
+			copy = asn1p_expr_clone_with_resolver(source, resolve_expr, rarg);
+			if(!copy) { free(pending); return -1; }
+			replacement = asn1p_value_fromtype(copy);
+			if(!replacement) {
+				asn1p_expr_free(copy);
+				free(pending);
+				return -1;
+			}
+			/* The cloned expression has no separate owner outside this value. */
+			copy->ref_cnt--;
+			asn1p_value_free(current->value);
+			current->value = replacement;
+			if(enqueue_containing_expr(rarg, copy)) {
+				free(pending);
+				return -1;
+			}
+		}
+		for(i = current->el_count; i > 0; i--) {
+			if(used == capacity) {
+				asn1p_constraint_t **larger;
+				if(capacity > (size_t)-1 / (2 * sizeof(*pending))) {
+					free(pending);
+					return -1;
+				}
+				capacity *= 2;
+				larger = realloc(pending, capacity * sizeof(*pending));
+				if(!larger) { free(pending); return -1; }
+				pending = larger;
+			}
+			pending[used++] = current->elements[i - 1];
+		}
+	}
+	free(pending);
+	return 0;
+}
+
+/*
+ * Purpose: queue a contained expression without recursion or fixed depth.
+ * Source: specialization contents traversal. Version/date: 2026-10-30.
+ * Inputs: rarg owns the worklist and expr is the next cloned type.
+ * Returns zero or -1 on invalid input/allocation failure; no exceptions.
+ * Author: asn1c maintainers. History: supports nested CONTAINING values.
+ * Example: queue a SEQUENCE inside an OCTET STRING contents constraint.
+ */
+static int
+enqueue_containing_expr(resolver_arg_t *rarg, asn1p_expr_t *expr) {
+	if(!rarg || !expr) return -1;
+	if(rarg->containing_used == rarg->containing_capacity) {
+		asn1p_expr_t **larger;
+		size_t capacity = rarg->containing_capacity ? rarg->containing_capacity : 32;
+		if(rarg->containing_capacity) {
+			if(capacity > (size_t)-1 / (2 * sizeof(*larger))) return -1;
+			capacity *= 2;
+		}
+		larger = realloc(rarg->containing_pending, capacity * sizeof(*larger));
+		if(!larger) return -1;
+		rarg->containing_pending = larger;
+		rarg->containing_capacity = capacity;
+	}
+	rarg->containing_pending[rarg->containing_used++] = expr;
+	return 0;
+}
+
+/*
+ * Purpose: visit a specialization's members and bind contained formal types.
+ * Source: parameterized expression clone tree. Version/date: 2026-10-30.
+ * Inputs: root is the cloned specialization and rarg supplies parameter values.
+ * Returns zero on success or -1 on malformed input/allocation failure; no exceptions.
+ * Author: asn1c maintainers. History: added contained-type substitution.
+ * Example: a parameterized OCTET STRING can contain a SEQUENCE using T.
+ */
+static int
+resolve_containing_exprs(asn1p_expr_t *root, resolver_arg_t *rarg) {
+	if(!root || !rarg) return -1;
+	if(enqueue_containing_expr(rarg, root)) return -1;
+	while(rarg->containing_used) {
+		asn1p_expr_t *current = rarg->containing_pending[--rarg->containing_used];
+		asn1p_expr_t *member;
+		if(resolve_containing_constraints(current->constraints, rarg)) {
+			free(rarg->containing_pending);
+			rarg->containing_pending = NULL;
+			return -1;
+		}
+		TQ_FOR(member, &current->members, next) {
+			if(enqueue_containing_expr(rarg, member)) {
+				free(rarg->containing_pending);
+				rarg->containing_pending = NULL;
+				return -1;
+			}
+		}
+	}
+	free(rarg->containing_pending);
+	rarg->containing_pending = NULL;
+	rarg->containing_capacity = 0;
+	return 0;
 }
 
 static int
@@ -147,12 +290,20 @@ resolve_expr(asn1p_expr_t *expr_to_resolve, void *resolver_arg) {
 			? strdup(expr_to_resolve->Identifier) : 0;
 		if(expr->meta_type == AMT_TYPEREF) {
 			asn1p_ref_t *ref = expr->reference;
-			rarg->resolved_name = calloc(1, strlen(rarg->original_expr->Identifier) + strlen(ref->components[ref->comp_count - 1].name) + 2);
-			sprintf(rarg->resolved_name, "%s_%s", rarg->original_expr->Identifier, ref->components[ref->comp_count - 1].name);
+			free(rarg->resolved_name);
+			rarg->resolved_name = calloc(1, strlen(rarg->original_expr->Identifier)
+			                          + strlen(ref->components[ref->comp_count - 1].name) + 2);
+			if(!rarg->resolved_name) {
+				asn1p_expr_free(nex);
+				return NULL;
+			}
+			sprintf(rarg->resolved_name, "%s_%s", rarg->original_expr->Identifier,
+			        ref->components[ref->comp_count - 1].name);
 		} else if(expr->meta_type == AMT_VALUESET) {
 			asn1p_constraint_t *ct = expr->constraints;
 			if(ct->type == ACT_EL_TYPE) {
 				asn1p_ref_t *ref = ct->containedSubtype->value.v_type->reference;
+				free(rarg->resolved_name);
 				rarg->resolved_name = strdup(ref->components[ref->comp_count - 1].name);
 			}
 		}

@@ -48,7 +48,7 @@ enum onc_flags {
 static int out_name_chain(arg_t *arg, enum onc_flags);
 static int asn1c_lang_C_type_SEQUENCE_def(
     arg_t *arg, asn1c_ioc_table_and_objset_t *);
-static int asn1c_lang_C_type_SET_def(arg_t *arg);
+static int asn1c_lang_C_type_SET_def(arg_t *arg, asn1c_ioc_table_and_objset_t *opt_ioc);
 static int asn1c_lang_C_type_CHOICE_def(arg_t *arg);
 static int asn1c_lang_C_type_SEx_OF_def(arg_t *arg, int seq_of);
 static int asn1c_lang_C_OpenType(arg_t *arg, asn1c_ioc_table_and_objset_t *opt_ioc, const char *column_name);
@@ -767,10 +767,19 @@ asn1c_lang_C_type_SET(arg_t *arg) {
 	int comp_mode = 0;	/* {root,ext=1,root,root,...} */
 	int saved_target = arg->target->target;
 	int ext_num = 1;
+    asn1c_ioc_table_and_objset_t ioc_tao;
 
 	if(assign_set_extension_group_names(expr)) return -1;
 
 	DEPENDENCIES;
+
+    /* SET members need the same IOC table and selected wrappers as SEQUENCE. */
+    ioc_tao = asn1c_get_ioc_table(arg);
+    if(ioc_tao.ioct) {
+        if(emit_ioc_table(arg, expr, ioc_tao)) return -1;
+    } else if(ioc_tao.fatal_error) {
+        return -1;
+    }
 
 	REDIR(OT_DEPS);
 
@@ -818,7 +827,19 @@ asn1c_lang_C_type_SET(arg_t *arg) {
 			sprintf(ext_name, "ext%d", ext_num++);
 			v->Identifier = strdup(ext_name);
 		}
-		EMBED(v);
+        if(is_open_type(arg, v, ioc_tao.ioct ? &ioc_tao : 0)) {
+            arg_t member_arg = *arg;
+            const char *column = v->reference->components[1].name;
+            member_arg.embed++;
+            member_arg.expr = v;
+            INDENT(+1);
+            if(asn1c_lang_C_OpenType(&member_arg, &ioc_tao, column)) return -1;
+            OUT(" %s%s;\n", MKID_safe(v),
+                v->marker.flags & EM_OPTIONAL ? "\t/* OPTIONAL */" : "");
+            INDENT(-1);
+        } else {
+            EMBED_WITH_IOCT(v, ioc_tao);
+        }
 	}
 
 	INDENTED(
@@ -846,7 +867,7 @@ asn1c_lang_C_type_SET(arg_t *arg) {
 		if(!expr->_anonymous_type) OUT(";\n");
 	}
 
-	return asn1c_lang_C_type_SET_def(arg);
+	return asn1c_lang_C_type_SET_def(arg, ioc_tao.ioct ? &ioc_tao : 0);
 }
 
 /*
@@ -955,7 +976,7 @@ emit_set_partition(arg_t *arg, asn1p_expr_t *expr, int *root_count,
 }
 
 static int
-asn1c_lang_C_type_SET_def(arg_t *arg) {
+asn1c_lang_C_type_SET_def(arg_t *arg, asn1c_ioc_table_and_objset_t *opt_ioc) {
 	asn1p_expr_t *expr = arg->expr;
 	asn1p_expr_t *v;
 	int elements;
@@ -1012,7 +1033,7 @@ asn1c_lang_C_type_SET_def(arg_t *arg) {
 			if(v->expr_type == A1TC_EXTENSIBLE) {
 				if(comp_mode < 3) comp_mode++;
 			} else {
-				emit_member_table(arg, v, NULL);
+                if(emit_member_table(arg, v, opt_ioc) < 0) return -1;
 				elements++;
 			}
 		});
@@ -2243,6 +2264,8 @@ asn1c_lang_C_type_REFERENCE(arg_t *arg) {
 			return -1;
 		}
 
+        /* The field occurrence determines whether this member is indirect. */
+        extract->marker.flags |= arg->expr->marker.flags & EM_INDIRECT;
 		tmp = *arg;
 		tmp.asn = arg->asn;
 		tmp.expr = extract;
@@ -4909,7 +4932,8 @@ emit_member_type_selector(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_ob
 
     asn1p_expr_t *constraining_memb = NULL;
     TQ_FOR(constraining_memb, &(parent_expr->members), next) {
-        if(strcmp(constraining_memb->Identifier, cname) == 0) {
+        if(constraining_memb->Identifier
+        && strcmp(constraining_memb->Identifier, cname) == 0) {
             break;
         }
     }

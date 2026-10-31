@@ -27,6 +27,7 @@ TESTS += check-JER-open-type.sh
 TESTS += check-JER-enumerated-opentype.sh
 TESTS += check-encoding-instructions.sh
 TESTS += check-APER-inline-constrained-ioc.sh
+TESTS += check-SET-open-type.sh
 TESTS += check-fprefix-link.sh
 TESTS += check-fprefix-anon-typedef.sh
 TESTS += check-CONTAINING.sh

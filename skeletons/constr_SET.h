@@ -12,6 +12,11 @@
 extern "C" {
 #endif
 
+#ifndef ASN_DISABLE_OER_SUPPORT
+/* Release the OER member phase cursor and any buffered open values. */
+void SET_oer_free_member_context(asn_struct_ctx_t *ctx);
+#endif
+
 struct asn_SEQUENCE_specifics_s;
 struct asn_SET_extension_group_s;
 
@@ -85,6 +90,9 @@ typedef struct asn_SET_member_view_s {
 	unsigned owner_index;            /* Member index in owner. */
 	int present;                     /* Whether a pointer-backed value exists. */
 } asn_SET_member_view_t;
+
+/* Return 0 for known width, -1 for malformed layout, or -2 for unknown primitive. */
+int SET_inline_value_size(const asn_TYPE_descriptor_t *td, size_t *size);
 
 /* Use this child_index to request an ordinary, non-group SET member. */
 #define ASN_SET_DIRECT_MEMBER UINT_MAX

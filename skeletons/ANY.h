@@ -37,12 +37,12 @@ int ANY_copy(const asn_TYPE_descriptor_t *td, void **aptr,
 #define ANY_constraint asn_generic_no_constraint
 
 #if !defined(ASN_DISABLE_BER_SUPPORT)
-#define ANY_decode_ber OCTET_STRING_decode_ber
-#define ANY_encode_der OCTET_STRING_encode_der
+ber_type_decoder_f ANY_decode_ber;
+der_type_encoder_f ANY_encode_der;
 #endif  /* !defined(ASN_DISABLE_BER_SUPPORT) */
 
 #if !defined(ASN_DISABLE_XER_SUPPORT)
-#define ANY_decode_xer OCTET_STRING_decode_xer_hex
+xer_type_decoder_f ANY_decode_xer;
 xer_type_encoder_f ANY_encode_xer;
 #endif  /* !defined(ASN_DISABLE_XER_SUPPORT) */
 
@@ -52,9 +52,17 @@ jer_type_encoder_f ANY_encode_jer;
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 
 #if !defined(ASN_DISABLE_OER_SUPPORT)
-#define ANY_decode_oer OCTET_STRING_decode_oer
-#define ANY_encode_oer OCTET_STRING_encode_oer
+oer_type_decoder_f ANY_decode_oer;
+oer_type_encoder_f ANY_encode_oer;
 #endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+cbor_type_decoder_f ANY_decode_cbor;
+cbor_type_encoder_f ANY_encode_cbor;
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
+
+/* Initialize a borrowed OCTET STRING view of a valid ANY value. */
+int ANY_to_octet_view(const ANY_t *value, OCTET_STRING_t *view);
 
 #if !defined(ASN_DISABLE_UPER_SUPPORT)
 per_type_decoder_f ANY_decode_uper;
@@ -84,9 +92,8 @@ int ANY_to_type_aper(ANY_t *, asn_TYPE_descriptor_t *td, void **struct_ptr);
 int ANY_to_type_aper_checked(ANY_t *, asn_TYPE_descriptor_t *td, void **struct_ptr);
 #endif  /* !defined(ASN_DISABLE_APER_SUPPORT) */
 
-#define	ANY_fromBuf(s, buf, size)	OCTET_STRING_fromBuf((s), (buf), (size))
-#define	ANY_new_fromBuf(buf, size)	OCTET_STRING_new_fromBuf(	\
-						&asn_DEF_ANY, (buf), (size))
+int ANY_fromBuf(ANY_t *value, const char *buffer, int size);
+ANY_t *ANY_new_fromBuf(const char *buffer, int size);
 
 #ifdef __cplusplus
 }

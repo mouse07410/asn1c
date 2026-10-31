@@ -154,8 +154,8 @@ rejects input that does not match them.
 ### OPTIONAL, CONTAINING, ANY, and OPEN TYPE
 
 C constructed codecs use generated presence metadata for `OPTIONAL` members.
-For `BIT STRING (CONTAINING named Type)` and
-`OCTET STRING (CONTAINING named Type)`, the
+For `BIT STRING (CONTAINING Type)` and
+`OCTET STRING (CONTAINING Type)`, the
 syntax-aware constraint checker decodes the embedded value, checks its own
 constraints, and requires a complete encoding. The OCTET STRING checker
 accepts only zero padding after the last PER bit; non-PER encodings must
@@ -163,24 +163,43 @@ consume every octet. The [CONTAINING smoke test](../tests/tests-asn1c-smoke/chec
 covers valid and invalid UPER and APER encodings, including spare values,
 padding, and trailing data. Random filling of OCTET STRING CONTAINING values
 does not yet construct a valid embedded value.
-Inline contained types are rejected during generation because the compiler
-does not emit a specialized descriptor for their constraints and codec
-metadata. Syntax-aware constraint checking limits nested calls to 64, so
-recursive contained values fail safely at that depth.
+Inline contained types receive generated descriptors that preserve their
+constraints and codec metadata. PDU-only generation includes descriptors
+referenced solely through `CONTAINING`. Parameterized types are supported when
+the actual contained type is supplied as an argument or when the contained
+type refers to a bound formal type. The
+[inline regression](../tests/tests-c-compiler/check-src/check-603.-gen-UPER.c)
+covers bounded INTEGER and constructed contained types under UPER, APER,
+OER, and BER. Syntax-aware constraint checking limits nested calls to 64,
+so recursive contained values fail safely at that depth.
 
 `ANY` remains an opaque encoded-value container with codec-specific behavior;
-the BER compatibility boundary is described above. IOC-selected `OPEN TYPE`
+the BER compatibility boundary is described above. C BER/DER, OER, CBOR,
+XER and JER adapters preserve the public signed-size `ANY_t` layout. Their
+regressions cover complete values, malformed input, and split BER and JER
+input. IOC-selected `OPEN TYPE`
 uses its selected concrete descriptor. The
 [JER OPEN TYPE regression](../tests/tests-c-compiler/check-src/check-602.-findirect-choice.-fcompound-names.-gen-JER.c)
 covers a selected value with an `OPTIONAL` field, truncation, and malformed
-input. C SET OER and APER still reject table-selected open types when a
-canonical SET member precedes its selector, because decoding requires
-deferred resolution.
+input. C SET APER and OER defer root open-type decoding until their selectors
+are available, including when a root open member precedes its selector in
+canonical wire order. APER and OER SET also support open types in extension
+additions, including selectors carried in later additions. Extension additions
+use a nested open-type envelope; OER retains the encoded value across partial
+input until its selector is available. The [generated SET IOC regression](../tests/tests-asn1c-smoke/check-SET-open-type.sh)
+covers open roots and additions with selectors in later canonical or extension
+order. OER rejects selected values that leave trailing bytes inside their
+open-type envelopes. Constructed storage validation permits pointer-recursive
+layouts and rejects graphs beyond 64 nested levels, 1024 distinct cached types,
+or 16384 descriptor visits.
 
 The Rust backend supports `OPTIONAL` fields only within its documented UPER
-SEQUENCE subset, now including inline nonextensible ENUMERATED values. Rust
-`CONTAINING`, `ANY`, and IOC-selected `OPEN TYPE` remain unsupported; the
-generator rejects those schemas before publishing output. See the
+SEQUENCE subset, including inline nonextensible ENUMERATED, opaque `ANY`, and
+primitive `CONTAINING` values. Direct `ANY` supports UPER, APER, OER, and JER.
+UPER `CONTAINING` supports unconstrained BIT/OCTET STRING containing a local
+direct BOOLEAN or non-singleton bounded INTEGER, at top level or as a required
+or OPTIONAL SEQUENCE field. Other forms and IOC-selected `OPEN TYPE` are
+rejected before output publication. See the
 [Rust implementation boundary](rust/implementation.md#implemented-boundary).
 
 ### C SET support in OER and APER
@@ -193,7 +212,8 @@ alternative tag, even when another alternative is selected or an extension
 alternative has a lower tag. The OER decoder supports input split across
 calls and frees its retained presence map when an incomplete value is freed.
 The APER codec uses child APER operations, including aligned member
-encodings. Both codecs reject table-selected open types. An open component can precede its selector in
+encodings. Both codecs support root table-selected open types. An open
+component can precede its selector in
 canonical SET order; decoding that form requires deferred component resolution.
 The shared OER open-type decoder now releases incomplete or failed CHOICE
 wrappers through their descriptor, with a focused malformed-input regression.

@@ -5,6 +5,52 @@
 #include <asn_internal.h>
 #include <OPEN_TYPE.h>
 #include <constr_CHOICE.h>
+#include <constr_SET.h>
+
+/*
+ * Purpose: Validate the selected type and its entire containing storage slot.
+ * Source: OPEN TYPE selector and generated descriptor layouts. Version: 2026-10-30.
+ * Inputs: parent/member/selected identify the value and its selected type.
+ * Returns: zero for compatible bounded storage, -1 for invalid metadata.
+ * Errors: Unknown inline widths and mismatched descriptors fail closed.
+ * Author: maintainers. History: Protects inline selected values from overflow.
+ * Example: An INTEGER arm at the last byte of its wrapper is rejected.
+ */
+static int
+open_type_oer_storage_valid(const asn_TYPE_descriptor_t *parent,
+                            const asn_TYPE_member_t *member,
+                            asn_type_selector_result_t selected) {
+    const asn_TYPE_descriptor_t *owner = parent;
+    const asn_TYPE_member_t *slot = member;
+    size_t owner_size, slot_size, parent_size, member_size, selected_size;
+    int selected_status;
+    if(SET_inline_value_size(parent, &parent_size)) return -1;
+    if(member->flags & ATF_POINTER) member_size = sizeof(void *);
+    else if(SET_inline_value_size(member->type, &member_size)) return -1;
+    if(member->memb_offset > parent_size
+    || member_size > parent_size - member->memb_offset) return -1;
+    if(member->type->elements_count) {
+        if(!member->type->elements || !member->type->specifics
+        || selected.presence_index > member->type->elements_count) return -1;
+        owner = member->type;
+        slot = &owner->elements[selected.presence_index - 1];
+        if(slot->type != selected.type_descriptor) return -1;
+        owner_size = ((const asn_CHOICE_specifics_t *)owner->specifics)->struct_size;
+    } else {
+        if(member->type != selected.type_descriptor) return -1;
+        owner_size = parent_size;
+    }
+    selected_status = SET_inline_value_size(selected.type_descriptor, &selected_size);
+    if(selected_status && (!(slot->flags & ATF_POINTER) || selected_status != -2)) return -1;
+    if((selected.type_descriptor->op->kind == ASN_KIND_SEQUENCE_OF
+        || selected.type_descriptor->op->kind == ASN_KIND_SET_OF)
+       && !selected.type_descriptor->elements[0].type->op->oer_decoder) return -1;
+    if(slot->flags & ATF_POINTER) slot_size = sizeof(void *);
+    else slot_size = selected_size;
+    if(slot->memb_offset > owner_size || slot_size > owner_size - slot->memb_offset)
+        return -1;
+    return 0;
+}
 
 /*
  * Release a CHOICE wrapper after its open type did not decode completely.
@@ -256,6 +302,7 @@ OPEN_TYPE_oer_get(const asn_codec_ctx_t *opt_codec_ctx,
         ASN__DECODE_FAILED;
     }
 
+    if(open_type_oer_storage_valid(td, elm, selected)) ASN__DECODE_FAILED;
     choice_wrapper = elm->type->elements_count > 0;
     direct_original_value = NULL;
 
@@ -283,20 +330,8 @@ OPEN_TYPE_oer_get(const asn_codec_ctx_t *opt_codec_ctx,
     const asn_TYPE_member_t *variant_elm = NULL;
 
     if(choice_wrapper) {
-        size_t variant_span;
-        const asn_CHOICE_specifics_t *specs =
-            (const asn_CHOICE_specifics_t *)elm->type->specifics;
-
         variant_elm = &elm->type->elements[selected.presence_index - 1];
         memb_offset = variant_elm->memb_offset;
-        variant_span = (variant_elm->flags & ATF_POINTER) ? sizeof(void *) : 1;
-        if(memb_offset > specs->struct_size
-           || variant_span > specs->struct_size - memb_offset) {
-            ASN_DEBUG("Open Type %s->%s: selected CHOICE member is out of bounds",
-                      td->name, elm->name);
-            open_type_oer_cleanup_choice(elm, elm->type, memb_ptr2);
-            ASN__DECODE_FAILED;
-        }
 
         /*
          * For ATF_POINTER variants (e.g., "PersonInfo *PersonInfo" in CHOICE):
@@ -323,7 +358,9 @@ OPEN_TYPE_oer_get(const asn_codec_ctx_t *opt_codec_ctx,
         inner_value = *memb_ptr2;
     }
 
-    ot_ret = oer_open_type_get(opt_codec_ctx, selected.type_descriptor, NULL,
+    /* The CHOICE arm carries constraints for inline selected types. */
+    ot_ret = oer_open_type_get(opt_codec_ctx, selected.type_descriptor,
+                               variant_elm ? variant_elm->encoding_constraints.oer_constraints : NULL,
                                &inner_value, ptr, size);
     return open_type_oer_finish(elm, selected, choice_wrapper, memb_ptr2,
                                 variant_elm, memb_offset, inner_value,

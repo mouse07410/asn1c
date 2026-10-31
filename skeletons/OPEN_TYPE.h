@@ -150,6 +150,9 @@ asn_enc_rval_t OPEN_TYPE_aper_put(
     const asn_TYPE_member_t *element,
     asn_per_outp_t *per_output);
 
+/* Report whether an APER wrapper has a valid opaque unknown alternative. */
+int OPEN_TYPE_aper_has_fallback(const asn_TYPE_descriptor_t *td);
+
 int OPEN_TYPE_aper_is_unknown_type(
     const asn_TYPE_descriptor_t *td,
     void *sptr,

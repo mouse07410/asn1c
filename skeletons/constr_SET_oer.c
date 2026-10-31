@@ -7,6 +7,7 @@
 #include <asn_bit_data.h>
 #include <constr_SET.h>
 #include <constr_SEQUENCE.h>
+#include <constr_CHOICE.h>
 #include <OPEN_TYPE.h>
 #include <oer_decoder.h>
 #include <oer_encoder.h>
@@ -18,6 +19,91 @@
 /* The SET free path uses these phases to identify owned OER maps. */
 #define SET_OER_PHASE_INITIAL 1000
 #define SET_OER_PHASE_COMPLETE 1002
+
+/* Buffered complete envelopes awaiting a table selector. */
+typedef struct SET_oer_pending_s {
+    struct SET_oer_pending_s *next; /* Next buffered member. */
+    unsigned index;                 /* Parent member index. */
+    size_t size;                    /* Encoded envelope length. */
+    uint8_t bytes[1];               /* Owned complete OER envelope. */
+} SET_oer_pending_t;
+
+/*
+ * Purpose: Free an OER member preamble and its deferred envelopes.
+ * Source: SET OER streaming state. Version: 2026-10-30.
+ * Inputs: ctx owns the member phase cursor. Returns: nothing.
+ * Errors: None. Author: asn1c maintainers. History: cleanup for deferred fields.
+ * Example: Called when freeing a SET after an incomplete decode.
+ */
+void
+SET_oer_free_member_context(asn_struct_ctx_t *ctx) {
+    asn_bit_data_t *bits;
+    SET_oer_pending_t *entry;
+    if(!ctx || !ctx->ptr) return;
+    bits = (asn_bit_data_t *)ctx->ptr;
+    entry = (SET_oer_pending_t *)bits->refill_key;
+    while(entry) {
+        SET_oer_pending_t *next = entry->next;
+        FREEMEM(entry);
+        entry = next;
+    }
+    FREEMEM(bits);
+    ctx->ptr = 0;
+}
+
+/*
+ * Purpose: Save one complete OER envelope without selecting its type yet.
+ * Source: OER open-type length determinant. Version: 2026-10-30.
+ * Inputs: ctx and index identify the owner; ptr/size provide available bytes.
+ * Returns: RC_OK, RC_WMORE, or RC_FAIL; consumed receives saved bytes.
+ * Errors: Overflow and allocation failures fail. Author: asn1c maintainers.
+ * History: Added for selectors that follow their open type in SET order.
+ * Example: Partial envelopes return RC_WMORE without consuming their bytes.
+ */
+static int
+SET_oer_save_open(asn_struct_ctx_t *ctx, unsigned index, const char *ptr,
+                  size_t size, size_t *consumed) {
+    asn_bit_data_t *bits = (asn_bit_data_t *)ctx->ptr;
+    SET_oer_pending_t *entry;
+    size_t length = 0, total;
+    ssize_t header = oer_fetch_length(ptr, size, &length);
+    if(header < 0 || !bits) return RC_FAIL;
+    if(header == 0) return RC_WMORE;
+    if((size_t)header > size || length > size - (size_t)header) return RC_WMORE;
+    total = (size_t)header + length;
+    if(total > SIZE_MAX - sizeof(*entry)) return RC_FAIL;
+    entry = (SET_oer_pending_t *)MALLOC(sizeof(*entry) + total);
+    if(!entry) return RC_FAIL;
+    entry->next = (SET_oer_pending_t *)bits->refill_key;
+    entry->index = index;
+    entry->size = total;
+    memcpy(entry->bytes, ptr, total);
+    bits->refill_key = entry;
+    *consumed = total;
+    return RC_OK;
+}
+
+/*
+ * Purpose: Decode saved open envelopes after the governing fields are present.
+ * Source: OPEN_TYPE_oer_get contract. Version: 2026-10-30.
+ * Inputs: codec/td/st identify the SET; ctx owns saved complete envelopes.
+ * Returns: RC_OK or RC_FAIL. Errors: invalid or incompletely decoded data fail.
+ * Author: asn1c maintainers. History: supports canonical SET ordering.
+ * Example: A selector later in wire order is available before decoding.
+ */
+static int
+SET_oer_resolve_pending(const asn_codec_ctx_t *codec,
+                        const asn_TYPE_descriptor_t *td, void *st,
+                        asn_struct_ctx_t *ctx) {
+    asn_bit_data_t *bits = (asn_bit_data_t *)ctx->ptr;
+    SET_oer_pending_t *entry = bits ? (SET_oer_pending_t *)bits->refill_key : 0;
+    for(; entry; entry = entry->next) {
+        asn_dec_rval_t result = OPEN_TYPE_oer_get(codec, td, st,
+            &td->elements[entry->index], entry->bytes, entry->size);
+        if(result.code != RC_OK || result.consumed != entry->size) return RC_FAIL;
+    }
+    return RC_OK;
+}
 
 /* A root tag and member index form one qsort key for canonical ordering. */
 typedef struct SET_oer_root_tag_s {
@@ -236,7 +322,7 @@ SET_oer_map_order(const asn_TYPE_descriptor_t *td,
  * Inputs: td/specs describe members and the containing structure.
  * Returns: zero when all direct member storage spans are valid, otherwise -1.
  * Exceptions: none. History: validates before any OER access to member storage;
- * Table-selected open types and extension groups are rejected.
+ * Root table-selected open types use deferred selection.
  * Example: an inline field extending past the SET structure is rejected.
  */
 static int
@@ -251,7 +337,7 @@ SET_oer_validate_members(const asn_TYPE_descriptor_t *td,
         size_t offset = member->memb_offset;
 
         if(!member->type || !member->type->op
-        || (member->flags & ATF_OPEN_TYPE)
+        || ((member->flags & ATF_OPEN_TYPE) && !member->type_selector)
         || offset >= specs->struct_size
         || ((member->flags & ATF_POINTER)
             && sizeof(void *) > specs->struct_size - offset))
@@ -547,14 +633,14 @@ SET_oer_members_context_valid(const asn_TYPE_descriptor_t *td,
  * Purpose: validate the extension-map phase before any bitmap allocation.
  * Source: SET OER extension phase state and saved extension indicator.
  * Version/date: 2026-10-30. Inputs: ctx is the SET decoder context.
- * Returns: nonzero when no map is owned and the extension indicator is valid.
+ * Returns: nonzero when the saved cursor and extension indicator are valid.
  * Errors: stale counters, pointers, and invalid indicators are rejected.
  * Author: asn1c maintainers. History: split phase-specific state checks.
- * Example: a partial bitmap read resumes with a null saved map.
+ * Example: a partial bitmap read retains buffered open envelopes.
  */
 static int
 SET_oer_extension_map_context_valid(const asn_struct_ctx_t *ctx) {
-    return !ctx->ptr && ctx->step == 0 && ctx->context == 0
+    return ctx->ptr && ctx->step == 0 && ctx->context == 0
         && ctx->left >= 0 && ctx->left <= 1;
 }
 
@@ -607,7 +693,7 @@ SET_oer_context_valid(const asn_TYPE_descriptor_t *td,
         (const asn_SET_specifics_t *)td->specifics;
     size_t root_count = specs->extensible >= 2
         ? specs->root_count : td->elements_count;
-    int has_preamble = optional_count != 0 || specs->extensible >= 2;
+    int has_preamble = 1; /* The member cursor also owns deferred envelopes. */
 
     switch(ctx->phase) {
     case SET_OER_PHASE_INITIAL:
@@ -710,9 +796,10 @@ SET_oer_read_preamble(asn_struct_ctx_t *ctx, int extensible,
         uint8_t last = (uint8_t)(*ptr)[preamble_bytes - 1];
         if(last & ((1u << unused) - 1u)) return RC_FAIL;
     }
-    if(preamble_bits) {
+    {
+        static const char empty = 0;
         asn_bit_data_t *preamble = asn_bit_data_new_contiguous(
-            *ptr, preamble_bits);
+            preamble_bits ? *ptr : &empty, preamble_bits);
         if(!preamble) return RC_FAIL;
         if(extensible) {
             int32_t has_extensions = asn_get_few_bits(preamble, 1);
@@ -724,7 +811,7 @@ SET_oer_read_preamble(asn_struct_ctx_t *ctx, int extensible,
         }
         ctx->ptr = preamble;
         *consumed += preamble_bytes;
-        *ptr += preamble_bytes;
+        if(preamble_bytes) *ptr += preamble_bytes;
         *size -= preamble_bytes;
     }
     ctx->phase = ASN_SET_OER_PHASE_MEMBERS;
@@ -823,9 +910,18 @@ SET_oer_decode_next_member(const asn_codec_ctx_t *codec,
     if(should_decode < 0) return -1;
     if(!should_decode) return RC_OK;
     ctx->step = (short)((position << 1) | 1);
-    status = SET_oer_decode_member_value(codec, td, st, member, member_ptr,
-                                         ptr, size, consumed, rval);
-    if(status != RC_OK) return status;
+    if(member->flags & ATF_OPEN_TYPE) {
+        size_t saved = 0;
+        status = SET_oer_save_open(ctx, index, *ptr, *size, &saved);
+        if(status != RC_OK) return status;
+        *ptr += saved;
+        *size -= saved;
+        *consumed += saved;
+    } else {
+        status = SET_oer_decode_member_value(codec, td, st, member, member_ptr,
+                                             ptr, size, consumed, rval);
+        if(status != RC_OK) return status;
+    }
     ASN_SET_MKPRESENT((char *)st + specs->pres_offset, index);
     ctx->step = (short)((position + 1) << 1);
     return RC_OK;
@@ -996,6 +1092,29 @@ SET_oer_read_extension_map(const char *ptr, size_t size,
 }
 
 /*
+ * Purpose: Retain the inner open envelope of an OER extension addition.
+ * Source: X.696 extension and open-type length framing. Version: 2026-10-30.
+ * Inputs: ctx/index own the saved field; ptr/size hold the outer envelope.
+ * Returns: RC_OK, RC_WMORE, or RC_FAIL; consumed receives outer bytes.
+ * Errors: Invalid nested framing and incomplete inner values fail.
+ * Author: maintainers. History: Defers selection until additions complete.
+ * Example: A later addition may select an earlier open-type addition.
+ */
+static int
+SET_oer_save_open_addition(asn_struct_ctx_t *ctx, unsigned index,
+                           const char *ptr, size_t size, size_t *consumed) {
+    size_t length = 0, saved = 0;
+    ssize_t header = oer_fetch_length(ptr, size, &length);
+    int status;
+    if(header < 0 || (header > 0 && (size_t)header > size)) return RC_FAIL;
+    if(header == 0 || length > size - (size_t)header) return RC_WMORE;
+    status = SET_oer_save_open(ctx, index, ptr + header, length, &saved);
+    if(status != RC_OK || saved != length) return RC_FAIL;
+    *consumed = (size_t)header + length;
+    return RC_OK;
+}
+
+/*
  * Purpose: decode present known additions and skip unknown open types.
  * Source: X.696 extension-addition bitmap ordering and open-type framing.
  * Version/date: 2026-10-30. Inputs: td/st/specs/ctx and input cursor describe
@@ -1022,15 +1141,22 @@ SET_oer_decode_extensions(const asn_codec_ctx_t *codec,
             unsigned member_index = specs->extension_map[bit_index];
             const asn_TYPE_member_t *member = &td->elements[member_index];
             void **slot = (void **)((char *)st + member->memb_offset);
-            ssize_t decoded = SET_oer_get_open_type(
-                codec, td, member_index, slot, *ptr, *size);
-            if(decoded == 0) status = RC_WMORE;
-            else if(decoded < 0) status = RC_FAIL;
-            else {
-                if((size_t)decoded > *size) return RC_FAIL;
-                *ptr += decoded;
-                *size -= (size_t)decoded;
-                *consumed += (size_t)decoded;
+            size_t used = 0;
+            if(member->flags & ATF_OPEN_TYPE) {
+                status = SET_oer_save_open_addition(ctx, member_index,
+                                                    *ptr, *size, &used);
+            } else {
+                ssize_t decoded = SET_oer_get_open_type(
+                    codec, td, member_index, slot, *ptr, *size);
+                if(decoded == 0) status = RC_WMORE;
+                else if(decoded < 0) status = RC_FAIL;
+                else used = (size_t)decoded;
+            }
+            if(status == RC_OK) {
+                if(used > *size) return RC_FAIL;
+                *ptr += used;
+                *size -= used;
+                *consumed += used;
                 ASN_SET_MKPRESENT((char *)st + specs->pres_offset,
                                   member_index);
             }
@@ -1092,7 +1218,8 @@ SET_oer_extension_defaults(const asn_TYPE_descriptor_t *td, void *st,
         unsigned index = specs->extension_map[i];
         asn_TYPE_member_t *member = &td->elements[index];
         void **slot = (void **)((char *)st + member->memb_offset);
-        if(!*slot && member->default_value_set) {
+        if(!*slot && member->default_value_set
+        && !ASN_SET_ISPRESENT2((char *)st + specs->pres_offset, index)) {
             if(member->default_value_set(slot)) return -1;
             ASN_SET_MKPRESENT((char *)st + specs->pres_offset, index);
         }
@@ -1110,13 +1237,14 @@ SET_oer_extension_defaults(const asn_TYPE_descriptor_t *td, void *st,
  * Example: only a populated SET with all optional bits consumed is completed.
  */
 static int
-SET_oer_finish_decode(const asn_TYPE_descriptor_t *td, void *st,
+SET_oer_finish_decode(const asn_codec_ctx_t *codec,
+                      const asn_TYPE_descriptor_t *td, void *st,
                       const asn_SET_specifics_t *specs,
                       asn_struct_ctx_t *ctx) {
     if(!SET_oer_roots_populated(td, st, specs)
-    || SET_oer_extension_defaults(td, st, specs)) return -1;
-    if(ctx->ptr) FREEMEM(ctx->ptr);
-    ctx->ptr = 0;
+    || SET_oer_extension_defaults(td, st, specs)
+    || SET_oer_resolve_pending(codec, td, st, ctx) != RC_OK) return -1;
+    SET_oer_free_member_context(ctx);
     ctx->phase = SET_OER_PHASE_COMPLETE;
     ctx->step = 0;
     ctx->context = 0;
@@ -1149,8 +1277,6 @@ SET_oer_decode_roots(const asn_codec_ctx_t *codec,
     }
     if(ctx->phase == ASN_SET_OER_PHASE_MEMBERS) {
         if(ctx->context != (int)optional_count) return RC_FAIL;
-        if(ctx->ptr) FREEMEM(ctx->ptr);
-        ctx->ptr = 0;
         ctx->phase = ASN_SET_OER_PHASE_EXTENSION_MAP;
         ctx->step = 0;
         ctx->context = 0;
@@ -1177,7 +1303,7 @@ SET_oer_decode_additions(const asn_codec_ctx_t *codec,
 
     if(ctx->phase == ASN_SET_OER_PHASE_EXTENSION_MAP) {
         if(!ctx->left)
-            return SET_oer_finish_decode(td, st, specs, ctx)
+            return SET_oer_finish_decode(codec, td, st, specs, ctx)
                 ? RC_FAIL : RC_OK;
         {
             asn_bit_data_t *extension_map = 0;
@@ -1185,6 +1311,13 @@ SET_oer_decode_additions(const asn_codec_ctx_t *codec,
             status = SET_oer_read_extension_map(*ptr, *size, &extension_map,
                                                 &map_bytes);
             if(status != RC_OK) return status;
+            /* Transfer saved envelopes to the newly owned bitmap cursor. */
+            {
+                asn_bit_data_t *previous = (asn_bit_data_t *)ctx->ptr;
+                extension_map->refill_key = previous->refill_key;
+                previous->refill_key = 0;
+                FREEMEM(previous);
+            }
             ctx->ptr = extension_map;
             ctx->context = 0;
             ctx->step = 0;
@@ -1198,7 +1331,7 @@ SET_oer_decode_additions(const asn_codec_ctx_t *codec,
         status = SET_oer_decode_extensions(codec, td, st, specs, ctx,
                                            ptr, size, consumed);
         if(status != RC_OK) return status;
-        return SET_oer_finish_decode(td, st, specs, ctx) ? RC_FAIL : RC_OK;
+        return SET_oer_finish_decode(codec, td, st, specs, ctx) ? RC_FAIL : RC_OK;
     }
     return RC_FAIL;
 }
@@ -1397,6 +1530,65 @@ SET_oer_addition_present(const asn_TYPE_descriptor_t *td, const void *st, unsign
     return value && (!member->default_value_cmp || member->default_value_cmp(value) != 0);
 }
 
+/* Parent and member metadata for an OER open-addition encoder. */
+typedef struct SET_oer_open_adapter_s {
+    const asn_TYPE_descriptor_t *parent; /* SET descriptor for selection. */
+    const asn_TYPE_member_t *member;     /* Open addition metadata. */
+} SET_oer_open_adapter_t;
+
+/*
+ * Purpose: Verify a selected wrapper matches its parent table selector.
+ * Source: OPEN TYPE CHOICE metadata. Version: 2026-10-30.
+ * Inputs: td/sptr identify the parent; member describes its open field.
+ * Returns: zero when consistent, -1 for invalid metadata or selection.
+ * Errors: Invalid wrapper bounds and mismatched CHOICE arms fail.
+ * Author: maintainers. History: Protects nested OER extension encoding.
+ * Example: A selector choosing arm one rejects a wrapper holding arm two.
+ */
+static int
+SET_oer_open_selection_valid(const asn_TYPE_descriptor_t *td, const void *sptr,
+                             const asn_TYPE_member_t *member) {
+    asn_type_selector_result_t selected;
+    const asn_CHOICE_specifics_t *specs;
+    const void *value;
+    if(!member->type_selector || !member->type) return -1;
+    selected = member->type_selector(td, sptr);
+    if(!selected.type_descriptor || !selected.presence_index) return -1;
+    if(!member->type->elements_count) return 0;
+    if(!member->type->elements || !member->type->specifics
+    || selected.presence_index > member->type->elements_count) return -1;
+    specs = (const asn_CHOICE_specifics_t *)member->type->specifics;
+    if((specs->pres_size != sizeof(char) && specs->pres_size != sizeof(short)
+        && specs->pres_size != sizeof(int))
+    || specs->pres_offset > specs->struct_size
+    || specs->pres_size > specs->struct_size - specs->pres_offset) return -1;
+    value = SET_oer_element_ptr(sptr, member);
+    if(!value || CHOICE_variant_get_presence(member->type, value) != selected.presence_index
+    || member->type->elements[selected.presence_index - 1].type != selected.type_descriptor)
+        return -1;
+    return 0;
+}
+
+/*
+ * Purpose: Encode an inner open value under its parent's table selector.
+ * Source: OPEN_TYPE_oer_put. Version: 2026-10-30.
+ * Inputs: td carries adapter metadata; sptr is the parent; cb/key receive bytes.
+ * Returns: encoder result. Errors: Invalid selection or encoding fails.
+ * Author: maintainers. History: Adds extension-addition outer framing.
+ * Example: A selected INTEGER is written inside two OER envelopes.
+ */
+static asn_enc_rval_t
+SET_oer_encode_open_adapter(const asn_TYPE_descriptor_t *td,
+                            const asn_oer_constraints_t *constraints,
+                            const void *sptr, asn_app_consume_bytes_f *cb,
+                            void *key) {
+    const SET_oer_open_adapter_t *adapter = td->specifics;
+    (void)constraints;
+    if(SET_oer_open_selection_valid(adapter->parent, sptr, adapter->member))
+        ASN__ENCODE_FAILED;
+    return OPEN_TYPE_oer_put(adapter->parent, sptr, adapter->member, cb, key);
+}
+
 /*
  * Purpose: encode present SET extension values as bounded OER open types.
  * Source: X.696 16.5 and the validated v3 SEQUENCE group adapters.
@@ -1419,12 +1611,24 @@ SET_oer_encode_extension_values(const asn_TYPE_descriptor_t *td, const void *spt
         const void *value = SET_oer_element_ptr(sptr, member);
         ssize_t wrote;
         asn_TYPE_descriptor_t adapter;
+        asn_TYPE_operation_t operations;
+        SET_oer_open_adapter_t open_adapter;
         const asn_TYPE_descriptor_t *wire_type = member->type;
         int present = SET_oer_addition_present(td, sptr, specs->extension_map[i]);
 
         if(present < 0) return -1;
         if(!present) continue;
-        if(member->flags & ATF_EXTENSION_GROUP) {
+        if(member->flags & ATF_OPEN_TYPE) {
+            adapter = *member->type;
+            memset(&operations, 0, sizeof(operations));
+            operations.oer_encoder = SET_oer_encode_open_adapter;
+            open_adapter.parent = td;
+            open_adapter.member = member;
+            adapter.op = &operations;
+            adapter.specifics = &open_adapter;
+            wire_type = &adapter;
+            value = sptr;
+        } else if(member->flags & ATF_EXTENSION_GROUP) {
             if(SET_group_adapter(td, specs->extension_map[i], &adapter)) return -1;
             wire_type = &adapter;
         }

@@ -51,6 +51,12 @@ EXTRA_DIST = $(srcdir)/FirstSlice.asn1 \
     $(srcdir)/NamedNumber.asn1 \
     $(srcdir)/EncodingControl.asn1 \
     $(srcdir)/ReservedModule.asn1 \
+    $(srcdir)/any_additional.rs \
+    $(srcdir)/c_any_additional.c \
+    $(srcdir)/containing_conformance.rs \
+    $(srcdir)/c_containing.c \
+    $(srcdir)/any_conformance.rs \
+    $(srcdir)/c_any.c \
     $(srcdir)/conformance.rs \
     $(srcdir)/additional_codecs.rs \
     $(srcdir)/jer_conformance.rs \

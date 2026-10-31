@@ -49,7 +49,7 @@ constr_SET.c NULL.h NULL.c
 constr_SET.c NativeInteger.h NativeInteger.c
 constr_SET.c NativeReal.h NativeReal.c
 constr_SET.c asn_codecs_prim.h asn_codecs_prim.c
-constr_SET.c OCTET_STRING.h OCTET_STRING.c
+constr_SET.c OCTET_STRING.h OCTET_STRING.c ANY.h BIT_STRING.h
 constr_SET.c constr_CHOICE.h constr_CHOICE.c
 constr_SET.c constr_SEQUENCE.h constr_SEQUENCE.c
 constr_SET.c constr_SEQUENCE_OF.h
@@ -181,7 +181,7 @@ oer_support.h
 oer_decoder.h oer_decoder.c OPEN_TYPE.h
 oer_encoder.h oer_encoder.c
 oer_support.h oer_support.c
-OPEN_TYPE.h OPEN_TYPE_oer.c constr_CHOICE.h
+OPEN_TYPE.h OPEN_TYPE_oer.c constr_CHOICE.h constr_SET.h
 INTEGER.h INTEGER_oer.c
 BIT_STRING.h BIT_STRING_oer.c OCTET_STRING.h
 OCTET_STRING.h OCTET_STRING_oer.c BIT_STRING.h
@@ -258,13 +258,13 @@ NativeEnumerated.h NativeEnumerated_aper.c
 NativeInteger.h NativeInteger_aper.c
 NativeReal.h NativeReal_aper.c
 OCTET_STRING.h OCTET_STRING_aper.c
-OPEN_TYPE.h OPEN_TYPE_aper.c
+OPEN_TYPE.h OPEN_TYPE_aper.c ANY.h
 REAL.h REAL_aper.c
 constr_CHOICE.h constr_CHOICE_aper.c
 constr_SEQUENCE_OF.h constr_SEQUENCE_OF_aper.c
 constr_SEQUENCE.h constr_SEQUENCE_aper.c
 constr_SET_OF.h constr_SET_OF_aper.c
-constr_SET.h constr_SET_aper.c OPEN_TYPE.h aper_opentype.h
+constr_SET.h constr_SET_aper.c OPEN_TYPE.h aper_opentype.h ANY.h
 
 PRINT:			# THIS IS A SPECIAL SECTION
 BIT_STRING.h BIT_STRING_print.c

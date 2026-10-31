@@ -55,6 +55,9 @@ static int rust_check_module(asn1p_t *, asn1p_module_t *, int *, uint64_t);
 static int rust_check_module_name(asn1p_t *, asn1p_module_t *);
 static int rust_check_module_types(asn1p_module_t *, int *, uint64_t);
 static int rust_check_type_name(asn1p_module_t *, asn1p_expr_t *);
+static asn1p_expr_t *rust_contained_primitive(asn1p_module_t *, asn1p_expr_t *);
+static const asn1p_constraint_t *rust_containing_node(const asn1p_constraint_t *, unsigned);
+static int rust_write_containing(FILE *, const char *, asn1p_expr_t *, asn1p_expr_t *);
 static int rust_check_type(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_sequence(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_sequence_tree(asn1p_module_t *, asn1p_expr_t *,
@@ -95,6 +98,8 @@ static int rust_write_project(asn1p_t *, const char *, const char *, uint64_t);
 static int rust_write_module(FILE *, asn1p_module_t *, uint64_t);
 static int rust_write_module_file(asn1p_module_t *, const char *, uint64_t);
 static int rust_write_type(FILE *, asn1p_module_t *, asn1p_expr_t *, uint64_t);
+static int rust_write_any(FILE *, const char *, uint64_t);
+static int rust_write_any_codec(FILE *, const char *, const char *, const char *);
 static int rust_write_boolean(FILE *, const char *, uint64_t);
 static int rust_write_boolean_ber(FILE *);
 static int rust_write_null(FILE *, const char *, uint64_t);
@@ -347,6 +352,47 @@ rust_check_type_name(asn1p_module_t *module, asn1p_expr_t *expr) {
     return 0;
 }
 
+/* Find exactly one uncombined contents constraint, rejecting other forms.
+ * Inputs: node is a constraint tree; depth limits recursion. Returns the node
+ * or NULL. No exceptions. Source: Rust CONTAINING gate; version 2026-10-30.
+ * Responsible: asn1c maintainers. History: UPER primitive subset.
+ * Example: a single CONTAINING constraint is returned.
+ */
+static const asn1p_constraint_t *
+rust_containing_node(const asn1p_constraint_t *node, unsigned depth) {
+    if(!node || depth > RUST_CONSTRAINT_DEPTH_LIMIT) return NULL;
+    if(node->type == ACT_CT_CTNG) return node;
+    if((node->type == ACT_CA_SET || node->type == ACT_CA_INT) && node->el_count == 1)
+        return rust_containing_node(node->elements[0], depth + 1);
+    return NULL;
+}
+
+/* Resolve one local direct contained BOOLEAN or non-singleton bounded INTEGER.
+ * Inputs: module owns declarations; expr is a string. Returns its contained
+ * type or NULL. No exceptions. Source: fixed constraint tree; version 2026-10-30.
+ * Responsible: asn1c maintainers. History: UPER primitive subset.
+ * Example: OCTET STRING (CONTAINING LocalInteger) resolves LocalInteger.
+ */
+static asn1p_expr_t *
+rust_contained_primitive(asn1p_module_t *module, asn1p_expr_t *expr) {
+    const asn1p_constraint_t *node = rust_containing_node(expr->combined_constraints, 0);
+    asn1p_expr_t *ref, *candidate;
+    int64_t lower, upper;
+    if(!node || !node->value || node->value->type != ATV_TYPE
+       || !(ref = node->value->value.v_type) || ref->expr_type != A1TC_REFERENCE
+       || !ref->reference || ref->reference->comp_count != 1 || ref->constraints) return NULL;
+    TQ_FOR(candidate, &module->members, next) {
+        if(!candidate->Identifier || strcmp(candidate->Identifier, ref->reference->components[0].name)) continue;
+        if(candidate->expr_type == ASN_BASIC_BOOLEAN && !candidate->constraints
+           && !candidate->combined_constraints) return candidate;
+        if(candidate->expr_type == ASN_BASIC_INTEGER && candidate->combined_constraints
+           && rust_constraint_supported(candidate->combined_constraints, 0)
+           && !rust_integer_bounds(candidate, &lower, &upper) && lower < upper) return candidate;
+        return NULL;
+    }
+    return NULL;
+}
+
 /*
  * Reject one unsupported type before output publication.
  * Parameters: module and expr identify the fixed assignment; codecs is the
@@ -377,6 +423,25 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
         rust_diagnostic(module, expr,
                         "explicit type tags are not supported by the initial Rust slice");
         return -1;
+    }
+    if((expr->expr_type == ASN_BASIC_OCTET_STRING || expr->expr_type == ASN_BASIC_BIT_STRING)
+       && rust_containing_node(expr->combined_constraints, 0)) {
+        asn1p_expr_t *inner = rust_contained_primitive(module, expr);
+        if(codecs != RUST_CODEC_UPER || !inner) {
+            rust_diagnostic(module, expr, "CONTAINING requires a supported UPER primitive");
+            return -1;
+        }
+        return 0;
+    }
+    if(expr->expr_type == ASN_TYPE_ANY) {
+        if(!codecs || (codecs & ~(RUST_CODEC_UPER | RUST_CODEC_APER | RUST_CODEC_OER | RUST_CODEC_JER))
+           || expr->reference || expr->constraints
+           || expr->combined_constraints || expr->lhs_params || expr->ioc_table
+           || expr->members.tq_head) {
+            rust_diagnostic(module, expr, "ANY requires unqualified UPER, APER, OER, or JER opaque framing");
+            return -1;
+        }
+        return 0;
     }
     if(expr->expr_type == ASN_CONSTR_SEQUENCE)
         return rust_check_sequence(module, expr, codecs);
@@ -658,6 +723,12 @@ rust_check_sequence_member(asn1p_module_t *module, asn1p_expr_t *member) {
                         "SEQUENCE field must be a direct primitive with supported shape");
         return -1;
     }
+    if((member->expr_type == ASN_BASIC_OCTET_STRING || member->expr_type == ASN_BASIC_BIT_STRING)
+       && rust_containing_node(member->combined_constraints, 0)) {
+        if(member->marker.flags != EM_DEFAULT && rust_contained_primitive(module, member)) return 0;
+        rust_diagnostic(module, member, "SEQUENCE CONTAINING needs a supported UPER primitive");
+        return -1;
+    }
     if(member->expr_type == ASN_BASIC_ENUMERATED) {
         if(member->marker.flags == EM_DEFAULT) {
             rust_diagnostic(module, member, "ENUMERATED DEFAULT is unsupported");
@@ -670,7 +741,10 @@ rust_check_sequence_member(asn1p_module_t *module, asn1p_expr_t *member) {
                         "primitive SEQUENCE field cannot contain child members");
         return -1;
     }
-    if(member->expr_type == ASN_BASIC_BOOLEAN
+    if(member->expr_type == ASN_TYPE_ANY) {
+        supported = !member->reference && !member->constraints && !member->combined_constraints
+            && member->marker.flags != EM_DEFAULT;
+    } else if(member->expr_type == ASN_BASIC_BOOLEAN
        || member->expr_type == ASN_BASIC_NULL) {
         supported = !member->constraints && !member->combined_constraints;
     } else if(member->expr_type == ASN_BASIC_INTEGER) {
@@ -1693,10 +1767,15 @@ rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
     }
     if(expr->expr_type == ASN_CONSTR_SEQUENCE) {
         ret = rust_write_all_sequences(stream, name, expr, 1);
+    } else if(expr->expr_type == ASN_TYPE_ANY) {
+        ret = rust_write_any(stream, name, codecs);
     } else if(expr->expr_type == ASN_BASIC_BOOLEAN) {
         ret = rust_write_boolean(stream, name, codecs);
     } else if(expr->expr_type == ASN_BASIC_NULL) {
         ret = rust_write_null(stream, name, codecs);
+    } else if((expr->expr_type == ASN_BASIC_OCTET_STRING || expr->expr_type == ASN_BASIC_BIT_STRING)
+              && rust_containing_node(expr->combined_constraints, 0)) {
+        ret = rust_write_containing(stream, name, expr, rust_contained_primitive(module, expr));
     } else if(expr->expr_type == ASN_BASIC_OCTET_STRING
               || expr->expr_type == ASN_BASIC_BIT_STRING) {
         ret = rust_write_string(stream, name, expr, codecs);
@@ -1709,6 +1788,107 @@ rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
     }
     free(name);
     return ret || ferror(stream) ? -1 : 0;
+}
+
+/*
+ * Emit the opaque ANY wrapper and selected codec methods.
+ * Parameters: stream receives source; name is the Rust type identifier; codecs
+ * selects the supported methods.
+ * Returns zero on success or -1 on write error; no exceptions.
+ * Source: Rust ANY runtimes. Version/date: 2026-10-30.
+ * Responsible: asn1c maintainers. History: initial ANY support.
+ * Example: rust_write_any(stream, "Value", RUST_CODEC_UPER).
+ */
+static int
+rust_write_any(FILE *stream, const char *name, uint64_t codecs) {
+    if(fprintf(stream, "/// Opaque ASN.1 ANY octets.\n"
+        "#[derive(Clone, Debug, Eq, PartialEq)]\n"
+        "pub struct %s(\n    /// Opaque octet state variable.\n"
+        "    pub ::std::vec::Vec<u8>\n);\n\nimpl %s {\n", name, name) < 0) return -1;
+    if((codecs & RUST_CODEC_UPER)
+       && rust_write_any_codec(stream, "uper", "uper_cursor::encode_any_uper(&self.0, limits)",
+                               "uper_cursor::decode_any_uper(input, limits)")) return -1;
+    /* Standalone APER starts aligned, so its ANY envelope is identical to UPER. */
+    if((codecs & RUST_CODEC_APER)
+       && rust_write_any_codec(stream, "aper", "uper_cursor::encode_any_uper(&self.0, limits)",
+                               "uper_cursor::decode_any_uper(input, limits)")) return -1;
+    if((codecs & RUST_CODEC_OER)
+       && rust_write_any_codec(stream, "oer", "oer::encode_any_oer(&self.0, limits)",
+                               "oer::decode_any_oer(input, limits)")) return -1;
+    if((codecs & RUST_CODEC_JER)
+       && rust_write_any_codec(stream, "jer", "jer::encode_octet_string_jer(&self.0, self.0.len(), limits)",
+                               "jer::decode_bounded_octet_string_jer(input, 0, usize::MAX, limits)")) return -1;
+    return fputs("}\n\n", stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Emit one pair of codec methods for an opaque ANY wrapper.
+ * Parameters: stream receives Rust; codec is the method suffix; encode and decode
+ * are validated runtime call expressions. Returns zero or -1; no exceptions.
+ * Source: Rust ANY codec emission. Version/date: 2026-10-30.
+ * Responsible: asn1c maintainers. History: selectable opaque codecs.
+ * Example: emit the UPER runtime pair.
+ */
+static int
+rust_write_any_codec(FILE *stream, const char *codec, const char *encode, const char *decode) {
+    if(rust_write_method_doc(stream, "Encode opaque ANY octets.",
+        "`self` supplies octets; `limits` bounds resources.", "Returns the encoding.",
+        "Returns a resource or allocation error.", "`value.encode_uper(&Default::default())?;")) return -1;
+    if(fprintf(stream, "    pub fn encode_%s(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::%s\n    }\n", codec, encode) < 0) return -1;
+    if(rust_write_method_doc(stream, "Decode opaque ANY octets.",
+        "`input` supplies bytes; `limits` bounds resources.", "Returns the value and consumed lengths.",
+        "Returns an error for invalid input or resource exhaustion.",
+        "`Type::decode_uper(input, &Default::default())?;")) return -1;
+    return fprintf(stream, "    pub fn decode_%s(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+        "        let decoded = ::asn1c_runtime::%s?;\n"
+        "        Ok(::asn1c_runtime::Decoded { value: Self(decoded.value),\n"
+        "            consumed_bits: decoded.consumed_bits, consumed_bytes: decoded.consumed_bytes })\n"
+        "    }\n", codec, decode) < 0 ? -1 : 0;
+}
+
+/* Emit a typed UPER wrapper for one validated primitive contents constraint.
+ * Inputs: stream receives source, name is the Rust type, expr is the outer
+ * string, inner is its resolved primitive. Returns zero or -1; no exceptions.
+ * Source: Rust CONTAINING runtime. Version: 2026-10-30. Responsible: asn1c
+ * maintainers. History: first typed primitive subset. Example: emit an integer.
+ */
+static int
+rust_write_containing(FILE *stream, const char *name, asn1p_expr_t *expr, asn1p_expr_t *inner) {
+    int is_boolean = inner && inner->expr_type == ASN_BASIC_BOOLEAN;
+    int64_t lower = 0, upper = 1;
+    char low[64], high[64];
+    const char *type = is_boolean ? "bool" : "i64";
+    const char *value = is_boolean ? "i64::from(self.0)" : "self.0";
+    const char *decoded = is_boolean ? "decoded.value != 0" : "decoded.value";
+    const char *octets = expr->expr_type == ASN_BASIC_OCTET_STRING ? "true" : "false";
+    if(!inner || (!is_boolean && rust_integer_bounds(inner, &lower, &upper))
+       || rust_format_bound(low, sizeof(low), lower) || rust_format_bound(high, sizeof(high), upper)) return -1;
+    if(fprintf(stream, "/// Typed value of an ASN.1 CONTAINING string.\n"
+        "#[derive(Clone, Debug, Eq, PartialEq)]\n"
+        "pub struct %s(\n    /// Contained primitive state variable.\n    pub %s\n);\n\nimpl %s {\n",
+        name, type, name) < 0) return -1;
+    if(rust_write_method_doc(stream, "Encode this contained value with UPER.",
+        "`self` supplies the primitive; `limits` bounds resources.", "Returns the outer encoding.",
+        "Returns an error for invalid values or exhausted resources.", "`value.encode_uper(&Default::default())?;"))
+        return -1;
+    if(fprintf(stream, "    pub fn encode_uper(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::uper_cursor::encode_containing_uper(%s, %s, %s, %s, limits)\n    }\n",
+        value, low, high, octets) < 0) return -1;
+    if(rust_write_method_doc(stream, "Decode a contained UPER value.",
+        "`input` supplies the outer prefix; `limits` bounds resources.", "Returns the inner value and consumption.",
+        "Returns an error for malformed contents or exhausted resources.",
+        "`Type::decode_uper(input, &Default::default())?;"))
+        return -1;
+    return fprintf(stream, "    pub fn decode_uper(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+        "        let decoded = ::asn1c_runtime::uper_cursor::decode_containing_uper(input, %s, %s, %s, limits)?;\n"
+        "        Ok(::asn1c_runtime::Decoded { value: Self(%s),\n"
+        "            consumed_bits: decoded.consumed_bits, consumed_bytes: decoded.consumed_bytes })\n"
+        "    }\n}\n\n", low, high, octets, decoded) < 0 ? -1 : 0;
 }
 
 /*
@@ -1891,7 +2071,10 @@ rust_write_sequence_field(FILE *stream, const char *parent,
     char *nested_type = (member->expr_type == ASN_CONSTR_SEQUENCE
                          || member->expr_type == ASN_BASIC_ENUMERATED)
         ? rust_nested_type_name(parent, member) : NULL;
-    const char *type = nested_type ? nested_type
+    asn1p_expr_t *contained = rust_containing_node(member->combined_constraints, 0)
+        ? rust_contained_primitive(member->module, member) : NULL;
+    const char *type = contained ? (contained->expr_type == ASN_BASIC_BOOLEAN ? "bool" : "i64")
+                       : nested_type ? nested_type
                        : member->expr_type == ASN_BASIC_BOOLEAN ? "bool"
                        : member->expr_type == ASN_BASIC_NULL ? "()"
                        : member->expr_type == ASN_BASIC_INTEGER ? "i64"
@@ -1942,6 +2125,31 @@ rust_write_sequence_encode_field(FILE *stream, asn1p_expr_t *member) {
             ret = fprintf(stream,
                 "        self.%s.encode_uper_fields(writer)?;\n", name);
         }
+    } else if(rust_containing_node(member->combined_constraints, 0)) {
+        asn1p_expr_t *inner = rust_contained_primitive(member->module, member);
+        int64_t lower = 0, upper = 1;
+        char low[64], high[64];
+        int is_boolean = inner && inner->expr_type == ASN_BASIC_BOOLEAN;
+        if(inner && (is_boolean || !rust_integer_bounds(inner, &lower, &upper))
+           && !rust_format_bound(low, sizeof(low), lower) && !rust_format_bound(high, sizeof(high), upper)) {
+            const char *octets = member->expr_type == ASN_BASIC_OCTET_STRING ? "true" : "false";
+            const char *cast = is_boolean ? "i64::from(" : "";
+            const char *close = is_boolean ? ")" : "";
+            if(member->marker.flags == EM_OPTIONAL)
+                ret = fprintf(stream, "        if let Some(value) = self.%s.as_ref() {\n"
+                    "            ::asn1c_runtime::uper_cursor::write_containing_uper(\n"
+                    "                writer, %s*value%s, %s, %s, %s)?;\n"
+                    "        }\n", name, cast, close, low, high, octets);
+            else ret = fprintf(stream,
+                "        ::asn1c_runtime::uper_cursor::write_containing_uper(writer, %sself.%s%s, %s, %s, %s)?;\n",
+                cast, name, close, low, high, octets);
+        }
+    } else if(member->expr_type == ASN_TYPE_ANY) {
+        ret = member->marker.flags == EM_OPTIONAL
+            ? fprintf(stream, "        if let Some(value) = self.%s.as_ref() {\n"
+                "            ::asn1c_runtime::uper_cursor::write_any_uper(writer, value)?;\n"
+                "        }\n", name)
+            : fprintf(stream, "        ::asn1c_runtime::uper_cursor::write_any_uper(writer, &self.%s)?;\n", name);
     } else if(member->marker.flags == EM_OPTIONAL) {
         ret = rust_write_sequence_encode_optional(stream, member, name);
     } else if(member->marker.flags == EM_DEFAULT) {
@@ -2218,7 +2426,19 @@ rust_write_sequence_decode_field(FILE *stream, const char *parent,
             return -1;
         }
     }
-    if(member->expr_type == ASN_BASIC_BOOLEAN)
+    if(rust_containing_node(member->combined_constraints, 0)) {
+        asn1p_expr_t *inner = rust_contained_primitive(member->module, member);
+        int64_t lower = 0, upper = 1;
+        char low[64], high[64];
+        int is_boolean = inner && inner->expr_type == ASN_BASIC_BOOLEAN;
+        if(inner && (is_boolean || !rust_integer_bounds(inner, &lower, &upper))
+           && !rust_format_bound(low, sizeof(low), lower) && !rust_format_bound(high, sizeof(high), upper))
+            ret = fprintf(stream, "::asn1c_runtime::uper_cursor::read_containing_uper(reader, %s, %s, %s)?%s",
+                low, high, member->expr_type == ASN_BASIC_OCTET_STRING ? "true" : "false",
+                is_boolean ? " != 0" : "");
+    } else if(member->expr_type == ASN_TYPE_ANY)
+        ret = fputs("::asn1c_runtime::uper_cursor::read_any_uper(reader)?", stream);
+    else if(member->expr_type == ASN_BASIC_BOOLEAN)
         ret = fputs("reader.read_boolean()?", stream);
     else if(member->expr_type == ASN_BASIC_OCTET_STRING
             || member->expr_type == ASN_BASIC_BIT_STRING)

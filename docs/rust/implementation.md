@@ -12,7 +12,7 @@ with typed Rust bindings and a local copy of the Rust runtime. The current
 defaults are UPER and CER. `-gen-APER` and `-gen-OER` add paired primitive
 encoders and decoders; `-gen-BER` adds BER decoding and DER encoding.
 -gen-JER adds compact JSON encoding and complete-input decoding for top-level
-BOOLEAN, NULL, bounded INTEGER, direct nonextensible ENUMERATED, direct
+BOOLEAN, NULL, bounded INTEGER, direct ANY, direct nonextensible ENUMERATED, direct
 fixed-size or bounded nonextensible OCTET STRING, and direct fixed-size or
 bounded nonextensible BIT STRING assignments. JER for these strings is
 available by itself or together with UPER. An explicit request for an unavailable
@@ -78,6 +78,9 @@ fresh directory after adding application code or running Cargo there.
 | Direct fixed BIT STRING | Opt-in JER packed hexadecimal string; JER alone or with UPER |
 | Direct bounded BIT STRING | One nonextensible SIZE(l..u), 0 <= l < u < 65536; JER `value`/`length` object, JER alone or with UPER |
 | Direct ENUMERATED | Nonextensible root values fitting i64, up to 64 items; UPER or opt-in JER encode/decode |
+| Primitive CONTAINING | UPER top-level and required/OPTIONAL SEQUENCE fields; unconstrained BIT/OCTET STRING containing a same-module direct BOOLEAN or non-singleton bounded INTEGER; validates inner range, length, and octet padding |
+| Direct ANY and required/OPTIONAL ANY SEQUENCE fields | Opaque octets under UPER with C-compatible length framing and shared cursor budgets |
+| Direct ANY | Opt-in APER and OER octet framing, and JER uppercase hexadecimal strings; C interoperability vectors and malformed-input checks |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Strict CER decoding; canonical short-form TLV only |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in BER prefix decoding and DER encoding with `-gen-BER` |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in APER and OER encode/decode; each call begins at an octet boundary |
@@ -88,7 +91,8 @@ fresh directory after adding application code or running Cargo there.
 | XER, CBOR, and nonprimitive JER | Planned; unavailable in Rust mode |
 | SET, collections, extensible, unbounded, fragmented or disjoint strings, named-bit strings, extensible ENUMERATED, aliases, imports, top-level tagged types | Planned; rejected in this slice |
 | Encoding controls, information objects, parameterized types | Planned; rejected in this slice |
-| CONTAINING, ANY, IOC-selected OPEN TYPE | Require reference resolution and embedded or selected codec dispatch; rejected before output publication |
+| Other CONTAINING forms and IOC-selected OPEN TYPE | Unsupported; rejected before output publication |
+| ANY in SEQUENCE outside UPER, and ANY under BER/DER, CER, XER, or CBOR | Require codec-specific opaque-value semantics; rejected before output publication |
 
 BOOLEAN and INTEGER wrappers expose constructors, value getters, and the
 methods selected during generation. UPER methods encode and prefix-decode the
@@ -219,3 +223,5 @@ schema and codec support. XER, CBOR, and JER for
 types outside the listed primitive, string, and ENUMERATED slices remain unimplemented.
 The CER encoder is also only a first slice and does not establish whole-runtime
 parity.
+
+The [OPEN TYPE plan](open-type-plan.md) describes future selector-driven Rust support.

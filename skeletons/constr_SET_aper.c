@@ -7,6 +7,8 @@
 #include <asn_internal.h>
 #include <constr_SET.h>
 #include <OPEN_TYPE.h>
+#include <ANY.h>
+#include <aper_encoder.h>
 #include <aper_opentype.h>
 #include <aper_support.h>
 #include <string.h>
@@ -399,7 +401,7 @@ SET_aper_descriptor_valid(const asn_TYPE_descriptor_t *td,
  * Version: 2026-10-30.
  * Parameters: td/st identify the SET; index selects a direct member.
  * Returns: 0 for valid storage and operations, -1 for malformed descriptors.
- * Errors: Group/open-type members, invalid offsets, and missing operations fail.
+ * Errors: Invalid offsets and missing operations fail.
  * Author: asn1c maintainers.
  * History: Added to keep malformed member metadata out of codec loops.
  * Example: An inline value with an invalid storage width is rejected.
@@ -412,8 +414,10 @@ SET_aper_member_valid(const asn_TYPE_descriptor_t *td, const void *st,
 
     if(index >= td->elements_count) return -1;
     member = &td->elements[index];
-    if(!member->type || !member->type->op || !member->type->op->free_struct
-    || (member->flags & ATF_OPEN_TYPE)) return -1;
+    if(!member->type || !member->type->op || !member->type->op->free_struct)
+        return -1;
+    if((member->flags & ATF_OPEN_TYPE) && !member->type_selector
+       && !OPEN_TYPE_aper_has_fallback(member->type)) return -1;
     if(member->flags & ATF_EXTENSION_GROUP) {
         asn_TYPE_descriptor_t adapter;
         if(SET_group_adapter(td, index, &adapter)) return -1;
@@ -480,7 +484,8 @@ SET_aper_decode_members_valid(const asn_TYPE_descriptor_t *td, const void *st,
             unsigned index = specs->extension_map[i];
             const asn_TYPE_member_t *member = &td->elements[index];
             if(SET_aper_member_valid(td, st, index)
-            || !member->type->op->aper_decoder) return -1;
+            || (!(member->flags & ATF_OPEN_TYPE)
+                && !member->type->op->aper_decoder)) return -1;
         }
     }
     return 0;
@@ -556,6 +561,52 @@ SET_aper_decode_presence(asn_per_data_t *pd, size_t count, uint8_t **storage,
 }
 
 /*
+ * Purpose: Replay a buffered open-type envelope once all SET fields exist.
+ * Source: SET APER canonical ordering and OPEN_TYPE_aper_get. Version: 2026-10-30.
+ * Inputs: ctx/td/st select the parent; member and payload identify a value.
+ * Returns: Decoder status. Errors: allocation or invalid envelope fails.
+ * Author: asn1c maintainers. History: defer table selection until roots decode.
+ * Example: An open field before its selector is decoded after that selector.
+ */
+static asn_dec_rval_t
+SET_aper_resolve_open(const asn_codec_ctx_t *ctx,
+                      const asn_TYPE_descriptor_t *td, void *st,
+                      asn_TYPE_member_t *member, const ANY_t *payload) {
+    asn_dec_rval_t result = {RC_FAIL, 0};
+    asn_per_data_t input;
+    void *encoded = 0;
+    ssize_t size = aper_encode_to_new_buffer(&asn_DEF_ANY, 0, payload, &encoded);
+
+    if(size <= 0 || (size_t)size > SIZE_MAX / 8) {
+        FREEMEM(encoded);
+        return result;
+    }
+    memset(&input, 0, sizeof(input));
+    input.buffer = encoded;
+    input.nbits = (size_t)size * 8;
+    result = OPEN_TYPE_aper_get(ctx, td, st, member, &input);
+    FREEMEM(encoded);
+    return result;
+}
+
+/*
+ * Purpose: Release every saved open payload in a SET decoding attempt.
+ * Source: Local APER SET decoder. Version: 2026-10-30.
+ * Inputs: values is a count-entry array of nullable ANY pointers.
+ * Returns: Nothing. Errors: None. Author: asn1c maintainers.
+ * History: Added for deferred table selection. Example: cleanup after RC_WMORE.
+ */
+static void
+SET_aper_free_pending(ANY_t **values, unsigned count) {
+    unsigned i;
+    if(!values) return;
+    for(i = 0; i < count; i++) {
+        if(values[i]) ASN_STRUCT_FREE(asn_DEF_ANY, values[i]);
+    }
+    FREEMEM(values);
+}
+
+/*
  * Purpose: decode all SET members after the optional presence preamble.
  * Source: X.691 SET component order and generated member callbacks.
  * Version: 2026-10-30.
@@ -574,7 +625,8 @@ SET_aper_decode_content(const asn_codec_ctx_t *opt_codec_ctx,
                         const asn_SET_specifics_t *specs,
                         const unsigned *order, unsigned count,
                         asn_per_data_t *pd,
-                        asn_per_data_t *optional_bits, asn_dec_rval_t *rv) {
+                        asn_per_data_t *optional_bits, asn_dec_rval_t *rv,
+                        ANY_t **pending) {
     size_t i;
 
     for(i = 0; i < count; i++) {
@@ -602,7 +654,8 @@ SET_aper_decode_content(const asn_codec_ctx_t *opt_codec_ctx,
             continue;
         }
         if(member->flags & ATF_OPEN_TYPE) {
-            *rv = OPEN_TYPE_aper_get(opt_codec_ctx, td, st, member, pd);
+            *rv = ANY_decode_aper(opt_codec_ctx, &asn_DEF_ANY, 0,
+                                  (void **)&pending[index], pd);
         } else {
             *rv = member->type->op->aper_decoder(
                 opt_codec_ctx, member->type,
@@ -671,7 +724,8 @@ SET_aper_extension_defaults(const asn_TYPE_descriptor_t *td, void *st,
         asn_TYPE_member_t *member = &td->elements[index];
         void **slot = (void **)((char *)st + member->memb_offset);
 
-        if(!*slot && member->default_value_set) {
+        if(!*slot && member->default_value_set
+        && !ASN_SET_ISPRESENT2((char *)st + specs->pres_offset, index)) {
             if(member->default_value_set(slot)) return -1;
             ASN_SET_MKPRESENT((char *)st + specs->pres_offset, index);
         }
@@ -730,6 +784,45 @@ SET_aper_extension_map_get(asn_per_data_t *pd, uint8_t **storage,
 }
 
 /*
+ * Purpose: Save an addition's inner open envelope for later table selection.
+ * Source: X.691 extension-addition and open-type framing. Version: 2026-10-30.
+ * Inputs: ctx/pd read the outer envelope; pending receives the inner payload.
+ * Returns: decoder status; incomplete outer input retains RC_WMORE.
+ * Errors: Invalid inner framing or nonzero padding fails. Author: maintainers.
+ * History: Supports open additions selected by later extension fields.
+ * Example: An inner open value remains undecoded until the SET is complete.
+ */
+static asn_dec_rval_t
+SET_aper_save_open_addition(const asn_codec_ctx_t *ctx, asn_per_data_t *pd,
+                            ANY_t **pending) {
+    ANY_t *outer = 0;
+    asn_per_data_t inner;
+    asn_dec_rval_t result;
+    size_t padding;
+
+    result = ANY_decode_aper(ctx, &asn_DEF_ANY, 0, (void **)&outer, pd);
+    if(result.code != RC_OK) goto done;
+    if(!outer || outer->size < 0 || (size_t)outer->size > SIZE_MAX / 8) {
+        result.code = RC_FAIL;
+        goto done;
+    }
+    memset(&inner, 0, sizeof(inner));
+    inner.buffer = outer->buf;
+    inner.nbits = (size_t)outer->size * 8;
+    result = ANY_decode_aper(ctx, &asn_DEF_ANY, 0, (void **)pending, &inner);
+    if(result.code != RC_OK || inner.moved > (size_t)outer->size * 8) {
+        result.code = RC_FAIL;
+        goto done;
+    }
+    padding = (size_t)outer->size * 8 - inner.moved;
+    if(padding >= 8 || (padding && per_get_few_bits(&inner, (int)padding) != 0))
+        result.code = RC_FAIL;
+done:
+    if(outer) ASN_STRUCT_FREE(asn_DEF_ANY, outer);
+    return result;
+}
+
+/*
  * Purpose: decode one known extension addition from its aligned open type.
  * Source: X.691 extension-addition encoding and APER open-type runtime.
  * Version/date: 2026-10-30.
@@ -743,18 +836,20 @@ static asn_dec_rval_t
 SET_aper_decode_addition(const asn_codec_ctx_t *ctx,
                         const asn_TYPE_descriptor_t *td, void *st,
                         const asn_SET_specifics_t *specs, unsigned index,
-                        asn_per_data_t *pd) {
+                        asn_per_data_t *pd, ANY_t **pending) {
     asn_dec_rval_t rv;
     asn_TYPE_member_t *member = &td->elements[index];
     void **slot = (void **)((char *)st + member->memb_offset);
 
     if(!member->type || !member->type->op
-    || !member->type->op->aper_decoder) {
+    || (!(member->flags & ATF_OPEN_TYPE) && !member->type->op->aper_decoder)) {
         rv.code = RC_FAIL;
         rv.consumed = 0;
         return rv;
     }
-    if(member->flags & ATF_EXTENSION_GROUP) {
+    if(member->flags & ATF_OPEN_TYPE) {
+        rv = SET_aper_save_open_addition(ctx, pd, &pending[index]);
+    } else if(member->flags & ATF_EXTENSION_GROUP) {
         asn_TYPE_descriptor_t adapter;
         void *temporary = 0;
         if(SET_group_adapter(td, index, &adapter)) {
@@ -794,7 +889,7 @@ static asn_dec_rval_t
 SET_aper_decode_extensions(const asn_codec_ctx_t *ctx,
                            const asn_TYPE_descriptor_t *td, void *st,
                            const asn_SET_specifics_t *specs,
-                           asn_per_data_t *pd, int extpresent) {
+                           asn_per_data_t *pd, int extpresent, ANY_t **pending) {
     asn_dec_rval_t rv = {RC_OK, 0};
 
     if(extpresent) {
@@ -817,7 +912,7 @@ SET_aper_decode_extensions(const asn_codec_ctx_t *ctx,
             if(present) {
                 if(i < specs->extension_count) {
                     rv = SET_aper_decode_addition(ctx, td, st, specs,
-                                                  specs->extension_map[i], pd);
+                                                  specs->extension_map[i], pd, pending);
                     if(rv.code != RC_OK) break;
                 } else {
                     rv = aper_open_type_skip_result(ctx, pd);
@@ -853,6 +948,8 @@ SET_decode_aper(const asn_codec_ctx_t *opt_codec_ctx,
     asn_per_data_t optional_bits;
     uint8_t *presence = 0;
     unsigned *order = 0;
+    ANY_t **pending = 0;
+    unsigned i;
     void *st;
     size_t optional_count = 0;
     unsigned root_count;
@@ -864,6 +961,9 @@ SET_decode_aper(const asn_codec_ctx_t *opt_codec_ctx,
         ASN__DECODE_FAILED;
     if(SET_aper_decode_prepare(opt_codec_ctx, td, specs, sptr, &st, &order,
                                &root_count, &optional_count)) ASN__DECODE_FAILED;
+    pending = (ANY_t **)CALLOC(td->elements_count ? td->elements_count : 1,
+                              sizeof(*pending));
+    if(!pending) goto failed;
     if(specs->extensible >= 2) {
         extpresent = per_get_few_bits(pd, 1);
         if(extpresent < 0) goto starved;
@@ -874,19 +974,27 @@ SET_decode_aper(const asn_codec_ctx_t *opt_codec_ctx,
     if(status) goto failed;
     status = SET_aper_decode_content(opt_codec_ctx, td, st, specs, order,
                                      root_count,
-                                     pd, &optional_bits, &rv);
+                                     pd, &optional_bits, &rv, pending);
     if(status == 1) goto starved;
     if(status == 2) goto child_failed;
     if(status) goto failed;
     rv = SET_aper_decode_extensions(opt_codec_ctx, td, st, specs, pd,
-                                    extpresent);
+                                    extpresent, pending);
     if(rv.code == RC_WMORE) goto starved;
     if(rv.code != RC_OK) goto failed;
     if(!SET_aper_roots_populated(td, st, specs)) goto failed;
+    for(i = 0; i < td->elements_count; i++) {
+        if(pending[i]) {
+            rv = SET_aper_resolve_open(opt_codec_ctx, td, st,
+                                       &td->elements[i], pending[i]);
+            if(rv.code != RC_OK) goto failed;
+        }
+    }
     rv.code = RC_OK;
     rv.consumed = pd->moved;
     FREEMEM(presence);
     FREEMEM(order);
+    SET_aper_free_pending(pending, td->elements_count);
     return rv;
 
 starved:
@@ -901,6 +1009,7 @@ failed:
 cleanup:
     FREEMEM(presence);
     FREEMEM(order);
+    SET_aper_free_pending(pending, td->elements_count);
     return rv;
 }
 
@@ -1058,6 +1167,38 @@ SET_aper_encode_extensions_valid(const asn_TYPE_descriptor_t *td,
     return 0;
 }
 
+/* Parent and member metadata used by an extension OPEN TYPE encoder. */
+typedef struct SET_aper_open_adapter_s {
+    const asn_TYPE_descriptor_t *parent; /* SET descriptor for selection. */
+    const asn_TYPE_member_t *member;     /* Addition being selected. */
+} SET_aper_open_adapter_t;
+
+/*
+ * Purpose: Encode an inner open envelope using its containing SET selector.
+ * Source: OPEN_TYPE_aper_put contract. Version: 2026-10-30.
+ * Inputs: td carries adapter metadata; sptr is the parent and po is output.
+ * Returns: encoder result. Errors: Invalid selectors and values fail.
+ * Author: maintainers. History: Nested extension-addition framing.
+ * Example: The outer addition wraps the selector-validated inner encoding.
+ */
+static asn_enc_rval_t
+SET_aper_encode_open_adapter(const asn_TYPE_descriptor_t *td,
+                             const asn_per_constraints_t *constraints,
+                             const void *sptr, asn_per_outp_t *po) {
+    const SET_aper_open_adapter_t *adapter = td->specifics;
+    const asn_TYPE_member_t *member = adapter->member;
+    (void)constraints;
+    if(member->type_selector && member->type->elements_count) {
+        asn_type_selector_result_t selected = member->type_selector(adapter->parent, sptr);
+        if(selected.presence_index && selected.type_descriptor) {
+            if(!member->type->elements || selected.presence_index > member->type->elements_count
+            || member->type->elements[selected.presence_index - 1].type != selected.type_descriptor)
+                ASN__ENCODE_FAILED;
+        }
+    }
+    return OPEN_TYPE_aper_put(adapter->parent, sptr, member, po);
+}
+
 /*
  * Purpose: encode the APER extension map and present open-type additions.
  * Source: X.691 extension addition bitmap and APER open-type helpers.
@@ -1100,8 +1241,20 @@ SET_aper_encode_extensions(const asn_TYPE_descriptor_t *td, const void *sptr,
         if(present < 0) return -1;
         if(present) {
             asn_TYPE_descriptor_t adapter;
+            asn_TYPE_operation_t operations;
+            SET_aper_open_adapter_t open_adapter;
             const asn_TYPE_descriptor_t *wire_type = member->type;
-            if(member->flags & ATF_EXTENSION_GROUP) {
+            if(member->flags & ATF_OPEN_TYPE) {
+                adapter = *member->type;
+                memset(&operations, 0, sizeof(operations));
+                operations.aper_encoder = SET_aper_encode_open_adapter;
+                open_adapter.parent = td;
+                open_adapter.member = member;
+                adapter.op = &operations;
+                adapter.specifics = &open_adapter;
+                wire_type = &adapter;
+                value = sptr;
+            } else if(member->flags & ATF_EXTENSION_GROUP) {
                 if(SET_group_adapter(td, index, &adapter)) return -1;
                 wire_type = &adapter;
             }

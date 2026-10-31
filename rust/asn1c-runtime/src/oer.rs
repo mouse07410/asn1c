@@ -273,6 +273,92 @@ fn integer_width(lower: i64, upper: i64) -> Result<(usize, bool), Error> {
     Ok((width, false))
 }
 
+/// Encode opaque ANY octets with an OER length determinant.
+///
+/// # Parameters and returns
+/// `value` supplies octets and `limits` bounds resources. Returns the encoding.
+///
+/// # Errors
+/// Returns size, resource, or allocation errors.
+///
+/// # Source, version, history, and example
+/// Source: `ANY_encode_oer` and `oer_serialize_length`. Version: 2026-10-30.
+/// Responsible: asn1c maintainers. History: opaque OER ANY support.
+/// Example: `encode_any_oer(&[0xa5], &Limits::default())?`.
+pub fn encode_any_oer(value: &[u8], limits: &Limits) -> Result<Encoded, Error> {
+    let length = value.len();
+    let octets = length.to_be_bytes();
+    let first = octets
+        .iter()
+        .position(|byte| *byte != 0)
+        .unwrap_or(octets.len() - 1);
+    let count = octets.len() - first;
+    let header = if length < 128 { 1 } else { count + 1 };
+    let total = header.checked_add(length).ok_or(Error::SizeOverflow)?;
+    let bits = total.checked_mul(8).ok_or(Error::SizeOverflow)?;
+    check_work_limit(bits, limits)?;
+    let mut bytes = allocate_zeroed(total, limits)?;
+    if length < 128 {
+        bytes[0] = u8::try_from(length).map_err(|_| Error::SizeOverflow)?;
+    } else {
+        bytes[0] = 0x80 | u8::try_from(count).map_err(|_| Error::SizeOverflow)?;
+        bytes[1..header].copy_from_slice(&octets[first..]);
+    }
+    bytes[header..].copy_from_slice(value);
+    Ok(Encoded {
+        bytes,
+        bit_len: bits,
+    })
+}
+
+/// Decode an OER length-delimited opaque ANY prefix.
+///
+/// # Parameters and returns
+/// `input` supplies the prefix; `limits` bounds resources. Returns octets and
+/// consumed lengths. Basic OER permits nonminimal length representations.
+///
+/// # Errors
+/// Returns truncation, arithmetic, allocation, or resource errors.
+///
+/// # Source, version, history, and example
+/// Source: `ANY_decode_oer` and `oer_fetch_length`. Version: 2026-10-30.
+/// Responsible: asn1c maintainers. History: opaque OER ANY support.
+/// Example: `decode_any_oer(&[1, 0xa5], &Limits::default())?`.
+pub fn decode_any_oer(input: &[u8], limits: &Limits) -> Result<Decoded<Vec<u8>>, Error> {
+    check_input_limit(input, limits)?;
+    require_bytes(input, 1)?;
+    let first = input[0];
+    let count = if first & 0x80 == 0 {
+        0
+    } else {
+        usize::from(first & 0x7f)
+    };
+    let header = count + 1;
+    require_bytes(input, header)?;
+    let mut length = if count == 0 && first & 0x80 == 0 {
+        usize::from(first)
+    } else {
+        0
+    };
+    for byte in &input[1..header] {
+        length = length
+            .checked_mul(256)
+            .and_then(|n| n.checked_add(usize::from(*byte)))
+            .ok_or(Error::SizeOverflow)?;
+    }
+    let total = header.checked_add(length).ok_or(Error::SizeOverflow)?;
+    require_bytes(input, total)?;
+    let bits = total.checked_mul(8).ok_or(Error::SizeOverflow)?;
+    check_work_limit(bits, limits)?;
+    let mut value = allocate_zeroed(length, limits)?;
+    value.copy_from_slice(&input[header..total]);
+    Ok(Decoded {
+        value,
+        consumed_bits: bits,
+        consumed_bytes: total,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     //! Regression coverage for bounded OER primitive boundaries and limits.

@@ -6,6 +6,8 @@
 #include <asn_internal.h>
 #include <ANY.h>
 #include <errno.h>
+#include <limits.h>
+#include <stdint.h>
 
 #undef RETURN
 #define RETURN(_code)                       \
@@ -16,6 +18,15 @@
         return tmprval;                     \
     } while(0)
 
+/*
+ * Purpose: Replace an ANY payload with an APER encoding of a typed value.
+ * Source: asn1c APER ANY conversion. Version: 2026-10-30.
+ * Parameters: st is the destination, td describes sptr, and sptr is nullable.
+ * Returns: 0 on success, -1 on invalid arguments, encoding failure or overflow.
+ * Errors: An oversized encoding is freed without replacing the destination.
+ * Responsible party: asn1c maintainers. History: Validate the signed size field.
+ * Example: Passing a null sptr clears both the buffer and its length.
+ */
 int
 ANY_fromType_aper(ANY_t *st, asn_TYPE_descriptor_t *td, void *sptr) {
     uint8_t *buffer = NULL;
@@ -28,13 +39,14 @@ ANY_fromType_aper(ANY_t *st, asn_TYPE_descriptor_t *td, void *sptr) {
 
     if(!sptr) {
         if(st->buf) FREEMEM(st->buf);
+        st->buf = NULL;
         st->size = 0;
         return 0;
     }
 
     erval = aper_encode_to_new_buffer(td, td->encoding_constraints.per_constraints, sptr, (void**)&buffer);
 
-    if(erval == -1) {
+    if(erval < 0 || (size_t)erval > INT_MAX) {
         if(buffer) FREEMEM(buffer);
         return -1;
     }
@@ -42,7 +54,7 @@ ANY_fromType_aper(ANY_t *st, asn_TYPE_descriptor_t *td, void *sptr) {
 
     if(st->buf) FREEMEM(st->buf);
     st->buf = buffer;
-    st->size = erval;
+    st->size = (int)erval;
 
     return 0;
 }
@@ -103,60 +115,61 @@ ANY_to_type_aper_checked(ANY_t *st, asn_TYPE_descriptor_t *td, void **struct_ptr
  	return ANY_to_type_aper(st, td, struct_ptr) == 0 && *struct_ptr != 0 ? 0 : -1;
 }
 
+/*
+ * Purpose: Decode a PER open-type payload into ABI-compatible ANY storage.
+ * Original source: asn1c ANY PER decoder. Version: 2026-10-30.
+ * Parameters: codec context and constraints are unused; td describes storage;
+ *             sptr receives the value; pd supplies the encoded bit stream.
+ * Returns: RC_OK, RC_WMORE, or RC_FAIL and the number of payload bits read.
+ * Errors: Invalid descriptors, oversized payloads, and allocation failure fail.
+ * Responsible party: asn1c maintainers.
+ * History: Check signed size and bit count before allocation and arithmetic.
+ * Example: A zero-length envelope yields an empty, terminated payload.
+ */
 asn_dec_rval_t
 ANY_decode_aper(const asn_codec_ctx_t *opt_codec_ctx,
                 const asn_TYPE_descriptor_t *td,
                 const asn_per_constraints_t *constraints, void **sptr,
                 asn_per_data_t *pd) {
-    const asn_OCTET_STRING_specifics_t *specs =
-        td->specifics ? (const asn_OCTET_STRING_specifics_t *)td->specifics
-                      : &asn_SPC_ANY_specs;
+    const asn_OCTET_STRING_specifics_t *specs;
     size_t consumed_myself = 0;
+    ANY_t *st;
     int repeat;
-    ANY_t *st = (ANY_t *)*sptr;
 
     (void)opt_codec_ctx;
     (void)constraints;
-
-    /*
-     * Allocate the structure.
-     */
+    if(!td || !sptr || !pd) RETURN(RC_FAIL);
+    specs = td->specifics ? (const asn_OCTET_STRING_specifics_t *)td->specifics
+                          : &asn_SPC_ANY_specs;
+    if(specs->struct_size < sizeof(ANY_t)
+       || specs->ctx_offset != offsetof(ANY_t, _asn_ctx)) RETURN(RC_FAIL);
+    st = (ANY_t *)*sptr;
+    if(st && (st->size < 0 || (st->size > 0 && !st->buf))) RETURN(RC_FAIL);
     if(!st) {
         st = (ANY_t *)(*sptr = CALLOC(1, specs->struct_size));
         if(!st) RETURN(RC_FAIL);
     }
 
-    ASN_DEBUG("APER Decoding ANY type");
-
+    /* Decode fragments using checked arithmetic before growing the buffer. */
     st->size = 0;
     do {
-        ssize_t raw_len;
-        ssize_t len_bytes;
-        ssize_t len_bits;
-        void *p;
-        int ret;
-
-        /* Get the PER length */
-        raw_len = aper_get_length(pd, -1, -1, -1, &repeat);
+        ssize_t raw_len = aper_get_length(pd, -1, -1, -1, &repeat);
+        size_t length;
+        uint8_t *buffer;
         if(raw_len < 0) RETURN(RC_WMORE);
-        if(raw_len == 0 && st->buf) break;
-
-        ASN_DEBUG("Got PER length len %" ASN_PRI_SIZE ", %s (%s)", raw_len,
-                  repeat ? "repeat" : "once", td->name);
-        len_bytes = raw_len;
-        len_bits = len_bytes * 8;
-
-        p = REALLOC(st->buf, st->size + len_bytes + 1);
-        if(!p) RETURN(RC_FAIL);
-        st->buf = (uint8_t *)p;
-
-        ret = per_get_many_bits(pd, &st->buf[st->size], 0, len_bits);
-        if(ret < 0) RETURN(RC_WMORE);
-        consumed_myself += len_bits;
-        st->size += len_bytes;
+        length = (size_t)raw_len;
+        if(length > (size_t)INT_MAX - (size_t)st->size
+           || length > (size_t)INT_MAX / 8
+           || length > (SIZE_MAX - consumed_myself) / 8) RETURN(RC_FAIL);
+        buffer = (uint8_t *)REALLOC(st->buf, (size_t)st->size + length + 1);
+        if(!buffer) RETURN(RC_FAIL);
+        st->buf = buffer;
+        if(per_get_many_bits(pd, st->buf + st->size, 0, (int)(length * 8)))
+            RETURN(RC_WMORE);
+        consumed_myself += length * 8;
+        st->size += (int)length;
     } while(repeat);
-    st->buf[st->size] = 0; /* nul-terminate */
-
+    st->buf[st->size] = 0;
     RETURN(RC_OK);
 }
 

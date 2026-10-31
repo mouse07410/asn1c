@@ -25,6 +25,9 @@
 #include <genhash.h>
 #include "asn1fix.h"
 
+/* Private fixer state variable: this root completed the phase-I main pass. */
+#define ASN1F_PHASE1_DONE (1u << 8)
+
 #ifdef	_WIN32
 #define	EX_NOINPUT	66
 #define	EX_DATAERR	65

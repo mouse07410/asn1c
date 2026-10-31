@@ -6,6 +6,7 @@
 #include <asn_internal.h>
 #include <ANY.h>
 #include <errno.h>
+#include <limits.h>
 
 struct _callback_arg {
     uint8_t *buffer;
@@ -13,21 +14,30 @@ struct _callback_arg {
     size_t size;
 };
 
+/*
+ * Purpose: Append DER output while bounding the public ANY signed length.
+ * Source: Existing ANY DER callback. Version: 2026-10-30.
+ * Inputs: buffer/size are emitted bytes; key holds the accumulating buffer.
+ * Returns: zero on success, -1 on overflow, invalid bytes or allocation failure.
+ * Errors: Payloads above INT_MAX are rejected. Author: maintainers.
+ * History: Replaced unchecked allocation arithmetic.
+ * Example: Appending bytes preserves the existing prefix.
+ */
 static int ANY__consume_bytes(const void *buffer, size_t size, void *key) {
     struct _callback_arg *arg = (struct _callback_arg *)key;
-
-    if((arg->offset + size) >= arg->size) {
-        size_t nsize = (arg->size ? arg->size << 2 : 16) + size;
-        void *p = REALLOC(arg->buffer, nsize);
-        if(!p) return -1;
-        arg->buffer = (uint8_t *)p;
-        arg->size = nsize;
+    size_t required;
+    void *replacement;
+    if(!arg || (size && !buffer) || arg->offset > INT_MAX
+    || size > (size_t)INT_MAX - arg->offset) return -1;
+    required = arg->offset + size + 1;
+    if(required > arg->size) {
+        replacement = REALLOC(arg->buffer, required);
+        if(!replacement) return -1;
+        arg->buffer = (uint8_t *)replacement;
+        arg->size = required;
     }
-
-    memcpy(arg->buffer + arg->offset, buffer, size);
+    if(size) memcpy(arg->buffer + arg->offset, buffer, size);
     arg->offset += size;
-    assert(arg->offset < arg->size);
-
     return 0;
 }
 
@@ -43,6 +53,7 @@ ANY_fromType(ANY_t *st, asn_TYPE_descriptor_t *td, void *sptr) {
 
     if(!sptr) {
         if(st->buf) FREEMEM(st->buf);
+        st->buf = NULL;
         st->size = 0;
         return 0;
     }
@@ -59,7 +70,7 @@ ANY_fromType(ANY_t *st, asn_TYPE_descriptor_t *td, void *sptr) {
 
     if(st->buf) FREEMEM(st->buf);
     st->buf = arg.buffer;
-    st->size = arg.offset;
+    st->size = (int)arg.offset;
 
     return 0;
 }
@@ -93,7 +104,8 @@ ANY_to_type(ANY_t *st, asn_TYPE_descriptor_t *td, void **struct_ptr) {
     asn_dec_rval_t rval;
     void *newst = 0;
 
-    if(!st || !td || !struct_ptr) {
+    if(!st || !td || !struct_ptr || st->size < 0
+       || (st->size > 0 && !st->buf)) {
         errno = EINVAL;
         return -1;
     }

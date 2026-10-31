@@ -111,10 +111,18 @@ OPTIONAL fields. Their indices follow numeric value order, and singleton values
 consume no payload bits. Tests compare presence and payload vectors with C,
 and reject truncation and spare indices.
 
-Rust does not support CONTAINING, ANY, or information-object OPEN TYPE. A
-correct CONTAINING implementation needs contained-type reference resolution,
-length and fragmentation handling for unbounded strings, transfer-syntax-aware
-inner decoding with exact consumption and constraints, and shared resource
-budgets. ANY needs a defined opaque representation and codec-specific framing;
-information-object OPEN TYPE additionally needs object-set resolution and
-selector-driven dispatch. These forms are rejected before output publication.
+Rust supports unqualified ANY at top level with UPER, APER, OER, and JER,
+and as required or OPTIONAL UPER SEQUENCE fields. Values are represented as
+opaque octets, including fragmented PER length determinants. The payload is
+not interpreted as an ASN.1 value; callers supply its transfer syntax. Other
+codecs and selector-driven ANY remain unsupported.
+
+Unconstrained BIT STRING and OCTET STRING with CONTAINING support UPER
+at top level or as required/OPTIONAL SEQUENCE fields when the contained type
+is a same-module direct BOOLEAN or a bounded, non-singleton INTEGER. Inline forms are promoted to local type assignments.
+Generated wrappers hold the typed inner value. Decoding validates the outer
+length, inner range and OCTET STRING padding with a single operation budget.
+SIZE combinations, singleton integers, constructed contents, and other
+encodings are rejected before output publication.
+Information-object OPEN TYPE needs object-set resolution and selector-driven
+dispatch and is also rejected.

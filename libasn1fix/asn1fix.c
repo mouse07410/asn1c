@@ -18,6 +18,34 @@ static int asn1f_check_constraints(arg_t *arg);	/* For subtype constraints */
 static int asn1f_check_duplicate(arg_t *arg);
 static int asn1f_apply_unique_index(arg_t *arg);
 static int phase_1_1(arg_t *arg, int prm2);
+static int asn1f_fix_late_containing(asn1p_t *asn, arg_t *arg);
+static int asn1f_reject_late_containing(asn1p_t *asn, arg_t *arg);
+static void asn1f_clear_phase1_marks(asn1p_t *asn);
+static int asn1f_has_containing(asn1p_t *asn, asn1p_module_t *mod, asn1p_expr_t *expr);
+
+/* Private state variable: this module declaration was promoted from contents. */
+#define ASN1F_CONTAINING_ROOT (1u << 9)
+
+static int asn1f_promote_containing_module(asn1p_t *asn,
+                                          asn1p_module_t *mod, size_t *count);
+static int asn1f_promote_containing_expr(asn1p_t *asn, asn1p_module_t *mod,
+                                        asn1p_expr_t *expr, size_t *count);
+static int asn1f_promote_containing_constraint(asn1p_t *asn,
+                                              asn1p_module_t *mod,
+                                              asn1p_constraint_t *constraint,
+                                              size_t *count);
+static int asn1f_promote_containing_node(asn1p_t *asn,
+                                        asn1p_module_t *mod,
+                                        asn1p_constraint_t *constraint,
+                                        size_t *count);
+static int asn1f_containing_name_exists(const asn1p_t *asn, const char *name);
+
+/* state variable: unique inline CONTAINING declaration count for one fixer call. */
+static size_t asn1f_containing_count;
+/* state variable: whether the current traversal found a contents constraint. */
+static int asn1f_containing_seen;
+/* state variable: inspect constraint trees without modifying templates. */
+static int asn1f_containing_scan_only;
 
 arg_t a1f_replace_me_with_proper_interface_arg;
 
@@ -95,6 +123,16 @@ asn1f_process(asn1p_t *asn, enum asn1f_flags flags,
 		return -1;
 	}
 
+	/* Give inline CONTAINING types their own descriptors before the fixer
+	 * resolves references and computes codec-specific constraints. */
+	asn1f_containing_count = 0;
+	asn1f_containing_seen = 0;
+	asn1f_containing_scan_only = 0;
+	TQ_FOR(arg.mod, &(asn->modules), mod_next) {
+		if(asn1f_promote_containing_module(asn, arg.mod,
+		                                  &asn1f_containing_count)) return -1;
+	}
+
     /*
      * Process each module in the list.
      * PHASE I.
@@ -111,6 +149,8 @@ asn1f_process(asn1p_t *asn, enum asn1f_flags flags,
         asn1_namespace_free(arg.ns);
         arg.ns = 0;
     }
+    if((asn1f_containing_count || asn1f_containing_seen)
+       && asn1f_fix_late_containing(asn, &arg)) fatals++;
     /*
      * Generated source files may contain definitions from several top-level
      * assignments, including parameterized specializations. Keep their inner
@@ -127,6 +167,9 @@ asn1f_process(asn1p_t *asn, enum asn1f_flags flags,
         asn1_namespace_free(arg.ns);
         arg.ns = 0;
     }
+	if(asn1f_reject_late_containing(asn, &arg)) fatals++;
+	/* Do not expose private phase state to later compiler operations. */
+	asn1f_clear_phase1_marks(asn);
 
 	a1f_replace_me_with_proper_interface_arg = (arg_t){
 		.eh = arg.eh,
@@ -138,6 +181,251 @@ asn1f_process(asn1p_t *asn, enum asn1f_flags flags,
 	 * Compute a return value.
 	 */
 	return fatals?-1:warnings?1:0;
+}
+
+/*
+ * Find and promote inline CONTAINING types in one module before fixing it.
+ * Original source: ASN.1 contents-constraint AST and module member list.
+ * Version/date: 2026-10-30. Inputs: asn is the full input, mod is the mutable
+ * module, and count tracks names across modules.
+ * Returns: zero on success or -1 for malformed/oversized input or allocation
+ * failure. Exceptions: none. Author: asn1c maintainers.
+ * History: added specialized descriptors for inline contained types.
+ * Example: CONTAINING INTEGER (0..2) gains a generated named type.
+ */
+static int
+asn1f_promote_containing_module(asn1p_t *asn, asn1p_module_t *mod,
+                                 size_t *count) {
+	asn1p_expr_t *expr;
+	if(!asn || !mod || !count) return -1;
+	TQ_FOR(expr, &mod->members, next) {
+		/* Inspect templates without promoting their unbound formal parameters. */
+		if(expr->lhs_params && expr->spec_index == -1) {
+			int has_containing = asn1f_has_containing(asn, mod, expr);
+			if(has_containing < 0) return -1;
+			if(has_containing) asn1f_containing_seen = 1;
+			continue;
+		}
+		if(asn1f_promote_containing_expr(asn, mod, expr, count)) return -1;
+	}
+	return 0;
+}
+
+/*
+ * Inspect one type and its members for inline CONTAINING constraints.
+ * Original source: fixer expression traversal. Version/date: 2026-10-30.
+ * Inputs: asn is the full input, mod owns the type, expr is current, and
+ * count caps new declarations. Returns zero or -1; no exceptions.
+ * Author: asn1c maintainers. History: added pre-fix promotion traversal.
+ * Example: inspect an OCTET STRING field inside a SEQUENCE.
+ */
+static int
+asn1f_promote_containing_expr(asn1p_t *asn, asn1p_module_t *mod, asn1p_expr_t *expr,
+	                            size_t *count) {
+	asn1p_expr_t **pending;
+	size_t used = 0;
+	size_t capacity = 32;
+	if(!asn || !mod || !expr || !count) return -1;
+	pending = malloc(capacity * sizeof(*pending));
+	if(!pending) return -1;
+	pending[used++] = expr;
+	while(used) {
+		asn1p_expr_t *current = pending[--used];
+		asn1p_expr_t *member;
+		if(asn1f_promote_containing_constraint(asn, mod,
+		                                     current->constraints, count)) {
+			free(pending);
+			return -1;
+		}
+		/* Parameter actuals are stored outside the ordinary member list. */
+		if(current->rhs_pspecs) {
+			if(used == capacity) {
+				asn1p_expr_t **larger;
+				if(capacity > (size_t)-1 / (2 * sizeof(*pending))) {
+					free(pending);
+					return -1;
+				}
+				capacity *= 2;
+				larger = realloc(pending, capacity * sizeof(*pending));
+				if(!larger) {
+					free(pending);
+					return -1;
+				}
+				pending = larger;
+			}
+			pending[used++] = current->rhs_pspecs;
+		}
+		TQ_FOR(member, &current->members, next) {
+			if(used == capacity) {
+				asn1p_expr_t **larger;
+				if(capacity > (size_t)-1 / (2 * sizeof(*pending))) {
+					free(pending);
+					return -1;
+				}
+				capacity *= 2;
+				larger = realloc(pending, capacity * sizeof(*pending));
+				if(!larger) {
+					free(pending);
+					return -1;
+				}
+				pending = larger;
+			}
+			pending[used++] = member;
+		}
+	}
+	free(pending);
+	return 0;
+}
+
+/*
+ * Scan a constraint tree iteratively for inline contents types.
+ * Source: contents-constraint AST. Version/date: 2026-10-30.
+ * Inputs: asn is the full input, mod owns declarations, constraint is the
+ * root node, and count limits generated names. Returns zero or -1 on invalid
+ * input/allocation failure; no exceptions. Author: asn1c maintainers.
+ * History: avoids a new nesting limit on unrelated schemas.
+ * Example: find CONTAINING inside a union of constraint elements.
+ */
+static int
+asn1f_promote_containing_constraint(asn1p_t *asn, asn1p_module_t *mod,
+                                    asn1p_constraint_t *constraint,
+	                                    size_t *count) {
+	asn1p_constraint_t **pending;
+	size_t used = 0;
+	size_t capacity = 32;
+	if(!constraint) return 0;
+	if(!asn || !mod || !count) return -1;
+	pending = malloc(capacity * sizeof(*pending));
+	if(!pending) return -1;
+	pending[used++] = constraint;
+	while(used) {
+		asn1p_constraint_t *current = pending[--used];
+		unsigned i;
+		if(asn1f_promote_containing_node(asn, mod, current, count)) {
+			free(pending);
+			return -1;
+		}
+		for(i = current->el_count; i > 0; i--) {
+			if(used == capacity) {
+				asn1p_constraint_t **larger;
+				if(capacity > (size_t)-1 / (2 * sizeof(*pending))) {
+					free(pending);
+					return -1;
+				}
+				capacity *= 2;
+				larger = realloc(pending, capacity * sizeof(*pending));
+				if(!larger) {
+					free(pending);
+					return -1;
+				}
+				pending = larger;
+			}
+			pending[used++] = current->elements[i - 1];
+		}
+	}
+	free(pending);
+	return 0;
+}
+
+/*
+ * Promote one inline contents type and replace it with a named reference.
+ * Original source: contents-constraint AST and module type registration.
+ * Version/date: 2026-10-30. Inputs: asn is the full input, mod owns
+ * declarations, constraint is one node, and count limits generated names.
+ * Returns zero or -1 on invalid input/allocation failure; no exceptions.
+ * Author: asn1c maintainers. History: added inline descriptor generation.
+ * Example: CONTAINING SEQUENCE { x BOOLEAN } becomes a generated type.
+ */
+static int
+asn1f_promote_containing_node(asn1p_t *asn, asn1p_module_t *mod,
+                              asn1p_constraint_t *constraint, size_t *count) {
+	if(!asn || !mod || !constraint || !count) return -1;
+	if(constraint->type == ACT_CT_CTNG && constraint->value
+	   && constraint->value->type == ATV_TYPE) {
+		asn1p_expr_t *contained = constraint->value->value.v_type;
+		asn1f_containing_seen = 1;
+		if(!contained) return -1;
+		if(asn1f_containing_scan_only) return 0;
+		if(contained->expr_type != A1TC_REFERENCE || contained->constraints
+		   || contained->rhs_pspecs) {
+			asn1p_expr_t *reference = NULL;
+			char name[64];
+			char *identifier;
+			do {
+				if(++*count > 4096) return -1;
+				if(snprintf(name, sizeof(name), "ASN1CContained%zu", *count)
+				   < 0) return -1;
+			} while(asn1f_containing_name_exists(asn, name));
+			identifier = strdup(name);
+			reference = asn1p_expr_new(contained->_lineno, mod);
+			if(!identifier || !reference) {
+				free(identifier);
+				asn1p_expr_free(reference);
+				return -1;
+			}
+			reference->meta_type = AMT_TYPE;
+			reference->expr_type = A1TC_REFERENCE;
+			reference->reference = asn1p_ref_new(contained->_lineno, mod);
+			if(!reference->reference
+			   || asn1p_ref_add_component(reference->reference, name, RLT_UNKNOWN)) {
+				free(identifier);
+				asn1p_expr_free(reference);
+				return -1;
+			}
+			free(contained->Identifier);
+			contained->Identifier = identifier;
+			contained->module = mod;
+			contained->_mark &= ~ASN1F_PHASE1_DONE;
+			contained->_mark |= ASN1F_CONTAINING_ROOT;
+			contained->_type_referenced = 1;
+			/* Move the value's ownership of this type to the module list. */
+			if(contained->ref_cnt) contained->ref_cnt--;
+			constraint->value->value.v_type = reference;
+			asn1p_module_member_add(mod, contained);
+		}
+	}
+	return 0;
+}
+
+/*
+ * Detect a contents constraint without changing its tree. Source: promotion
+ * traversal. Version: 2026-10-30. Inputs: asn/mod/expr identify a type.
+ * Returns one if present, zero if absent, -1 on failure; no exceptions.
+ * Author: asn1c maintainers. History: restrict late work to contents types.
+ * Example: an uninstantiated template can be inspected without promotion.
+ */
+static int
+asn1f_has_containing(asn1p_t *asn, asn1p_module_t *mod, asn1p_expr_t *expr) {
+	int previous_seen = asn1f_containing_seen;
+	int result;
+	asn1f_containing_seen = 0;
+	asn1f_containing_scan_only = 1;
+	result = asn1f_promote_containing_expr(asn, mod, expr, &asn1f_containing_count);
+	asn1f_containing_scan_only = 0;
+	if(!result) result = asn1f_containing_seen;
+	asn1f_containing_seen = previous_seen;
+	return result;
+}
+
+/*
+ * Check generated-type name collisions across the entire ASN.1 input.
+ * Original source: module declaration lists. Version/date: 2026-10-30.
+ * Inputs: asn is the input tree, name is the candidate identifier.
+ * Returns one for a collision and zero otherwise; no exceptions.
+ * Author: asn1c maintainers. History: keep synthetic output files unique.
+ * Example: a user-defined ASN1CContained1 forces the next candidate.
+ */
+static int
+asn1f_containing_name_exists(const asn1p_t *asn, const char *name) {
+	asn1p_module_t *mod;
+	if(!asn || !name) return 1;
+	TQ_FOR(mod, &asn->modules, mod_next) {
+		asn1p_expr_t *expr;
+		TQ_FOR(expr, &mod->members, next) {
+			if(expr->Identifier && strcmp(expr->Identifier, name) == 0) return 1;
+		}
+	}
+	return 0;
 }
 
 /*
@@ -415,6 +703,12 @@ phase_1_1(arg_t *arg, int prm2) {
 	} else if(prm2) {
 		return 0;	/* Already done! */
 	}
+	if(expr->_mark & ASN1F_PHASE1_DONE) return 0;
+	expr->_mark |= ASN1F_PHASE1_DONE;
+
+	/* Process contained types cloned by specialization and any new declarations. */
+	if(asn1f_promote_containing_expr(arg->asn, arg->mod, expr,
+	                                &asn1f_containing_count)) return -1;
 
 	/* Check whether this type is a duplicate */
 	if(!expr->lhs_params) {
@@ -474,6 +768,109 @@ phase_1_1(arg_t *arg, int prm2) {
 	 */
 
 	return rvalue;
+}
+
+/*
+ * Complete phase I for roots and specializations discovered after their module
+ * was visited. Source: the normal module phase-I passes. Version: 2026-10-30.
+ * Inputs: asn owns modules; arg provides diagnostics. Returns zero or -1.
+ * Errors: fixer failures propagate; no exceptions. Author: asn1c maintainers.
+ * History: process late cross-module specializations exactly once.
+ * Example: an imported template can be specialized in a later module.
+ */
+static int
+asn1f_fix_late_containing(asn1p_t *asn, arg_t *arg) {
+	int progress, failed = 0;
+	do {
+		asn1p_module_t *mod;
+		progress = 0;
+		TQ_FOR(mod, &asn->modules, mod_next) {
+			asn1p_expr_t *expr;
+			arg->mod = mod;
+			arg->ns = asn1_namespace_new_from_module(mod, 0);
+			if(!arg->ns) return -1;
+			TQ_FOR(expr, &mod->members, next) {
+				int i, count = expr->lhs_params && expr->spec_index == -1
+					? expr->specializations.pspecs_count : 1;
+				if(expr->_mark & TM_ENCODING_INSTRUCTION) continue;
+				for(i = 0; i < count; i++) {
+					asn1p_expr_t *root = expr->lhs_params && expr->spec_index == -1
+						? expr->specializations.pspec[i].my_clone : expr;
+					int relevant;
+					if(root->_mark & ASN1F_PHASE1_DONE) continue;
+					relevant = (root->_mark & ASN1F_CONTAINING_ROOT) != 0;
+					if(!relevant && root->spec_index >= 0)
+						relevant = asn1f_has_containing(asn, mod, root);
+					if(relevant < 0) { failed = 1; continue; }
+					if(!relevant) continue;
+					progress = 1;
+					arg->expr = root;
+					if(phase_1_1(arg, 0) < 0
+					|| asn1f_recurse_expr(arg, asn1f_fix_constr_autotag) < 0
+					|| asn1f_recurse_expr(arg, asn1f_fix_bit_string) < 0
+					|| asn1f_recurse_expr(arg, asn1f_fix_cstring) < 0
+					|| asn1f_recurse_expr(arg, asn1f_check_constr_tags_distinct) < 0)
+						failed = 1;
+				}
+			}
+			asn1_namespace_free(arg->ns);
+			arg->ns = 0;
+		}
+	} while(progress);
+	return failed ? -1 : 0;
+}
+
+/*
+ * Clear temporary root processing marks after fixing. Source: phase-I worklist.
+ * Version: 2026-10-30. Input: asn owns modules. Returns nothing; no exceptions.
+ * Author: asn1c maintainers. History: keep fixer state private to one call.
+ * Example: a later fixer call does not inherit a completed-work marker.
+ */
+static void
+asn1f_clear_phase1_marks(asn1p_t *asn) {
+	asn1p_module_t *mod;
+	TQ_FOR(mod, &asn->modules, mod_next) {
+		asn1p_expr_t *expr;
+		TQ_FOR(expr, &mod->members, next) {
+			int i;
+			expr->_mark &= ~(ASN1F_PHASE1_DONE | ASN1F_CONTAINING_ROOT);
+			for(i = 0; i < expr->specializations.pspecs_count; i++)
+				expr->specializations.pspec[i].my_clone->_mark &= ~ASN1F_PHASE1_DONE;
+		}
+	}
+}
+
+/*
+ * Reject contents-bearing specializations created too late for phase I.
+ * Source: phase-II specialization audit. Version: 2026-10-30.
+ * Inputs: asn owns the modules, arg provides diagnostics. Returns zero or -1.
+ * Errors: unsupported late specialization or allocation failure; no exceptions.
+ * Author: asn1c maintainers. History: prevent silently omitted constraints.
+ * Example: a late constraint specialization fails before code generation.
+ */
+static int
+asn1f_reject_late_containing(asn1p_t *asn, arg_t *arg) {
+	asn1p_module_t *mod;
+	TQ_FOR(mod, &asn->modules, mod_next) {
+		asn1p_expr_t *expr;
+		arg->mod = mod;
+		TQ_FOR(expr, &mod->members, next) {
+			int i;
+			for(i = 0; i < expr->specializations.pspecs_count; i++) {
+				asn1p_expr_t *clone = expr->specializations.pspec[i].my_clone;
+				if(clone->_mark & ASN1F_PHASE1_DONE) continue;
+				asn1f_containing_seen = 0;
+				if(asn1f_promote_containing_expr(asn, mod, clone,
+				                                 &asn1f_containing_count)) return -1;
+				if(asn1f_containing_seen) {
+					FATAL("CONTAINING specialization of %s was created after phase I",
+					      expr->Identifier ? expr->Identifier : "anonymous type");
+					return -1;
+				}
+			}
+		}
+	}
+	return 0;
 }
 
 static int
