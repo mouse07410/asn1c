@@ -6,6 +6,10 @@
  */
 #include <asn_internal.h>
 #include <constr_SET.h>
+#include <constr_CHOICE.h>
+#include <OPEN_TYPE.h>
+#include <ANY.h>
+#include <uper_encoder.h>
 #include <uper_opentype.h>
 
 #ifndef ASN_DISABLE_UPER_SUPPORT
@@ -151,6 +155,154 @@ SET__uper_storage(const asn_TYPE_descriptor_t *td, const void *st) {
 }
 
 /*
+ * Purpose: Preflight open-member metadata and recursive SET storage.
+ * Source: SET descriptor and UPER table selection. Version: 2026-10-30.
+ * Inputs: td is the descriptor. Returns: zero when valid, otherwise -1.
+ * Errors: Missing selectors or malformed layouts fail before wire access.
+ * Author: maintainers. History: Protects deferred SET open-type decoding.
+ * Example: An INTEGER spuriously marked OPEN TYPE without selector fails.
+ */
+static int
+SET__uper_open_preflight(const asn_TYPE_descriptor_t *td) {
+    size_t i, width;
+    int found = 0;
+    for(i = 0; i < td->elements_count; i++) {
+        if(td->elements[i].flags & ATF_OPEN_TYPE) {
+            if(!td->elements[i].type_selector) return -1;
+            found = 1;
+        }
+    }
+    return found && SET_inline_value_size(td, &width) ? -1 : 0;
+}
+
+/*
+ * Purpose: Validate a SET open-type selector and active wrapper arm.
+ * Source: OPEN TYPE UPER table selection. Version: 2026-10-30.
+ * Inputs: td/st identify the parent; member is open; encoding checks presence.
+ * Returns: zero when valid, otherwise -1. Errors: invalid selections fail.
+ * Author: maintainers. History: Added for deferred SET UPER selection.
+ * Example: A selector for arm one cannot encode an active arm two.
+ */
+static int
+SET__uper_open_valid(const asn_TYPE_descriptor_t *td, const void *st,
+                     const asn_TYPE_member_t *member, int encoding) {
+    asn_type_selector_result_t selected;
+    const void *value;
+    if(!member->type || !member->type_selector) return -1;
+    selected = member->type_selector(td, st);
+    if(!selected.presence_index || !selected.type_descriptor || !selected.type_descriptor->op)
+        return -1;
+    if(encoding ? !selected.type_descriptor->op->uper_encoder
+                : !selected.type_descriptor->op->uper_decoder) return -1;
+    if(!member->type->elements_count)
+        return member->type == selected.type_descriptor ? 0 : -1;
+    if(!member->type->elements || selected.presence_index > member->type->elements_count
+    || member->type->elements[selected.presence_index - 1].type != selected.type_descriptor) return -1;
+    if(!encoding) return 0;
+    value = (const char *)st + member->memb_offset;
+    if(member->flags & ATF_POINTER) value = *(const void *const *)value;
+    return value && CHOICE_variant_get_presence(member->type, value) == selected.presence_index ? 0 : -1;
+}
+
+/*
+ * Purpose: Replay a saved UPER envelope after the parent selectors are known.
+ * Source: OPEN_TYPE_uper_get and ANY UPER framing. Version: 2026-10-30.
+ * Inputs: ctx/td/st/member identify the target; payload owns saved octets.
+ * Returns: decoder status. Errors: invalid selection or allocation fails.
+ * Author: maintainers. History: Added for canonical SET selector ordering.
+ * Example: An open root preceding its selector is resolved after additions.
+ */
+static asn_dec_rval_t
+SET__uper_resolve_open(const asn_codec_ctx_t *ctx, const asn_TYPE_descriptor_t *td,
+                       void *st, const asn_TYPE_member_t *member, const ANY_t *payload) {
+    asn_dec_rval_t result = {RC_FAIL, 0};
+    asn_per_data_t input;
+    void *encoded = 0;
+    ssize_t length;
+    if(SET__uper_open_valid(td, st, member, 0)) return result;
+    length = uper_encode_to_new_buffer(&asn_DEF_ANY, 0, payload, &encoded);
+    if(length <= 0 || (size_t)length > SIZE_MAX / 8) { FREEMEM(encoded); return result; }
+    memset(&input, 0, sizeof(input));
+    input.buffer = encoded;
+    input.nbits = (size_t)length * 8;
+    result = OPEN_TYPE_uper_get(ctx, td, st, member, &input);
+    if(result.code == RC_OK && input.moved != (size_t)length * 8) result.code = RC_FAIL;
+    FREEMEM(encoded);
+    return result;
+}
+
+/*
+ * Purpose: Release all saved SET UPER open payloads after an attempt.
+ * Source: Deferred open-type buffer ownership. Version: 2026-10-30.
+ * Inputs: pending is a nullable count-entry array. Returns: nothing.
+ * Errors: none. Author: maintainers. History: cleanup on all decoder exits.
+ * Example: A truncated selector frees previously saved open payloads.
+ */
+static void
+SET__uper_free_pending(ANY_t **pending, unsigned count) {
+    unsigned i;
+    if(!pending) return;
+    for(i = 0; i < count; i++) if(pending[i]) ASN_STRUCT_FREE(asn_DEF_ANY, pending[i]);
+    FREEMEM(pending);
+}
+
+/*
+ * Purpose: Extract a nested open value from an extension-addition envelope.
+ * Source: X.691 addition framing and UPER open types. Version: 2026-10-30.
+ * Inputs: ctx/pd read the outer envelope; pending receives inner payload.
+ * Returns: decoder result. Errors: malformed inner frames and padding fail.
+ * Author: maintainers. History: Added for table-selected SET additions.
+ * Example: A later addition can select an earlier open-type addition.
+ */
+static asn_dec_rval_t
+SET__uper_save_addition(const asn_codec_ctx_t *ctx, asn_per_data_t *pd, ANY_t **pending) {
+    ANY_t *outer = 0;
+    asn_per_data_t inner;
+    asn_dec_rval_t result = ANY_decode_uper(ctx, &asn_DEF_ANY, 0, (void **)&outer, pd);
+    size_t bits, padding;
+    if(result.code != RC_OK) goto done;
+    if(!outer || outer->size < 0 || (size_t)outer->size > SIZE_MAX / 8) {
+        result.code = RC_FAIL;
+        goto done;
+    }
+    bits = (size_t)outer->size * 8;
+    memset(&inner, 0, sizeof(inner));
+    inner.buffer = outer->buf;
+    inner.nbits = bits;
+    result = ANY_decode_uper(ctx, &asn_DEF_ANY, 0, (void **)pending, &inner);
+    if(result.code != RC_OK || inner.moved > bits) { result.code = RC_FAIL; goto done; }
+    padding = bits - inner.moved;
+    if(padding >= 8 || (padding && per_get_few_bits(&inner, (int)padding) != 0))
+        result.code = RC_FAIL;
+done:
+    if(outer) ASN_STRUCT_FREE(asn_DEF_ANY, outer);
+    return result;
+}
+
+/* Parent/member metadata for UPER open-addition framing. */
+typedef struct SET_uper_open_adapter_s {
+    const asn_TYPE_descriptor_t *parent; /* Parent descriptor for selection. */
+    const asn_TYPE_member_t *member; /* The selected addition. */
+} SET_uper_open_adapter_t;
+
+/*
+ * Purpose: Encode an inner selected open type inside an addition envelope.
+ * Source: OPEN_TYPE_uper_put contract. Version: 2026-10-30.
+ * Inputs: td carries adapter metadata; sptr is the parent; po receives bits.
+ * Returns: encoder result. Errors: inconsistent selector or arm fails.
+ * Author: maintainers. History: Adds nested SET extension framing.
+ * Example: The extension envelope contains a selected INTEGER open envelope.
+ */
+static asn_enc_rval_t
+SET__uper_open_adapter(const asn_TYPE_descriptor_t *td, const asn_per_constraints_t *constraints,
+                       const void *sptr, asn_per_outp_t *po) {
+    const SET_uper_open_adapter_t *adapter = td->specifics;
+    (void)constraints;
+    if(SET__uper_open_valid(adapter->parent, sptr, adapter->member, 1)) ASN__ENCODE_FAILED;
+    return OPEN_TYPE_uper_put(adapter->parent, sptr, adapter->member, po);
+}
+
+/*
  * Purpose: encode or transactionally decode one SEQUENCE-view SET group.
  * Source: X.691 clauses 19.9 and 21; generated v3 group adapter metadata.
  * Version/date: 1.0, 2026-10-30. Inputs: td/st/index select the group;
@@ -193,13 +345,34 @@ SET__uper_group(const asn_TYPE_descriptor_t *td, void *st, unsigned index,
  */
 static int
 SET__uper_addition(const asn_TYPE_descriptor_t *td, void *st, unsigned idx,
-                   const asn_codec_ctx_t *ctx, asn_per_data_t *pd, asn_per_outp_t *po) {
+                   const asn_codec_ctx_t *ctx, asn_per_data_t *pd, asn_per_outp_t *po,
+                   ANY_t **pending) {
     asn_TYPE_member_t *member = &td->elements[idx];
     const asn_TYPE_descriptor_t *type = member->type;
     asn_SET_member_view_t view;
     void *inline_value, **slot;
     int result;
     if(member->flags & ATF_EXTENSION_GROUP) return SET__uper_group(td, st, idx, ctx, pd, po);
+    if(member->flags & ATF_OPEN_TYPE) {
+        if(po) {
+            asn_TYPE_descriptor_t adapter = *member->type;
+            asn_TYPE_operation_t operations;
+            SET_uper_open_adapter_t metadata = {td, member};
+            memset(&operations, 0, sizeof(operations));
+            operations.uper_encoder = SET__uper_open_adapter;
+            adapter.op = &operations;
+            adapter.specifics = &metadata;
+            return uper_open_type_put(&adapter, 0, st, po);
+        } else {
+            asn_dec_rval_t rv = SET__uper_save_addition(ctx, pd, &pending[idx]);
+            if(rv.code == RC_OK) {
+                const asn_SET_specifics_t *specs = td->specifics;
+                ASN_SET_MKPRESENT((char *)st + specs->pres_offset, idx);
+                return 0;
+            }
+            return rv.code == RC_WMORE ? -2 : -1;
+        }
+    }
     if(SET_member_view(td, st, idx, ASN_SET_DIRECT_MEMBER, &view)) return -1;
     if(member->flags & ATF_POINTER) slot = (void **)((char *)st + member->memb_offset);
     else { inline_value = (char *)st + member->memb_offset; slot = &inline_value; }
@@ -253,7 +426,7 @@ SET__uper_extensions_put(const asn_TYPE_descriptor_t *td, void *st, asn_per_outp
     }
     for(i = 0; i < specs->extension_count; i++) {
         int present = SET__uper_present(td, st, specs->extension_map[i]);
-        if(present < 0 || (present && SET__uper_addition(td, st, specs->extension_map[i], 0, 0, po)))
+        if(present < 0 || (present && SET__uper_addition(td, st, specs->extension_map[i], 0, 0, po, 0)))
             return -1;
     }
     return 0;
@@ -269,7 +442,7 @@ SET__uper_extensions_put(const asn_TYPE_descriptor_t *td, void *st, asn_per_outp
  */
 static int
 SET__uper_extensions(const asn_TYPE_descriptor_t *td, void *st, const asn_codec_ctx_t *ctx,
-                     asn_per_data_t *pd, asn_per_outp_t *po) {
+                     asn_per_data_t *pd, asn_per_outp_t *po, ANY_t **pending) {
     const asn_SET_specifics_t *specs = (const asn_SET_specifics_t *)td->specifics;
     ssize_t bits;
     unsigned i;
@@ -294,7 +467,7 @@ SET__uper_extensions(const asn_TYPE_descriptor_t *td, void *st, const asn_codec_
         if(!present) continue;
         any = 1;
         if(i < specs->extension_count) {
-            result = SET__uper_addition(td, st, specs->extension_map[i], ctx, pd, 0);
+            result = SET__uper_addition(td, st, specs->extension_map[i], ctx, pd, 0, pending);
         } else {
             asn_dec_rval_t rv = uper_open_type_skip_result(ctx, pd);
             result = rv.code == RC_OK ? 0 : (rv.code == RC_WMORE ? -2 : -1);
@@ -323,7 +496,8 @@ SET__uper_extension_defaults(const asn_TYPE_descriptor_t *td, void *st) {
         asn_SET_member_view_t view;
         if(elm->flags & ATF_EXTENSION_GROUP) continue;
         if(SET_member_view(td, st, idx, ASN_SET_DIRECT_MEMBER, &view)) return -1;
-        if(!view.present && elm->default_value_set && (elm->flags & ATF_POINTER)) {
+        if(!view.present && elm->default_value_set && (elm->flags & ATF_POINTER)
+        && !ASN_SET_ISPRESENT2((char *)st + specs->pres_offset, idx)) {
             void **slot = (void **)((char *)st + elm->memb_offset);
             if(elm->default_value_set(slot)) return -1;
             ASN_SET_MKPRESENT((char *)st + specs->pres_offset, idx);
@@ -341,7 +515,8 @@ SET__uper_extension_defaults(const asn_TYPE_descriptor_t *td, void *st) {
  */
 static asn_dec_rval_t
 SET__uper_root_get(const asn_codec_ctx_t *ctx, const asn_TYPE_descriptor_t *td, void *st,
-                   const unsigned *order, unsigned count, asn_per_data_t *map, asn_per_data_t *pd) {
+                   const unsigned *order, unsigned count, asn_per_data_t *map, asn_per_data_t *pd,
+                   ANY_t **pending) {
     const asn_SET_specifics_t *specs = (const asn_SET_specifics_t *)td->specifics;
     asn_dec_rval_t rv;
     unsigned i;
@@ -362,8 +537,12 @@ SET__uper_root_get(const asn_codec_ctx_t *ctx, const asn_TYPE_descriptor_t *td, 
                 continue;
             }
         }
-        if(!elm->type || !elm->type->op || !elm->type->op->uper_decoder) ASN__DECODE_FAILED;
-        rv = elm->type->op->uper_decoder(ctx, elm->type, elm->encoding_constraints.per_constraints, slot, pd);
+        if(elm->flags & ATF_OPEN_TYPE)
+            rv = ANY_decode_uper(ctx, &asn_DEF_ANY, 0, (void **)&pending[idx], pd);
+        else {
+            if(!elm->type || !elm->type->op || !elm->type->op->uper_decoder) ASN__DECODE_FAILED;
+            rv = elm->type->op->uper_decoder(ctx, elm->type, elm->encoding_constraints.per_constraints, slot, pd);
+        }
         if(rv.code != RC_OK) return rv;
         ASN_SET_MKPRESENT((char *)st + specs->pres_offset, idx);
     }
@@ -415,8 +594,13 @@ SET__uper_root_put(const asn_TYPE_descriptor_t *td, const void *sptr,
             ? *(const void *const *)((const char *)sptr + elm->memb_offset) : (const char *)sptr + elm->memb_offset;
         if(!value) { if(elm->optional) continue; ASN__ENCODE_FAILED; }
         if(elm->default_value_cmp && !elm->default_value_cmp(value)) continue;
-        if(!elm->type || !elm->type->op || !elm->type->op->uper_encoder) ASN__ENCODE_FAILED;
-        er = elm->type->op->uper_encoder(elm->type, elm->encoding_constraints.per_constraints, value, po);
+        if(elm->flags & ATF_OPEN_TYPE) {
+            if(SET__uper_open_valid(td, sptr, elm, 1)) ASN__ENCODE_FAILED;
+            er = OPEN_TYPE_uper_put(td, sptr, elm, po);
+        } else {
+            if(!elm->type || !elm->type->op || !elm->type->op->uper_encoder) ASN__ENCODE_FAILED;
+            er = elm->type->op->uper_encoder(elm->type, elm->encoding_constraints.per_constraints, value, po);
+        }
         if(er.encoded == -1) return er;
     }
     ASN__ENCODED_OK(er);
@@ -488,6 +672,87 @@ SET__uper_target(const asn_TYPE_descriptor_t *td, const asn_SET_specifics_t *spe
 }
 
 /*
+ * Purpose: Read the canonical root bitmap and decode all root components.
+ * Source: SET UPER root traversal. Version: 2026-10-30.
+ * Inputs: codec/td/st/pd and pending describe the decode attempt.
+ * Returns: decoder result. Errors: invalid maps and allocation failures fail.
+ * Author: maintainers. History: Extracted for bounded top-level complexity.
+ * Example: A short optional bitmap returns RC_WMORE without leaking storage.
+ */
+static asn_dec_rval_t
+SET__uper_decode_roots(const asn_codec_ctx_t *codec, const asn_TYPE_descriptor_t *td,
+                       void *st, asn_per_data_t *pd, ANY_t **pending) {
+    const asn_SET_specifics_t *specs = td->specifics;
+    unsigned count = specs->extensible >= 2 ? specs->root_count : td->elements_count;
+    uint8_t *presence = 0;
+    unsigned *order = 0;
+    asn_per_data_t map;
+    asn_dec_rval_t result = {RC_FAIL, 0};
+    int status;
+    if(SET__uper_order_alloc(td, specs, &order)) return result;
+    status = SET__uper_root_map(td, order, count, pd, &map, &presence);
+    if(status) {
+        if(status == -2) result.code = RC_WMORE;
+    } else result = SET__uper_root_get(codec, td, st, order, count, &map, pd, pending);
+    FREEMEM(presence);
+    FREEMEM(order);
+    return result;
+}
+
+/*
+ * Purpose: Resolve saved open values after all root and addition selectors.
+ * Source: SET UPER deferred selection. Version: 2026-10-30.
+ * Inputs: codec/td/st describe the parent; pending holds decoded envelopes.
+ * Returns: RC_OK or RC_FAIL. Errors: malformed selections or payloads fail.
+ * Author: maintainers. History: Extracted for bounded decoder complexity.
+ * Example: A later extension ID selects an earlier open root.
+ */
+static asn_dec_rval_t
+SET__uper_resolve_pending(const asn_codec_ctx_t *codec, const asn_TYPE_descriptor_t *td,
+                          void *st, ANY_t **pending) {
+    asn_dec_rval_t result = {RC_OK, 0};
+    unsigned i;
+    for(i = 0; i < td->elements_count; i++) {
+        if(pending[i]) {
+            result = SET__uper_resolve_open(codec, td, st, &td->elements[i], pending[i]);
+            if(result.code != RC_OK) { result.code = RC_FAIL; return result; }
+        }
+    }
+    return result;
+}
+
+/*
+ * Purpose: Decode UPER roots and additions before selecting open values.
+ * Source: SET extension and canonical root ordering. Version: 2026-10-30.
+ * Inputs: codec/td/st/pd/pending describe this attempt. Returns: decode status.
+ * Errors: Short streams retain RC_WMORE; malformed values return RC_FAIL.
+ * Author: maintainers. History: Isolates traversal from top-level ownership.
+ * Example: Root open payloads are resolved only after extension defaults.
+ */
+static asn_dec_rval_t
+SET__uper_decode_values(const asn_codec_ctx_t *codec, const asn_TYPE_descriptor_t *td,
+                        void *st, asn_per_data_t *pd, ANY_t **pending) {
+    const asn_SET_specifics_t *specs = td->specifics;
+    asn_dec_rval_t result = {RC_FAIL, 0};
+    int extpresent = 0, status;
+    if(specs->extensible >= 2) {
+        extpresent = per_get_few_bits(pd, 1);
+        if(extpresent < 0) { result.code = RC_WMORE; return result; }
+    }
+    result = SET__uper_decode_roots(codec, td, st, pd, pending);
+    if(result.code != RC_OK) return result;
+    if(extpresent) {
+        status = SET__uper_extensions(td, st, codec, pd, 0, pending);
+        if(status) { result.code = status == -2 ? RC_WMORE : RC_FAIL; return result; }
+    }
+    if(specs->extensible >= 2 && SET__uper_extension_defaults(td, st)) {
+        result.code = RC_FAIL;
+        return result;
+    }
+    return SET__uper_resolve_pending(codec, td, st, pending);
+}
+
+/*
  * Purpose: decode a SET in UPER canonical root order and addition order.
  * Source: SET UPER codec adapted from vlm/asn1c PR #543.
  * Version: 2026-10-30. Author: asn1c maintainers.
@@ -501,50 +766,18 @@ SET_decode_uper(const asn_codec_ctx_t *opt_codec_ctx,
                 const asn_TYPE_descriptor_t *td,
                 const asn_per_constraints_t *constraints, void **sptr,
                 asn_per_data_t *pd) {
-    const asn_SET_specifics_t *specs = td ? (const asn_SET_specifics_t *)td->specifics : 0;
-	void *st = sptr ? *sptr : 0;	/* Target structure. */
-	uint8_t *opres;		/* Presence of optional root members */
-	asn_per_data_t opmd;
-	asn_dec_rval_t rv;
-	unsigned *corder;	/* Canonical tag order of the members */
-    unsigned root_count;
-    int extpresent = 0;
+    const asn_SET_specifics_t *specs = td ? td->specifics : 0;
+    asn_dec_rval_t result = {RC_FAIL, 0};
+    ANY_t **pending;
     (void)constraints;
-    if(ASN__STACK_OVERFLOW_CHECK(opt_codec_ctx)) ASN__DECODE_FAILED;
-    if(!sptr || !pd || SET__uper_layout(td, specs)) ASN__DECODE_FAILED;
-    if(SET__uper_target(td, specs, sptr)) ASN__DECODE_FAILED;
-    st = *sptr;
-    root_count = specs->extensible >= 2 ? specs->root_count : td->elements_count;
-    if(specs->extensible >= 2) {
-        extpresent = per_get_few_bits(pd, 1);
-        if(extpresent < 0) ASN__DECODE_STARVED;
-    }
-    if(SET__uper_order_alloc(td, specs, &corder)) ASN__DECODE_FAILED;
-    {
-        int result = SET__uper_root_map(td, corder, root_count, pd, &opmd, &opres);
-        if(result) {
-            FREEMEM(corder);
-            if(result == -2) ASN__DECODE_STARVED;
-            ASN__DECODE_FAILED;
-        }
-    }
-
-    rv = SET__uper_root_get(opt_codec_ctx, td, st, corder, root_count, &opmd, pd);
-
-	FREEMEM(opres);
-	FREEMEM(corder);
-    if(rv.code != RC_OK) return rv;
-
-    if(extpresent) {
-        int result = SET__uper_extensions(td, st, opt_codec_ctx, pd, 0);
-        if(result == -2) ASN__DECODE_STARVED;
-        if(result) ASN__DECODE_FAILED;
-    }
-    if(specs->extensible >= 2 && SET__uper_extension_defaults(td, st)) ASN__DECODE_FAILED;
-
-	rv.consumed = 0;
-	rv.code = RC_OK;
-	return rv;
+    if(ASN__STACK_OVERFLOW_CHECK(opt_codec_ctx)) return result;
+    if(!sptr || !pd || SET__uper_layout(td, specs) || SET__uper_open_preflight(td)) return result;
+    if(SET__uper_target(td, specs, sptr)) return result;
+    pending = CALLOC(td->elements_count ? td->elements_count : 1, sizeof(*pending));
+    if(!pending) return result;
+    result = SET__uper_decode_values(opt_codec_ctx, td, *sptr, pd, pending);
+    SET__uper_free_pending(pending, td->elements_count);
+    return result;
 }
 
 /*
@@ -569,7 +802,7 @@ SET_encode_uper(const asn_TYPE_descriptor_t *td,
 
 	(void)constraints;
 
-	if(!sptr || !po || SET__uper_layout(td, specs))
+	if(!sptr || !po || SET__uper_layout(td, specs) || SET__uper_open_preflight(td))
 		ASN__ENCODE_FAILED;
 
 	er.encoded = 0;
@@ -597,7 +830,7 @@ SET_encode_uper(const asn_TYPE_descriptor_t *td,
     if(er.encoded == -1) { FREEMEM(corder); return er; }
 
 	FREEMEM(corder);
-    if(extpresent && SET__uper_extensions(td, (void *)sptr, 0, 0, po)) ASN__ENCODE_FAILED;
+    if(extpresent && SET__uper_extensions(td, (void *)sptr, 0, 0, po, 0)) ASN__ENCODE_FAILED;
 
 	ASN__ENCODED_OK(er);
 }

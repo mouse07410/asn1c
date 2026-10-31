@@ -56,6 +56,10 @@ EXTRA_DIST = $(srcdir)/OpenSelected.asn1 \
     $(srcdir)/c_any_additional.c \
     $(srcdir)/containing_conformance.rs \
     $(srcdir)/c_containing.c \
+    $(srcdir)/open_selected_wide.rs \
+    $(srcdir)/c_open_selected_wide.c \
+    $(srcdir)/open_selected_extra.rs \
+    $(srcdir)/c_open_selected_extra.c \
     $(srcdir)/open_selected.rs \
     $(srcdir)/c_open_selected.c \
     $(srcdir)/any_conformance.rs \

@@ -68,7 +68,7 @@ typedef struct rust_open_plan_s {
 } rust_open_plan_t;
 
 static int rust_open_module_plan(asn1p_module_t *, rust_open_plan_t *);
-static int rust_write_open_module(FILE *, const rust_open_plan_t *);
+static int rust_write_open_module(FILE *, const rust_open_plan_t *, uint64_t);
 static char *rust_identifier(const char *, int);
 static char *rust_enum_variant(const char *);
 static int rust_check_tree(asn1p_t *, uint64_t);
@@ -325,9 +325,22 @@ rust_check_module_types(asn1p_module_t *module, int *emitted, uint64_t codecs) {
     {
         rust_open_plan_t open_plan;
         if(!rust_open_module_plan(module, &open_plan)) {
-            if(codecs != RUST_CODEC_UPER) {
-                rust_diagnostic(module, open_plan.sequence, "selected OPEN TYPE requires UPER only");
+            size_t i;
+            if(!codecs || (codecs & ~(RUST_CODEC_UPER | RUST_CODEC_APER | RUST_CODEC_OER))) {
+                rust_diagnostic(module, open_plan.sequence, "selected OPEN TYPE needs UPER, APER, or OER");
                 return -1;
+            }
+            if(codecs & RUST_CODEC_APER) {
+                if(open_plan.lower != 0 || open_plan.upper != 255) {
+                    rust_diagnostic(module, open_plan.sequence, "APER selected OPEN TYPE needs selector 0..255");
+                    return -1;
+                }
+                for(i = 0; i < open_plan.rows; i++) {
+                    if((uint64_t)open_plan.row[i].upper - (uint64_t)open_plan.row[i].lower > 255) {
+                        rust_diagnostic(module, open_plan.sequence, "APER selected INTEGER range exceeds 255");
+                        return -1;
+                    }
+                }
             }
             (*emitted)++;
             return 0;
@@ -2007,7 +2020,7 @@ rust_write_module(FILE *stream, asn1p_module_t *module, uint64_t codecs) {
         return -1;
     {
         rust_open_plan_t open_plan;
-        if(!rust_open_module_plan(module, &open_plan)) return rust_write_open_module(stream, &open_plan);
+        if(!rust_open_module_plan(module, &open_plan)) return rust_write_open_module(stream, &open_plan, codecs);
     }
     TQ_FOR(expr, &module->members, next) {
         if(rust_write_type(stream, module, expr, codecs)) return -1;
@@ -2048,20 +2061,20 @@ rust_open_write_declarations(FILE *stream, const rust_open_plan_t *plan,
  */
 static int
 rust_open_write_encode(FILE *stream, const rust_open_plan_t *plan, const char *choice,
-                       const char *selector, const char *member) {
+                       const char *selector, const char *member, const char *codec) {
     char low[64], high[64];
     size_t i;
     if(rust_format_bound(low, sizeof(low), plan->lower)
        || rust_format_bound(high, sizeof(high), plan->upper)) return -1;
-    if(rust_write_method_doc(stream, "Encode the selected OPEN TYPE with UPER.",
-        "`self` supplies selector and value; `limits` bounds resources.", "Returns the UPER encoding.",
+    if(rust_write_method_doc(stream, "Encode the selected OPEN TYPE with packed encoding rules.",
+        "`self` supplies selector and value; `limits` bounds resources.", "Returns the packed encoding.",
         "Returns an error for a selector mismatch, invalid value, or limits.",
-        "`value.encode_uper(&Default::default())?;")) return -1;
-    if(fprintf(stream, "    pub fn encode_uper(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "`let limits = Default::default();")) return -1;
+    if(fprintf(stream, "    pub fn encode_%s(&self, limits: &::asn1c_runtime::Limits) ->\n"
         "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
         "        let mut writer = ::asn1c_runtime::UperWriter::new(limits)?;\n"
         "        writer.write_integer(self.%s, %s, %s)?;\n"
-        "        match (self.%s, &self.%s) {\n", selector, low, high, selector, member) < 0) return -1;
+        "        match (self.%s, &self.%s) {\n", codec, selector, low, high, selector, member) < 0) return -1;
     for(i = 0; i < plan->rows; i++) {
         if(rust_format_bound(low, sizeof(low), plan->row[i].lower)
            || rust_format_bound(high, sizeof(high), plan->row[i].upper)) return -1;
@@ -2083,20 +2096,20 @@ rust_open_write_encode(FILE *stream, const rust_open_plan_t *plan, const char *c
  */
 static int
 rust_open_write_decode(FILE *stream, const rust_open_plan_t *plan, const char *choice,
-                       const char *selector, const char *member) {
+                       const char *selector, const char *member, const char *codec) {
     char low[64], high[64];
     size_t i;
-    if(rust_write_method_doc(stream, "Decode the selected OPEN TYPE with UPER.",
+    if(rust_write_method_doc(stream, "Decode the selected OPEN TYPE with packed encoding rules.",
         "`input` supplies the prefix; `limits` bounds resources.", "Returns the record and prefix consumption.",
         "Returns an error for an unknown selector, invalid envelope, or limits.",
-        "`Type::decode_uper(input, &Default::default())?;")) return -1;
+        "`let limits = Default::default();")) return -1;
     if(rust_format_bound(low, sizeof(low), plan->lower)
        || rust_format_bound(high, sizeof(high), plan->upper)) return -1;
-    if(fprintf(stream, "    pub fn decode_uper(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+    if(fprintf(stream, "    pub fn decode_%s(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
         "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
         "        let mut reader = ::asn1c_runtime::UperReader::new(input, limits)?;\n"
-        "        let selector = reader.read_integer(%s, %s)?;\n"
-        "        let __asn1c_value = match selector {\n", low, high) < 0) return -1;
+        "        let __asn1c_selector = reader.read_integer(%s, %s)?;\n"
+        "        let __asn1c_value = match __asn1c_selector {\n", codec, low, high) < 0) return -1;
     for(i = 0; i < plan->rows; i++) {
         if(rust_format_bound(low, sizeof(low), plan->row[i].lower)
            || rust_format_bound(high, sizeof(high), plan->row[i].upper)) return -1;
@@ -2108,9 +2121,83 @@ rust_open_write_decode(FILE *stream, const rust_open_plan_t *plan, const char *c
     return fprintf(stream, "            _ => return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
         "                reason: \"unknown OPEN TYPE selector\",\n"
         "            }),\n        };\n        let consumed = reader.finish()?;\n"
-        "        Ok(::asn1c_runtime::Decoded { value: Self { %s: selector, %s: __asn1c_value },\n"
+        "        Ok(::asn1c_runtime::Decoded { value: Self { %s: __asn1c_selector, %s: __asn1c_value },\n"
         "            consumed_bits: consumed.consumed_bits, consumed_bytes: consumed.consumed_bytes })\n"
-        "    }\n}\n", selector, member) < 0 ? -1 : 0;
+        "    }\n", selector, member) < 0 ? -1 : 0;
+}
+
+/* Emit selected OER encoding with one cumulative operation budget.
+ * Inputs: stream receives Rust; plan and names describe the validated record.
+ * Returns zero or -1; no exceptions. Source: X.696 open-type encoding.
+ * Version: 2026-10-30. Responsible: asn1c maintainers. History: OER selection.
+ * Example: emit a bounded selected BOOLEAN row.
+ */
+static int
+rust_open_write_oer_encode(FILE *stream, const rust_open_plan_t *plan, const char *choice,
+                           const char *selector, const char *member) {
+    char low[64], high[64], idlow[64], idhigh[64];
+    size_t i;
+    if(rust_format_bound(idlow, sizeof(idlow), plan->lower)
+       || rust_format_bound(idhigh, sizeof(idhigh), plan->upper)) return -1;
+    if(rust_write_method_doc(stream, "Encode the selected OPEN TYPE with OER.",
+        "`self` supplies selector and value; `limits` bounds resources.", "Returns the OER encoding.",
+        "Returns an error for a selector mismatch, invalid value, or limits.",
+        "`value.encode_oer(&Default::default())?;")) return -1;
+    if(fprintf(stream, "    pub fn encode_oer(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+        "        match (self.%s, &self.%s) {\n", selector, member) < 0) return -1;
+    for(i = 0; i < plan->rows; i++) {
+        if(rust_format_bound(low, sizeof(low), plan->row[i].lower)
+           || rust_format_bound(high, sizeof(high), plan->row[i].upper)) return -1;
+        if(fprintf(stream, "            (%" PRId64 ", %s::Row%zu(value)) =>\n"
+            "                ::asn1c_runtime::oer::encode_open_record_oer(\n"
+            "                    self.%s, (%s, %s), %s, (%s, %s), %s, limits),\n",
+            plan->row[i].key, choice, i + 1, selector, idlow, idhigh,
+            plan->row[i].boolean ? "i64::from(*value)" : "*value", low, high,
+            plan->row[i].boolean ? "true" : "false") < 0) return -1;
+    }
+    return fputs("            _ => Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+        "                reason: \"OPEN TYPE selector and value do not match\",\n"
+        "            }),\n        }\n    }\n", stream) == EOF ? -1 : 0;
+}
+
+/* Emit selected OER decoding and exact inner-envelope validation.
+ * Inputs: stream receives Rust; plan and names describe the validated record.
+ * Returns zero or -1; no exceptions. Source: X.696 open-type decoding.
+ * Version: 2026-10-30. Responsible: asn1c maintainers. History: OER selection.
+ * Example: decode a selected bounded INTEGER row.
+ */
+static int
+rust_open_write_oer_decode(FILE *stream, const rust_open_plan_t *plan, const char *choice,
+                           const char *selector, const char *member) {
+    char low[64], high[64];
+    size_t i;
+    if(rust_write_method_doc(stream, "Decode the selected OPEN TYPE with OER.",
+        "`input` supplies the prefix; `limits` bounds resources.", "Returns the record and consumption.",
+        "Returns an error for an unknown selector, invalid envelope, or limits.",
+        "`Type::decode_oer(input, &Default::default())?;")) return -1;
+    if(rust_format_bound(low, sizeof(low), plan->lower)
+       || rust_format_bound(high, sizeof(high), plan->upper)) return -1;
+    if(fprintf(stream, "    pub fn decode_oer(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+        "        let __asn1c_id = ::asn1c_runtime::oer::decode_integer_oer(input, %s, %s, limits)?;\n"
+        "        let (__asn1c_value, __asn1c_decoded) = match __asn1c_id.value {\n", low, high) < 0) return -1;
+    for(i = 0; i < plan->rows; i++) {
+        if(rust_format_bound(low, sizeof(low), plan->row[i].lower)
+           || rust_format_bound(high, sizeof(high), plan->row[i].upper)) return -1;
+        if(fprintf(stream, "            %" PRId64 " => {\n"
+            "                let decoded = ::asn1c_runtime::oer::decode_open_payload_oer(\n"
+            "                    input, __asn1c_id.consumed_bytes, (%s, %s), %s, limits)?;\n"
+            "                (%s::Row%zu(decoded.value%s), decoded)\n            },\n",
+            plan->row[i].key, low, high, plan->row[i].boolean ? "true" : "false", choice, i + 1,
+            plan->row[i].boolean ? " != 0" : "") < 0) return -1;
+    }
+    return fprintf(stream, "            _ => return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+        "                reason: \"unknown OPEN TYPE selector\",\n"
+        "            }),\n        };\n"
+        "        Ok(::asn1c_runtime::Decoded { value: Self { %s: __asn1c_id.value, %s: __asn1c_value },\n"
+        "            consumed_bits: __asn1c_decoded.consumed_bits,\n"
+        "            consumed_bytes: __asn1c_decoded.consumed_bytes })\n    }\n", selector, member) < 0 ? -1 : 0;
 }
 
 /* Emit a selector-driven UPER record from a validated IOC plan.
@@ -2120,16 +2207,24 @@ rust_open_write_decode(FILE *stream, const rust_open_plan_t *plan, const char *c
  * History: narrow selected OPEN TYPE. Example: emit a two-row record.
  */
 static int
-rust_write_open_module(FILE *stream, const rust_open_plan_t *plan) {
+rust_write_open_module(FILE *stream, const rust_open_plan_t *plan, uint64_t codecs) {
     char *record = rust_identifier(plan->sequence->Identifier, 0);
     char *selector = rust_identifier(plan->selector->Identifier, 1);
     char *member = rust_identifier(plan->member->Identifier, 1);
     char *choice = rust_nested_type_name(record, plan->member);
     int ret = -1;
     if(!record || !selector || !member || !choice || !strcmp(selector, member)) goto done;
-    if(rust_open_write_declarations(stream, plan, record, choice, selector, member)
-       || rust_open_write_encode(stream, plan, choice, selector, member)
-       || rust_open_write_decode(stream, plan, choice, selector, member)) goto done;
+    if(rust_open_write_declarations(stream, plan, record, choice, selector, member)) goto done;
+    if((codecs & RUST_CODEC_UPER)
+       && (rust_open_write_encode(stream, plan, choice, selector, member, "uper")
+           || rust_open_write_decode(stream, plan, choice, selector, member, "uper"))) goto done;
+    if((codecs & RUST_CODEC_APER)
+       && (rust_open_write_encode(stream, plan, choice, selector, member, "aper")
+           || rust_open_write_decode(stream, plan, choice, selector, member, "aper"))) goto done;
+    if((codecs & RUST_CODEC_OER)
+       && (rust_open_write_oer_encode(stream, plan, choice, selector, member)
+           || rust_open_write_oer_decode(stream, plan, choice, selector, member))) goto done;
+    if(fputs("}\n", stream) == EOF) goto done;
     ret = 0;
 done:
     free(record); free(selector); free(member); free(choice);

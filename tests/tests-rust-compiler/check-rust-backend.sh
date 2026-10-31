@@ -197,13 +197,52 @@ if "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$test_tmp/rejected-open-e
     exit 1
 fi
 test ! -e "$test_tmp/rejected-open-extensible"
-if "$asn1c_bin" --rust -gen-APER -no-gen-UPER -no-gen-CER -S "$skeletons" \
-    -D "$test_tmp/rejected-open-aper" "$test_srcdir/OpenSelected.asn1" \
-    >"$test_tmp/open-aper.log" 2>&1; then
-    echo "FAIL: Rust backend accepted APER selected OPEN TYPE" >&2
-    exit 1
-fi
-test ! -e "$test_tmp/rejected-open-aper"
+# APER/OER selected primitives have independently checked C wire vectors.
+"$asn1c_bin" --rust -gen-APER -gen-OER -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/open-selected-extra-rust" "$test_srcdir/OpenSelected.asn1"
+mkdir -p "$test_tmp/open-selected-extra-rust/tests" "$test_tmp/open-selected-extra-c"
+cp "$test_srcdir/open_selected_extra.rs" "$test_tmp/open-selected-extra-rust/tests/"
+cargo test --offline --manifest-path "$test_tmp/open-selected-extra-rust/Cargo.toml"
+cargo clippy --offline --manifest-path "$test_tmp/open-selected-extra-rust/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings
+"$asn1c_bin" -gen-APER -gen-OER -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/open-selected-extra-c" "$test_srcdir/OpenSelected.asn1"
+rm -f "$test_tmp/open-selected-extra-c/converter-example.c" "$test_tmp/open-selected-extra-c/pdu_collection.c"
+cc -I"$test_tmp/open-selected-extra-c" "$test_tmp/open-selected-extra-c"/*.c \
+    "$test_srcdir/c_open_selected_extra.c" -lm -o "$test_tmp/c-open-selected-extra"
+"$test_tmp/c-open-selected-extra"
+
+# OER also supports multi-octet selector and selected INTEGER widths.
+sed -e 's/INTEGER (0..255) UNIQUE/INTEGER (0..65535) UNIQUE/' \
+    -e 's/INTEGER (0..2)/INTEGER (0..256)/' "$test_srcdir/OpenSelected.asn1" \
+    >"$test_tmp/OpenOerWide.asn1"
+"$asn1c_bin" --rust -gen-OER -no-gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/open-wide-rust" "$test_tmp/OpenOerWide.asn1"
+mkdir -p "$test_tmp/open-wide-rust/tests" "$test_tmp/open-wide-c"
+cp "$test_srcdir/open_selected_wide.rs" "$test_tmp/open-wide-rust/tests/"
+cargo test --offline --manifest-path "$test_tmp/open-wide-rust/Cargo.toml"
+cargo clippy --offline --manifest-path "$test_tmp/open-wide-rust/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings
+"$asn1c_bin" -gen-OER -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/open-wide-c" "$test_tmp/OpenOerWide.asn1"
+rm -f "$test_tmp/open-wide-c/converter-example.c" "$test_tmp/open-wide-c/pdu_collection.c"
+cc -I"$test_tmp/open-wide-c" "$test_tmp/open-wide-c"/*.c "$test_srcdir/c_open_selected_wide.c" \
+    -lm -o "$test_tmp/c-open-selected-wide"
+"$test_tmp/c-open-selected-wide"
+
+# APER rejects bounds outside the proven aligned primitive subset.
+sed 's/INTEGER (0..255) UNIQUE/INTEGER (0..256) UNIQUE/' "$test_srcdir/OpenSelected.asn1" \
+    >"$test_tmp/OpenAperWideSelector.asn1"
+sed 's/INTEGER (0..2)/INTEGER (0..256)/' "$test_srcdir/OpenSelected.asn1" \
+    >"$test_tmp/OpenAperWideValue.asn1"
+for fixture in OpenAperWideSelector OpenAperWideValue; do
+    if "$asn1c_bin" --rust -gen-APER -no-gen-UPER -no-gen-CER -S "$skeletons" \
+        -D "$test_tmp/rejected-$fixture" "$test_tmp/$fixture.asn1" >"$test_tmp/$fixture.log" 2>&1; then
+        echo "FAIL: Rust backend accepted unsupported $fixture" >&2
+        exit 1
+    fi
+    test ! -e "$test_tmp/rejected-$fixture"
+done
 
 # Reject unsupported relation shapes and selected types before publication.
 sed 's/value CLASS1.\&Type({SET1}{@id})/value CLASS1.\&Type({SET1}{@id}) OPTIONAL/' \

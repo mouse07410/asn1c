@@ -7,6 +7,8 @@
  */
 #include <asn_internal.h>
 #include <constr_SET.h>
+#include <constr_CHOICE.h>
+#include <OPEN_TYPE.h>
 #include <cbor_encoder.h>
 #include <cbor_decoder.h>
 #include <cbor_support.h>
@@ -55,6 +57,64 @@ SET_cbor_has_extension_groups(const asn_TYPE_descriptor_t *td) {
 }
 
 /*
+ * Purpose: validate a selected CHOICE arm's layout before accessing it.
+ * Source: generated CHOICE specifics and runtime type widths. Version: 2026-10-30.
+ * Inputs: specs/variant describe storage and selected identifies its type.
+ * Returns: zero for valid storage or -1. Errors: malformed layouts fail.
+ * Author: asn1c maintainers. History: added bounds checks for open values.
+ * Example: a pointer arm must fit fully inside the CHOICE wrapper.
+ */
+static int
+SET_cbor_choice_valid(const asn_CHOICE_specifics_t *specs, const asn_TYPE_member_t *variant,
+                      asn_type_selector_result_t selected) {
+    size_t selected_size = 0, slot_size;
+    int size_status = SET_inline_value_size(selected.type_descriptor, &selected_size);
+    if(size_status && (!(variant->flags & ATF_POINTER) || size_status != -2)) return -1;
+    slot_size = (variant->flags & ATF_POINTER) ? sizeof(void *) : selected_size;
+    if(variant->type != selected.type_descriptor || !specs->struct_size
+       || (specs->pres_size != sizeof(char) && specs->pres_size != sizeof(short)
+           && specs->pres_size != sizeof(int))
+       || specs->pres_offset > specs->struct_size
+       || specs->pres_size > specs->struct_size - specs->pres_offset
+       || variant->memb_offset > specs->struct_size
+       || slot_size > specs->struct_size - variant->memb_offset) return -1;
+    return 0;
+}
+
+/*
+ * Purpose: validate an IOC selector and its generated CHOICE wrapper.
+ * Source: OPEN_TYPE_cbor_get and generated CHOICE metadata. Version: 2026-10-30.
+ * Inputs: td/st describe the parent, member its open field, encoding selects
+ * encoder validation. Returns: zero for a supported selection, else -1.
+ * Errors: missing selectors, inconsistent arms, or malformed layouts fail.
+ * Author: asn1c maintainers. History: added for direct SET open members.
+ * Example: an unknown table selector is rejected before child dispatch.
+ */
+static int
+SET_cbor_open_valid(const asn_TYPE_descriptor_t *td, const void *st,
+                    const asn_TYPE_member_t *member, int encoding) {
+    asn_type_selector_result_t selected;
+    const asn_TYPE_member_t *variant;
+    const void *value;
+    if(!member->type_selector || !member->type->specifics || !member->type->elements
+       || !member->type->elements_count) return -1;
+    selected = member->type_selector(td, st);
+    if(!selected.presence_index || selected.presence_index > member->type->elements_count
+       || !selected.type_descriptor || !selected.type_descriptor->op) return -1;
+    if(encoding ? !selected.type_descriptor->op->cbor_encoder : !selected.type_descriptor->op->cbor_decoder)
+        return -1;
+    variant = &member->type->elements[selected.presence_index - 1];
+    if(SET_cbor_choice_valid(member->type->specifics, variant, selected)) return -1;
+    if(!encoding) return 0;
+    value = (const char *)st + member->memb_offset;
+    if(member->flags & ATF_POINTER) value = *(const void *const *)value;
+    if(!value || CHOICE_variant_get_presence(member->type, value) != selected.presence_index) return -1;
+    if((variant->flags & ATF_POINTER)
+       && !*(const void *const *)((const char *)value + variant->memb_offset)) return -1;
+    return 0;
+}
+
+/*
  * Purpose: Encode a SET value as a CBOR map keyed by member names.
  * Source: This SET CBOR runtime skeleton.
  * Version: 1.0, 2026-10-30.
@@ -81,7 +141,8 @@ SET_encode_cbor(const asn_TYPE_descriptor_t *td, const void *sptr,
         asn_SET_member_view_t view;
         if(SET_member_view(td, sptr, (unsigned)edx, ASN_SET_DIRECT_MEMBER, &view)
            || (view.present && ((view.member->flags & ATF_OPEN_TYPE)
-                                || !view.member->type->op->cbor_encoder))) ASN__ENCODE_FAILED;
+                                ? SET_cbor_open_valid(td, sptr, view.member, 1)
+                                : !view.member->type->op->cbor_encoder))) ASN__ENCODE_FAILED;
     }
 
     /* Count present members */
@@ -122,8 +183,10 @@ SET_encode_cbor(const asn_TYPE_descriptor_t *td, const void *sptr,
         if(ret < 0) ASN__ENCODE_FAILED;
         er.encoded += ret;
 
-        if(!elm->type->op->cbor_encoder) ASN__ENCODE_FAILED;
-        tmper = elm->type->op->cbor_encoder(elm->type, memb_ptr, cb, app_key);
+        if(elm->flags & ATF_OPEN_TYPE)
+            tmper = OPEN_TYPE_cbor_put(td, sptr, elm, cb, app_key);
+        else
+            tmper = elm->type->op->cbor_encoder(elm->type, memb_ptr, cb, app_key);
         if(tmper.encoded < 0) return tmper;
         er.encoded += tmper.encoded;
     }
@@ -164,7 +227,8 @@ SET_cbor_key_compare(const void *left, const void *right) {
  */
 static ssize_t
 SET_cbor_decode_member(const asn_codec_ctx_t *codec, const asn_TYPE_descriptor_t *td, void *st,
-                       uint8_t *seen, const char *key, size_t key_len, const uint8_t *buf, size_t size) {
+                       uint8_t *seen, SET_cbor_key_t *pending, const char *key, size_t key_len,
+                       const uint8_t *buf, size_t size) {
     size_t edx;
     for(edx = 0; edx < td->elements_count; edx++) {
         const asn_TYPE_member_t *elm = &td->elements[edx];
@@ -174,7 +238,15 @@ SET_cbor_decode_member(const asn_codec_ctx_t *codec, const asn_TYPE_descriptor_t
         asn_dec_rval_t result;
         if(strlen(elm->name) != key_len || memcmp(elm->name, key, key_len)) continue;
         if(seen[edx] || SET_member_view(td, st, (unsigned)edx, ASN_SET_DIRECT_MEMBER, &view)) return -1;
-        if((elm->flags & ATF_OPEN_TYPE) || !elm->type->op->cbor_decoder) return -1;
+        if(elm->flags & ATF_OPEN_TYPE) {
+            ssize_t length = cbor_skip_item_with_ctx(codec, buf, size);
+            if(length <= 0 || (size_t)length > size) return -1;
+            pending[edx].data = buf;
+            pending[edx].size = (size_t)length;
+            seen[edx] = 1;
+            return length;
+        }
+        if(!elm->type->op->cbor_decoder) return -1;
         if(elm->flags & ATF_POINTER) slot = (void **)((char *)st + elm->memb_offset);
         else { member = (char *)st + elm->memb_offset; slot = &member; }
         result = elm->type->op->cbor_decoder(codec, elm->type, slot, buf, size);
@@ -211,6 +283,32 @@ SET_cbor_validate_members(const asn_TYPE_descriptor_t *td, const uint8_t *seen,
 }
 
 /*
+ * Purpose: decode saved open members after all selector fields are available.
+ * Source: OPEN_TYPE_cbor_get and SET presence metadata. Version: 2026-10-30.
+ * Inputs: codec/td/st describe the parent; pending stores bounded value slices.
+ * Returns: zero on success, -1 on invalid selector or malformed child.
+ * Errors: malformed values and incomplete child consumption fail.
+ * Author: asn1c maintainers. History: added selector-independent map decoding.
+ * Example: a value preceding its selector decodes after the selector is read.
+ */
+static int
+SET_cbor_decode_open(const asn_codec_ctx_t *codec, const asn_TYPE_descriptor_t *td,
+                     void *st, const SET_cbor_key_t *pending) {
+    const asn_SET_specifics_t *specs = td->specifics;
+    size_t i;
+    for(i = 0; i < td->elements_count; i++) {
+        asn_dec_rval_t result;
+        const asn_TYPE_member_t *member = &td->elements[i];
+        if(!pending[i].data) continue;
+        if(SET_cbor_open_valid(td, st, member, 0)) return -1;
+        result = OPEN_TYPE_cbor_get(codec, td, st, member, pending[i].data, pending[i].size);
+        if(result.code != RC_OK || result.consumed != pending[i].size) return -1;
+        ASN_SET_MKPRESENT((char *)st + specs->pres_offset, i);
+    }
+    return 0;
+}
+
+/*
  * Purpose: decode a CBOR map into a SET with unique keys and required members.
  * Source: SET metadata and CBOR map framing. Version: 2026-10-30.
  * Inputs: codec controls limits, td describes SET, sptr receives the value,
@@ -224,7 +322,7 @@ SET_decode_cbor(const asn_codec_ctx_t *codec, const asn_TYPE_descriptor_t *td,
                 void **sptr, const void *buf_ptr, size_t size) {
     const asn_SET_specifics_t *specs;
     const uint8_t *buf = buf_ptr;
-    SET_cbor_key_t *keys = 0;
+    SET_cbor_key_t *keys = 0, *pending = 0;
     uint8_t *seen = 0, major;
     uint64_t map_count, i;
     size_t consumed = 0, edx;
@@ -256,6 +354,7 @@ SET_decode_cbor(const asn_codec_ctx_t *codec, const asn_TYPE_descriptor_t *td,
     if(map_count > (size - consumed) / 2 || map_count > SIZE_MAX / sizeof(*keys)) return rval;
     if(map_count && !(keys = CALLOC((size_t)map_count, sizeof(*keys)))) return rval;
     if(td->elements_count && !(seen = CALLOC(td->elements_count, 1))) goto done;
+    if(td->elements_count && !(pending = CALLOC(td->elements_count, sizeof(*pending)))) goto done;
     for(i = 0; i < map_count; i++) {
         uint64_t key_len;
         used = cbor_decode_head(buf + consumed, size - consumed, &major, &key_len);
@@ -265,15 +364,17 @@ SET_decode_cbor(const asn_codec_ctx_t *codec, const asn_TYPE_descriptor_t *td,
         keys[i].data = buf + consumed;
         keys[i].size = (size_t)key_len;
         consumed += (size_t)key_len;
-        used = SET_cbor_decode_member(codec, td, st, seen, (const char *)keys[i].data,
+        used = SET_cbor_decode_member(codec, td, st, seen, pending, (const char *)keys[i].data,
                                       keys[i].size, buf + consumed, size - consumed);
         if(used < 0 || (size_t)used > size - consumed) goto done;
         consumed += (size_t)used;
     }
-    if(SET_cbor_validate_members(td, seen, keys, (size_t)map_count)) goto done;
+    if(SET_cbor_validate_members(td, seen, keys, (size_t)map_count)
+       || SET_cbor_decode_open(codec, td, st, pending)) goto done;
     rval.code = RC_OK;
     rval.consumed = consumed;
 done:
+    FREEMEM(pending);
     FREEMEM(seen);
     FREEMEM(keys);
     return rval;

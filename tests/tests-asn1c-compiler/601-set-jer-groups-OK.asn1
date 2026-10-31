@@ -1,4 +1,4 @@
-SetJerGroups DEFINITIONS IMPLICIT TAGS ::= BEGIN
+SetJerGroups DEFINITIONS AUTOMATIC TAGS ::= BEGIN
 
 JerGroupSet ::= SET {
     root [0] INTEGER (0..255),
@@ -17,5 +17,18 @@ JerRecursive ::= SET {
 JerPlainSet ::= SET { root [0] INTEGER (0..255), flag [1] BOOLEAN OPTIONAL }
 
 JerAllOptional ::= SET { flag [0] BOOLEAN OPTIONAL }
+
+Id ::= INTEGER
+P ::= CLASS { &id Id UNIQUE, &Type } WITH SYNTAX { ID &id TYPE &Type }
+Payload ::= SEQUENCE { text OCTET STRING, number INTEGER }
+Objs P ::= { { ID 1 TYPE Payload } | { ID 2 TYPE BOOLEAN } }
+SetOpen ::= SET {
+    id P.&id({Objs}),
+    value P.&Type({Objs}{@id}) OPTIONAL
+}
+SeqOpen ::= SEQUENCE {
+    id P.&id({Objs}),
+    value P.&Type({Objs}{@id}) OPTIONAL
+}
 
 END

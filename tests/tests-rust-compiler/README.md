@@ -124,8 +124,9 @@ Generated wrappers hold the typed inner value. Decoding validates the outer
 length, inner range and OCTET STRING padding with a single operation budget.
 SIZE combinations, singleton integers, constructed contents, and other
 encodings are rejected before output publication.
-A narrow UPER information-object OPEN TYPE subset supports a two-field
+A narrow UPER, APER, and OER information-object OPEN TYPE subset supports a two-field
 required SEQUENCE with a bounded INTEGER selector and a local nonextensible
 object set of direct BOOLEAN or bounded INTEGER rows. The generated enum is
 checked against its selector, and malformed inner lengths, values and padding
-are rejected. Other object-set and codec forms are rejected.
+are rejected. APER requires selector bounds 0..255 and selected INTEGER range
+spans at most 255. Other object-set and codec forms are rejected.

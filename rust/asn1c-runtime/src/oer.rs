@@ -359,6 +359,110 @@ pub fn decode_any_oer(input: &[u8], limits: &Limits) -> Result<Decoded<Vec<u8>>,
     })
 }
 
+/// Encode a selected primitive and selector in a complete OER record.
+///
+/// # Parameters and returns
+/// `selector` and `selector_bounds` describe the INTEGER selector. `value`,
+/// `value_bounds` and `boolean` describe the selected primitive. `limits`
+/// bounds the entire operation. Returns the record encoding.
+///
+/// # Errors
+/// Returns invalid values, bounds, exhausted resources, allocation or size errors.
+///
+/// # Source, version, history, and example
+/// Source: C OER SEQUENCE and OPEN TYPE codecs. Version: 2026-10-30.
+/// Responsible: asn1c maintainers. History: selected primitive OPEN TYPE.
+/// Example: `encode_open_record_oer(1, (0, 255), 1, (0, 1), true, limits)?`.
+pub fn encode_open_record_oer(
+    selector: i64,
+    selector_bounds: (i64, i64),
+    value: i64,
+    value_bounds: (i64, i64),
+    boolean: bool,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    let id = encode_integer_oer(selector, selector_bounds.0, selector_bounds.1, limits)?;
+    let inner = if boolean {
+        validate_integer(value, 0, 1)?;
+        encode_boolean_oer(value != 0, limits)?
+    } else {
+        encode_integer_oer(value, value_bounds.0, value_bounds.1, limits)?
+    };
+    let envelope = encode_any_oer(&inner.bytes, limits)?;
+    let length = id
+        .bytes
+        .len()
+        .checked_add(envelope.bytes.len())
+        .ok_or(Error::SizeOverflow)?;
+    let bits = length.checked_mul(8).ok_or(Error::SizeOverflow)?;
+    check_work_limit(
+        bits.checked_add(inner.bit_len).ok_or(Error::SizeOverflow)?,
+        limits,
+    )?;
+    let mut bytes = allocate_zeroed(length, limits)?;
+    bytes[..id.bytes.len()].copy_from_slice(&id.bytes);
+    bytes[id.bytes.len()..].copy_from_slice(&envelope.bytes);
+    Ok(Encoded {
+        bytes,
+        bit_len: bits,
+    })
+}
+
+/// Decode one selected primitive OER envelope after a decoded selector.
+///
+/// # Parameters and returns
+/// `input` is the complete record prefix; `offset` is the selector byte width;
+/// `bounds` and `boolean` describe the selected primitive. `limits` bounds
+/// input, output, and cumulative work. Returns value and full-prefix lengths.
+///
+/// # Errors
+/// Returns malformed, truncated, invalid-value, resource or allocation errors.
+///
+/// # Source, version, history, and example
+/// Source: C OER SEQUENCE and OPEN TYPE codecs. Version: 2026-10-30.
+/// Responsible: asn1c maintainers. History: selected primitive OPEN TYPE.
+/// Example: `decode_open_payload_oer(input, 1, (0, 1), true, limits)?`.
+pub fn decode_open_payload_oer(
+    input: &[u8],
+    offset: usize,
+    bounds: (i64, i64),
+    boolean: bool,
+    limits: &Limits,
+) -> Result<Decoded<i64>, Error> {
+    check_input_limit(input, limits)?;
+    require_bytes(input, offset)?;
+    let envelope = decode_any_oer(&input[offset..], limits)?;
+    let inner = if boolean {
+        let decoded = decode_boolean_oer(&envelope.value, limits)?;
+        Decoded {
+            value: i64::from(decoded.value),
+            consumed_bits: decoded.consumed_bits,
+            consumed_bytes: decoded.consumed_bytes,
+        }
+    } else {
+        decode_integer_oer(&envelope.value, bounds.0, bounds.1, limits)?
+    };
+    if inner.consumed_bytes != envelope.value.len() {
+        return Err(Error::InvalidEncoding {
+            reason: "OPEN TYPE envelope has trailing octets",
+        });
+    }
+    let total = offset
+        .checked_add(envelope.consumed_bytes)
+        .ok_or(Error::SizeOverflow)?;
+    let bits = total.checked_mul(8).ok_or(Error::SizeOverflow)?;
+    check_work_limit(
+        bits.checked_add(inner.consumed_bits)
+            .ok_or(Error::SizeOverflow)?,
+        limits,
+    )?;
+    Ok(Decoded {
+        value: inner.value,
+        consumed_bits: bits,
+        consumed_bytes: total,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     //! Regression coverage for bounded OER primitive boundaries and limits.

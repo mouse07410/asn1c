@@ -1,4 +1,10 @@
 Changes since v1.5.3:
+	* Add C SET CBOR direct IOC-selected OPEN TYPE dispatch with unordered-key
+	  resolution, selected-arm storage validation, and cleanup of partial arms.
+	* Extend the bounded Rust selected OPEN TYPE slice to OER and aligned APER,
+	  with cumulative resource limits and C interoperability vectors.
+	* Added C SET UPER OPEN TYPE roots and additions with deferred selectors,
+	  nested-envelope checks, and generated SEQUENCE interoperability tests.
 	* Generate a bounded UPER IOC-selected OPEN TYPE Rust slice with typed
 	  variants, selector checks, shared resource limits and C parity tests.
 	* Added C SET JER direct OPEN TYPE support with selector-order-independent

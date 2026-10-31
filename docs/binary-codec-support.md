@@ -186,7 +186,11 @@ are available, including when a root open member precedes its selector in
 canonical wire order. APER and OER SET also support open types in extension
 additions, including selectors carried in later additions. Extension additions
 use a nested open-type envelope; OER retains the encoded value across partial
-input until its selector is available. The [generated SET IOC regression](../tests/tests-asn1c-smoke/check-SET-open-type.sh)
+input until its selector is available. UPER SET also supports direct root and
+extension-addition open values with deferred selector resolution and nested
+addition envelopes. Unknown UPER selectors fail because its selected-value
+runtime has no opaque fallback. The
+[generated SET IOC regression](../tests/tests-asn1c-smoke/check-SET-open-type.sh)
 covers open roots and additions with selectors in later canonical or extension
 order. Direct SET OPEN TYPE members also support JER with the selector before
 or after the value; duplicate keys and mismatched selectors are rejected. For
@@ -202,10 +206,11 @@ SEQUENCE subset, including inline nonextensible ENUMERATED, opaque `ANY`, and
 primitive `CONTAINING` values. Direct `ANY` supports UPER, APER, OER, and JER.
 UPER `CONTAINING` supports unconstrained BIT/OCTET STRING containing a local
 direct BOOLEAN or non-singleton bounded INTEGER, at top level or as a required
-or OPTIONAL SEQUENCE field. A narrow UPER IOC-selected `OPEN TYPE` subset
-supports one local nonextensible object set with bounded INTEGER selectors and
-primitive BOOLEAN or bounded INTEGER rows in a two-field required SEQUENCE.
-Other forms are rejected before output publication. See the
+or OPTIONAL SEQUENCE field. A narrow UPER, APER, and OER IOC-selected
+`OPEN TYPE` subset supports one local nonextensible object set with bounded
+INTEGER selectors and primitive BOOLEAN or bounded INTEGER rows in a two-field
+required SEQUENCE. APER requires selector bounds 0..255 and selected INTEGER
+range spans at most 255. Other forms are rejected before output publication. See the
 [Rust implementation boundary](rust/implementation.md#implemented-boundary).
 
 ### C SET support in OER and APER
@@ -271,9 +276,11 @@ and rejects absent mandatory pointers. CER permits an absent OPTIONAL ANY
 member in SEQUENCE or SET, producing the usual empty component encoding when
 no other members are present. A present opaque ANY remains unsupported in CER.
 SET CBOR decoding rejects missing required members and duplicate map keys,
-including duplicate unknown keys. CBOR encoding and decoding reject a present
-IOC-selected SET OPEN TYPE until the selector-aware mapping is implemented;
-an absent OPTIONAL open field is accepted.
+including duplicate unknown keys. Direct IOC-selected CBOR SET open members
+are resolved against their selector regardless of map-key order. An absent
+OPTIONAL open member is accepted; malformed selections, wrappers, and repeated
+keys fail. Open leaves inside SET extension groups remain unsupported in CBOR
+and UPER. CBOR selection from another deferred open member is unsupported.
 
 The generic binary selectors map to their implemented codec families.
 Basic/canonical OER and PER decode selectors share

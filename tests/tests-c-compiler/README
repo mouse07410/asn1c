@@ -17,5 +17,7 @@ The fixture was corrected after the issue #585 decoder hardening exposed it.
 
 check-601 exercises SET CBOR maps with required and optional members, duplicate
 known and unknown keys, truncated input, and malformed descriptors. Synthetic
-SET extension groups and present table-selected SET open values remain
-unsupported by the SET CBOR codec and are rejected.
+SET extension groups remain unsupported by the SET CBOR codec and are rejected.
+The indirect-choice 601 test covers CBOR table-selected SET open values in both
+map orders, unknown selectors, optional omission, malformed selected data, and
+generated SET/SEQUENCE cross-decoding of the same CBOR map.

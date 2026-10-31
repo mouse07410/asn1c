@@ -91,7 +91,7 @@ fresh directory after adding application code or running Cargo there.
 | XER, CBOR, and nonprimitive JER | Planned; unavailable in Rust mode |
 | SET, collections, extensible, unbounded, fragmented or disjoint strings, named-bit strings, extensible ENUMERATED, aliases, imports, top-level tagged types | Planned; rejected in this slice |
 | Encoding controls, other information-object forms, parameterized types | Planned; rejected in this slice |
-| IOC-selected OPEN TYPE | UPER only; one local nonextensible object set, bounded INTEGER selector, direct BOOLEAN or bounded INTEGER rows, and a two-field required SEQUENCE |
+| IOC-selected OPEN TYPE | UPER, APER, OER; one local nonextensible set, bounded INTEGER selector, BOOLEAN or bounded INTEGER rows, and a two-field required SEQUENCE; APER selector 0..255 and row spans <=255 |
 | Other CONTAINING and OPEN TYPE forms | Unsupported; rejected before output publication |
 | ANY in SEQUENCE outside UPER, and ANY under BER/DER, CER, XER, or CBOR | Require codec-specific opaque-value semantics; rejected before output publication |
 

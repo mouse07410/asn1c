@@ -5,9 +5,82 @@
 #include <asn_internal.h>
 #include <OPEN_TYPE.h>
 #include <constr_CHOICE.h>
+#include <constr_SEQUENCE.h>
+#include <constr_SET.h>
 #include <cbor_encoder.h>
 #include <cbor_decoder.h>
 
+/*
+ * Purpose: validate presence storage in an open CHOICE wrapper.
+ * Source: asn_CHOICE_specifics_t. Version: 2026-10-30.
+ * Inputs: specs is the wrapper layout. Returns: zero if valid or -1.
+ * Errors: malformed layouts fail. Author: asn1c maintainers.
+ * History: extracted CBOR open storage validation. Example: a missing presence field fails.
+ */
+static int
+OPEN_TYPE_cbor_choice_valid(const asn_CHOICE_specifics_t *specs) {
+    if(!specs || !specs->struct_size
+       || (specs->pres_size != sizeof(char) && specs->pres_size != sizeof(short)
+           && specs->pres_size != sizeof(int))
+       || specs->pres_offset > specs->struct_size
+       || specs->pres_size > specs->struct_size - specs->pres_offset) return -1;
+    return 0;
+}
+
+/*
+ * Purpose: validate the complete parent and selected open-value storage spans.
+ * Source: generated SET/SEQUENCE, CHOICE, and built-in type layouts.
+ * Version: 2026-10-30. Inputs: parent and member describe the enclosing slot;
+ * selected identifies the IOC arm. Returns: zero if bounded, otherwise -1.
+ * Errors: invalid metadata and unknown inline widths fail. Author: maintainers.
+ * History: adapted from OER storage preflight. Example: a truncated inline arm fails.
+ */
+static int
+OPEN_TYPE_cbor_storage_valid(const asn_TYPE_descriptor_t *parent,
+                             const asn_TYPE_member_t *member,
+                             asn_type_selector_result_t selected) {
+    size_t parent_size, member_size, selected_size = 0, slot_size;
+    const asn_TYPE_member_t *slot = member;
+    size_t owner_size;
+    int selected_status;
+    if(!parent || !parent->op || !parent->specifics || !member || !member->type
+       || !selected.type_descriptor || !selected.presence_index) return -1;
+    if(parent->op->kind == ASN_KIND_SET)
+        parent_size = ((const asn_SET_specifics_t *)parent->specifics)->struct_size;
+    else if(parent->op->kind == ASN_KIND_SEQUENCE)
+        parent_size = ((const asn_SEQUENCE_specifics_t *)parent->specifics)->struct_size;
+    else return -1;
+    if(member->type->elements_count) {
+        const asn_CHOICE_specifics_t *specs = member->type->specifics;
+        if(OPEN_TYPE_cbor_choice_valid(specs) || !member->type->elements
+           || selected.presence_index > member->type->elements_count) return -1;
+        slot = &member->type->elements[selected.presence_index - 1];
+        if(slot->type != selected.type_descriptor) return -1;
+        owner_size = specs->struct_size;
+        member_size = (member->flags & ATF_POINTER) ? sizeof(void *) : owner_size;
+    } else {
+        if(member->type != selected.type_descriptor) return -1;
+        owner_size = parent_size;
+        member_size = 0;
+    }
+    selected_status = SET_inline_value_size(selected.type_descriptor, &selected_size);
+    if(selected_status && (!(slot->flags & ATF_POINTER) || selected_status != -2)) return -1;
+    slot_size = (slot->flags & ATF_POINTER) ? sizeof(void *) : selected_size;
+    if(!member->type->elements_count) member_size = slot_size;
+    if(member->memb_offset > parent_size || member_size > parent_size - member->memb_offset
+       || slot->memb_offset > owner_size || slot_size > owner_size - slot->memb_offset) return -1;
+    return 0;
+}
+
+/*
+ * Purpose: decode a table-selected CBOR value into its open-type wrapper.
+ * Source: asn1c IOC selector and CHOICE ownership contracts. Version: 2026-10-30.
+ * Inputs: opt_codec_ctx limits recursion, td/sptr describe the parent,
+ * elm selects its open member, and ptr/size bound encoded input.
+ * Returns: child decode result. Errors: malformed selector or child data fails.
+ * Author: asn1c maintainers. History: partial arms are attached before cleanup.
+ * Example: a failed pointer-backed selected SEQUENCE is freed with its wrapper.
+ */
 asn_dec_rval_t
 OPEN_TYPE_cbor_get(const asn_codec_ctx_t *opt_codec_ctx,
                    const asn_TYPE_descriptor_t *td,
@@ -19,7 +92,7 @@ OPEN_TYPE_cbor_get(const asn_codec_ctx_t *opt_codec_ctx,
     void *inner_value;
     asn_dec_rval_t rv;
 
-    if(!(elm->flags & ATF_OPEN_TYPE)) {
+    if(!td || !sptr || !elm || (!ptr && size) || !(elm->flags & ATF_OPEN_TYPE)) {
         ASN__DECODE_FAILED;
     }
 
@@ -36,7 +109,9 @@ OPEN_TYPE_cbor_get(const asn_codec_ctx_t *opt_codec_ctx,
     }
 
     selected = elm->type_selector(td, sptr);
-    if(!selected.presence_index || !selected.type_descriptor) {
+    if(!selected.presence_index || !selected.type_descriptor
+       || !selected.type_descriptor->op || !selected.type_descriptor->op->cbor_decoder
+       || OPEN_TYPE_cbor_storage_valid(td, elm, selected)) {
         ASN__DECODE_FAILED;
     }
 
@@ -56,9 +131,11 @@ OPEN_TYPE_cbor_get(const asn_codec_ctx_t *opt_codec_ctx,
         const asn_TYPE_member_t *variant_elm;
         unsigned int memb_offset;
 
-        if(!specs) {
-            ASN_DEBUG("Open Type %s->%s: type specifics is NULL",
-                      td->name, elm->name);
+        if(!specs || !specs->struct_size
+           || (specs->pres_size != sizeof(char) && specs->pres_size != sizeof(short)
+               && specs->pres_size != sizeof(int))
+           || specs->pres_offset > specs->struct_size
+           || specs->pres_size > specs->struct_size - specs->pres_offset) {
             ASN__DECODE_FAILED;
         }
 
@@ -87,6 +164,12 @@ OPEN_TYPE_cbor_get(const asn_codec_ctx_t *opt_codec_ctx,
 
         variant_elm = &elm->type->elements[selected.presence_index - 1];
         memb_offset = variant_elm->memb_offset;
+        if(variant_elm->type != selected.type_descriptor || memb_offset >= specs->struct_size
+           || ((variant_elm->flags & ATF_POINTER)
+               && sizeof(void *) > specs->struct_size - memb_offset)
+           || CHOICE_variant_set_presence(elm->type, *memb_ptr2, selected.presence_index)) {
+            ASN__DECODE_FAILED;
+        }
 
         if(variant_elm->flags & ATF_POINTER) {
             inner_value = *(void **)((char *)*memb_ptr2 + memb_offset);
@@ -107,30 +190,19 @@ OPEN_TYPE_cbor_get(const asn_codec_ctx_t *opt_codec_ctx,
     rv = selected.type_descriptor->op->cbor_decoder(
         opt_codec_ctx, selected.type_descriptor, &inner_value, ptr, size);
 
+    /* Attach the partially decoded arm before cleanup can free the wrapper. */
+    if(elm->type->elements_count > 0) {
+        const asn_TYPE_member_t *variant = &elm->type->elements[selected.presence_index - 1];
+        if(variant->flags & ATF_POINTER) {
+            *(void **)((char *)*memb_ptr2 + variant->memb_offset) = inner_value;
+        }
+    } else if(elm->flags & ATF_POINTER) {
+        *memb_ptr2 = inner_value;
+    }
+
     switch(rv.code) {
     case RC_OK:
-        if(elm->type->elements_count > 0) {
-            const asn_TYPE_member_t *variant_elm =
-                &elm->type->elements[selected.presence_index - 1];
-            if(CHOICE_variant_set_presence(elm->type, *memb_ptr2,
-                                           selected.presence_index)
-               == 0) {
-                if(variant_elm->flags & ATF_POINTER) {
-                    void **variant_ptr =
-                        (void **)((char *)*memb_ptr2 + variant_elm->memb_offset);
-                    *variant_ptr = inner_value;
-                }
-                break;
-            } else {
-                rv.code = RC_FAIL;
-            }
-        } else {
-            if(elm->flags & ATF_POINTER) {
-                *memb_ptr2 = inner_value;
-            }
-            break;
-        }
-        /* Fall through */
+        break;
     case RC_FAIL:
     case RC_WMORE:
         if(elm->type->elements_count > 0) {
@@ -168,6 +240,14 @@ OPEN_TYPE_cbor_get(const asn_codec_ctx_t *opt_codec_ctx,
     return rv;
 }
 
+/*
+ * Purpose: encode an open value using its parent table selector.
+ * Source: asn1c IOC selector and CBOR child encoder contracts.
+ * Version: 2026-10-30. Inputs: td/sptr describe parent, elm selects its member,
+ * cb/app_key receive bytes. Returns: child encoder result or failure.
+ * Errors: missing selector, value, or codec fails. Author: asn1c maintainers.
+ * History: parent-aware CBOR open dispatch. Example: encode a selected BOOLEAN.
+ */
 asn_enc_rval_t
 OPEN_TYPE_cbor_put(const asn_TYPE_descriptor_t *td, const void *sptr,
                    const asn_TYPE_member_t *elm,
@@ -175,7 +255,7 @@ OPEN_TYPE_cbor_put(const asn_TYPE_descriptor_t *td, const void *sptr,
     asn_type_selector_result_t selected;
     const void *memb_ptr;
 
-    if(!(elm->flags & ATF_OPEN_TYPE)) {
+    if(!td || !sptr || !elm || !cb || !(elm->flags & ATF_OPEN_TYPE)) {
         ASN__ENCODE_FAILED;
     }
 
@@ -204,6 +284,8 @@ OPEN_TYPE_cbor_put(const asn_TYPE_descriptor_t *td, const void *sptr,
         ASN__ENCODE_FAILED;
     }
 
+    if(OPEN_TYPE_cbor_storage_valid(td, elm, selected)) ASN__ENCODE_FAILED;
+
     if(!selected.type_descriptor->op || !selected.type_descriptor->op->cbor_encoder) {
         ASN_DEBUG("Open Type %s->%s: selected type %s has no CBOR encoder",
                   td->name, elm->name, selected.type_descriptor->name);
@@ -231,6 +313,8 @@ OPEN_TYPE_cbor_put(const asn_TYPE_descriptor_t *td, const void *sptr,
             ASN__ENCODE_FAILED;
         }
 
+        if(CHOICE_variant_get_presence(elm->type, memb_ptr) != selected.presence_index)
+            ASN__ENCODE_FAILED;
         variant_elm = &elm->type->elements[selected.presence_index - 1];
 
         if(variant_elm->flags & ATF_POINTER) {

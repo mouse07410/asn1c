@@ -15,6 +15,7 @@
 #include <NativeInteger.h>
 #include <aper_decoder.h>
 #include <aper_encoder.h>
+#include <uper_decoder.h>
 #include <oer_decoder.h>
 #include <oer_encoder.h>
 #include <constr_SET.h>
@@ -1085,6 +1086,27 @@ SET_oer_test_missing_open_selector(void) {
 }
 
 /*
+ * Purpose: Reject selector-less SET UPER open members before wire access.
+ * Source: SET UPER descriptor validation. Version: 2026-10-30.
+ * Inputs: none. Returns: nothing. Errors: assertions abort. Author: maintainers.
+ * History: Covers malformed flags on an ordinary INTEGER member.
+ * Example: An open member without a table selector fails on empty input.
+ */
+static void
+SET_uper_test_missing_open_selector(void) {
+    SET_aper_test_value_t *decoded = 0;
+    asn_TYPE_member_t members[2];
+    asn_TYPE_descriptor_t descriptor = test_descriptor;
+    asn_dec_rval_t result;
+    uint8_t input = 0;
+    memcpy(members, test_members, sizeof(members));
+    members[1].flags |= ATF_OPEN_TYPE;
+    descriptor.elements = members;
+    result = uper_decode(0, &descriptor, (void **)&decoded, &input, 0, 0, 0);
+    assert(result.code == RC_FAIL && result.consumed == 0 && !decoded);
+}
+
+/*
  * Purpose: execute all SET APER regression cases.
  * Source: Local C runtime test suite.
  * Version: 2026-10-30.
@@ -1190,6 +1212,7 @@ int
 main(void) {
     SET_test_all_member_constraints();
     SET_oer_test_empty_null_input();
+    SET_uper_test_missing_open_selector();
     SET_oer_test_missing_open_selector();
     SET_aper_test_missing_open_selector();
     SET_test_open_choice_addition();

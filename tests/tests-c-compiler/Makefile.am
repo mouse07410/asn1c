@@ -96,6 +96,7 @@ TESTS += check-src/check-598.-gen-APER.c
 TESTS += check-src/check-599.-gen-OER.c
 TESTS += check-src/check-600.-gen-UPER.-gen-APER.-gen-OER.c
 TESTS += check-src/check-601.-fcompound-names.-gen-JER.-gen-CBOR.c
+TESTS += check-src/check-601.-findirect-choice.-fcompound-names.-gen-CBOR.c
 TESTS += check-src/check-602.-findirect-choice.-fcompound-names.-gen-JER.c
 TESTS += check-src/check-603.-gen-UPER.c
 TESTS += check-src/check-582.-gen-UPER.-gen-APER.c
@@ -137,6 +138,7 @@ EXTRA_DIST += check-src/check-598.-gen-APER.c
 EXTRA_DIST += check-src/check-599.-gen-OER.c
 EXTRA_DIST += check-src/check-600.-gen-UPER.-gen-APER.-gen-OER.c
 EXTRA_DIST += check-src/check-601.-fcompound-names.-gen-JER.-gen-CBOR.c
+EXTRA_DIST += check-src/check-601.-findirect-choice.-fcompound-names.-gen-CBOR.c
 EXTRA_DIST += check-src/check-602.-findirect-choice.-fcompound-names.-gen-JER.c
 EXTRA_DIST += check-src/check-603.-gen-UPER.c
 
