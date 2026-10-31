@@ -2,7 +2,8 @@
 //!
 //! In addition to a limited PER/OER/CER/DER/BER codec slice, this crate covers
 //! BOOLEAN, NULL, bounded signed INTEGER, direct ENUMERATED, fixed and
-//! bounded-size UPER strings, and fixed or bounded JER strings.
+//! bounded-size UPER strings, fixed or bounded JER strings, and direct CBOR
+//! primitives and opaque ANY values.
 //! It uses only the Rust standard library and applies caller-configurable input,
 //! output, and work limits before reading bits or allocating output storage.
 //!
@@ -18,6 +19,8 @@ use std::fmt;
 
 /// Primitive Aligned Packed Encoding Rules (APER) codecs.
 pub mod aper;
+/// Bounded primitive and opaque CBOR codecs.
+pub mod cbor;
 /// Bounded primitive JSON Encoding Rules (JER) codecs.
 pub mod jer;
 /// Primitive Octet Encoding Rules (OER) codecs.
@@ -28,6 +31,10 @@ pub mod uper_cursor;
 pub use aper::{
     decode_boolean_aper, decode_integer_aper, decode_null_aper, encode_boolean_aper,
     encode_integer_aper, encode_null_aper,
+};
+pub use cbor::{
+    decode_boolean_cbor, decode_integer_cbor, decode_null_cbor, encode_boolean_cbor,
+    encode_integer_cbor, encode_null_cbor,
 };
 pub use jer::{
     decode_bit_string_jer, decode_boolean_jer, decode_bounded_bit_string_jer,

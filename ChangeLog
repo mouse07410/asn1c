@@ -1,4 +1,11 @@
 Changes since v1.5.3:
+	* Add bounded C SET BER/DER direct OPEN TYPE support for one unambiguous
+	  explicitly tagged member, with two-pass unordered decoding, canonical
+	  DER sorting, selector checks, and generated sanitizer regressions.
+	* Add a bounded C SET XER direct OPEN TYPE path with parent-aware selected
+	  encoding, selector-first decoding, streaming replay, and malformed-input tests.
+	* Add opt-in Rust CBOR codecs for BOOLEAN, NULL, bounded INTEGER and opaque
+	  ANY with checked prefix decoding, resource limits and C parity vectors.
 	* Add C SET CBOR direct IOC-selected OPEN TYPE dispatch with unordered-key
 	  resolution, selected-arm storage validation, and cleanup of partial arms.
 	* Extend the bounded Rust selected OPEN TYPE slice to OER and aligned APER,

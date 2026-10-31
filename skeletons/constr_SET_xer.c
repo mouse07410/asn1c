@@ -5,6 +5,8 @@
  */
 #include <asn_internal.h>
 #include <constr_SET.h>
+#include <constr_CHOICE.h>
+#include <OPEN_TYPE.h>
 
 /*
  * Return a standardized complex structure.
@@ -80,6 +82,160 @@ _SET_xer_find_member(const asn_TYPE_descriptor_t *td, const void *st,
 }
 
 /*
+ * Purpose: validate selected XER CHOICE storage and context fields.
+ * Source: generated CHOICE metadata and runtime type widths. Version: 2026-10-30.
+ * Inputs: specs/arm describe the wrapper; selected identifies its child.
+ * Returns: zero when valid, -1 otherwise. Errors: invalid spans fail.
+ * Author: maintainers. History: split storage validation from selector dispatch.
+ * Example: an out-of-bounds pointer arm is rejected before any allocation.
+ */
+static int
+_SET_xer_choice_valid(const asn_CHOICE_specifics_t *specs, const asn_TYPE_member_t *arm,
+                      asn_type_selector_result_t selected) {
+    size_t width = 0, slot;
+    int status = SET_inline_value_size(selected.type_descriptor, &width);
+    if(status && (!(arm->flags & ATF_POINTER) || status != -2)) return -1;
+    slot = (arm->flags & ATF_POINTER) ? sizeof(void *) : width;
+    if(arm->type != selected.type_descriptor || !specs->struct_size
+       || (specs->pres_size != sizeof(char) && specs->pres_size != sizeof(short)
+           && specs->pres_size != sizeof(int)) || specs->pres_offset > specs->struct_size
+       || specs->pres_size > specs->struct_size - specs->pres_offset
+       || specs->ctx_offset > specs->struct_size
+       || sizeof(asn_struct_ctx_t) > specs->struct_size - specs->ctx_offset
+       || (specs->pres_offset < specs->ctx_offset + sizeof(asn_struct_ctx_t)
+           && specs->ctx_offset < specs->pres_offset + specs->pres_size)
+       || arm->memb_offset > specs->struct_size || slot > specs->struct_size - arm->memb_offset) return -1;
+    if(arm->memb_offset < specs->pres_offset + specs->pres_size
+       && specs->pres_offset < arm->memb_offset + slot) return -1;
+    if(arm->memb_offset < specs->ctx_offset + sizeof(asn_struct_ctx_t)
+       && specs->ctx_offset < arm->memb_offset + slot) return -1;
+    return 0;
+}
+
+/*
+ * Purpose: validate the selected IOC arm and its complete wrapper storage.
+ * Source: generated SET/CHOICE metadata. Version: 2026-10-30.
+ * Inputs: td/st identify the parent; member selects the open field; result
+ * receives its selector. Returns: zero or -1. Errors: invalid metadata fails.
+ * Author: asn1c maintainers. History: added direct XER open dispatch.
+ * Example: an unknown selector or truncated arm fails before decoding.
+ */
+static int
+_SET_xer_open_selection(const asn_TYPE_descriptor_t *td, const void *st,
+                        const asn_TYPE_member_t *member, asn_type_selector_result_t *result) {
+    const asn_TYPE_member_t *arm;
+    if(!member->type_selector || !member->type || !member->type->specifics
+       || !member->type->elements || !member->type->elements_count) return -1;
+    *result = member->type_selector(td, st);
+    if(!result->presence_index || result->presence_index > member->type->elements_count
+       || !result->type_descriptor || !result->type_descriptor->op
+       || !result->type_descriptor->op->free_struct
+       || !result->type_descriptor->op->xer_decoder
+       || !result->type_descriptor->op->xer_encoder) return -1;
+    arm = &member->type->elements[result->presence_index - 1];
+    if(_SET_xer_choice_valid(member->type->specifics, arm, *result)) return -1;
+    return 0;
+}
+
+/*
+ * Purpose: locate a complete direct open element without consuming partial input.
+ * Source: XER token framing and SET streaming contract. Version: 2026-10-30.
+ * Inputs: member is the selected field, buf/size bound available bytes, start/end
+ * receive the inner slice. Returns: 1 complete, 0 needs more, -1 malformed.
+ * Errors: invalid tags, excessive lengths or nesting fail. Author: maintainers.
+ * History: buffers by caller replay rather than retaining owned parser state.
+ * Example: a truncated value returns zero consumed so the caller can append.
+ */
+static int
+_SET_xer_open_frame(const asn_TYPE_member_t *member, const char *buf, size_t size,
+                    size_t *start, size_t *end, size_t *total) {
+    size_t offset = 0, depth = 0;
+    int context = 0;
+    while(offset < size) {
+        pxer_chunk_type_e type;
+        ssize_t length = xer_next_token(&context, buf + offset, size - offset, &type);
+        xer_check_tag_e tag;
+        if(length < 0) return -1;
+        if(type == PXER_WMORE) return 0;
+        if(length == 0 || (size_t)length > size - offset || length > INT_MAX) return -1;
+        if(type != PXER_TAG) { offset += (size_t)length; continue; }
+        tag = xer_check_tag(buf + offset, (int)length, depth ? 0 : member->name);
+        if(tag == XCT_BROKEN) return -1;
+        if(!depth) {
+            if(tag != XCT_OPENING) return -1;
+            *start = offset + (size_t)length;
+            depth = 1;
+        } else if((tag & 3) == XCT_OPENING) {
+            if(depth == SIZE_MAX) return -1;
+            depth++;
+        } else if((tag & 3) == XCT_CLOSING) {
+            if(--depth == 0) {
+                if(xer_check_tag(buf + offset, (int)length, member->name) != XCT_CLOSING) return -1;
+                *end = offset;
+                *total = offset + (size_t)length;
+                return 1;
+            }
+        }
+        offset += (size_t)length;
+    }
+    return 0;
+}
+
+/*
+ * Purpose: decode a complete selector-first IOC open SET member.
+ * Source: XER child decoder and CHOICE ownership contracts. Version: 2026-10-30.
+ * Inputs: codec/td/st/outer identify the value, buf/size bound XML input.
+ * Returns: child status and consumed bytes. Errors: bad selection and XML fail.
+ * Author: asn1c maintainers. History: caller retains incomplete value bytes.
+ * Example: a selected INTEGER child is decoded after every sibling is present.
+ */
+static asn_dec_rval_t
+_SET_xer_decode_open(const asn_codec_ctx_t *codec, const asn_TYPE_descriptor_t *td,
+                     void *st, unsigned outer, const char *buf, size_t size) {
+    const asn_SET_specifics_t *parent = td->specifics;
+    const asn_TYPE_member_t *member = &td->elements[outer], *arm;
+    const asn_CHOICE_specifics_t *specs;
+    asn_type_selector_result_t selected;
+    asn_dec_rval_t result = {RC_FAIL, 0};
+    size_t i, start, end, total;
+    void *wrapper, *inner;
+    void **slot;
+    int framed;
+    /* The selector is opaque, so every other sibling must already be present. */
+    for(i = 0; i < td->elements_count; i++) {
+        if(i != outer && !ASN_SET_ISPRESENT2((char *)st + parent->pres_offset, i)) return result;
+    }
+    if(_SET_xer_open_selection(td, st, member, &selected)) return result;
+    framed = _SET_xer_open_frame(member, buf, size, &start, &end, &total);
+    if(framed == 0) { result.code = RC_WMORE; return result; }
+    if(framed < 0) return result;
+    specs = member->type->specifics;
+    if(member->flags & ATF_POINTER) {
+        slot = (void **)((char *)st + member->memb_offset);
+        if(!*slot && !(*slot = CALLOC(1, specs->struct_size))) return result;
+        wrapper = *slot;
+    } else wrapper = (char *)st + member->memb_offset;
+    if(CHOICE_variant_set_presence(member->type, wrapper, selected.presence_index)) return result;
+    arm = &member->type->elements[selected.presence_index - 1];
+    if(arm->flags & ATF_POINTER) inner = *(void **)((char *)wrapper + arm->memb_offset);
+    else inner = (char *)wrapper + arm->memb_offset;
+    result = selected.type_descriptor->op->xer_decoder(codec, selected.type_descriptor, &inner,
+                                                       0, buf + start, total - start);
+    if(arm->flags & ATF_POINTER) *(void **)((char *)wrapper + arm->memb_offset) = inner;
+    if(result.code != RC_OK || result.consumed > end - start) {
+        result.code = RC_FAIL; result.consumed = 0; return result;
+    }
+    /* Only XML whitespace may remain between the child and the outer close. */
+    for(i = start + result.consumed; i < end; i++) {
+        if(buf[i] != ' ' && buf[i] != '\t' && buf[i] != '\r' && buf[i] != '\n') {
+            result.code = RC_FAIL; result.consumed = 0; return result;
+        }
+    }
+    result.consumed = total;
+    return result;
+}
+
+/*
  * Purpose: decode one XER member selected by the SET body parser.
  * Source: Generated SET member descriptors and child XER decoders.
  * Version: 2026-10-22.
@@ -122,8 +278,17 @@ _SET_xer_decode_member(const asn_codec_ctx_t *codec,
     if(SET_member_view(td, st, outer, child, &view) != 0) return -1;
     if(ASN_SET_ISPRESENT2((char *)owner + view.owner_specs->pres_offset,
                           view.owner_index)) return -1;
-    if(!view.member->type || !view.member->type->op
-    || !view.member->type->op->xer_decoder) return -1;
+    if(!view.member->type || !view.member->type->op) return -1;
+    if(view.member->flags & ATF_OPEN_TYPE) {
+        if(child != ASN_SET_DIRECT_MEMBER) return -1;
+        *rval = _SET_xer_decode_open(codec, td, st, outer, buf, size);
+        if(rval->code == RC_OK) {
+            ASN_SET_MKPRESENT((char *)st + view.owner_specs->pres_offset, view.owner_index);
+            ctx->ptr = 0;
+        }
+        return 0;
+    }
+    if(!view.member->type->op->xer_decoder) return -1;
     if(view.member->flags & ATF_POINTER) {
         member_ptr2 = (void **)((char *)owner + view.member->memb_offset);
     } else {
@@ -428,6 +593,8 @@ SET_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
     unsigned child_index;
     int selected;
 
+    if((size && !buf_ptr) || size > SSIZE_MAX) RETURN(RC_FAIL);
+    if(!buf_ptr) buf_ptr = "";
     if(_SET_xer_prepare(opt_codec_ctx, td, struct_ptr, &specs, &st, &ctx) != 0)
         RETURN(RC_FAIL);
     xml_tag = opt_mname ? opt_mname : td->xml_tag;
@@ -484,8 +651,8 @@ SET_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
  * Example: a group child is emitted as its own sibling XML element.
  */
 static asn_enc_rval_t
-_SET_xer_encode_leaf(const asn_TYPE_member_t *member, const void *value,
-                     int ilevel, enum xer_encoder_flags_e flags,
+_SET_xer_encode_leaf(const asn_TYPE_descriptor_t *parent, const void *parent_value,
+                     const asn_TYPE_member_t *member, const void *value, int ilevel, enum xer_encoder_flags_e flags,
                      asn_app_consume_bytes_f *cb, void *app_key) {
     const asn_TYPE_descriptor_t *td = member->type;
     const void *sptr = value;
@@ -498,7 +665,9 @@ _SET_xer_encode_leaf(const asn_TYPE_member_t *member, const void *value,
     if(!td || !td->op || !td->op->xer_encoder) ASN__ENCODE_FAILED;
     if(!canonical) ASN__TEXT_INDENT(1, ilevel);
     ASN__CALLBACK3("<", 1, name, name_size, ">", 1);
-    child = td->op->xer_encoder(td, value, ilevel + 1, flags, cb, app_key);
+    if(member->flags & ATF_OPEN_TYPE)
+        child = OPEN_TYPE_xer_put(parent, parent_value, member, ilevel + 1, flags, cb, app_key);
+    else child = td->op->xer_encoder(td, value, ilevel + 1, flags, cb, app_key);
     if(child.encoded < 0) return child;
     if(child.encoded > SSIZE_MAX - er.encoded) ASN__ENCODE_FAILED;
     er.encoded += child.encoded;
@@ -515,6 +684,29 @@ cb_failed:
 }
 
 /*
+ * Purpose: ensure a present open value can be decoded under the sibling gate.
+ * Source: SET member storage and XER selector ordering. Version: 2026-10-30.
+ * Inputs: td/st identify the parent and member identifies its open field.
+ * Returns: zero if every other sibling exists, -1 otherwise. Errors: invalid
+ * layouts fail. Author: maintainers. History: align encoder with decoder gate.
+ * Example: an absent unrelated OPTIONAL sibling blocks open-value encoding.
+ */
+static int
+_SET_xer_encode_siblings(const asn_TYPE_descriptor_t *td, const void *st,
+                         const asn_TYPE_member_t *member) {
+    size_t i;
+    for(i = 0; i < td->elements_count; i++) {
+        const asn_TYPE_member_t *sibling = &td->elements[i];
+        asn_SET_member_view_t view;
+        unsigned child = (sibling->flags & ATF_EXTENSION_GROUP) ? 0 : ASN_SET_DIRECT_MEMBER;
+        if(sibling == member) continue;
+        if(SET_member_view(td, st, (unsigned)i, child, &view)) return -1;
+        if((sibling->flags & ATF_EXTENSION_GROUP) ? !view.owner : !view.present) return -1;
+    }
+    return 0;
+}
+
+/*
  * Purpose: encode a resolved SET leaf, synthesizing absent DEFAULT values in
  *          canonical XER without modifying the const input structure.
  * Source: SET member default callbacks and X.693 canonical-XER rules.
@@ -528,7 +720,8 @@ cb_failed:
  * Example: a NULL DEFAULT pointer is encoded through a temporary value.
  */
 static asn_enc_rval_t
-_SET_xer_encode_view(const asn_SET_member_view_t *view, int ilevel,
+_SET_xer_encode_view(const asn_TYPE_descriptor_t *parent, const void *parent_value,
+                     const asn_SET_member_view_t *view, int ilevel,
                      enum xer_encoder_flags_e flags,
                      asn_app_consume_bytes_f *cb, void *app_key) {
     const asn_TYPE_member_t *member = view->member;
@@ -552,7 +745,16 @@ _SET_xer_encode_view(const asn_SET_member_view_t *view, int ilevel,
             ASN__ENCODE_FAILED;
         }
     }
-    er = _SET_xer_encode_leaf(member, value, ilevel, flags, cb, app_key);
+    if(member->flags & ATF_OPEN_TYPE) {
+        asn_type_selector_result_t selected;
+        if(view->owner != parent_value || _SET_xer_encode_siblings(parent, parent_value, member)
+           || _SET_xer_open_selection(parent, parent_value, member, &selected)
+           || CHOICE_variant_get_presence(member->type, value) != selected.presence_index) {
+            if(default_value) ASN_STRUCT_FREE(*member->type, default_value);
+            ASN__ENCODE_FAILED;
+        }
+    }
+    er = _SET_xer_encode_leaf(parent, parent_value, member, value, ilevel, flags, cb, app_key);
     if(default_value) ASN_STRUCT_FREE(*member->type, default_value);
     return er;
 }
@@ -591,7 +793,7 @@ _SET_xer_encode_group(const asn_TYPE_descriptor_t *td, const void *sptr,
         asn_enc_rval_t child;
         if(SET_member_view(td, sptr, outer, (unsigned)i, &view) != 0)
             ASN__ENCODE_FAILED;
-        child = _SET_xer_encode_view(&view, ilevel, flags, cb, app_key);
+        child = _SET_xer_encode_view(td, sptr, &view, ilevel, flags, cb, app_key);
         if(child.encoded < 0) return child;
         if(child.encoded > SSIZE_MAX - er.encoded) ASN__ENCODE_FAILED;
         er.encoded += child.encoded;
@@ -623,7 +825,7 @@ _SET_xer_encode_member(const asn_TYPE_descriptor_t *td, const void *sptr,
                                      app_key);
     if(SET_member_view(td, sptr, outer, ASN_SET_DIRECT_MEMBER, &view) != 0)
         ASN__ENCODE_FAILED;
-    return _SET_xer_encode_view(&view, ilevel, flags, cb, app_key);
+    return _SET_xer_encode_view(td, sptr, &view, ilevel, flags, cb, app_key);
 }
 
 /*
@@ -657,6 +859,15 @@ SET_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr, int ilevel,
     order_count = specs->tag2el_cxer_count;
     if(order_count != td->elements_count
     || (order_count && !order)) ASN__ENCODE_FAILED;
+    /* A present open member must follow every sibling in the emitted order. */
+    for(i = 0; i < order_count; i++) {
+        unsigned outer = order[i].el_no;
+        asn_SET_member_view_t view;
+        if(outer >= td->elements_count) ASN__ENCODE_FAILED;
+        if(!(td->elements[outer].flags & ATF_OPEN_TYPE)) continue;
+        if(SET_member_view(td, sptr, outer, ASN_SET_DIRECT_MEMBER, &view)) ASN__ENCODE_FAILED;
+        if(view.present && i + 1 != order_count) ASN__ENCODE_FAILED;
+    }
     XER_ENCODER_RECURSION_DEPTH_INC();
 
     for(i = 0; i < order_count; i++) {

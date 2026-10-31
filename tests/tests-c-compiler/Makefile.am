@@ -144,3 +144,6 @@ EXTRA_DIST += check-src/check-603.-gen-UPER.c
 
 clean-local:
 	rm -rf test-*
+
+TESTS += check-src/check-604.-findirect-choice.-fcompound-names.-gen-XER.c
+EXTRA_DIST += check-src/check-604.-findirect-choice.-fcompound-names.-gen-XER.c

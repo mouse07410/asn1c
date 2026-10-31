@@ -11,6 +11,7 @@ The matching runtime uses `std`, forbids unsafe Rust, and has no dependencies.
 with typed Rust bindings and a local copy of the Rust runtime. The current
 defaults are UPER and CER. `-gen-APER` and `-gen-OER` add paired primitive
 encoders and decoders; `-gen-BER` adds BER decoding and DER encoding.
+`-gen-CBOR` adds direct BOOLEAN, NULL, bounded INTEGER, and opaque ANY codecs.
 -gen-JER adds compact JSON encoding and complete-input decoding for top-level
 BOOLEAN, NULL, bounded INTEGER, direct ANY, direct nonextensible ENUMERATED, direct
 fixed-size or bounded nonextensible OCTET STRING, and direct fixed-size or
@@ -80,7 +81,8 @@ fresh directory after adding application code or running Cargo there.
 | Direct ENUMERATED | Nonextensible root values fitting i64, up to 64 items; UPER or opt-in JER encode/decode |
 | Primitive CONTAINING | UPER top-level and required/OPTIONAL SEQUENCE fields; unconstrained BIT/OCTET STRING containing a same-module direct BOOLEAN or non-singleton bounded INTEGER; validates inner range, length, and octet padding |
 | Direct ANY and required/OPTIONAL ANY SEQUENCE fields | Opaque octets under UPER with C-compatible length framing and shared cursor budgets |
-| Direct ANY | Opt-in APER and OER octet framing, and JER uppercase hexadecimal strings; C interoperability vectors and malformed-input checks |
+| Direct ANY | Opt-in APER/OER octet framing, JER hexadecimal strings, and CBOR byte strings; C interoperability vectors and malformed-input checks |
+| Direct BOOLEAN, NULL, bounded INTEGER | Opt-in CBOR prefix encode/decode, including semantic tags and nonminimal heads; bignum tags are rejected |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Strict CER decoding; canonical short-form TLV only |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in BER prefix decoding and DER encoding with `-gen-BER` |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in APER and OER encode/decode; each call begins at an octet boundary |
@@ -88,12 +90,12 @@ fresh directory after adding application code or running Cargo there.
 | Direct fixed OCTET/BIT STRING | Opt-in JER uppercase-hex encoding, case-insensitive complete-input decoding, exact packed size and zero-padding checks, and resource limits |
 | Direct bounded BIT STRING | Opt-in JER minified `{"value":"HEX","length":N}` encoding and complete-input decoding with range, padding, and resource-limit checks |
 | Direct ENUMERATED | Opt-in JER quoted-name encode/decode; complete input, JSON whitespace, unknown-name and resource-limit checks |
-| XER, CBOR, and nonprimitive JER | Planned; unavailable in Rust mode |
+| XER and nonprimitive CBOR/JER | Planned; unavailable in Rust mode |
 | SET, collections, extensible, unbounded, fragmented or disjoint strings, named-bit strings, extensible ENUMERATED, aliases, imports, top-level tagged types | Planned; rejected in this slice |
 | Encoding controls, other information-object forms, parameterized types | Planned; rejected in this slice |
 | IOC-selected OPEN TYPE | UPER, APER, OER; one local nonextensible set, bounded INTEGER selector, BOOLEAN or bounded INTEGER rows, and a two-field required SEQUENCE; APER selector 0..255 and row spans <=255 |
 | Other CONTAINING and OPEN TYPE forms | Unsupported; rejected before output publication |
-| ANY in SEQUENCE outside UPER, and ANY under BER/DER, CER, XER, or CBOR | Require codec-specific opaque-value semantics; rejected before output publication |
+| ANY in SEQUENCE outside UPER, and ANY under BER/DER, CER, or XER | Require codec-specific opaque-value semantics; rejected before output publication |
 
 BOOLEAN and INTEGER wrappers expose constructors, value getters, and the
 methods selected during generation. UPER methods encode and prefix-decode the
@@ -214,14 +216,13 @@ The generated Rust harness includes primitive, string, ENUMERATED, and flat
 SEQUENCE tests, including C comparisons for selected UPER/CER/APER/OER/JER vectors,
 C decoding of Rust output, codec selection, and negative-schema checks.
 Runtime and generated crates pass pedantic and nursery Clippy with warnings
-denied. `make dist` includes the APER, OER, JER, and UPER cursor modules and their
+denied. `make dist` includes the APER, OER, JER, CBOR, and UPER cursor modules and their
 test fixtures; `make install-data` installs the runtime modules. Hosted Rust CI has not yet run
 for this extension. No minimum Rust compiler version is claimed.
 
 These are first-slice gates. The [test migration plan](testing.md) remains the
 stage-wide target; unsupported DEFAULT forms, SET, and open types still need
-schema and codec support. XER, CBOR, and JER for
-types outside the listed primitive, string, and ENUMERATED slices remain unimplemented.
+schema and codec support. XER and CBOR/JER for types outside the listed slices remain unimplemented.
 The CER encoder is also only a first slice and does not establish whole-runtime
 parity.
 

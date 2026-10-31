@@ -11,7 +11,8 @@ $(ASN1C):
 # here would override Automake's generated driver recipe for this single test.
 $(TEST_LOGS): $(ASN1C)
 
-EXTRA_DIST = $(srcdir)/OpenSelected.asn1 \
+EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
+    $(srcdir)/OpenSelected.asn1 \
     $(srcdir)/FirstSlice.asn1 \
     $(srcdir)/SequenceSlice.asn1 \
     $(srcdir)/StringSlice.asn1 \
@@ -64,6 +65,8 @@ EXTRA_DIST = $(srcdir)/OpenSelected.asn1 \
     $(srcdir)/c_open_selected.c \
     $(srcdir)/any_conformance.rs \
     $(srcdir)/c_any.c \
+    $(srcdir)/cbor_conformance.rs \
+    $(srcdir)/c_cbor.c \
     $(srcdir)/conformance.rs \
     $(srcdir)/additional_codecs.rs \
     $(srcdir)/jer_conformance.rs \

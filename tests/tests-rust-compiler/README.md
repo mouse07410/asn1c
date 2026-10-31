@@ -79,7 +79,7 @@ methods and `-no-gen-BER` omits them. APER/OER/JER are opt-in and can be selecte
 independently. CER-only generation is
 also checked with explicit `-gen-CER -no-gen-UPER`; `-no-gen-BER` leaves CER
 selected. Disabling all supported codecs and requesting
-unsupported XER/CBOR codecs are rejected before output publication. The generated
+unsupported XER is rejected before output publication. The generated
 dual-codec and CER-only APIs are checked to contain `decode_cer`, and the
 `-no-gen-CER` output is checked to omit it.
 
@@ -111,7 +111,7 @@ OPTIONAL fields. Their indices follow numeric value order, and singleton values
 consume no payload bits. Tests compare presence and payload vectors with C,
 and reject truncation and spare indices.
 
-Rust supports unqualified ANY at top level with UPER, APER, OER, and JER,
+Rust supports unqualified ANY at top level with UPER, APER, OER, JER, and CBOR,
 and as required or OPTIONAL UPER SEQUENCE fields. Values are represented as
 opaque octets, including fragmented PER length determinants. The payload is
 not interpreted as an ASN.1 value; callers supply its transfer syntax. Other
@@ -130,3 +130,9 @@ object set of direct BOOLEAN or bounded INTEGER rows. The generated enum is
 checked against its selector, and malformed inner lengths, values and padding
 are rejected. APER requires selector bounds 0..255 and selected INTEGER range
 spans at most 255. Other object-set and codec forms are rejected.
+
+Direct BOOLEAN, NULL, bounded signed INTEGER, and opaque ANY support opt-in
+CBOR. Definite byte strings represent ANY. Decoding accepts semantic tags and
+nonminimal definite heads, but rejects INTEGER bignum tags, indefinite strings,
+invalid or truncated data, and exhausted resource budgets. C interoperability
+tests cover primitive boundaries and opaque byte-string lengths.

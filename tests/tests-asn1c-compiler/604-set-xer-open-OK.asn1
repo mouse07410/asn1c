@@ -1,0 +1,18 @@
+SetXerOpen DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+P ::= CLASS { &id INTEGER UNIQUE, &Type } WITH SYNTAX { ID &id TYPE &Type }
+Payload ::= INTEGER (0..255)
+NullPayload ::= NULL
+Objs P ::= { { ID 1 TYPE Payload } | { ID 2 TYPE BOOLEAN } | { ID 3 TYPE NullPayload } }
+SetOpenXer ::= SET {
+    id P.&id({Objs}),
+    flag BOOLEAN OPTIONAL,
+    value P.&Type({Objs}{@id}) OPTIONAL
+}
+SeqOpenXer ::= SEQUENCE {
+    id P.&id({Objs}),
+    flag BOOLEAN OPTIONAL,
+    value P.&Type({Objs}{@id}) OPTIONAL
+}
+ReverseXer ::= SET { value P.&Type({Objs}{@id}) OPTIONAL, id P.&id({Objs}) }
+GroupedXer ::= SET { id [0] INTEGER, ..., [[ leaf [1] BOOLEAN OPTIONAL ]] }
+END

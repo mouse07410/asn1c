@@ -779,7 +779,7 @@ asn1c_validate_options(const asn1c_cli_options_t *options) {
     const uint64_t rust_supported =
         (uint64_t)A1C_GEN_UPER | (uint64_t)A1C_GEN_BER
         | (uint64_t)A1C_GEN_CER | (uint64_t)A1C_GEN_APER
-        | (uint64_t)A1C_GEN_OER | (uint64_t)A1C_GEN_JER;
+        | (uint64_t)A1C_GEN_OER | (uint64_t)A1C_GEN_JER | (uint64_t)A1C_GEN_CBOR;
     if(options->print_out) {
         if((options->printer_flags & APF_PRINT_CONSTRAINTS)
            && !options->fix_n_print) {
@@ -806,7 +806,7 @@ asn1c_validate_options(const asn1c_cli_options_t *options) {
         if(!options->rust_codec_flags
            || (options->rust_codec_flags & ~rust_supported)) {
             fprintf(stderr,
-                    "Error: --rust supports UPER, APER, OER, BER, CER, and JER; select at least "
+                    "Error: --rust supports UPER, APER, OER, BER, CER, JER, and CBOR; select at least "
                     "one supported codec and no other codec\n");
             return -1;
         }

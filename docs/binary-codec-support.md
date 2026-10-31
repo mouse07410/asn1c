@@ -201,9 +201,29 @@ that leave trailing bytes inside their open-type envelopes. Constructed storage 
 layouts and rejects graphs beyond 64 nested levels, 1024 distinct cached types,
 or 16384 descriptor visits.
 
+Direct SET XER OPEN TYPE members support selector-first decoding once every
+other sibling has appeared. This conservative rule also rejects a present
+open value when an unrelated OPTIONAL sibling is absent. The encoder rejects
+canonical order that would put the open member before a sibling. Partial open
+XML members return `RC_WMORE` with zero member bytes consumed; callers retain
+and replay those bytes. Open leaves inside SET extension groups and a
+self-closing outer open-member element remain unsupported.
+
+Direct SET BER/DER OPEN TYPE support covers one explicitly tagged open member
+with an unambiguous tag route. BER waits for a complete SET TLV, returning
+`RC_WMORE` with zero bytes consumed until the caller can replay it. Two-pass
+decoding permits the selector before or after the open value; DER sorts the
+selected field canonically. A present open value requires every non-open
+sibling to be present before selector invocation, so an omitted unrelated
+OPTIONAL or DEFAULT sibling is conservatively rejected. Untagged, colliding,
+multiple, and extension-group open members remain unsupported in this path.
+
 The Rust backend supports `OPTIONAL` fields only within its documented UPER
 SEQUENCE subset, including inline nonextensible ENUMERATED, opaque `ANY`, and
-primitive `CONTAINING` values. Direct `ANY` supports UPER, APER, OER, and JER.
+primitive `CONTAINING` values. Direct `ANY` supports UPER, APER, OER, JER,
+and CBOR. Direct BOOLEAN, NULL, and bounded INTEGER also have opt-in CBOR
+codecs. Rust CBOR selected open types, constructed values, and indefinite
+byte strings remain unsupported.
 UPER `CONTAINING` supports unconstrained BIT/OCTET STRING containing a local
 direct BOOLEAN or non-singleton bounded INTEGER, at top level or as a required
 or OPTIONAL SEQUENCE field. A narrow UPER, APER, and OER IOC-selected

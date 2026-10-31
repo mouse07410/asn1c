@@ -21,3 +21,11 @@ SET extension groups remain unsupported by the SET CBOR codec and are rejected.
 The indirect-choice 601 test covers CBOR table-selected SET open values in both
 map orders, unknown selectors, optional omission, malformed selected data, and
 generated SET/SEQUENCE cross-decoding of the same CBOR map.
+
+check-604 covers direct IOC-selected SET XER values. Decoding a present open
+member requires every other SET sibling to have appeared, because selector
+callbacks do not expose their dependencies. Encoding also rejects a present
+open member unless its canonical order follows every sibling. An incomplete open element returns
+RC_WMORE without consuming that element; callers retain those bytes for replay.
+A selected named NULL uses a nested self-closing type element; a self-closing <value/> is
+rejected. Open leaves inside SET extension groups are unsupported and rejected.

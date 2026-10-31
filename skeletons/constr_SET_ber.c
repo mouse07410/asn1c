@@ -5,6 +5,8 @@
  */
 #include <asn_internal.h>
 #include <constr_SET.h>
+#include <constr_CHOICE.h>
+#include <OPEN_TYPE.h>
 
 /*
  * Number of bytes left for this structure.
@@ -175,7 +177,7 @@ static int
 _SET_ber_prepare_member(const asn_TYPE_descriptor_t *td, void *st,
                         unsigned outer, unsigned child,
                         asn_struct_ctx_t *ctx, asn_SET_member_view_t *view,
-                        void **member_ptr, void ***member_ptr2) {
+                        void **member_ptr, void ***member_ptr2, int mode) {
     const asn_TYPE_member_t *outer_member = &td->elements[outer];
     int is_group = (outer_member->flags & ATF_EXTENSION_GROUP) != 0;
     void *owner = st;
@@ -196,7 +198,7 @@ _SET_ber_prepare_member(const asn_TYPE_descriptor_t *td, void *st,
         return -1;
     }
     if(SET_member_view(td, st, outer, child, view) != 0) return -1;
-    if(ASN_SET_ISPRESENT2((char *)owner
+    if(mode != 2 && ASN_SET_ISPRESENT2((char *)owner
                           + view->owner_specs->pres_offset,
                           view->owner_index)) return -1;
     if(view->member->flags & ATF_POINTER) {
@@ -442,6 +444,123 @@ _SET_ber_select_next(const asn_codec_ctx_t *codec,
 }
 
 /*
+ * Purpose: Validate a BER table selection and, when encoding, its active arm.
+ * Source: OPEN TYPE selector contract. Version: 2026-10-30.
+ * Inputs: td/st identify the parent; member is open; encoding checks presence.
+ * Returns: selected descriptor and index, or an empty result for invalid data.
+ * Errors: missing or inconsistent selectors fail. Author: maintainers.
+ * History: Added for parent-aware SET BER dispatch.
+ * Example: A selector for arm one rejects an active arm two.
+ */
+static asn_type_selector_result_t
+_SET_ber_open_selection(const asn_TYPE_descriptor_t *td, const void *st,
+                        const asn_TYPE_member_t *member, int encoding) {
+    asn_type_selector_result_t selected = {0, 0};
+    const void *value;
+    if(!member->type || !member->type_selector) return selected;
+    selected = member->type_selector(td, st);
+    if(!selected.presence_index || !selected.type_descriptor || !selected.type_descriptor->op
+    || (encoding ? !selected.type_descriptor->op->der_encoder : !selected.type_descriptor->op->ber_decoder))
+        goto invalid;
+    if(!member->type->elements_count) {
+        if(member->type != selected.type_descriptor) goto invalid;
+        return selected;
+    }
+    if(!member->type->elements || selected.presence_index > member->type->elements_count
+    || member->type->elements[selected.presence_index - 1].type != selected.type_descriptor) goto invalid;
+    if(!encoding) return selected;
+    value = (const char *)st + member->memb_offset;
+    if(member->flags & ATF_POINTER) value = *(const void *const *)value;
+    if(value && CHOICE_variant_get_presence(member->type, value) == selected.presence_index) return selected;
+invalid:
+    selected.presence_index = 0;
+    selected.type_descriptor = 0;
+    return selected;
+}
+
+/*
+ * Purpose: Decode a selected CHOICE arm in transactionally owned storage.
+ * Source: BER member and CHOICE lifecycle contracts. Version: 2026-10-30.
+ * Inputs: codec/member/selected describe the arm; target receives the wrapper;
+ * ptr/size hold its complete TLV. Returns: decoder status and consumption.
+ * Errors: Invalid payloads and allocation failures fail without leaking storage.
+ * Author: maintainers. History: Added for SET selected-type decoding.
+ * Example: An inline arm failure never frees an interior wrapper address.
+ */
+static asn_dec_rval_t
+_SET_ber_open_wrapper(const asn_codec_ctx_t *codec, const asn_TYPE_member_t *member,
+                      asn_type_selector_result_t selected, void **target,
+                      const void *ptr, size_t size) {
+    const asn_CHOICE_specifics_t *specs = member->type->specifics;
+    const asn_TYPE_member_t *arm = &member->type->elements[selected.presence_index - 1];
+    asn_dec_rval_t result = {RC_FAIL, 0};
+    void *wrapper;
+    void *inner;
+    if((member->flags & ATF_POINTER) ? *target != NULL
+       : CHOICE_variant_get_presence(member->type, *target) != 0) return result;
+    wrapper = CALLOC(1, specs->struct_size);
+    if(!wrapper) return result;
+    inner = (arm->flags & ATF_POINTER) ? 0 : (char *)wrapper + arm->memb_offset;
+    result = selected.type_descriptor->op->ber_decoder(codec, selected.type_descriptor,
+                                                       &inner, ptr, size, member->tag_mode);
+    if(result.code == RC_OK && result.consumed == size
+    && !CHOICE_variant_set_presence(member->type, wrapper, selected.presence_index)) {
+        if(arm->flags & ATF_POINTER) *(void **)((char *)wrapper + arm->memb_offset) = inner;
+        if(member->flags & ATF_POINTER) {
+            if(*target) { ASN_STRUCT_FREE(*member->type, wrapper); result.code = RC_FAIL; return result; }
+            *target = wrapper;
+        } else {
+            memcpy(*target, wrapper, specs->struct_size);
+            FREEMEM(wrapper);
+        }
+        return result;
+    }
+    if(inner) {
+        if(arm->flags & ATF_POINTER) ASN_STRUCT_FREE(*selected.type_descriptor, inner);
+        else ASN_STRUCT_RESET(*selected.type_descriptor, inner);
+    }
+    FREEMEM(wrapper);
+    result.code = RC_FAIL;
+    result.consumed = 0;
+    return result;
+}
+
+/*
+ * Purpose: Decode a selected direct or CHOICE-wrapped SET open member.
+ * Source: BER selected-value contracts. Version: 2026-10-30.
+ * Inputs: codec/td/st/member/target describe output; ptr/size provide one TLV.
+ * Returns: decoder result. Errors: invalid selections and incomplete values fail.
+ * Author: maintainers. History: Added transactional SET open decoding.
+ * Example: A sibling selected after the open TLV chooses its concrete type.
+ */
+static asn_dec_rval_t
+_SET_ber_open_decode(const asn_codec_ctx_t *codec, const asn_TYPE_descriptor_t *td,
+                     void *st, const asn_TYPE_member_t *member, void **target,
+                     const void *ptr, size_t size) {
+    asn_type_selector_result_t selected = _SET_ber_open_selection(td, st, member, 0);
+    asn_dec_rval_t result = {RC_FAIL, 0};
+    void *inner;
+    if(!selected.type_descriptor) return result;
+    if(member->type->elements_count)
+        return _SET_ber_open_wrapper(codec, member, selected, target, ptr, size);
+    if((member->flags & ATF_POINTER) && *target) return result;
+    inner = (member->flags & ATF_POINTER) ? 0 : *target;
+    result = selected.type_descriptor->op->ber_decoder(codec, selected.type_descriptor,
+                                                       &inner, ptr, size, member->tag_mode);
+    if(result.code == RC_OK && result.consumed == size) {
+        if(member->flags & ATF_POINTER) *target = inner;
+        return result;
+    }
+    if(inner) {
+        if(member->flags & ATF_POINTER) ASN_STRUCT_FREE(*selected.type_descriptor, inner);
+        else ASN_STRUCT_RESET(*selected.type_descriptor, inner);
+    }
+    result.code = RC_FAIL;
+    result.consumed = 0;
+    return result;
+}
+
+/*
  * Purpose: decode one already-selected SET leaf using its bounded input span.
  * Source: Member BER operation, storage view, and duplicate presence checks.
  * Version: 2026-10-22.
@@ -457,7 +576,7 @@ static asn_dec_rval_t
 _SET_ber_decode_leaf(const asn_codec_ctx_t *codec,
                      const asn_TYPE_descriptor_t *td, void *st,
                      asn_struct_ctx_t *ctx, unsigned outer, unsigned child,
-                     const void **ptr, size_t *size) {
+                     const void **ptr, size_t *size, int mode) {
     asn_dec_rval_t rval = {RC_FAIL, 0};
     asn_SET_member_view_t view;
     void *member_ptr;
@@ -466,11 +585,31 @@ _SET_ber_decode_leaf(const asn_codec_ctx_t *codec,
         ? (size_t)ctx->left : *size;
 
     if(_SET_ber_prepare_member(td, st, outer, child, ctx, &view, &member_ptr,
-                               &member_ptr2) != 0) return rval;
-    if(!view.member->type->op || !view.member->type->op->ber_decoder)
+                               &member_ptr2, mode) != 0) return rval;
+    if((mode == 1 && (view.member->flags & ATF_OPEN_TYPE))
+    || (mode == 2 && !(view.member->flags & ATF_OPEN_TYPE))) {
+        ber_tlv_tag_t tag;
+        ssize_t tag_len = ber_fetch_tag(*ptr, available, &tag);
+        if(tag_len <= 0) return rval;
+        rval = _SET_ber_skip_unknown(codec, ctx, ptr, size, tag_len);
+        if(rval.code == RC_OK) _SET_ber_mark_member(td, st, outer, &view, ctx);
         return rval;
-    rval = view.member->type->op->ber_decoder(codec, view.member->type,
-                  member_ptr2, *ptr, available, view.member->tag_mode);
+    }
+    if(view.member->flags & ATF_OPEN_TYPE) {
+        ber_tlv_tag_t tag;
+        ssize_t tag_len = ber_fetch_tag(*ptr, available, &tag);
+        ssize_t length;
+        if(child != ASN_SET_DIRECT_MEMBER || tag_len <= 0) return rval;
+        length = ber_skip_length(codec, BER_TLV_CONSTRUCTED(*ptr),
+                                 (const char *)*ptr + tag_len, available - (size_t)tag_len);
+        if(length <= 0 || (size_t)length > available - (size_t)tag_len) return rval;
+        rval = _SET_ber_open_decode(codec, td, st, view.member, member_ptr2,
+                                    *ptr, (size_t)tag_len + (size_t)length);
+    } else {
+        if(!view.member->type->op || !view.member->type->op->ber_decoder) return rval;
+        rval = view.member->type->op->ber_decoder(codec, view.member->type,
+                      member_ptr2, *ptr, available, view.member->tag_mode);
+    }
     if(rval.consumed > available) {
         rval.code = RC_FAIL;
         rval.consumed = 0;
@@ -509,7 +648,7 @@ static asn_dec_rval_t
 _SET_ber_decode_step(const asn_codec_ctx_t *codec,
                      const asn_TYPE_descriptor_t *td, void *st,
                      const asn_SET_specifics_t *specs, asn_struct_ctx_t *ctx,
-                     const void **ptr, size_t *size, int *body_end) {
+                     const void **ptr, size_t *size, int *body_end, int mode) {
     asn_dec_rval_t rval;
     unsigned outer;
     unsigned child;
@@ -520,7 +659,7 @@ _SET_ber_decode_step(const asn_codec_ctx_t *codec,
     if(rval.code != RC_OK || !selected) return rval;
     {
         asn_dec_rval_t leaf = _SET_ber_decode_leaf(codec, td, st, ctx, outer,
-                                                   child, ptr, size);
+                                                   child, ptr, size, mode);
         leaf.consumed += rval.consumed;
         return leaf;
     }
@@ -646,10 +785,10 @@ _SET_ber_prepare(const asn_codec_ctx_t *codec,
  * History: Refactored to flatten SET extension groups and validate bounded input.
  * Example: a group child tag routes to its synthetic SET leaf without a wrapper.
  */
-asn_dec_rval_t
-SET_decode_ber(const asn_codec_ctx_t *opt_codec_ctx,
+static asn_dec_rval_t
+_SET_decode_ber_pass(const asn_codec_ctx_t *opt_codec_ctx,
                const asn_TYPE_descriptor_t *td, void **struct_ptr,
-               const void *ptr, size_t size, int tag_mode) {
+               const void *ptr, size_t size, int tag_mode, int mode) {
     /*
      * Bring closer parts of structure description.
      */
@@ -708,7 +847,7 @@ SET_decode_ber(const asn_codec_ctx_t *opt_codec_ctx,
         for(;;) {
             int body_end;
             rval = _SET_ber_decode_step(opt_codec_ctx, td, st, specs, ctx,
-                                        &ptr, &size, &body_end);
+                                        &ptr, &size, &body_end, mode);
             consumed_myself += rval.consumed;
             if(rval.code != RC_OK) RETURN(rval.code);
             if(body_end) break;
@@ -726,6 +865,114 @@ SET_decode_ber(const asn_codec_ctx_t *opt_codec_ctx,
     }
 
     RETURN(RC_OK);
+}
+
+/*
+ * Purpose: Validate an unambiguous explicitly tagged SET open member.
+ * Source: SET tag maps and opaque table-selector contracts. Version: 2026-10-30.
+ * Inputs: td is the SET descriptor. Returns: 1 for one valid open field,
+ * 0 for none, or -1 for unsupported or ambiguous metadata.
+ * Errors: Multiple open fields, group leaves and colliding tags fail closed.
+ * Author: maintainers. History: Added for transactional BER selection.
+ * Example: An untagged open field cannot be routed unambiguously.
+ */
+static int
+_SET_ber_open_shape(const asn_TYPE_descriptor_t *td) {
+    const asn_SET_specifics_t *specs = td->specifics;
+    unsigned i, open_index = 0, count = 0, matches = 0;
+    size_t width;
+    if(!specs || (td->elements_count && !td->elements)) return -1;
+    for(i = 0; i < td->elements_count; i++) {
+        const asn_TYPE_member_t *member = &td->elements[i];
+        if(member->flags & ATF_OPEN_TYPE) {
+            if(!member->type_selector || member->tag == (ber_tlv_tag_t)-1) return -1;
+            open_index = i;
+            count++;
+        }
+    }
+    if(!count) return 0;
+    if(count != 1 || SET_inline_value_size(td, &width) || !specs->tag2el) return -1;
+    /* Group presence does not prove each possible selector dependency exists. */
+    for(i = 0; i < td->elements_count; i++) {
+        if(td->elements[i].flags & ATF_EXTENSION_GROUP) return -1;
+    }
+    for(i = 0; i < specs->tag2el_count; i++) {
+        if(specs->tag2el[i].el_tag == td->elements[open_index].tag) {
+            if(specs->tag2el[i].el_no != open_index) return -1;
+            matches++;
+        }
+    }
+    return matches == 1 ? 1 : -1;
+}
+
+/*
+ * Purpose: Require every non-open sibling before invoking an opaque selector.
+ * Source: SET presence metadata and selector safety. Version: 2026-10-30.
+ * Inputs: td/st describe the decoded parent. Returns: zero or -1.
+ * Errors: Absent siblings fail closed. Author: maintainers.
+ * History: Restricts opaque selectors to initialized data.
+ * Example: An unrelated omitted OPTIONAL sibling is conservatively rejected.
+ */
+static int
+_SET_ber_open_dependencies(const asn_TYPE_descriptor_t *td, const void *st) {
+    const asn_SET_specifics_t *specs = td->specifics;
+    unsigned i;
+    for(i = 0; i < td->elements_count; i++) {
+        unsigned int word;
+        size_t word_bits = 8 * sizeof(word);
+        const char *map = (const char *)st + specs->pres_offset;
+        if(td->elements[i].flags & ATF_OPEN_TYPE) continue;
+        memcpy(&word, map + (i / word_bits) * sizeof(word), sizeof(word));
+        if(!(word & (1u << (word_bits - 1 - (i % word_bits))))) return -1;
+    }
+    return 0;
+}
+
+/*
+ * Purpose: Decode a direct SET open field after every sibling is available.
+ * Source: BER SET ordering and selector safety. Version: 2026-10-30.
+ * Inputs: codec/td/target/input/size/tag_mode follow the BER decoder API.
+ * Returns: RC_OK, RC_WMORE, or RC_FAIL and consumed bytes.
+ * Errors: Invalid metadata, duplicate fields, and unknown selectors fail.
+ * Author: maintainers. History: Atomic two-pass decode owns no staged bytes.
+ * Example: A selector can follow its explicitly tagged open field.
+ */
+asn_dec_rval_t
+SET_decode_ber(const asn_codec_ctx_t *codec, const asn_TYPE_descriptor_t *td,
+               void **target, const void *input, size_t size, int tag_mode) {
+    asn_dec_rval_t result = {RC_FAIL, 0};
+    const asn_SET_specifics_t *specs;
+    asn_struct_ctx_t *ctx;
+    ber_tlv_tag_t tag;
+    ssize_t tag_len, content_len;
+    unsigned i;
+    int shape;
+    if(!td || !target || (!input && size)) return result;
+    shape = _SET_ber_open_shape(td);
+    if(shape < 0) return result;
+    if(!shape) return _SET_decode_ber_pass(codec, td, target, input, size, tag_mode, 0);
+    if(!size) { result.code = RC_WMORE; return result; }
+    tag_len = ber_fetch_tag(input, size, &tag);
+    if(tag_len == 0) { result.code = RC_WMORE; return result; }
+    if(tag_len < 0 || (size_t)tag_len > size) return result;
+    content_len = ber_skip_length(codec, BER_TLV_CONSTRUCTED(input),
+                                  (const char *)input + tag_len, size - (size_t)tag_len);
+    if(content_len == 0) { result.code = RC_WMORE; return result; }
+    if(content_len < 0 || (size_t)content_len > size - (size_t)tag_len) return result;
+    size = (size_t)tag_len + (size_t)content_len;
+    result = _SET_decode_ber_pass(codec, td, target, input, size, tag_mode, 1);
+    if(result.code != RC_OK || result.consumed != size) { result.code = RC_FAIL; return result; }
+    specs = td->specifics;
+    for(i = 0; i < td->elements_count; i++) {
+        if((td->elements[i].flags & ATF_OPEN_TYPE)
+        && ASN_SET_ISPRESENT2((char *)*target + specs->pres_offset, i)
+        && _SET_ber_open_dependencies(td, *target)) { result.code = RC_FAIL; return result; }
+    }
+    ctx = (asn_struct_ctx_t *)((char *)*target + specs->ctx_offset);
+    memset(ctx, 0, sizeof(*ctx));
+    result = _SET_decode_ber_pass(codec, td, target, input, size, tag_mode, 2);
+    if(result.code == RC_OK && result.consumed != size) result.code = RC_FAIL;
+    return result;
 }
 
 /*
@@ -768,6 +1015,32 @@ _SET_der_member_cmp(const void *ap, const void *bp) {
 }
 
 /*
+ * Purpose: Ensure DER emits every sibling before resolving an opaque selector.
+ * Source: SET member presence and selector safety. Version: 2026-10-30.
+ * Inputs: td/st identify the parent; open identifies its selected member.
+ * Returns: zero when all siblings are emitted, otherwise -1.
+ * Errors: Absent, default-omitted or grouped siblings fail closed.
+ * Author: maintainers. History: Mirrors BER selector dependency validation.
+ * Example: An unrelated missing OPTIONAL sibling makes selected encoding fail.
+ */
+static int
+_SET_der_open_dependencies(const asn_TYPE_descriptor_t *td, const void *st,
+                           const asn_TYPE_member_t *open) {
+    unsigned i;
+    for(i = 0; i < td->elements_count; i++) {
+        const asn_TYPE_member_t *member = &td->elements[i];
+        asn_SET_member_view_t view;
+        if(member == open) continue;
+        if(member->flags & ATF_EXTENSION_GROUP) return -1;
+        if(SET_member_view(td, st, i, ASN_SET_DIRECT_MEMBER, &view) || !view.present)
+            return -1;
+        if(member->default_value_cmp && member->default_value_cmp(view.value) == 0)
+            return -1;
+    }
+    return 0;
+}
+
+/*
  * Purpose: size one present SET leaf and append its actual-tag sort entry.
  * Source: Member DER encoder and generated SET member descriptor.
  * Version: 2026-10-22.
@@ -780,8 +1053,8 @@ _SET_der_member_cmp(const void *ap, const void *bp) {
  * Example: a present CHOICE is sized and stored with its selected tag.
  */
 static int
-_SET_der_add_member(const asn_SET_member_view_t *view,
-                    SET_der_member_t *entries, size_t capacity,
+_SET_der_add_member(const asn_TYPE_descriptor_t *td, const void *sptr,
+                    const asn_SET_member_view_t *view, SET_der_member_t *entries, size_t capacity,
                     size_t *count, size_t *size, asn_enc_rval_t *error) {
     const asn_TYPE_member_t *member = view->member;
     asn_enc_rval_t child;
@@ -792,8 +1065,16 @@ _SET_der_add_member(const asn_SET_member_view_t *view,
     if(member->default_value_cmp && member->default_value_cmp(view->value) == 0)
         return 0;
     if(*count >= capacity) return -1;
-    child = member->type->op->der_encoder(member->type, view->value,
-                                          member->tag_mode, member->tag, 0, 0);
+    if(member->flags & ATF_OPEN_TYPE) {
+        asn_type_selector_result_t selected;
+        if(view->owner != sptr || _SET_der_open_dependencies(td, sptr, member)) return -1;
+        selected = _SET_ber_open_selection(td, sptr, member, 1);
+        if(!selected.type_descriptor) return -1;
+        child = OPEN_TYPE_ber_put(td, sptr, member, member->tag_mode, member->tag, 0, 0);
+    } else {
+        child = member->type->op->der_encoder(member->type, view->value,
+                                              member->tag_mode, member->tag, 0, 0);
+    }
     if(child.encoded < 0) {
         *error = child;
         return -2;
@@ -801,8 +1082,8 @@ _SET_der_add_member(const asn_SET_member_view_t *view,
     if((size_t)child.encoded > SIZE_MAX - *size) return -1;
     *size += (size_t)child.encoded;
     entries[*count].view = *view;
-    entries[*count].tag = asn_TYPE_outmost_tag(member->type, view->value,
-                                               member->tag_mode, member->tag);
+    entries[*count].tag = (member->flags & ATF_OPEN_TYPE) ? member->tag
+        : asn_TYPE_outmost_tag(member->type, view->value, member->tag_mode, member->tag);
     (*count)++;
     return 0;
 }
@@ -861,14 +1142,14 @@ _SET_der_gather(const asn_TYPE_descriptor_t *td, const void *sptr,
             for(j = 0; j < member->type->elements_count; j++) {
                 if(SET_member_view(td, sptr, (unsigned)i, (unsigned)j,
                                    &view) != 0) return -1;
-                status = _SET_der_add_member(&view, *entries, capacity,
+                status = _SET_der_add_member(td, sptr, &view, *entries, capacity,
                                              count, size, error);
                 if(status != 0) return status;
             }
         } else {
             if(SET_member_view(td, sptr, (unsigned)i, ASN_SET_DIRECT_MEMBER,
                                &view) != 0) return -1;
-            status = _SET_der_add_member(&view, *entries, capacity, count,
+            status = _SET_der_add_member(td, sptr, &view, *entries, capacity, count,
                                          size, error);
             if(status != 0) return status;
         }
@@ -904,6 +1185,7 @@ SET_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr, int tag_mode,
     if(!td || !td->op || td->op->kind != ASN_KIND_SET || !sptr
     || !td->specifics
     || (td->elements_count && !td->elements)) ASN__ENCODE_FAILED;
+    if(_SET_ber_open_shape(td) < 0) ASN__ENCODE_FAILED;
     ASN__ENCODER_RECURSION_DEPTH_INC();
     error.encoded = -1;
     error.failed_type = td;
@@ -943,9 +1225,11 @@ SET_encode_der(const asn_TYPE_descriptor_t *td, const void *sptr, int tag_mode,
         const asn_TYPE_member_t *member = view->member;
         asn_enc_rval_t child;
 
-        child = member->type->op->der_encoder(member->type, view->value,
-                                              member->tag_mode, member->tag,
-                                              cb, app_key);
+        if(member->flags & ATF_OPEN_TYPE)
+            child = OPEN_TYPE_ber_put(td, sptr, member, member->tag_mode, member->tag, cb, app_key);
+        else
+            child = member->type->op->der_encoder(member->type, view->value,
+                                                  member->tag_mode, member->tag, cb, app_key);
         if(child.encoded < 0) {
             FREEMEM(entries);
             ASN__ENCODER_RECURSION_DEPTH_DEC();

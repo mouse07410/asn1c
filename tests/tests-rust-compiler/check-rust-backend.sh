@@ -281,7 +281,7 @@ rust_out="$test_tmp/generated-rust"
 "$asn1c_bin" --rust -S "$skeletons" -D "$rust_out" \
     "$test_srcdir/FirstSlice.asn1"
 for generated in Cargo.toml src/lib.rs src/first_slice.rs runtime/Cargo.toml \
-    runtime/LICENSE runtime/src/lib.rs runtime/src/jer.rs runtime/src/aper.rs \
+    runtime/LICENSE runtime/src/lib.rs runtime/src/cbor.rs runtime/src/jer.rs runtime/src/aper.rs \
     runtime/src/oer.rs \
     runtime/src/uper_cursor.rs; do
     if [ ! -f "$rust_out/$generated" ]; then
@@ -451,7 +451,7 @@ if grep -F 'pub fn decode_cer' "$uper_only/src/first_slice.rs" >/dev/null; then
 fi
 
 # Unsupported codec requests must fail without publishing any Rust output.
-for codec in XER CBOR; do
+for codec in XER; do
     rejected_out="$test_tmp/rejected-$codec"
     if "$asn1c_bin" --rust "-gen-$codec" -S "$skeletons" \
         -D "$rejected_out" "$test_srcdir/FirstSlice.asn1" \
@@ -463,6 +463,31 @@ for codec in XER CBOR; do
         echo "FAIL: unsupported -gen-$codec created output before rejection"
         exit 1
     fi
+done
+
+# CBOR directly encodes primitive values and opaque ANY octets.
+"$asn1c_bin" --rust -gen-CBOR -no-gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/cbor-rust" "$test_srcdir/CborSlice.asn1"
+mkdir -p "$test_tmp/cbor-rust/tests" "$test_tmp/cbor-c"
+cp "$test_srcdir/cbor_conformance.rs" "$test_tmp/cbor-rust/tests/"
+cargo test --offline --manifest-path "$test_tmp/cbor-rust/Cargo.toml"
+cargo clippy --offline --manifest-path "$test_tmp/cbor-rust/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings
+"$asn1c_bin" -gen-CBOR -S "$skeletons" -D "$test_tmp/cbor-c" "$test_srcdir/CborSlice.asn1"
+rm -f "$test_tmp/cbor-c/converter-example.c" "$test_tmp/cbor-c/pdu_collection.c"
+cc -I"$test_tmp/cbor-c" "$test_tmp/cbor-c"/*.c "$test_srcdir/c_cbor.c" -lm -o "$test_tmp/c-cbor"
+"$test_tmp/c-cbor"
+
+# Constructed records, CONTAINING, and selected OPEN TYPE stay unsupported.
+for fixture in "$test_srcdir/SequenceSlice.asn1" "$test_srcdir/OpenSelected.asn1" \
+    "$test_tmp/ContainingSupported.asn1"; do
+    rejected_out="$test_tmp/rejected-cbor-$(basename "$fixture" .asn1)"
+    if "$asn1c_bin" --rust -gen-CBOR -no-gen-UPER -no-gen-CER -S "$skeletons" \
+        -D "$rejected_out" "$fixture" >"$test_tmp/rejected-cbor.log" 2>&1; then
+        echo "FAIL: Rust backend accepted unsupported CBOR $(basename "$fixture")" >&2
+        exit 1
+    fi
+    test ! -e "$rejected_out"
 done
 
 # JER is an opt-in primitive codec; its generated methods build without PER or CER.

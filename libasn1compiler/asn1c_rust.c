@@ -24,8 +24,9 @@
 #define RUST_CODEC_APER ((uint64_t)A1C_GEN_APER)
 #define RUST_CODEC_OER ((uint64_t)A1C_GEN_OER)
 #define RUST_CODEC_JER ((uint64_t)A1C_GEN_JER)
+#define RUST_CODEC_CBOR ((uint64_t)A1C_GEN_CBOR)
 #define RUST_CODEC_MASK (RUST_CODEC_UPER | RUST_CODEC_BER | RUST_CODEC_CER \
-                         | RUST_CODEC_APER | RUST_CODEC_OER | RUST_CODEC_JER)
+                         | RUST_CODEC_APER | RUST_CODEC_OER | RUST_CODEC_JER | RUST_CODEC_CBOR)
 #define RUST_CONSTRAINT_DEPTH_LIMIT 128
 #define RUST_IDENTIFIER_LIMIT 80
 #define RUST_MANIFEST_LIMIT (1024 * 1024)
@@ -192,7 +193,7 @@ asn1c_rust_compile(asn1p_t *asn, const char *runtime_dir,
     }
     if(!codecs || (codecs & ~RUST_CODEC_MASK)) {
         fprintf(stderr,
-                "asn1c: Rust backend supports UPER, APER, OER, BER, CER, and JER only\n");
+                "asn1c: Rust backend supports UPER, APER, OER, BER, CER, JER, and CBOR only\n");
         return -1;
     }
     if(rust_check_tree(asn, codecs)) return -1;
@@ -712,11 +713,12 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
         return 0;
     }
     if(expr->expr_type == ASN_TYPE_ANY) {
-        if(!codecs || (codecs & ~(RUST_CODEC_UPER | RUST_CODEC_APER | RUST_CODEC_OER | RUST_CODEC_JER))
+        if(!codecs || (codecs & ~(RUST_CODEC_UPER | RUST_CODEC_APER | RUST_CODEC_OER
+                                  | RUST_CODEC_JER | RUST_CODEC_CBOR))
            || expr->reference || expr->constraints
            || expr->combined_constraints || expr->lhs_params || expr->ioc_table
            || expr->members.tq_head) {
-            rust_diagnostic(module, expr, "ANY requires unqualified UPER, APER, OER, or JER opaque framing");
+            rust_diagnostic(module, expr, "ANY requires unqualified supported opaque framing");
             return -1;
         }
         return 0;
@@ -1859,6 +1861,7 @@ rust_manifest_path_allowed(const char *path) {
        || !strcmp(path, "runtime/README.md")
        || !strcmp(path, "runtime/LICENSE")
        || !strcmp(path, "runtime/src/lib.rs")
+       || !strcmp(path, "runtime/src/cbor.rs")
        || !strcmp(path, "runtime/src/jer.rs")
        || !strcmp(path, "runtime/src/aper.rs")
        || !strcmp(path, "runtime/src/oer.rs")
@@ -1919,7 +1922,7 @@ static int
 rust_copy_runtime(const char *source, const char *destination) {
     static const char *const files[] = {
         "Cargo.toml", "README.md", "LICENSE", "src/lib.rs",
-        "src/jer.rs", "src/aper.rs", "src/oer.rs", "src/uper_cursor.rs"
+        "src/cbor.rs", "src/jer.rs", "src/aper.rs", "src/oer.rs", "src/uper_cursor.rs"
     };
     struct stat status;
     char source_src[PATH_MAX];
@@ -2300,6 +2303,9 @@ rust_write_any(FILE *stream, const char *name, uint64_t codecs) {
     if((codecs & RUST_CODEC_OER)
        && rust_write_any_codec(stream, "oer", "oer::encode_any_oer(&self.0, limits)",
                                "oer::decode_any_oer(input, limits)")) return -1;
+    if((codecs & RUST_CODEC_CBOR)
+       && rust_write_any_codec(stream, "cbor", "cbor::encode_any_cbor(&self.0, limits)",
+                               "cbor::decode_any_cbor(input, limits)")) return -1;
     if((codecs & RUST_CODEC_JER)
        && rust_write_any_codec(stream, "jer", "jer::encode_octet_string_jer(&self.0, self.0.len(), limits)",
                                "jer::decode_bounded_octet_string_jer(input, 0, usize::MAX, limits)")) return -1;
@@ -3701,6 +3707,8 @@ rust_write_boolean(FILE *stream, const char *name, uint64_t codecs) {
        && rust_write_per_oer(stream, "oer", "boolean", NULL, NULL)) return -1;
     if((codecs & RUST_CODEC_JER)
        && rust_write_per_oer(stream, "jer", "boolean", NULL, NULL)) return -1;
+    if((codecs & RUST_CODEC_CBOR)
+       && rust_write_per_oer(stream, "cbor", "boolean", NULL, NULL)) return -1;
     if(fputs("}\n\n", stream) == EOF) return -1;
     return 0;
 }
@@ -3821,6 +3829,8 @@ rust_write_null(FILE *stream, const char *name, uint64_t codecs) {
        && rust_write_per_oer(stream, "oer", "null", NULL, NULL)) return -1;
     if((codecs & RUST_CODEC_JER)
        && rust_write_per_oer(stream, "jer", "null", NULL, NULL)) return -1;
+    if((codecs & RUST_CODEC_CBOR)
+       && rust_write_per_oer(stream, "cbor", "null", NULL, NULL)) return -1;
     if(fputs("}\n\n", stream) == EOF) return -1;
     return 0;
 }
@@ -3970,6 +3980,8 @@ rust_write_integer(FILE *stream, const char *name, int64_t lower,
        && rust_write_per_oer(stream, "oer", "integer", low, high)) return -1;
     if((codecs & RUST_CODEC_JER)
        && rust_write_per_oer(stream, "jer", "integer", low, high)) return -1;
+    if((codecs & RUST_CODEC_CBOR)
+       && rust_write_per_oer(stream, "cbor", "integer", low, high)) return -1;
     if(fputs("}\n\n", stream) == EOF) return -1;
     return 0;
 }
@@ -4040,9 +4052,9 @@ rust_write_per_oer(FILE *stream, const char *codec, const char *kind,
 
     if(!stream || !codec || !kind
        || (strcmp(codec, "aper") && strcmp(codec, "oer")
-           && strcmp(codec, "jer"))) return -1;
+           && strcmp(codec, "jer") && strcmp(codec, "cbor"))) return -1;
     label = !strcmp(codec, "aper") ? "APER"
-          : !strcmp(codec, "oer") ? "OER" : "JER";
+          : !strcmp(codec, "oer") ? "OER" : !strcmp(codec, "cbor") ? "CBOR" : "JER";
     decode_input = !strcmp(codec, "jer")
         ? "`input` is one complete JSON primitive; `limits` bounds input and work."
         : "`input` is the encoded prefix; `limits` bounds input and work.";
@@ -4198,7 +4210,7 @@ static int
 rust_write_manifest(asn1p_t *asn, const char *stage) {
     static const char *const fixed[] = {
         "Cargo.toml", "src/lib.rs", "runtime/Cargo.toml", "runtime/README.md",
-        "runtime/LICENSE", "runtime/src/lib.rs", "runtime/src/jer.rs",
+        "runtime/LICENSE", "runtime/src/lib.rs", "runtime/src/cbor.rs", "runtime/src/jer.rs",
         "runtime/src/aper.rs",
         "runtime/src/oer.rs", "runtime/src/uper_cursor.rs"
     };

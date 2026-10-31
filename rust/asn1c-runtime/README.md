@@ -113,3 +113,9 @@ cargo test --offline --manifest-path rust/asn1c-runtime/Cargo.toml
 cargo clippy --manifest-path rust/asn1c-runtime/Cargo.toml \
   --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings
 ```
+
+CBOR primitive APIs encode BOOLEAN, NULL, bounded signed INTEGER and opaque
+ANY. They decode one definite prefix, accept leading semantic tags and
+nonminimal definite heads, and reject INTEGER bignum tags and indefinite byte
+strings. ANY is represented as a definite CBOR byte string and is limited to
+`INT32_MAX` octets for compatibility with the C `ANY_t` size field.
