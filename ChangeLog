@@ -1,4 +1,8 @@
 Changes since v1.5.3:
+	* Add direct untagged IA5String Rust BER/DER/CER support under
+	  BER/CER-only selection. Preserve C-compatible raw BER and DER bytes,
+	  apply the 7-bit repertoire for CER, and test OCTET STRING fragments,
+	  canonical boundaries, malformed input, limits, and C interoperability.
 	* Add direct untagged OBJECT IDENTIFIER and RELATIVE-OID Rust
 	  BER/DER/CER roots under BER/CER-only selection. Retain arbitrarily
 	  large subidentifiers as canonical base-128 content, check malformed

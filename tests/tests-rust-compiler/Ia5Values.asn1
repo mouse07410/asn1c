@@ -1,0 +1,5 @@
+Ia5Values DEFINITIONS ::= BEGIN
+
+AsciiValue ::= IA5String
+
+END

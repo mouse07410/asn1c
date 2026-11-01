@@ -172,6 +172,16 @@ unterminated content that C BER may retain; strict CER requires the minimal
 primitive encoding. These roots use finite input, output, work, and aggregate
 scratch limits. Tagged, constrained, aliased, imported, and member OID forms
 remain outside the Rust slice.
+Direct untagged, unconstrained IA5String roots support BER prefix decoding,
+DER encoding, CER encoding, and strict CER decoding under BER/CER-only
+selection. BER and DER preserve arbitrary content bytes as the C codecs do;
+CER checks the IA5 7-bit repertoire. Constructed BER uses universal OCTET
+STRING fragments under the IA5 outer tag, and canonical CER fragments content
+above 1000 octets. An empty constructed BER value normalizes to empty Rust
+bytes and can be encoded as canonical `16 00`; the C BER decoder leaves a null
+buffer for that form, so its later constraint check or CER encode fails.
+Other character-string kinds, tagged or constrained IA5 roots, aliases,
+imports, and IA5 fields remain outside the Rust slice.
 Flat SET records with an untagged outer type and the same six direct field kinds are
 available when only BER and/or CER are selected. BER accepts members in any
 order; DER/CER emits them by ascending effective tag class and number, and strict CER rejects

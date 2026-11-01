@@ -1,0 +1,5 @@
+Ia5ValuesConstrained DEFINITIONS ::= BEGIN
+
+AsciiValue ::= IA5String (SIZE(1..2))
+
+END

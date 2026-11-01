@@ -98,6 +98,7 @@ fresh directory after adding application code or running Cargo there.
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in BER prefix decoding and DER encoding with `-gen-BER` |
 | Direct unconstrained INTEGER | BER prefix decoding, DER encoding, CER encoding, and strict CER decoding under BER/CER-only selection; private arbitrary-precision signed-byte value, untagged root, finite operation limits |
 | Direct unconstrained OBJECT IDENTIFIER and RELATIVE-OID | BER prefix decoding, DER encoding, CER encoding, and strict CER decoding under BER/CER-only selection; untagged roots, private canonical base-128 content, arbitrarily large subidentifiers and finite operation limits |
+| Direct unconstrained IA5String | BER prefix decoding and DER encoding preserve raw bytes; CER encoding and strict CER decoding enforce the 7-bit repertoire and canonical tag-22 primitive or universal OCTET STRING fragment forms; untagged BER/CER-only root with owned bytes and finite limits |
 | Direct ENUMERATED | BER prefix decoding, DER encoding, CER encoding and strict CER decoding when selected |
 | Direct fixed/bounded OCTET STRING and BIT STRING | BER prefix decoding, DER encoding, CER encoding and strict CER decoding when selected; finite nonextensible SIZE below 65536 |
 | Direct unconstrained OCTET STRING and BIT STRING | BER prefix decoding, DER encoding, CER encoding, and strict CER decoding under BER/CER-only selection; untagged roots, owned values, complete-input and work limits; BIT STRING stores validated packed bytes and exact bit length |

@@ -1,0 +1,13 @@
+Ia5ValuesImport DEFINITIONS ::= BEGIN
+
+IMPORTS Remote FROM Ia5ValuesRemote;
+
+AsciiValue ::= IA5String
+
+END
+
+Ia5ValuesRemote DEFINITIONS ::= BEGIN
+
+Remote ::= BOOLEAN
+
+END

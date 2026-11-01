@@ -1,0 +1,5 @@
+Ia5ValuesField DEFINITIONS ::= BEGIN
+
+Packet ::= SEQUENCE { text IA5String }
+
+END

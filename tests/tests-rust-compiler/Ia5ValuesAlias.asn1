@@ -1,0 +1,6 @@
+Ia5ValuesAlias DEFINITIONS ::= BEGIN
+
+Base ::= IA5String
+Alias ::= Base
+
+END

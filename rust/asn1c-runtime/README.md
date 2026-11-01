@@ -158,6 +158,18 @@ canonical re-encoding under one cumulative work and scratch budget. Rust
 deliberately rejects empty and unterminated BER contents even though the C BER
 decoder accepts them; such content cannot represent a valid OID value.
 
+`Ia5String` owns raw bytes and exposes them through `as_bytes`; its fallible
+`try_from_bytes` constructor preserves all octets without checking the IA5
+repertoire. `encode_ia5_string_der` and `decode_ia5_string_ber` likewise retain
+arbitrary bytes, matching the C BER/DER callbacks. CER encoding and strict CER
+decoding validate that every byte is at most `0x7f`; the entire 7-bit range,
+including NUL and ESC, is accepted. BER constructed values use universal
+OCTET STRING tag 4 fragments under outer IA5String tag 22. CER is primitive
+through 1000 content bytes, then uses an indefinite constructed tag-22 value
+with 1000-byte tag-4 fragments. Empty `16 00` is valid. BER also decodes an
+empty constructed value, which strict CER rejects because its canonical form
+is primitive `16 00`.
+
 `RecordContext`, `SequenceReader`, `SequenceWriter`, `SetReader`, and `SetWriter`
 compose flat SEQUENCE and SET values with direct BOOLEAN, NULL,
 ENUMERATED, bounded INTEGER, and bounded BIT/OCTET STRING fields under one

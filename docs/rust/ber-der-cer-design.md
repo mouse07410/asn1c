@@ -7,7 +7,7 @@ runtime currently supplies BER prefix decoding and DER and CER encoding, plus
 strict CER prefix decoding, for BOOLEAN, NULL, finite bounded `i64` INTEGER,
 unconstrained arbitrary-precision INTEGER, direct finite ENUMERATED, direct
 unconstrained OBJECT IDENTIFIER and RELATIVE-OID, and fixed, bounded, or direct
-unconstrained BIT/OCTET STRING values. See
+unconstrained BIT/OCTET STRING values, and direct untagged IA5String. See
 `rust/asn1c-runtime/README.md` and
 `libasn1compiler/asn1c_rust.c`. The generator rejects many schemas supported by
 C, including imports, references, most root tags, and multi-tag stacks. These
@@ -372,6 +372,43 @@ base-128 runs, `80` at every subidentifier boundary, high-tag aliases,
 malformed lengths and EOCs, suffix consumption, exact resource ceilings, and
 mutations. Keep numeric-arc conversion optional and explicitly fallible if it
 is added later.
+
+### Direct IA5String (qualified initial gate)
+
+The initial restricted-string gate covers only a direct untagged, unconstrained,
+top-level IA5String with BER/CER-only codec selection. It does not enable
+other character strings, references, members, imports, root tags, explicit
+constraints, or mixed codec selections. The public runtime `Ia5String` owns
+private bytes, has a fallible `try_from_bytes(&[u8], &Limits)` constructor and
+a borrowed `as_bytes()` accessor, and does not derive infallible `Clone`.
+Keep the bytes raw at construction: the C BER decoder accepts an octet above
+`7f`, and its DER encoder reproduces it. The C CER encoder applies the IA5
+constraint and rejects such a value; strict CER decoding rejects the same
+wire form. Rust BER and DER should preserve this codec timing. Rust CER must
+validate every byte is at most `7f` before encoding or publishing a decoded
+value. The full 7-bit repertoire, including `00`, ESC, and `7f`, is accepted
+by the C constraint. Empty `16 00` is a valid C BER and CER wire value even
+though a manually constructed C zero-length value with a null buffer fails
+its in-memory CER constraint check.
+The C BER decoder also accepts a constructed empty IA5String but leaves a
+null data pointer, so a subsequent C constraint check or CER encode fails.
+Rust may normalize that BER value to empty owned bytes and encode canonical
+`16 00`; document this cross-operation storage divergence.
+
+The BER reader expects universal tag 22 and flattens primitive or constructed
+definite and indefinite forms through universal OCTET STRING tag 4 children;
+character-tag children are rejected. It must validate each parent boundary,
+matching EOC, depth, output growth, and whole-input budget. DER emits a
+primitive tag 22 with minimal definite length. CER is primitive through 1000
+content octets; above 1000 it emits an indefinite constructed tag 22 with
+1000-octet universal tag 4 fragments, a final shorter fragment, and EOC.
+Fragmentation is bytewise, so later UTF8String support must validate after
+reassembly rather than per fragment. Strict CER decodes BER, validates IA5,
+re-encodes and compares the exact consumed prefix through one cumulative
+input, retained value, output, work, and scratch budget. The selected-method
+generator gate and tests must cover empty, invalid high-bit, 999/1000/1001
+and larger lengths, nested BER forms, fragment tags, high-tag aliases,
+truncation, suffixes, mutations, exact limits, and live C vectors.
 
 ## Decisions still required
 

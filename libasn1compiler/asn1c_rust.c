@@ -90,6 +90,7 @@ static int rust_check_type_name(asn1p_module_t *, asn1p_expr_t *);
 static int rust_check_unconstrained_string_codecs(asn1p_module_t *,
                                                 asn1p_expr_t *, uint64_t);
 static int rust_check_oid_codecs(asn1p_module_t *, asn1p_expr_t *, uint64_t);
+static int rust_check_ia5_codecs(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static asn1p_expr_t *rust_contained_primitive(asn1p_module_t *, asn1p_expr_t *);
 static const asn1p_constraint_t *rust_containing_node(const asn1p_constraint_t *, unsigned);
 static int rust_write_containing(FILE *, const char *, asn1p_expr_t *, asn1p_expr_t *, uint64_t);
@@ -174,6 +175,8 @@ static int rust_write_unconstrained_string(FILE *, const char *, int, uint64_t);
 static int rust_write_unconstrained_string_ber_cer(FILE *, int, int);
 static int rust_write_oid(FILE *, const char *, int, uint64_t);
 static int rust_write_oid_ber_cer(FILE *, int, int);
+static int rust_write_ia5_string(FILE *, const char *, uint64_t);
+static int rust_write_ia5_string_ber_cer(FILE *, int);
 static int rust_write_bounded_octets(FILE *, const char *, size_t, size_t,
                                     uint64_t);
 static int rust_write_bounded_octets_uper(FILE *, size_t, size_t);
@@ -829,6 +832,24 @@ rust_check_oid_codecs(asn1p_module_t *module, asn1p_expr_t *expr,
     return -1;
 }
 
+/* Validate BER/CER-only selection for one direct IA5String root.
+ * Inputs: module and expr identify the fixed assignment; codecs is selected.
+ * Returns zero for a nonempty BER/CER-only mask, otherwise -1 with a diagnostic.
+ * Errors: no exception. Source: approved direct IA5String generator gate.
+ * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
+ * History: raw-byte BER/DER with strict CER support.
+ * Example: BER plus CER is accepted; BER plus UPER is refused.
+ */
+static int
+rust_check_ia5_codecs(asn1p_module_t *module, asn1p_expr_t *expr,
+                      uint64_t codecs) {
+    const uint64_t ber_cer = RUST_CODEC_BER | RUST_CODEC_CER;
+    if(codecs && !(codecs & ~ber_cer)) return 0;
+    rust_diagnostic(module, expr,
+                    "unconstrained IA5String requires BER/CER-only codec selection");
+    return -1;
+}
+
 /*
  * Reject one unsupported type before output publication.
  * Parameters: module and expr identify the fixed assignment; codecs is the
@@ -931,6 +952,15 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
             return -1;
         }
         return rust_check_oid_codecs(module, expr, codecs);
+    }
+    if(expr->expr_type == ASN_STRING_IA5String) {
+        if(expr->constraints || expr->combined_constraints || expr->reference
+           || expr->rhs_pspecs || expr->marker.flags != EM_NOMARK) {
+            rust_diagnostic(module, expr,
+                "IA5String requires a direct untagged unconstrained root");
+            return -1;
+        }
+        return rust_check_ia5_codecs(module, expr, codecs);
     }
     if(expr->expr_type == ASN_BASIC_OCTET_STRING) {
         size_t lower, upper;
@@ -3480,6 +3510,8 @@ rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
               || expr->expr_type == ASN_BASIC_RELATIVE_OID) {
         ret = rust_write_oid(stream, name,
             expr->expr_type == ASN_BASIC_RELATIVE_OID, codecs);
+    } else if(expr->expr_type == ASN_STRING_IA5String) {
+        ret = rust_write_ia5_string(stream, name, codecs);
     } else {
         int64_t lower, upper;
         if(rust_integer_bounds(expr, &lower, &upper)) ret = -1;
@@ -6816,6 +6848,109 @@ rust_write_oid_ber_cer(FILE *stream, int relative, int cer) {
         "        ::asn1c_runtime::decode_%s_%s(input, limits)\n"
         "            .map(|decoded| decoded.map(Self))\n    }\n",
         suffix, family, suffix) < 0)
+        return -1;
+    return 0;
+}
+
+/*
+ * Emit one unbounded IA5String wrapper with private owned raw-byte storage.
+ * Inputs: stream receives Rust, name is the schema type, and codecs is the
+ * validated BER/CER-only mask. Returns zero or -1 on output failure.
+ * Errors: generated methods propagate codec validation and limit errors.
+ * Source: approved IA5String BER/CER API. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: direct IA5String slice.
+ * Example: rust_write_ia5_string(out, "Text", RUST_CODEC_CER).
+ */
+static int
+rust_write_ia5_string(FILE *stream, const char *name, uint64_t codecs) {
+    if(fprintf(stream,
+        "/// Unconstrained ASN.1 `IA5String` with private raw-byte storage.\n"
+        "#[derive(Debug, Eq, PartialEq)]\n"
+        "pub struct %s(\n"
+        "    /// Owned `IA5String` content state variable.\n"
+        "    ::asn1c_runtime::Ia5String\n"
+        ");\n\nimpl %s {\n", name, name) < 0)
+        return -1;
+    if(rust_write_method_doc(stream, "Construct an owned `IA5String` from raw bytes.",
+            "`bytes` is raw content; `limits` bounds input, storage, and work.",
+            "Returns privately owned bytes without applying CER's 7-bit check.",
+            "Returns an error if input or allocation exceeds configured limits.",
+            "`let value = Type::try_from_bytes(&[0x80], &limits)?;"))
+        return -1;
+    if(fputs("    pub fn try_from_bytes(\n"
+             "        bytes: &[u8], limits: &::asn1c_runtime::Limits\n"
+             "    ) -> ::core::result::Result<Self, ::asn1c_runtime::Error> {\n"
+             "        ::asn1c_runtime::Ia5String::try_from_bytes(bytes, limits)\n"
+             "            .map(Self)\n    }\n", stream) == EOF)
+        return -1;
+    if(rust_write_method_doc(stream, "Borrow the stored `IA5String` content bytes.",
+            "`self` is the value to inspect.",
+            "Returns the original content bytes without copying.",
+            "This accessor cannot fail.", "`let bytes = value.as_bytes();"))
+        return -1;
+    if(fputs("    #[must_use]\n"
+             "    pub fn as_bytes(&self) -> &[u8] { self.0.as_bytes() }\n",
+             stream) == EOF)
+        return -1;
+    if((codecs & RUST_CODEC_BER)
+       && rust_write_ia5_string_ber_cer(stream, 0)) return -1;
+    if((codecs & RUST_CODEC_CER)
+       && rust_write_ia5_string_ber_cer(stream, 1)) return -1;
+    return fputs("}\n\n", stream) == EOF ? -1 : 0;
+}
+
+/* Emit one DER/BER or CER method pair for the IA5String wrapper.
+ * Inputs: stream receives Rust; cer selects CER instead of DER/BER.
+ * Returns zero or -1 on output failure. BER/DER preserve arbitrary octets;
+ * CER methods apply the strict 7-bit IA5 constraint. Source: runtime IA5 APIs.
+ * Version/date: 2026-11-01. Responsible: asn1c maintainers.
+ * History: codec-selective IA5 output. Example: rust_write_ia5_string_ber_cer(out, 1).
+ */
+static int
+rust_write_ia5_string_ber_cer(FILE *stream, int cer) {
+    const char *suffix = cer ? "cer" : "ber";
+    const char *encode = cer ? "cer" : "der";
+    const char *description = cer
+        ? "Encode this value using strict IA5 CER rules."
+        : "Encode this value using DER while preserving raw content bytes.";
+    const char *decode_description = cer
+        ? "Strictly decode one CER `IA5String` TLV and report prefix consumption."
+        : "Decode one BER `IA5String` TLV and report prefix consumption.";
+    const char *encode_result = cer
+        ? "Returns an error if content contains a byte above 7f or exceeds limits."
+        : "Returns an error if output or work exceeds configured limits.";
+    const char *decode_result = cer
+        ? "Returns an error for invalid IA5 bytes, noncanonical input, or limits."
+        : "Returns an error for malformed input or exhausted limits.";
+    const char *encode_example = cer
+        ? "`let encoded = value.encode_cer(&Default::default())?;"
+        : "`let encoded = value.encode_der(&Default::default())?;";
+    const char *decode_example = cer
+        ? "`let decoded = Type::decode_cer(input, &Default::default())?;"
+        : "`let decoded = Type::decode_ber(input, &Default::default())?;";
+
+    if(rust_write_method_doc(stream, description,
+            "`self` is the value; `limits` bounds output and work.",
+            "Returns the complete universal tag 22 TLV.", encode_result, encode_example))
+        return -1;
+    if(fprintf(stream,
+        "    pub fn encode_%s(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, "
+        "::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::encode_ia5_string_%s(&self.0, limits)\n"
+        "    }\n", encode, encode) < 0)
+        return -1;
+    if(rust_write_method_doc(stream, decode_description,
+            "`input` is a prefix; `limits` bounds input, decoded storage, and work.",
+            "Returns the value and exact consumed byte and bit counts.",
+            decode_result, decode_example)) return -1;
+    if(fprintf(stream,
+        "    pub fn decode_%s(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, "
+        "::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::decode_ia5_string_%s(input, limits)\n"
+        "            .map(|decoded| decoded.map(Self))\n    }\n",
+        suffix, suffix) < 0)
         return -1;
     return 0;
 }

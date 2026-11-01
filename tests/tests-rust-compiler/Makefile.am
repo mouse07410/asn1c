@@ -44,6 +44,15 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/RelativeOidTagged.asn1 \
     $(srcdir)/oid_conformance.rs \
     $(srcdir)/c_oid.c \
+    $(srcdir)/Ia5Values.asn1 \
+    $(srcdir)/Ia5ValuesAlias.asn1 \
+    $(srcdir)/Ia5ValuesConstrained.asn1 \
+    $(srcdir)/Ia5ValuesField.asn1 \
+    $(srcdir)/Ia5ValuesImport.asn1 \
+    $(srcdir)/Ia5ValuesTagged.asn1 \
+    $(srcdir)/Ia5OtherRestrictedString.asn1 \
+    $(srcdir)/ia5_conformance.rs \
+    $(srcdir)/c_ia5.c \
     $(srcdir)/FirstSlice.asn1 \
     $(srcdir)/SequenceSlice.asn1 \
     $(srcdir)/StringSlice.asn1 \

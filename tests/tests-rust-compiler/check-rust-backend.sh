@@ -2941,4 +2941,105 @@ if ! "$test_tmp/c-oid"; then
     exit 1
 fi
 
+# Direct unconstrained IA5String keeps BER/DER raw-byte timing and strict CER.
+for fixture in Ia5ValuesAlias Ia5ValuesConstrained Ia5ValuesField \
+    Ia5ValuesImport Ia5ValuesTagged Ia5OtherRestrictedString; do
+    rejected_out="$test_tmp/rejected-$fixture"
+    if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$rejected_out" "$test_srcdir/$fixture.asn1" \
+        >"$test_tmp/$fixture.log" 2>&1; then
+        echo "FAIL: Rust backend accepted unsupported IA5 shape $fixture"
+        exit 1
+    fi
+    test ! -e "$rejected_out"
+done
+
+ia5_mixed="$test_tmp/rejected-ia5-mixed"
+if "$asn1c_bin" --rust -S "$skeletons" -D "$ia5_mixed" \
+    "$test_srcdir/Ia5Values.asn1" >"$test_tmp/ia5-mixed.log" 2>&1; then
+    echo "FAIL: mixed default codecs accepted direct IA5String"
+    exit 1
+fi
+test ! -e "$ia5_mixed"
+ia5_uper="$test_tmp/rejected-ia5-uper"
+if "$asn1c_bin" --rust -gen-UPER -no-gen-BER -no-gen-CER -S "$skeletons" \
+    -D "$ia5_uper" "$test_srcdir/Ia5Values.asn1" \
+    >"$test_tmp/ia5-uper.log" 2>&1; then
+    echo "FAIL: UPER-only selection accepted direct IA5String"
+    exit 1
+fi
+test ! -e "$ia5_uper"
+
+ia5_rust="$test_tmp/ia5-rust"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$ia5_rust" "$test_srcdir/Ia5Values.asn1"
+mkdir "$ia5_rust/tests"
+cp "$test_srcdir/ia5_conformance.rs" "$ia5_rust/tests/"
+ia5_source="$ia5_rust/src/ia5_values.rs"
+for method in try_from_bytes as_bytes encode_der decode_ber encode_cer decode_cer; do
+    grep -F "pub fn $method" "$ia5_source" >/dev/null
+done
+if grep -F '#[derive(Clone' "$ia5_source" >/dev/null; then
+    echo "FAIL: IA5 wrapper derives infallible Clone"
+    exit 1
+fi
+if ! (cd "$ia5_rust" && \
+    CARGO_TARGET_DIR="$test_tmp/target-ia5" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-ia5" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/ia5-rust.log" 2>&1; then
+    cat "$test_tmp/ia5-rust.log"
+    echo "FAIL: IA5 conformance or strict Clippy"
+    exit 1
+fi
+
+for codec in BER CER; do
+    if [ "$codec" = BER ]; then
+        ia5_unwanted='encode_cer|decode_cer'
+        "$asn1c_bin" --rust -gen-BER -no-gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$test_tmp/ia5-$codec-only" "$test_srcdir/Ia5Values.asn1"
+    else
+        ia5_unwanted='encode_der|decode_ber'
+        "$asn1c_bin" --rust -gen-CER -no-gen-BER -no-gen-UPER -S "$skeletons" \
+            -D "$test_tmp/ia5-$codec-only" "$test_srcdir/Ia5Values.asn1"
+    fi
+    ia5_codec_out="$test_tmp/ia5-$codec-only"
+    if (cargo check --offline --manifest-path "$ia5_codec_out/Cargo.toml" && \
+        cargo clippy --offline --manifest-path "$ia5_codec_out/Cargo.toml" \
+        --all-targets --all-features -- -W clippy::pedantic \
+        -W clippy::nursery -D warnings) >"$test_tmp/ia5-$codec-only.log" 2>&1; then
+        :
+    else
+        cat "$test_tmp/ia5-$codec-only.log"
+        echo "FAIL: IA5 $codec-only strict Clippy"
+        exit 1
+    fi
+    if grep -E "pub fn ($ia5_unwanted)" "$ia5_codec_out/src/ia5_values.rs" >/dev/null; then
+        echo "FAIL: IA5 $codec-only output has unselected methods"
+        exit 1
+    fi
+done
+
+ia5_c="$test_tmp/ia5-c"
+mkdir "$ia5_c"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$ia5_c" "$test_srcdir/Ia5Values.asn1" \
+    >"$test_tmp/ia5-c-generate.log" 2>&1
+ia5_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' "$ia5_c/Makefile.am.libasncodec")
+rm -f "$ia5_c/converter-example.c" "$ia5_c/pdu_collection.c"
+if ! cc $ia5_cflags -I"$ia5_c" "$ia5_c"/*.c "$test_srcdir/c_ia5.c" \
+    -lm -o "$test_tmp/c-ia5" >"$test_tmp/ia5-c-compile.log" 2>&1; then
+    cat "$test_tmp/ia5-c-compile.log"
+    echo "FAIL: C IA5 differential fixture did not compile"
+    exit 1
+fi
+if ! "$test_tmp/c-ia5"; then
+    echo "FAIL: C IA5 BER/DER/CER vectors or compatibility probes failed"
+    exit 1
+fi
+
 echo "PASS: generated Rust UPER/CER/BER-DER primitive slice"

@@ -15,6 +15,7 @@ const MAX_RECORD_SCRATCH_BYTES: usize = 128 * 1024 * 1024;
 const CER_FRAGMENT_MAX: usize = 1000;
 const TAG_BIT_STRING: u64 = 3;
 const TAG_OCTET_STRING: u64 = 4;
+const TAG_IA5_STRING: u64 = 22;
 const TAG_ENUMERATED: u64 = 10;
 const TAG_SEQUENCE: u64 = 16;
 const TAG_BOOLEAN: u64 = 1;
@@ -25,6 +26,8 @@ const TAG_OBJECT_IDENTIFIER: u32 = 6;
 const TAG_RELATIVE_OID: u32 = 13;
 /// Maximum simultaneous retained and canonical OID codec buffer capacity.
 const MAX_OID_SCRATCH_BYTES: usize = 128 * 1024 * 1024;
+/// Maximum simultaneous retained and canonical IA5 codec buffer capacity.
+const MAX_IA5_SCRATCH_BYTES: usize = 128 * 1024 * 1024;
 const MAX_SEQUENCE_FIELDS: usize = 6;
 /// Largest BER tag number representable by the C runtime's packed tag value.
 pub const MAX_TAG_NUMBER: u32 = 0x3fff_ffff;
@@ -123,6 +126,66 @@ impl RelativeOid {
     #[must_use]
     pub fn as_content(&self) -> &[u8] {
         &self.content
+    }
+}
+
+/// Raw octets for a direct ASN.1 `IA5String` value.
+///
+/// BER decoding and DER encoding preserve every octet. CER operations apply
+/// the 7-bit IA5 constraint, matching the C runtime's codec timing.
+#[derive(Debug, Eq, PartialEq)]
+pub struct Ia5String {
+    /// Owned raw value octets; state variable.
+    bytes: Vec<u8>,
+}
+
+impl Ia5String {
+    /// Copy raw `IA5String` bytes without applying the CER-only repertoire check.
+    ///
+    /// # Parameters and returns
+    /// `bytes` is the raw content; `limits` caps input, retained output, and
+    /// copy work. Returns an owned value without cloning.
+    ///
+    /// # Errors
+    /// Returns input/output/work/scratch limits, checked-size errors, or an
+    /// allocation error. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: C `IA5String` BER/DER codec timing. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct IA5 gate.
+    /// Example: `Ia5String::try_from_bytes(&[0x41], limits)?`.
+    pub fn try_from_bytes(bytes: &[u8], limits: &Limits) -> Result<Self, Error> {
+        check(Resource::InputBytes, bytes.len(), limits.max_input_bytes)?;
+        check(Resource::OutputBytes, bytes.len(), limits.max_output_bytes)?;
+        check_ia5_scratch(bytes.len())?;
+        let mut work = 0;
+        charge_work(&mut work, bytes.len(), limits)?;
+        let mut owned = Vec::new();
+        owned
+            .try_reserve_exact(bytes.len())
+            .map_err(|_| Error::AllocationFailed {
+                requested_bytes: bytes.len(),
+            })?;
+        check_ia5_scratch(owned.capacity())?;
+        owned.extend_from_slice(bytes);
+        Ok(Self { bytes: owned })
+    }
+
+    /// Borrow the raw `IA5String` content bytes.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns stored bytes without applying a repertoire check.
+    ///
+    /// # Errors
+    /// This accessor cannot fail or panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: C `IA5String` BER/DER codec timing. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct IA5 gate.
+    /// Example: `value.as_bytes() == [0x41]`.
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes
     }
 }
 
@@ -3739,6 +3802,331 @@ pub fn decode_relative_oid_cer(
     })
 }
 
+/// Encode raw `IA5String` bytes as a primitive DER TLV.
+///
+/// # Parameters and returns
+/// `value` contains raw bytes; `limits` caps complete output, work, and scratch.
+/// Returns tag 22 with a shortest definite length. The bytes are not validated.
+///
+/// # Errors
+/// Returns output/work/scratch limits, checked-size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: C `IA5String` DER callback. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct IA5 gate.
+/// Example: `encode_ia5_string_der(&value, limits)?`.
+pub fn encode_ia5_string_der(value: &Ia5String, limits: &Limits) -> Result<Encoded, Error> {
+    encode_ia5_der(&value.bytes, value.bytes.capacity(), limits)
+}
+
+/// Encode `IA5String` as canonical CER after validating all content octets.
+///
+/// # Parameters and returns
+/// `value` contains raw bytes; `limits` caps complete output, work, and scratch.
+/// Returns tag 22 primitive through 1000 content octets, otherwise tag 22 with
+/// universal tag-4 fragments.
+///
+/// # Errors
+/// Returns invalid encoding for octets above `0x7f`, resource limits, checked
+/// size errors, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: C `IA5String` CER constraint timing. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct IA5 gate.
+/// Example: `encode_ia5_string_cer(&value, limits)?`.
+pub fn encode_ia5_string_cer(value: &Ia5String, limits: &Limits) -> Result<Encoded, Error> {
+    let mut work = 0;
+    validate_ia5_content(&value.bytes, limits, &mut work)?;
+    let encoded_len = ia5_cer_encoded_len(value.bytes.len())?;
+    check(Resource::OutputBytes, encoded_len, limits.max_output_bytes)?;
+    check_ia5_scratch(
+        value
+            .bytes
+            .capacity()
+            .checked_add(encoded_len)
+            .ok_or(Error::SizeOverflow)?,
+    )?;
+    charge_work(&mut work, encoded_len, limits)?;
+    encode_ia5_cer_precharged(&value.bytes, value.bytes.capacity(), limits)
+}
+
+/// Decode one BER `IA5String` prefix while preserving all content octets.
+///
+/// # Parameters and returns
+/// `input` may have a suffix; `limits` caps the entire slice, retained bytes,
+/// and traversal work. Returns raw value bytes and exact TLV prefix consumption.
+///
+/// # Errors
+/// Returns malformed/truncated BER, tag/fragment/EOC, resource, size, or
+/// allocation errors. The IA5 repertoire is deliberately not checked.
+///
+/// # Source, version, history, example
+/// Source: C `IA5String` BER callback. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct IA5 gate.
+/// Example: `decode_ia5_string_ber(input, limits)?`.
+pub fn decode_ia5_string_ber(input: &[u8], limits: &Limits) -> Result<Decoded<Ia5String>, Error> {
+    let decoded = decode_ia5_ber_bytes(input, limits, &mut 0)?;
+    Ok(Decoded {
+        value: Ia5String {
+            bytes: decoded.value,
+        },
+        consumed_bits: decoded.consumed_bits,
+        consumed_bytes: decoded.consumed_bytes,
+    })
+}
+
+/// Strictly decode one canonical CER `IA5String` prefix.
+///
+/// # Parameters and returns
+/// `input` may have a suffix; `limits` caps whole input, retained/output
+/// scratch, and cumulative parse/validation/re-encode/compare work.
+/// Returns the validated bytes and exact prefix consumption.
+///
+/// # Errors
+/// Returns BER, IA5 repertoire, canonicality, resource, checked-size, or
+/// allocation errors. Empty `IA5String` content is valid.
+///
+/// # Source, version, history, example
+/// Source: X.690 CER and C IA5 constraint timing. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct IA5 gate.
+/// Example: `decode_ia5_string_cer(input, limits)?`.
+pub fn decode_ia5_string_cer(input: &[u8], limits: &Limits) -> Result<Decoded<Ia5String>, Error> {
+    let decoded = decode_ia5_cer_bytes(input, limits)?;
+    Ok(Decoded {
+        value: Ia5String {
+            bytes: decoded.value,
+        },
+        consumed_bits: decoded.consumed_bits,
+        consumed_bytes: decoded.consumed_bytes,
+    })
+}
+
+/// Encode raw IA5 content as DER under its simultaneous value/output budget.
+///
+/// # Parameters and returns
+/// `bytes` is unvalidated content; `retained_capacity` is its live allocation;
+/// `limits` sets output/work ceilings. Returns primitive tag 22.
+///
+/// # Errors
+/// Returns resource, checked-size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: C `IA5String` DER callback. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct IA5 gate.
+/// Example: called by `encode_ia5_string_der`.
+fn encode_ia5_der(
+    bytes: &[u8],
+    retained_capacity: usize,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    let encoded_len = single_identifier_tlv_len(bytes.len())?;
+    check(Resource::OutputBytes, encoded_len, limits.max_output_bytes)?;
+    check_ia5_scratch(
+        retained_capacity
+            .checked_add(encoded_len)
+            .ok_or(Error::SizeOverflow)?,
+    )?;
+    let mut work = 0;
+    charge_work(&mut work, encoded_len, limits)?;
+    let encoded = write_primitive(TAG_IA5_STRING, bytes, limits)?;
+    check_ia5_scratch(
+        retained_capacity
+            .checked_add(encoded.bytes.capacity())
+            .ok_or(Error::SizeOverflow)?,
+    )?;
+    Ok(encoded)
+}
+
+/// Build canonical CER IA5 output after its validation and work are charged.
+///
+/// # Parameters and returns
+/// `bytes` is validated 7-bit content; `retained_capacity` is the live value
+/// capacity; `limits` sets output/work ceilings. Returns a complete TLV.
+///
+/// # Errors
+/// Returns resource, checked-size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 CER string forms. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct IA5 gate.
+/// Example: called after `validate_ia5_content`.
+fn encode_ia5_cer_precharged(
+    bytes: &[u8],
+    retained_capacity: usize,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    let encoded_len = ia5_cer_encoded_len(bytes.len())?;
+    check(Resource::OutputBytes, encoded_len, limits.max_output_bytes)?;
+    check_ia5_scratch(
+        retained_capacity
+            .checked_add(encoded_len)
+            .ok_or(Error::SizeOverflow)?,
+    )?;
+    let mut output = new_output(encoded_len, limits)?;
+    if bytes.len() <= CER_FRAGMENT_MAX {
+        push_identifier(&mut output, false, TAG_IA5_STRING, limits)?;
+        push_length(&mut output, bytes.len(), limits)?;
+        push(&mut output, bytes, limits)?;
+    } else {
+        push_indefinite_header(&mut output, Tag::universal(22), limits)?;
+        for fragment in bytes.chunks(CER_FRAGMENT_MAX) {
+            push_primitive(&mut output, TAG_OCTET_STRING, fragment, limits)?;
+        }
+        push(&mut output, &[0, 0], limits)?;
+    }
+    if output.len() != encoded_len {
+        return Err(Error::SizeOverflow);
+    }
+    check_ia5_scratch(
+        retained_capacity
+            .checked_add(output.capacity())
+            .ok_or(Error::SizeOverflow)?,
+    )?;
+    finish(output, limits)
+}
+
+/// Return exact CER size using tag 22 outside and tag 4 inside fragments.
+///
+/// # Parameters and returns
+/// `content_len` is reassembled IA5 content bytes. Returns primitive or
+/// constructed complete-TLV size.
+///
+/// # Errors
+/// Returns `SizeOverflow` on checked arithmetic failure.
+///
+/// # Source, version, history, example
+/// Source: X.690 9.2 and CER fragment-tag correction. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct IA5 gate.
+/// Example: 1001 content bytes select constructed output.
+fn ia5_cer_encoded_len(content_len: usize) -> Result<usize, Error> {
+    if content_len <= CER_FRAGMENT_MAX {
+        return single_identifier_tlv_len(content_len);
+    }
+    let count = content_len.div_ceil(CER_FRAGMENT_MAX);
+    fragmented_size_tagged(content_len, count, false, Tag::universal(22))
+}
+
+/// Decode one BER `IA5String` and preserve its raw bytes.
+///
+/// # Parameters and returns
+/// `input` is the whole supplied slice; `limits` caps input and output;
+/// `work` shares parser and flattening work. Returns the consumed TLV prefix.
+///
+/// # Errors
+/// Returns BER framing, tag/fragment, output/work, size, or allocation errors.
+/// Does not apply the IA5 repertoire constraint.
+///
+/// # Source, version, history, example
+/// Source: C `IA5String` BER callback. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct IA5 gate.
+/// Example: called by both public IA5 decoders.
+fn decode_ia5_ber_bytes(
+    input: &[u8],
+    limits: &Limits,
+    work: &mut usize,
+) -> Result<Decoded<Vec<u8>>, Error> {
+    let decode_limits = ia5_decode_limits(limits);
+    let decoded =
+        decode_octet_ber_with_tag_work(input, Tag::universal(22), &decode_limits, work, None)?;
+    check_ia5_scratch(decoded.value.capacity())?;
+    Ok(decoded)
+}
+
+/// Strictly decode and canonicalize one CER `IA5String` under one budget.
+///
+/// # Parameters and returns
+/// `input` is the full slice; `limits` caps input/output/work/scratch. Returns
+/// validated content and exact consumed prefix.
+///
+/// # Errors
+/// Returns BER, repertoire, canonicality, limit, size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 strict CER and IA5 validation. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct IA5 gate.
+/// Example: called by `decode_ia5_string_cer`.
+fn decode_ia5_cer_bytes(input: &[u8], limits: &Limits) -> Result<Decoded<Vec<u8>>, Error> {
+    let mut work = 0;
+    let decoded = decode_ia5_ber_bytes(input, limits, &mut work)?;
+    validate_ia5_content(&decoded.value, limits, &mut work)?;
+    let encoded_len = ia5_cer_encoded_len(decoded.value.len())?;
+    check(Resource::OutputBytes, encoded_len, limits.max_output_bytes)?;
+    check_ia5_scratch(
+        decoded
+            .value
+            .capacity()
+            .checked_add(encoded_len)
+            .ok_or(Error::SizeOverflow)?,
+    )?;
+    let compare_len = decoded.consumed_bytes.max(encoded_len);
+    let future_work = encoded_len
+        .checked_add(compare_len)
+        .ok_or(Error::SizeOverflow)?;
+    charge_work(&mut work, future_work, limits)?;
+    let canonical = encode_ia5_cer_precharged(&decoded.value, decoded.value.capacity(), limits)?;
+    if input.get(..decoded.consumed_bytes) != Some(canonical.bytes.as_slice()) {
+        return Err(invalid("CER IA5String differs from canonical re-encoding"));
+    }
+    Ok(decoded)
+}
+
+/// Check the full 7-bit IA5 repertoire and meter its byte scan.
+///
+/// # Parameters and returns
+/// `bytes` is raw content; `limits` caps work; `work` shares operation bits.
+/// Returns success when every octet is at most `0x7f`.
+///
+/// # Errors
+/// Returns a work limit or `InvalidEncoding` for a high-bit octet.
+///
+/// # Source, version, history, example
+/// Source: X.680 IA5 repertoire and C IA5 constraint. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct IA5 gate.
+/// Example: CER operations validate before output/publication.
+fn validate_ia5_content(bytes: &[u8], limits: &Limits, work: &mut usize) -> Result<(), Error> {
+    charge_work(work, bytes.len(), limits)?;
+    if bytes.iter().any(|octet| octet & 0x80 != 0) {
+        return Err(invalid("IA5String content contains an octet above 0x7f"));
+    }
+    Ok(())
+}
+
+/// Cap IA5 retained bytes while preserving caller input and work limits.
+///
+/// # Parameters and returns
+/// `limits` supplies all ceilings; returns a copy capped to the IA5 scratch
+/// maximum for decoded output.
+///
+/// # Errors
+/// This helper cannot fail.
+///
+/// # Source, version, history, example
+/// Source: bounded scalar scratch policy. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct IA5 gate.
+/// Example: passed to the shared OCTET flattener.
+fn ia5_decode_limits(limits: &Limits) -> Limits {
+    let mut decoded_limits = *limits;
+    decoded_limits.max_output_bytes = decoded_limits.max_output_bytes.min(MAX_IA5_SCRATCH_BYTES);
+    decoded_limits
+}
+
+/// Bound simultaneous IA5 value and canonical TLV buffers.
+///
+/// # Parameters and returns
+/// `bytes` is the checked sum of live allocation capacities. Returns success
+/// when within the scalar scratch ceiling.
+///
+/// # Errors
+/// Returns `LimitExceeded(OutputBytes)` when the fixed ceiling is exceeded.
+///
+/// # Source, version, history, example
+/// Source: BigInteger/OID scalar scratch policy. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct IA5 gate.
+/// Example: checks retained bytes plus strict-CER output.
+const fn check_ia5_scratch(bytes: usize) -> Result<(), Error> {
+    check(Resource::OutputBytes, bytes, MAX_IA5_SCRATCH_BYTES)
+}
+
 /// Normalize one encoded OID content value under constructor limits.
 ///
 /// # Parameters and returns
@@ -3886,7 +4274,7 @@ fn encode_oid_content(
     limits: &Limits,
     work: &mut usize,
 ) -> Result<Encoded, Error> {
-    let total_len = oid_tlv_len(content.len())?;
+    let total_len = single_identifier_tlv_len(content.len())?;
     check(Resource::OutputBytes, total_len, limits.max_output_bytes)?;
     check_oid_scratch(
         retained_capacity
@@ -3930,7 +4318,7 @@ fn encode_oid_content_precharged(
     tag: u32,
     limits: &Limits,
 ) -> Result<Encoded, Error> {
-    let total_len = oid_tlv_len(content.len())?;
+    let total_len = single_identifier_tlv_len(content.len())?;
     check(Resource::OutputBytes, total_len, limits.max_output_bytes)?;
     check_oid_scratch(
         retained_capacity
@@ -4000,7 +4388,7 @@ fn decode_oid_content(
         normalized_len,
         limits.max_output_bytes,
     )?;
-    let encoded_len = oid_tlv_len(normalized_len)?;
+    let encoded_len = single_identifier_tlv_len(normalized_len)?;
     let extra_scratch = if strict_cer { encoded_len } else { 0 };
     if strict_cer {
         check(Resource::OutputBytes, encoded_len, limits.max_output_bytes)?;
@@ -4037,20 +4425,20 @@ fn decode_oid_content(
     })
 }
 
-/// Calculate shortest primitive OID TLV size with checked arithmetic.
+/// Calculate the shortest one-octet-identifier primitive TLV size.
 ///
 /// # Parameters and returns
-/// `content_len` is nonempty encoded content. Returns identifier, length, and
-/// content octets combined.
+/// `content_len` is primitive content. Returns identifier, length, and content
+/// octets combined for a tag number below 31.
 ///
 /// # Errors
 /// Returns `SizeOverflow` when a complete TLV size cannot be represented.
 ///
 /// # Source, version, history, example
-/// Source: X.690 definite-length OID encoding. Version: 2026-11-01.
-/// Responsible: runtime maintainers. History: direct OID runtime gate.
+/// Source: X.690 definite-length encoding. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OID and IA5 gates.
 /// Example: short content adds two framing octets.
-fn oid_tlv_len(content_len: usize) -> Result<usize, Error> {
+fn single_identifier_tlv_len(content_len: usize) -> Result<usize, Error> {
     1_usize
         .checked_add(length_size(content_len))
         .and_then(|size| size.checked_add(content_len))
@@ -10619,6 +11007,538 @@ mod tests {
                     let _ = decode_object_identifier_cer(&mutated, &limits);
                     let _ = decode_relative_oid_ber(&mutated, &limits);
                     let _ = decode_relative_oid_cer(&mutated, &limits);
+                }
+            }
+        }
+    }
+
+    /// Preserve raw bytes in BER/DER and apply the repertoire rule only in CER.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks constructor and codec policy with valid/invalid IA5.
+    ///
+    /// # Errors
+    /// Panics on unexpected codec values or policy acceptance.
+    ///
+    /// # Source, version, history, example
+    /// Source: C IA5 callback behavior. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct IA5 gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn ia5_raw_ber_der_and_cer_constraint_timing() {
+        let limits = Limits::default();
+        let raw = Ia5String::try_from_bytes(&[0, 0x1b, 0x7f, 0x80, 0xff], &limits).unwrap();
+        assert_eq!(raw.as_bytes(), [0, 0x1b, 0x7f, 0x80, 0xff]);
+        assert_eq!(
+            encode_ia5_string_der(&raw, &limits).unwrap().bytes,
+            [0x16, 5, 0, 0x1b, 0x7f, 0x80, 0xff]
+        );
+        assert!(encode_ia5_string_cer(&raw, &limits).is_err());
+
+        let decoded = decode_ia5_string_ber(&[0x16, 1, 0x80], &limits).unwrap();
+        assert_eq!(decoded.value.as_bytes(), [0x80]);
+        assert_eq!(decoded.consumed_bytes, 3);
+        assert!(decode_ia5_string_cer(&[0x16, 1, 0x80], &limits).is_err());
+
+        let valid = Ia5String::try_from_bytes(&[0, 0x1b, 0x7f], &limits).unwrap();
+        assert_eq!(
+            encode_ia5_string_cer(&valid, &limits).unwrap().bytes,
+            [0x16, 3, 0, 0x1b, 0x7f]
+        );
+        assert_eq!(
+            decode_ia5_string_cer(&[0x16, 3, 0, 0x1b, 0x7f], &limits)
+                .unwrap()
+                .value
+                .as_bytes(),
+            [0, 0x1b, 0x7f]
+        );
+    }
+
+    /// Accept BER constructed IA5 content only through universal OCTET fragments.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Covers definite, nested-indefinite, empty, and suffix cases.
+    ///
+    /// # Errors
+    /// Panics on incorrect bytes, consumption, or canonicality decisions.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 constructed strings and C probe. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct IA5 gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn ia5_ber_constructed_fragments_and_prefix_consumption() {
+        let limits = Limits::default();
+        let definite = [0x36, 5, 4, 1, b'A', 4, 0];
+        let decoded = decode_ia5_string_ber(&definite, &limits).unwrap();
+        assert_eq!(decoded.value.as_bytes(), b"A");
+        assert_eq!(decoded.consumed_bytes, definite.len());
+
+        let nested = [0x36, 0x80, 4, 1, b'A', 0x24, 0x80, 4, 1, b'B', 0, 0, 0, 0];
+        let decoded = decode_ia5_string_ber(&nested, &limits).unwrap();
+        assert_eq!(decoded.value.as_bytes(), b"AB");
+        assert_eq!(decoded.consumed_bytes, nested.len());
+        assert!(decode_ia5_string_cer(&nested, &limits).is_err());
+
+        let constructed_empty = [0x36, 0x80, 0, 0];
+        let decoded = decode_ia5_string_ber(&constructed_empty, &limits).unwrap();
+        assert_eq!(decoded.value.as_bytes(), []);
+        assert_eq!(decoded.consumed_bytes, constructed_empty.len());
+        assert!(decode_ia5_string_cer(&constructed_empty, &limits).is_err());
+        assert!(decode_ia5_string_cer(&[0x16, 0], &limits).is_ok());
+
+        let with_suffix = [0x36, 0x80, 4, 1, b'Z', 0, 0, 0xff];
+        let decoded = decode_ia5_string_ber(&with_suffix, &limits).unwrap();
+        assert_eq!(decoded.value.as_bytes(), b"Z");
+        assert_eq!(decoded.consumed_bytes, 7);
+    }
+
+    /// Reject malformed IA5 framing, wrong fragment tags, and misplaced EOC.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Sends malformed and truncated root/child forms to BER.
+    ///
+    /// # Errors
+    /// Panics if any malformed input is accepted.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 BER TLV rules. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct IA5 gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn ia5_ber_rejects_malformed_roots_and_children() {
+        let limits = Limits::default();
+        let malformed: &[&[u8]] = &[
+            &[],
+            &[0x16],
+            &[0x16, 0x80, 0, 0],
+            &[0x16, 1],
+            &[0x16, 2, b'A'],
+            &[0x36, 0x80, 4, 1, b'A'],
+            &[0x36, 0x80, 0, 1],
+            &[0x36, 1, 4],
+            &[0x36, 0x80, 0x16, 1, b'A', 0, 0],
+            &[0x36, 0x80, 0x0c, 1, b'A', 0, 0],
+            &[0x36, 0x80, 4, 0x80, 0, 0, 0, 0],
+            &[0x17, 0],
+            &[0x1f, 0x81],
+        ];
+        for input in malformed {
+            assert!(decode_ia5_string_ber(input, &limits).is_err(), "{input:?}");
+        }
+    }
+
+    /// Accept C-compatible BER low-tag aliases while requiring canonical CER.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Exercises root and universal OCTET fragment aliases.
+    ///
+    /// # Errors
+    /// Panics on alias rejection in BER or alias acceptance in strict CER.
+    ///
+    /// # Source, version, history, example
+    /// Source: C BER alias probes. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct IA5 gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn ia5_ber_aliases_are_normalized_by_cer_validation() {
+        let limits = Limits::default();
+        let root_alias = [0x1f, 0x16, 1, b'A'];
+        let decoded = decode_ia5_string_ber(&root_alias, &limits).unwrap();
+        assert_eq!(decoded.value.as_bytes(), b"A");
+        assert_eq!(decoded.consumed_bytes, root_alias.len());
+        assert!(decode_ia5_string_cer(&root_alias, &limits).is_err());
+
+        let child_alias = [0x36, 0x80, 0x1f, 4, 1, b'A', 0, 0];
+        assert_eq!(
+            decode_ia5_string_ber(&child_alias, &limits)
+                .unwrap()
+                .value
+                .as_bytes(),
+            b"A"
+        );
+        assert!(decode_ia5_string_cer(&child_alias, &limits).is_err());
+
+        let high_bit_child = [0x36, 0x80, 4, 1, 0x80, 0, 0];
+        assert_eq!(
+            decode_ia5_string_ber(&high_bit_child, &limits)
+                .unwrap()
+                .value
+                .as_bytes(),
+            [0x80]
+        );
+        assert!(decode_ia5_string_cer(&high_bit_child, &limits).is_err());
+    }
+
+    /// Check primitive length transitions and CER fragmentation boundaries.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Validates 127/128 and 1000/1001/2001-byte content forms.
+    ///
+    /// # Errors
+    /// Panics on mismatched expected lengths, headers, fragments, or round trips.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 CER plus C probes. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct IA5 gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn ia5_cer_short_long_and_fragment_boundaries() {
+        let limits = Limits::default();
+        let cases = [
+            (0, 2),
+            (127, 129),
+            (128, 131),
+            (999, 1003),
+            (1000, 1004),
+            (1001, 1011),
+            (2001, 2015),
+        ];
+        for (size, expected_len) in cases {
+            let value = Ia5String::try_from_bytes(&vec![0x7f; size], &limits).unwrap();
+            let encoded = encode_ia5_string_cer(&value, &limits).unwrap();
+            assert_eq!(encoded.bytes.len(), expected_len);
+            assert_eq!(encoded.bit_len, expected_len * 8);
+            let decoded = decode_ia5_string_cer(&encoded.bytes, &limits).unwrap();
+            assert_eq!(decoded.value.as_bytes(), value.as_bytes());
+            assert_eq!(decoded.consumed_bytes, expected_len);
+        }
+
+        let value_127 = Ia5String::try_from_bytes(&[0x41; 127], &limits).unwrap();
+        assert_eq!(
+            &encode_ia5_string_cer(&value_127, &limits).unwrap().bytes[..2],
+            &[0x16, 127]
+        );
+        let value_128 = Ia5String::try_from_bytes(&[0x41; 128], &limits).unwrap();
+        assert_eq!(
+            &encode_ia5_string_cer(&value_128, &limits).unwrap().bytes[..3],
+            &[0x16, 0x81, 0x80]
+        );
+
+        let value_1001 = Ia5String::try_from_bytes(&vec![0x7f; 1001], &limits).unwrap();
+        let encoded = encode_ia5_string_cer(&value_1001, &limits).unwrap();
+        assert_eq!(&encoded.bytes[..6], &[0x36, 0x80, 4, 0x82, 3, 0xe8]);
+        assert_eq!(
+            &encoded.bytes[encoded.bytes.len() - 5..],
+            &[4, 1, 0x7f, 0, 0]
+        );
+    }
+
+    /// Enforce exact constructor, DER, and CER encoder resource limits.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks input, output, and work ceilings at exact boundaries.
+    ///
+    /// # Errors
+    /// Panics on resource acceptance below the documented measured threshold.
+    ///
+    /// # Source, version, history, example
+    /// Source: runtime IA5 resource policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct IA5 gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn ia5_constructor_and_encoder_limits_are_exact() {
+        let exact = Limits {
+            max_input_bytes: 2,
+            max_output_bytes: 2,
+            max_work_bits: 16,
+        };
+        assert_eq!(
+            Ia5String::try_from_bytes(&[0, 0x7f], &exact)
+                .unwrap()
+                .as_bytes(),
+            [0, 0x7f]
+        );
+        assert!(Ia5String::try_from_bytes(
+            &[0, 0x7f],
+            &Limits {
+                max_input_bytes: 1,
+                ..exact
+            }
+        )
+        .is_err());
+        assert!(Ia5String::try_from_bytes(
+            &[0, 0x7f],
+            &Limits {
+                max_output_bytes: 1,
+                ..exact
+            }
+        )
+        .is_err());
+        assert!(Ia5String::try_from_bytes(
+            &[0, 0x7f],
+            &Limits {
+                max_work_bits: 15,
+                ..exact
+            }
+        )
+        .is_err());
+
+        let value = Ia5String::try_from_bytes(&[0, 0x7f], &Limits::default()).unwrap();
+        let der_exact = Limits {
+            max_output_bytes: 4,
+            max_work_bits: 32,
+            ..Limits::default()
+        };
+        assert_eq!(
+            encode_ia5_string_der(&value, &der_exact).unwrap().bytes,
+            [0x16, 2, 0, 0x7f]
+        );
+        assert!(encode_ia5_string_der(
+            &value,
+            &Limits {
+                max_output_bytes: 3,
+                ..der_exact
+            }
+        )
+        .is_err());
+        assert!(encode_ia5_string_der(
+            &value,
+            &Limits {
+                max_work_bits: 31,
+                ..der_exact
+            }
+        )
+        .is_err());
+
+        let cer_exact = Limits {
+            max_output_bytes: 4,
+            max_work_bits: 48,
+            ..Limits::default()
+        };
+        assert!(encode_ia5_string_cer(&value, &cer_exact).is_ok());
+        assert!(encode_ia5_string_cer(
+            &value,
+            &Limits {
+                max_work_bits: 47,
+                ..cer_exact
+            }
+        )
+        .is_err());
+
+        assert!(check_ia5_scratch(MAX_IA5_SCRATCH_BYTES).is_ok());
+        assert!(check_ia5_scratch(MAX_IA5_SCRATCH_BYTES + 1).is_err());
+    }
+
+    /// Check retained-plus-output scratch boundaries without large allocations.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Uses a one-byte value and synthetic retained capacities.
+    ///
+    /// # Errors
+    /// Panics if exact scratch capacity fails or one byte above the cap passes.
+    ///
+    /// # Source, version, history, example
+    /// Source: IA5 scalar scratch policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct IA5 gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn ia5_encoders_preflight_combined_scratch_capacity() {
+        let limits = Limits {
+            max_output_bytes: 3,
+            ..Limits::default()
+        };
+        let exact_retained = MAX_IA5_SCRATCH_BYTES - 3;
+        let over_retained = exact_retained + 1;
+
+        assert_eq!(
+            encode_ia5_der(&[0], exact_retained, &limits).unwrap().bytes,
+            [0x16, 1, 0]
+        );
+        assert!(encode_ia5_der(&[0], over_retained, &limits).is_err());
+        assert_eq!(
+            encode_ia5_cer_precharged(&[0], exact_retained, &limits)
+                .unwrap()
+                .bytes,
+            [0x16, 1, 0]
+        );
+        assert!(encode_ia5_cer_precharged(&[0], over_retained, &limits).is_err());
+    }
+
+    /// Enforce BER and strict-CER decoder limits, including cumulative work.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks exact and one-below decode resource boundaries.
+    ///
+    /// # Errors
+    /// Panics on unexpected resource acceptance or work accounting.
+    ///
+    /// # Source, version, history, example
+    /// Source: runtime IA5 resource policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct IA5 gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn ia5_decoder_limits_and_strict_work_are_exact() {
+        let ber_with_suffix = [0x16, 2, 0, 0x7f, 0xff];
+        let ber_work = minimum_ia5_ber_work(&ber_with_suffix);
+        let ber_exact = Limits {
+            max_input_bytes: ber_with_suffix.len(),
+            max_output_bytes: 2,
+            max_work_bits: ber_work,
+        };
+        let decoded = decode_ia5_string_ber(&ber_with_suffix, &ber_exact).unwrap();
+        assert_eq!(decoded.value.as_bytes(), [0, 0x7f]);
+        assert_eq!(decoded.consumed_bytes, 4);
+        assert!(decode_ia5_string_ber(
+            &ber_with_suffix,
+            &Limits {
+                max_input_bytes: ber_with_suffix.len() - 1,
+                ..ber_exact
+            }
+        )
+        .is_err());
+        assert!(decode_ia5_string_ber(
+            &ber_with_suffix,
+            &Limits {
+                max_output_bytes: 1,
+                ..ber_exact
+            }
+        )
+        .is_err());
+        assert!(decode_ia5_string_ber(
+            &ber_with_suffix,
+            &Limits {
+                max_work_bits: ber_work - 1,
+                ..ber_exact
+            }
+        )
+        .is_err());
+
+        let canonical = [0x16, 1, b'A'];
+        let minimum = minimum_ia5_cer_work(&canonical);
+        assert_eq!(minimum, 88);
+        let exact_cer = Limits {
+            max_work_bits: minimum,
+            ..Limits::default()
+        };
+        let below_cer = Limits {
+            max_work_bits: minimum - 1,
+            ..Limits::default()
+        };
+        assert!(decode_ia5_string_cer(&canonical, &exact_cer).is_ok());
+        assert!(decode_ia5_string_cer(&canonical, &below_cer).is_err());
+        assert!(decode_ia5_string_cer(
+            &canonical,
+            &Limits {
+                max_output_bytes: 2,
+                ..Limits::default()
+            }
+        )
+        .is_err());
+        let strict_with_suffix = [0x16, 1, b'A', 0xff];
+        let strict_prefix = decode_ia5_string_cer(&strict_with_suffix, &Limits::default()).unwrap();
+        assert_eq!(strict_prefix.consumed_bytes, 3);
+
+        let malformed_high_tag = [0x1f, 0x81, 0x80, 0x16, 1, 0x41];
+        let low_work = Limits {
+            max_work_bits: 8,
+            ..Limits::default()
+        };
+        assert!(matches!(
+            decode_ia5_string_ber(&malformed_high_tag, &low_work),
+            Err(Error::LimitExceeded {
+                resource: Resource::WorkBits,
+                ..
+            })
+        ));
+    }
+
+    /// Find the minimum cumulative work ceiling for strict IA5 CER decoding.
+    ///
+    /// # Parameters and returns
+    /// `input` is canonical CER; returns the least passing work limit.
+    ///
+    /// # Errors
+    /// Panics if default limits reject canonical test input.
+    ///
+    /// # Source, version, history, example
+    /// Source: scalar codec resource tests. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct IA5 gate.
+    /// Example: called by `ia5_decoder_limits_and_strict_work_are_exact`.
+    fn minimum_ia5_cer_work(input: &[u8]) -> usize {
+        let decode = |limits: &Limits| decode_ia5_string_cer(input, limits).map(|_| ());
+        let mut low = 0;
+        let mut high = Limits::default().max_work_bits;
+        assert!(decode(&Limits::default()).is_ok());
+        while low < high {
+            let middle = low + (high - low) / 2;
+            let limits = Limits {
+                max_work_bits: middle,
+                ..Limits::default()
+            };
+            if decode(&limits).is_ok() {
+                high = middle;
+            } else {
+                low = middle + 1;
+            }
+        }
+        low
+    }
+
+    /// Find the minimum BER work ceiling for one IA5 prefix decode.
+    ///
+    /// # Parameters and returns
+    /// `input` is a valid BER prefix; returns the least passing work limit.
+    ///
+    /// # Errors
+    /// Panics if default limits reject canonical test input.
+    ///
+    /// # Source, version, history, example
+    /// Source: scalar codec resource tests. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct IA5 gate.
+    /// Example: called by `ia5_decoder_limits_and_strict_work_are_exact`.
+    fn minimum_ia5_ber_work(input: &[u8]) -> usize {
+        let decode = |limits: &Limits| decode_ia5_string_ber(input, limits).map(|_| ());
+        let mut low = 0;
+        let mut high = Limits::default().max_work_bits;
+        assert!(decode(&Limits::default()).is_ok());
+        while low < high {
+            let middle = low + (high - low) / 2;
+            let limits = Limits {
+                max_work_bits: middle,
+                ..Limits::default()
+            };
+            if decode(&limits).is_ok() {
+                high = middle;
+            } else {
+                low = middle + 1;
+            }
+        }
+        low
+    }
+
+    /// Exercise malformed and mutated IA5 BER/CER inputs without decoder panics.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Tries all proper prefixes and single-byte substitutions.
+    ///
+    /// # Errors
+    /// Panics only if an untrusted input mutation unwinds from a decoder.
+    ///
+    /// # Source, version, history, example
+    /// Source: BER parser mutation hardening. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct IA5 gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn ia5_single_byte_mutations_and_truncations_do_not_panic() {
+        let limits = Limits::default();
+        let vectors: &[&[u8]] = &[
+            &[0x16, 3, 0, 0x1b, 0x7f],
+            &[0x36, 0x80, 4, 1, b'A', 0, 0],
+            &[0x1f, 0x16, 1, b'A'],
+        ];
+        for vector in vectors {
+            for end in 0..vector.len() {
+                let truncated = &vector[..end];
+                let _ = decode_ia5_string_ber(truncated, &limits);
+                let _ = decode_ia5_string_cer(truncated, &limits);
+            }
+            for index in 0..vector.len() {
+                for replacement in 0_u8..=u8::MAX {
+                    let mut mutated = vector.to_vec();
+                    mutated[index] = replacement;
+                    let _ = decode_ia5_string_ber(&mutated, &limits);
+                    let _ = decode_ia5_string_cer(&mutated, &limits);
                 }
             }
         }

@@ -366,3 +366,20 @@ mutations, and resource limits. C BER accepts empty and unterminated OID
 content and preserves nonminimal content; Rust rejects invalid empty or
 unterminated values and normalizes BER aliases. Strict CER rejects these
 noncanonical forms.
+
+The direct IA5String BER/CER slice accepts only an untagged, unconstrained
+top-level `IA5String` with BER/CER-only selection. Its wrapper owns private raw
+bytes, exposes a borrowed view, and does not derive infallible `Clone`. BER and
+DER preserve arbitrary content bytes; CER encode and strict CER decode require
+every byte to be at most `0x7f`, including the valid NUL, ESC, and DEL values.
+Other restricted character strings, tags, constraints, aliases, imports,
+fields, and mixed or non-BER/CER selections fail before publication.
+
+`Ia5Values.asn1`, `ia5_conformance.rs`, and `c_ia5.c` compare empty content,
+127/128 and 999/1000/1001/2001-byte CER boundaries, constructed BER with OCTET STRING
+fragments, high-tag aliases, prefix consumption, malformed EOCs, truncation,
+mutations, and limits. The vectors also confirm that C and Rust BER/DER retain
+`0x80`, while C and Rust CER reject it. Constructed empty BER normalizes to an
+empty byte vector in Rust and re-encodes as primitive `16 00`; C BER also
+decodes it, but its null-buffer representation cannot be passed directly to
+the C CER encoder without first providing valid in-memory storage.

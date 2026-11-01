@@ -1,0 +1,5 @@
+Ia5ValuesTagged DEFINITIONS IMPLICIT TAGS ::= BEGIN
+
+AsciiValue ::= [0] IMPLICIT IA5String
+
+END
