@@ -1,0 +1,3 @@
+OidRecordRelativeConstrained DEFINITIONS ::= BEGIN
+Bad ::= SEQUENCE { oid RELATIVE-OID (SIZE(1..8)) }
+END

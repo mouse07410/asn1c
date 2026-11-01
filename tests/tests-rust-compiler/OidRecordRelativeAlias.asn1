@@ -1,0 +1,4 @@
+OidRecordRelativeAlias DEFINITIONS ::= BEGIN
+RelativeAlias ::= RELATIVE-OID
+Bad ::= SET { relative RelativeAlias }
+END

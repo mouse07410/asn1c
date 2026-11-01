@@ -1,0 +1,6 @@
+OidRecordMultiple DEFINITIONS ::= BEGIN
+Bad ::= SEQUENCE {
+    first OBJECT IDENTIFIER,
+    second OBJECT IDENTIFIER
+}
+END

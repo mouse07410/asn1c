@@ -160,6 +160,18 @@ canonical re-encoding under one cumulative work and scratch budget. Rust
 deliberately rejects empty and unterminated BER contents even though the C BER
 decoder accepts them; such content cannot represent a valid OID value.
 
+Flat BER/CER-only SEQUENCE and SET records can use one direct OBJECT IDENTIFIER
+and one direct RELATIVE-OID field through `FieldKind::ObjectIdentifier` and
+`FieldKind::RelativeOid`, with typed `write_*` and `read_*` methods. These
+natural fields require `RecordContext::new_with_aggregate_scratch`, even when
+an OPTIONAL OID is absent. Record BER accepts primitive tag aliases and
+normalizes redundant base-128 groups using the parent's shared work and
+retained-capacity accounting. Constructed OID fields, empty content, and
+unterminated arcs are rejected. Record DER/CER output uses primitive definite
+TLVs; SET writers sort by universal tag while BER SET readers accept any
+member order. Strict CER re-encoding and prefix comparison reuse the same
+record context and include retained OID capacity plus output scratch.
+
 `Ia5String` owns raw bytes and exposes them through `as_bytes`; its fallible
 `try_from_bytes` constructor preserves all octets without checking the IA5
 repertoire. `encode_ia5_string_der` and `decode_ia5_string_ber` likewise retain

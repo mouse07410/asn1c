@@ -367,6 +367,24 @@ content and preserves nonminimal content; Rust rejects invalid empty or
 unterminated values and normalizes BER aliases. Strict CER rejects these
 noncanonical forms.
 
+One natural, unconstrained OBJECT IDENTIFIER and one RELATIVE-OID member are
+supported in an untagged flat SEQUENCE or SET under BER/CER-only selection.
+Each field may be required or OPTIONAL alongside the existing supported scalar
+fields. Generated fields own the existing canonical-content wrappers without
+infallible `Clone`, and every record operation uses aggregate-scratch accounting
+even when an OPTIONAL OID is absent. IA5 coexistence, tags, constraints, aliases,
+imports, DEFAULT, nested records, duplicate OID kinds, and mixed codecs fail
+before output publication.
+
+`OidRecord.asn1`, `oid_record_conformance.rs`, and `c_oid_record.c` compare exact
+DER/CER records and decoded values for both OID kinds, SET ordering, optional
+SEQUENCE and SET presence/absence, large base-128 arcs, and 127/128/1001-byte
+content. They cover BER
+normalization and C preservation of redundant groups, C BER acceptance of empty
+and unterminated content, strict CER rejection under canonical record framing,
+prefix suffixes, truncation, single-byte mutations, malformed content, and
+input/output/work limits.
+
 The direct IA5String BER/CER slice accepts only an untagged, unconstrained
 top-level `IA5String` with BER/CER-only selection. Its wrapper owns private raw
 bytes, exposes a borrowed view, and does not derive infallible `Clone`. BER and

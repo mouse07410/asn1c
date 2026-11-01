@@ -1,0 +1,23 @@
+OidRecord DEFINITIONS ::= BEGIN
+
+Sequence ::= SEQUENCE {
+    before BOOLEAN,
+    oid OBJECT IDENTIFIER OPTIONAL,
+    count INTEGER (0..5),
+    relative RELATIVE-OID OPTIONAL,
+    bytes OCTET STRING (SIZE(1..4))
+}
+
+Set ::= SET {
+    oid OBJECT IDENTIFIER,
+    relative RELATIVE-OID,
+    flag [4] IMPLICIT BOOLEAN
+}
+
+SetOptional ::= SET {
+    oid OBJECT IDENTIFIER OPTIONAL,
+    relative RELATIVE-OID OPTIONAL,
+    flag [4] IMPLICIT BOOLEAN
+}
+
+END

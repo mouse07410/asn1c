@@ -1,0 +1,6 @@
+OidRecordRelativeMultiple DEFINITIONS ::= BEGIN
+Bad ::= SET {
+    first RELATIVE-OID,
+    second RELATIVE-OID
+}
+END

@@ -1,0 +1,4 @@
+OidRecordImported DEFINITIONS ::= BEGIN
+IMPORTS Remote FROM OidRecordImportedBase;
+Bad ::= SEQUENCE { oid Remote }
+END

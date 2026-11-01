@@ -1,0 +1,3 @@
+OidRecordRelativeDefault DEFINITIONS ::= BEGIN
+Bad ::= SET { relative RELATIVE-OID DEFAULT { 1 2 } }
+END

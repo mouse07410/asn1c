@@ -26,6 +26,9 @@ supported. One nonrecursive inline SEQUENCE or nonempty SET child and one
 primitive CHOICE child in the qualified parent/tag combinations are also
 supported below; broader nested records and members remain in the parity
 matrix.
+BER/CER-only untagged flat records additionally qualify one natural IA5String
+member or up to one natural OBJECT IDENTIFIER and one natural RELATIVE-OID
+member, with the resource and schema gates described below.
 
 The flat SET slice uses the same six direct field kinds under BER/CER-only
 selection. Its BER reader accepts arbitrary member order;
@@ -811,7 +814,7 @@ vectors for SEQUENCE with IA5String `A` are DER `30 03 16 01 41` and CER
 TRUE` is DER `31 06 16 01 41 84 01 ff` and CER
 `31 80 16 01 41 84 01 ff 00 00`.
 
-### OID fields in flat records (next qualified gate)
+### OID fields in flat records (qualified slice)
 
 Extend the flat BER/CER-only untagged SEQUENCE and SET gate to at most one
 natural direct OBJECT IDENTIFIER and one natural direct RELATIVE-OID field,
@@ -846,6 +849,46 @@ the broader BER compatibility policy is settled. Acceptance includes both
 presence states, large arcs and length boundaries, malformed identifiers,
 duplicate and unknown fields, suffixes, all truncations, exact limits,
 canonical SET ordering, C vectors, and negative schema gates.
+
+### Unconstrained INTEGER fields in flat records (next qualified gate)
+
+Add at most one natural, direct unconstrained INTEGER member to an untagged
+flat SEQUENCE or SET under BER/CER-only selection. The member may be required
+or OPTIONAL and may coexist with already-qualified scalar siblings, while
+the six-field cap remains. Keep bounded `i64` INTEGER members and their API
+unchanged. Reject member/root tags, DEFAULT, references/imports, constraints,
+extensions, nested records, CHOICE, IA5/OID coexistence, and mixed codecs
+before publication. The generator selects the existing `BigInteger` owned
+value only for the unconstrained member; C differential tests for values
+outside `i64` must use `-fwide-types` because default C generation can select
+native `long` storage.
+
+Add natural `write_big_integer` and `read_big_integer` methods to record
+writers/readers while retaining universal `FieldKind::Integer` dispatch.
+DER/CER emit one primitive definite tag-2 TLV containing the wrapper's
+minimal signed bytes. BER rejects constructed and empty content and
+normalizes redundant leading `00` or `ff` sign octets. Share the record
+context's input, work, output, and aggregate retained-capacity counters;
+factor the existing direct normalizer so scan and copy passes can charge the
+caller's budget without making a new scalar budget. Generated methods select
+aggregate scratch accounting even when the OPTIONAL field is absent; strict
+CER re-encoding uses the same context and compares only the consumed prefix.
+The record encoder excludes unused reserve capacity of caller-owned input,
+as in the IA5/OID gates.
+
+Live C wide-type output for positive `2^63` content
+`00 80 00 00 00 00 00 00 00` in SEQUENCE is DER
+`30 0b 02 09 00 80 00 00 00 00 00 00 00` and CER
+`30 80 02 09 00 80 00 00 00 00 00 00 00 00 00`.
+For a SET containing BOOLEAN TRUE and that INTEGER, C DER is
+`31 0e 01 01 ff 02 09 00 80 00 00 00 00 00 00 00`; CER uses
+indefinite root framing and the same child order. C BER accepts empty
+INTEGER content, while the direct Rust `BigInteger` codec rejects it; this
+qualified divergence must be documented. Acceptance includes sign boundaries,
+large values and length boundaries, redundant sign normalization, optional
+SET presence and ordering, malformed/constructed fields, tag aliases,
+suffixes, every truncation, exact resource limits, C vectors, and negative
+schema gates.
 
 ## Decisions still required
 

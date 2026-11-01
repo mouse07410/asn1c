@@ -1,0 +1,4 @@
+OidRecordImportedBase DEFINITIONS ::= BEGIN
+EXPORTS Remote;
+Remote ::= OBJECT IDENTIFIER
+END

@@ -1,0 +1,6 @@
+OidRecordMixedIa5 DEFINITIONS ::= BEGIN
+Bad ::= SEQUENCE {
+    oid OBJECT IDENTIFIER,
+    text IA5String
+}
+END

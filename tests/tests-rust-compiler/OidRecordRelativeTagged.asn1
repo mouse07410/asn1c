@@ -1,0 +1,3 @@
+OidRecordRelativeTagged DEFINITIONS ::= BEGIN
+Bad ::= SEQUENCE { oid [4] IMPLICIT RELATIVE-OID }
+END

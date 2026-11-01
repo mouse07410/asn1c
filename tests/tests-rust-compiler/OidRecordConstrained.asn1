@@ -1,0 +1,3 @@
+OidRecordConstrained DEFINITIONS ::= BEGIN
+Bad ::= SEQUENCE { oid OBJECT IDENTIFIER (SIZE(1..8)) }
+END

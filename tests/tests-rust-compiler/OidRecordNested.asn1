@@ -1,0 +1,3 @@
+OidRecordNested DEFINITIONS ::= BEGIN
+Bad ::= SEQUENCE { child SEQUENCE { oid OBJECT IDENTIFIER } }
+END

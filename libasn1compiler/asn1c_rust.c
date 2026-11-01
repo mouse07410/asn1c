@@ -138,11 +138,14 @@ static uint32_t rust_ber_cer_choice_min_tag(asn1p_expr_t *);
 static uint32_t rust_ber_cer_choice_arm_tag(asn1p_expr_t *);
 static int rust_ber_cer_has_tagged_members(asn1p_expr_t *);
 static int rust_ber_cer_has_nested_record(asn1p_expr_t *);
-static int rust_ber_cer_has_ia5_member(asn1p_expr_t *);
+static int rust_ber_cer_has_variable_content_member(asn1p_expr_t *);
 static const char *rust_ber_cer_context_constructor(asn1p_expr_t *);
 static int rust_check_ber_cer_ia5_record(asn1p_module_t *, asn1p_expr_t *,
                                          uint64_t);
 static int rust_check_ber_cer_ia5_member(asn1p_module_t *, asn1p_expr_t *);
+static int rust_check_ber_cer_oid_record(asn1p_module_t *, asn1p_expr_t *,
+                                         uint64_t);
+static int rust_check_ber_cer_oid_member(asn1p_module_t *, asn1p_expr_t *);
 static asn1p_expr_t *rust_ber_cer_choice_member(asn1p_expr_t *, size_t *);
 static int rust_ber_cer_has_empty_nested_record(asn1p_expr_t *);
 static int rust_ber_cer_tag_compare(const asn1p_expr_t *, const asn1p_expr_t *);
@@ -439,6 +442,90 @@ rust_check_ber_cer_ia5_record(asn1p_module_t *module, asn1p_expr_t *expr,
                   || member->expr_type == ASN_CONSTR_CHOICE) {
             rust_diagnostic(module, member,
                             "record IA5String fields do not support nested record members");
+            return -1;
+        }
+    }
+    return 0;
+}
+
+/*
+ * Validate one natural OID field with no constraints or type indirection.
+ * Inputs: module supplies diagnostics; member is the resolved component.
+ * Returns zero for a required/OPTIONAL direct OID field, otherwise -1.
+ * Errors: tags, constraints, references, parameters, and DEFAULT are rejected.
+ * Source: fixed ASN.1 AST and approved OID record gate. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: OID record field stage.
+ * Example: direct OPTIONAL RELATIVE-OID passes.
+ */
+static int
+rust_check_ber_cer_oid_member(asn1p_module_t *module, asn1p_expr_t *member) {
+    int oid_type = member && (member->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
+                              || member->expr_type == ASN_BASIC_RELATIVE_OID);
+    int natural_tag;
+    int no_constraints;
+    int no_indirection;
+    int supported_presence;
+    if(!module || !member || !oid_type) return -1;
+    natural_tag = member->tag.tag_class == TC_NOCLASS
+               && member->tag.tag_mode == TM_DEFAULT;
+    no_constraints = !member->constraints && !member->combined_constraints;
+    no_indirection = !member->reference && !member->lhs_params
+                   && !member->rhs_pspecs && !member->ioc_table
+                   && !member->members.tq_head
+                   && member->encoding_control.encoding_type == EC_NONE;
+    supported_presence = member->marker.flags == EM_NOMARK
+                      || member->marker.flags == EM_OPTIONAL;
+    if(rust_sequence_member_shape_valid(member) && natural_tag && no_constraints
+       && no_indirection && supported_presence) return 0;
+    rust_diagnostic(module, member,
+        "record OID fields must be direct, unconstrained, natural-tagged, and required or OPTIONAL");
+    return -1;
+}
+
+/*
+ * Validate OID field count, incompatibilities, and record-level codec shape.
+ * Parameters: module/expr identify the fixed root; codecs is its selection.
+ * Returns zero when no OID exists or the narrow root gate passes, otherwise -1.
+ * Errors: mixed IA5, duplicate OID kinds, tags, nesting, and other codecs fail.
+ * Source: approved flat OID record gate. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: OBJECT IDENTIFIER record stage.
+ * Example: one OID and one RELATIVE-OID fit beside scalar fields.
+ */
+static int
+rust_check_ber_cer_oid_record(asn1p_module_t *module, asn1p_expr_t *expr,
+                              uint64_t codecs) {
+    const uint64_t supported = RUST_CODEC_BER | RUST_CODEC_CER;
+    asn1p_expr_t *member;
+    size_t oid_count = 0;
+    size_t relative_count = 0;
+    int has_ia5 = 0;
+    if(!module || !expr) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        if(member->expr_type == ASN_BASIC_OBJECT_IDENTIFIER) oid_count++;
+        if(member->expr_type == ASN_BASIC_RELATIVE_OID) relative_count++;
+        if(member->expr_type == ASN_STRING_IA5String) has_ia5 = 1;
+    }
+    if(!oid_count && !relative_count) return 0;
+    if(has_ia5 || oid_count > 1 || relative_count > 1) {
+        rust_diagnostic(module, expr,
+            "OID records allow at most one of each OID kind and exclude IA5String");
+        return -1;
+    }
+    if(!(codecs & supported) || (codecs & ~supported)
+       || expr->tag.tag_class != TC_NOCLASS || expr->tag.tag_mode != TM_DEFAULT) {
+        rust_diagnostic(module, expr,
+            "record OID fields require an untagged root and BER/CER-only codecs");
+        return -1;
+    }
+    TQ_FOR(member, &expr->members, next) {
+        if(member->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
+           || member->expr_type == ASN_BASIC_RELATIVE_OID) {
+            if(rust_check_ber_cer_oid_member(module, member)) return -1;
+        } else if(member->expr_type == ASN_CONSTR_SEQUENCE
+                  || member->expr_type == ASN_CONSTR_SET
+                  || member->expr_type == ASN_CONSTR_CHOICE) {
+            rust_diagnostic(module, member,
+                            "OID record fields do not support nested record members");
             return -1;
         }
     }
@@ -1549,6 +1636,7 @@ rust_check_sequence(asn1p_module_t *module, asn1p_expr_t *expr,
         return -1;
     }
     if(rust_check_ber_cer_ia5_record(module, expr, codecs)) return -1;
+    if(rust_check_ber_cer_oid_record(module, expr, codecs)) return -1;
     if(rust_check_sequence_tree(module, expr, stack, 0, &nodes, &work, codecs)) return -1;
     if((codecs & RUST_CODEC_UPER)
        && (codecs & (RUST_CODEC_BER | RUST_CODEC_CER))
@@ -1592,6 +1680,7 @@ rust_check_set_ber_cer(asn1p_module_t *module, asn1p_expr_t *expr,
         return -1;
     }
     if(rust_check_ber_cer_ia5_record(module, expr, codecs)) return -1;
+    if(rust_check_ber_cer_oid_record(module, expr, codecs)) return -1;
     TQ_FOR(member, &expr->members, next) {
         if(++count > RUST_BER_CER_FIELD_LIMIT || ++work > RUST_BER_CER_WORK_LIMIT) {
             rust_diagnostic(module, expr, "BER/CER SET exceeds the supported direct-field limit");
@@ -1740,6 +1829,17 @@ rust_check_ber_cer_member(asn1p_module_t *module, asn1p_expr_t *expr,
         }
         return 0;
     }
+    if(member->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
+       || member->expr_type == ASN_BASIC_RELATIVE_OID) {
+        if(rust_check_ber_cer_oid_member(module, member)
+           || (set && rust_check_sequence_name(module, expr, member))) return -1;
+        if(rust_ber_cer_duplicate_tag(expr, member)) {
+            rust_diagnostic(module, member,
+                            "BER/CER record fields must have unique effective tags");
+            return -1;
+        }
+        return 0;
+    }
     if(!rust_ber_cer_member_shape_valid(member)
        || (set && rust_check_sequence_name(module, expr, member))) {
         rust_diagnostic(module, member,
@@ -1854,7 +1954,9 @@ rust_sequence_ber_cer_tag(const asn1p_expr_t *member) {
     case ASN_BASIC_BIT_STRING: return 3;
     case ASN_BASIC_OCTET_STRING: return 4;
     case ASN_BASIC_NULL: return 5;
+    case ASN_BASIC_OBJECT_IDENTIFIER: return 6;
     case ASN_BASIC_ENUMERATED: return 10;
+    case ASN_BASIC_RELATIVE_OID: return 13;
     case ASN_STRING_IA5String: return 22;
     case ASN_CONSTR_SEQUENCE: return 16;
     case ASN_CONSTR_SET: return 17;
@@ -2003,19 +2105,21 @@ rust_ber_cer_has_nested_record(asn1p_expr_t *expr) {
 }
 
 /*
- * Detect an IA5String member that requires aggregate runtime storage tracking.
+ * Detect a variable-content member requiring aggregate runtime storage tracking.
  * Input: expr owns one record's direct members. Returns one when present.
- * Errors: none. Source: approved IA5 record accounting policy.
+ * Errors: none. Source: approved IA5 and OID record accounting policies.
  * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
- * History: IA5 flat-record gate. Example: an absent OPTIONAL IA5 still selects
+ * History: variable-content record gates. Example: absent OID still selects
  * aggregate accounting for the record operation.
  */
 static int
-rust_ber_cer_has_ia5_member(asn1p_expr_t *expr) {
+rust_ber_cer_has_variable_content_member(asn1p_expr_t *expr) {
     asn1p_expr_t *member;
     if(!expr) return 0;
     TQ_FOR(member, &expr->members, next) {
-        if(member->expr_type == ASN_STRING_IA5String) return 1;
+        if(member->expr_type == ASN_STRING_IA5String
+           || member->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
+           || member->expr_type == ASN_BASIC_RELATIVE_OID) return 1;
     }
     return 0;
 }
@@ -2026,12 +2130,13 @@ rust_ber_cer_has_ia5_member(asn1p_expr_t *expr) {
  * name for new/nested/aggregate-scratch mode. Errors: none. Source: runtime
  * record context constructors. Version/date: 2026-11-01. Responsible party:
  * asn1c maintainers. History: nested and IA5 record support.
- * Example: an OPTIONAL IA5 field selects `new_with_aggregate_scratch`.
+ * Example: an absent OPTIONAL OID selects `new_with_aggregate_scratch`.
  */
 static const char *
 rust_ber_cer_context_constructor(asn1p_expr_t *expr) {
     if(rust_ber_cer_has_nested_record(expr)) return "new_nested";
-    if(rust_ber_cer_has_ia5_member(expr)) return "new_with_aggregate_scratch";
+    if(rust_ber_cer_has_variable_content_member(expr))
+        return "new_with_aggregate_scratch";
     return "new";
 }
 
@@ -2142,6 +2247,8 @@ rust_ber_cer_field_kind(const asn1p_expr_t *member) {
     case ASN_CONSTR_SEQUENCE: return "Sequence";
     case ASN_CONSTR_SET: return "Set";
     case ASN_STRING_IA5String: return "Ia5String";
+    case ASN_BASIC_OBJECT_IDENTIFIER: return "ObjectIdentifier";
+    case ASN_BASIC_RELATIVE_OID: return "RelativeOid";
     default: return NULL;
     }
 }
@@ -3037,6 +3144,15 @@ rust_check_sequence_tree_member(asn1p_module_t *module, asn1p_expr_t *parent,
             return -1;
         }
         return 0;
+    }
+    if(member->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
+       || member->expr_type == ASN_BASIC_RELATIVE_OID) {
+        if(depth != 0) {
+            rust_diagnostic(module, member,
+                            "OID fields are supported only at the record root");
+            return -1;
+        }
+        return rust_check_ber_cer_oid_member(module, member);
     }
     return rust_check_sequence_member(module, member);
 }
@@ -4875,7 +4991,7 @@ rust_write_sequence(FILE *stream, const char *name, asn1p_expr_t *expr,
                     int top_level, uint64_t codecs) {
     asn1p_expr_t *member;
     int has_members = expr->members.tq_head != 0;
-    const char *derive = rust_ber_cer_has_ia5_member(expr)
+    const char *derive = rust_ber_cer_has_variable_content_member(expr)
                        ? "Debug, Eq, PartialEq" : "Clone, Debug, Eq, PartialEq";
     if(fprintf(stream,
         "/// ASN.1 SEQUENCE record with direct inline fields.\n"
@@ -5540,6 +5656,10 @@ rust_write_set_ber_cer_decode_helper(FILE *stream, const char *parent,
           && rust_fixed_size(member, &(size_t){0}) == 0 ? "::std::vec::Vec<u8>"
         : member->expr_type == ASN_BASIC_BIT_STRING ? "::asn1c_runtime::BitStringValue"
         : member->expr_type == ASN_STRING_IA5String ? "::asn1c_runtime::Ia5String"
+        : member->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
+          ? "::asn1c_runtime::ObjectIdentifier"
+        : member->expr_type == ASN_BASIC_RELATIVE_OID
+          ? "::asn1c_runtime::RelativeOid"
         : nested_type;
     int ret;
     if(!name || !type) {
@@ -5903,7 +6023,7 @@ static int
 rust_write_set(FILE *stream, const char *name, asn1p_expr_t *expr,
                int top_level, uint64_t codecs) {
     asn1p_expr_t *member;
-    const char *derive = rust_ber_cer_has_ia5_member(expr)
+    const char *derive = rust_ber_cer_has_variable_content_member(expr)
                        ? "Debug, Eq, PartialEq" : "Clone, Debug, Eq, PartialEq";
     TQ_FOR(member, &expr->members, next) {
         if(member->expr_type == ASN_CONSTR_SEQUENCE || member->expr_type == ASN_CONSTR_SET) {
@@ -6245,6 +6365,14 @@ rust_write_sequence_ber_cer_encode_value(FILE *stream, const char *parent,
     case ASN_STRING_IA5String:
         if(tagged || explicit_tag) return -1;
         return fprintf(stream, "writer.write_ia5_string(%s)?;\n", value) < 0 ? -1 : 0;
+    case ASN_BASIC_OBJECT_IDENTIFIER:
+        if(tagged || explicit_tag) return -1;
+        return fprintf(stream, "writer.write_object_identifier(%s)?;\n", value) < 0
+            ? -1 : 0;
+    case ASN_BASIC_RELATIVE_OID:
+        if(tagged || explicit_tag) return -1;
+        return fprintf(stream, "writer.write_relative_oid(%s)?;\n", value) < 0
+            ? -1 : 0;
     default:
         return -1;
     }
@@ -6279,7 +6407,9 @@ rust_write_sequence_ber_cer_encode_optional(FILE *stream, const char *parent,
         return -1;
     if(member->expr_type == ASN_BASIC_OCTET_STRING)
         strcpy(value, "value.as_slice()");
-    else if(member->expr_type == ASN_STRING_IA5String)
+    else if(member->expr_type == ASN_STRING_IA5String
+            || member->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
+            || member->expr_type == ASN_BASIC_RELATIVE_OID)
         strcpy(value, "value");
     else if(member->expr_type == ASN_BASIC_BIT_STRING)
         strcpy(value, "value");
@@ -6339,7 +6469,9 @@ rust_write_sequence_ber_cer_encode_required(FILE *stream, const char *parent,
        || (member->expr_type == ASN_BASIC_BIT_STRING
            && rust_fixed_size(member, &(size_t){0}) == 0))
         written = snprintf(value, sizeof(value), "&self.%s", name);
-    else if(member->expr_type == ASN_STRING_IA5String)
+    else if(member->expr_type == ASN_STRING_IA5String
+            || member->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
+            || member->expr_type == ASN_BASIC_RELATIVE_OID)
         written = snprintf(value, sizeof(value), "&self.%s", name);
     else if(member->expr_type == ASN_BASIC_NULL)
         written = snprintf(value, sizeof(value), "()");
@@ -6615,6 +6747,12 @@ rust_write_sequence_ber_cer_decode_value(FILE *stream, const char *parent,
     case ASN_STRING_IA5String:
         return fprintf(stream, "%slet value = reader.read_ia5_string()?;\n", indent) < 0
             ? -1 : 0;
+    case ASN_BASIC_OBJECT_IDENTIFIER:
+        return fprintf(stream, "%slet value = reader.read_object_identifier()?;\n",
+                       indent) < 0 ? -1 : 0;
+    case ASN_BASIC_RELATIVE_OID:
+        return fprintf(stream, "%slet value = reader.read_relative_oid()?;\n",
+                       indent) < 0 ? -1 : 0;
     default:
         return -1;
     }
@@ -7571,6 +7709,10 @@ rust_write_sequence_field(FILE *stream, const char *parent,
                          ? "::asn1c_runtime::BitStringValue"
                        : member->expr_type == ASN_STRING_IA5String
                          ? "::asn1c_runtime::Ia5String"
+                       : member->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
+                         ? "::asn1c_runtime::ObjectIdentifier"
+                       : member->expr_type == ASN_BASIC_RELATIVE_OID
+                         ? "::asn1c_runtime::RelativeOid"
                        : "::std::vec::Vec<u8>";
     int ret = -1;
     if(name) {

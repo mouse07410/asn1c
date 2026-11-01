@@ -606,6 +606,10 @@ pub enum FieldKind {
     Null,
     /// Raw `IA5String` content, validated only by CER encoding.
     Ia5String,
+    /// Canonical base-128 OBJECT IDENTIFIER content.
+    ObjectIdentifier,
+    /// Canonical base-128 RELATIVE-OID content.
+    RelativeOid,
     /// Signed numeric ENUMERATED field content.
     Enumerated,
     /// Inline constructed SEQUENCE record content.
@@ -643,6 +647,8 @@ impl FieldKind {
             Self::BitString => TAG_BIT_STRING,
             Self::OctetString => TAG_OCTET_STRING,
             Self::Ia5String => TAG_IA5_STRING,
+            Self::ObjectIdentifier => 6,
+            Self::RelativeOid => 13,
             Self::Null => TAG_NULL,
             Self::Enumerated => TAG_ENUMERATED,
             Self::Sequence => TAG_SEQUENCE,
@@ -762,11 +768,13 @@ impl RecordField {
 /// Example: called by `RecordField::new` and all tagged writers.
 fn validate_field_descriptor(tag: Tag, kind: FieldKind) -> Result<(), Error> {
     tag.validate()?;
-    if kind == FieldKind::Ia5String
-        && (tag.class != TagClass::Universal || u64::from(tag.number) != TAG_IA5_STRING)
+    if matches!(
+        kind,
+        FieldKind::Ia5String | FieldKind::ObjectIdentifier | FieldKind::RelativeOid
+    ) && (tag.class != TagClass::Universal || u64::from(tag.number) != kind.universal_tag())
     {
         return Err(invalid(
-            "record IA5String fields require their natural universal tag",
+            "record variable-length fields require their natural universal tag",
         ));
     }
     if tag.class == TagClass::Universal && u64::from(tag.number) != kind.universal_tag() {
@@ -797,9 +805,12 @@ fn validate_field_mode(tag: Tag, kind: FieldKind, mode: TaggingMode) -> Result<(
         TaggingMode::Implicit => validate_field_descriptor(tag, kind),
         TaggingMode::Explicit => {
             tag.validate()?;
-            if kind == FieldKind::Ia5String {
+            if matches!(
+                kind,
+                FieldKind::Ia5String | FieldKind::ObjectIdentifier | FieldKind::RelativeOid
+            ) {
                 return Err(invalid(
-                    "record IA5String fields do not support EXPLICIT tagging",
+                    "record variable-length fields do not support EXPLICIT tagging",
                 ));
             }
             if tag.class != TagClass::ContextSpecific {
@@ -829,6 +840,8 @@ const fn field_kind_for_universal(tag: u64) -> Option<FieldKind> {
         TAG_BIT_STRING => Some(FieldKind::BitString),
         TAG_OCTET_STRING => Some(FieldKind::OctetString),
         TAG_IA5_STRING => Some(FieldKind::Ia5String),
+        6 => Some(FieldKind::ObjectIdentifier),
+        13 => Some(FieldKind::RelativeOid),
         TAG_NULL => Some(FieldKind::Null),
         TAG_ENUMERATED => Some(FieldKind::Enumerated),
         TAG_SEQUENCE => Some(FieldKind::Sequence),
@@ -1287,7 +1300,7 @@ impl RecordKind {
 ///
 /// A context is created once for an encode or decode operation and may be
 /// reused for strict CER re-encoding and comparison. On decode, `max_output_bytes`
-/// also caps cumulative OCTET/BIT/IA5 STRING payload allocation charges. Nested
+/// also caps cumulative OCTET/BIT/IA5/OID payload allocation charges. Nested
 /// callback failures roll back traversal but keep work and allocation charges.
 pub struct RecordContext {
     /// Copied caller ceilings for this complete operation.
@@ -1591,7 +1604,7 @@ impl RecordContext {
         self.nested_record_depth = self.nested_record_depth.saturating_sub(1);
     }
 
-    /// Return output limits remaining for one decoded-string allocation.
+    /// Return output limits remaining for one decoded variable-field allocation.
     ///
     /// # Parameters and returns
     /// Returns a copy with remaining cumulative payload and scratch ceilings;
@@ -1602,7 +1615,7 @@ impl RecordContext {
     ///
     /// # Source, version, history, example
     /// Source: bounded record scratch policy. Version: 2026-10-31.
-    /// Responsible: asn1c maintainers. History: shared string fields.
+    /// Responsible: asn1c maintainers. History: shared variable fields.
     /// Example: `let remaining = context.remaining_decode_limits()?`.
     fn remaining_decode_limits(&self) -> Result<Limits, Error> {
         let mut remaining = self.limits;
@@ -1632,7 +1645,7 @@ impl RecordContext {
     ///
     /// # Source, version, history, example
     /// Source: record decoded-storage policy. Version: 2026-10-31.
-    /// Responsible: asn1c maintainers. History: bounded string fields.
+    /// Responsible: asn1c maintainers. History: bounded variable fields.
     /// Example: `context.retain_decoded(owned.len(), owned.capacity())?`.
     fn retain_decoded(&mut self, bytes: usize, capacity: usize) -> Result<(), Error> {
         let total = self
@@ -1652,7 +1665,7 @@ impl RecordContext {
         Ok(())
     }
 
-    /// Require the fixed aggregate allocation cap for a variable record field.
+    /// Require aggregate capacity accounting for variable record fields.
     ///
     /// # Parameters and returns
     /// No parameters. Returns success only for a context created with aggregate
@@ -1662,13 +1675,13 @@ impl RecordContext {
     /// Returns `InvalidEncoding` when the context was created with `new`.
     ///
     /// # Source, version, history, example
-    /// Source: flat-record `IA5String` resource policy. Version: 2026-11-01.
-    /// Responsible: runtime maintainers. History: IA5 record gate.
-    /// Example: called at each public record IA5 reader/writer entry.
+    /// Source: flat-record IA5/OID resource policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: variable record-field gate.
+    /// Example: called at each public variable-field reader/writer entry.
     const fn require_aggregate_scratch(&self) -> Result<(), Error> {
         if !self.aggregate_scratch {
             return Err(invalid(
-                "record IA5String requires aggregate scratch accounting",
+                "record variable-length fields require aggregate scratch accounting",
             ));
         }
         Ok(())
@@ -2484,6 +2497,40 @@ impl SequenceWriter<'_> {
         Ok(())
     }
 
+    /// Append one natural universal OBJECT IDENTIFIER field.
+    ///
+    /// # Parameters and returns
+    /// `value` holds canonical base-128 content. Returns success after the
+    /// primitive definite TLV is committed in record order.
+    ///
+    /// # Errors
+    /// Returns missing aggregate mode, duplicate/order, work/output/scratch,
+    /// checked-size, or allocation errors. Failed writes roll back.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 8.19. Version: 2026-11-01. Responsible: runtime maintainers.
+    /// History: flat record OID gate. Example: `writer.write_object_identifier(&oid)?`.
+    pub fn write_object_identifier(&mut self, value: &ObjectIdentifier) -> Result<(), Error> {
+        self.write_oid_field(FieldKind::ObjectIdentifier, value.as_content())
+    }
+
+    /// Append one natural universal RELATIVE-OID field.
+    ///
+    /// # Parameters and returns
+    /// `value` holds canonical base-128 content. Returns success after the
+    /// primitive definite TLV is committed in record order.
+    ///
+    /// # Errors
+    /// Returns missing aggregate mode, duplicate/order, work/output/scratch,
+    /// checked-size, or allocation errors. Failed writes roll back.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 8.20. Version: 2026-11-01. Responsible: runtime maintainers.
+    /// History: flat record OID gate. Example: `writer.write_relative_oid(&oid)?`.
+    pub fn write_relative_oid(&mut self, value: &RelativeOid) -> Result<(), Error> {
+        self.write_oid_field(FieldKind::RelativeOid, value.as_content())
+    }
+
     /// Append one bounded OCTET STRING using the selected record rule.
     ///
     /// # Parameters
@@ -2939,6 +2986,52 @@ impl SequenceWriter<'_> {
         Ok(())
     }
 
+    /// Append canonical OID content with transactional aggregate accounting.
+    ///
+    /// # Parameters and returns
+    /// `kind` selects OBJECT IDENTIFIER or RELATIVE-OID; `content` is its
+    /// private canonical value. Returns success after the TLV is committed.
+    ///
+    /// # Errors
+    /// Returns aggregate-mode, ordering, output/work/scratch, size, or
+    /// allocation errors. Buffer and field state roll back on failure.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 OID field encoding. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat record OID gate.
+    /// Example: called by both public OID writer methods.
+    fn write_oid_field(&mut self, kind: FieldKind, content: &[u8]) -> Result<(), Error> {
+        self.context.require_aggregate_scratch()?;
+        let tag = intrinsic_tag(kind);
+        validate_field_descriptor(tag, kind)?;
+        let field_size = tagged_primitive_field_size(tag, content.len())?;
+        self.prepare_field(tag, field_size)?;
+        let start = self.bytes.len();
+        let mut identifier = [0_u8; 6];
+        let identifier_len = encode_identifier_bytes(tag, false, &mut identifier)?;
+        let mut length = [0_u8; std::mem::size_of::<usize>() + 1];
+        let length_len = encode_length_bytes(content.len(), &mut length)?;
+        let result = (|| {
+            self.push_record_bytes(&identifier[..identifier_len])?;
+            self.push_record_bytes(&length[..length_len])?;
+            self.push_record_bytes(content)
+        })();
+        if let Err(error) = result {
+            self.bytes.truncate(start);
+            return Err(error);
+        }
+        if self.bytes.len().checked_sub(start) != Some(field_size) {
+            self.bytes.truncate(start);
+            return Err(Error::SizeOverflow);
+        }
+        if let Err(error) = self.remember_tag(tag) {
+            self.bytes.truncate(start);
+            return Err(error);
+        }
+        self.last_tag = Some(tag);
+        Ok(())
+    }
+
     /// Write one canonical primitive or constructed CER `IA5String` field.
     ///
     /// # Parameters and returns
@@ -3270,6 +3363,42 @@ impl<'context> SetWriter<'context> {
     /// Example: `writer.write_ia5_string(&value)?`.
     pub fn write_ia5_string(&mut self, value: &Ia5String) -> Result<(), Error> {
         self.inner.write_ia5_string(value)
+    }
+
+    /// Append one natural universal OBJECT IDENTIFIER member in SET tag order.
+    ///
+    /// # Parameters and returns
+    /// `value` holds canonical OID content. Returns success after the field is
+    /// committed under the shared aggregate record context.
+    ///
+    /// # Errors
+    /// Returns aggregate-mode, duplicate/order, work/output/scratch, size, or
+    /// allocation errors. Failed writes roll back.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 8.19 and SET ordering. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat record OID gate.
+    /// Example: `writer.write_object_identifier(&oid)?`.
+    pub fn write_object_identifier(&mut self, value: &ObjectIdentifier) -> Result<(), Error> {
+        self.inner.write_object_identifier(value)
+    }
+
+    /// Append one natural universal RELATIVE-OID member in SET tag order.
+    ///
+    /// # Parameters and returns
+    /// `value` holds canonical relative-OID content. Returns success after the
+    /// field is committed under the shared aggregate record context.
+    ///
+    /// # Errors
+    /// Returns aggregate-mode, duplicate/order, work/output/scratch, size, or
+    /// allocation errors. Failed writes roll back.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 8.20 and SET ordering. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat record OID gate.
+    /// Example: `writer.write_relative_oid(&oid)?`.
+    pub fn write_relative_oid(&mut self, value: &RelativeOid) -> Result<(), Error> {
+        self.inner.write_relative_oid(value)
     }
 
     /// Append one bounded OCTET STRING member in increasing tag order.
@@ -3799,6 +3928,14 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
                     }
                 }
             }
+            if fields.iter().any(|field| {
+                matches!(
+                    field.kind,
+                    FieldKind::ObjectIdentifier | FieldKind::RelativeOid
+                )
+            }) {
+                context.require_aggregate_scratch()?;
+            }
         } else {
             for (index, tag) in expected_tags.iter().enumerate() {
                 context.charge(1)?;
@@ -3813,6 +3950,9 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
                         return Err(invalid("record descriptor tags must be unique"));
                     }
                 }
+            }
+            if expected_tags.iter().any(|tag| matches!(*tag, 6 | 13)) {
+                context.require_aggregate_scratch()?;
             }
         }
         let work = &mut context.work_used;
@@ -4388,6 +4528,44 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
         })
     }
 
+    /// Decode and normalize one natural universal OBJECT IDENTIFIER field.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns canonical nonempty base-128 content in the
+    /// existing owned OID wrapper.
+    ///
+    /// # Errors
+    /// Returns missing aggregate mode, constructed/empty/unterminated BER,
+    /// retained/output/work/scratch, checked-size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 8.19. Version: 2026-11-01. Responsible: runtime maintainers.
+    /// History: flat record OID gate. Example: `let oid = reader.read_object_identifier()?`.
+    pub fn read_object_identifier(&mut self) -> Result<ObjectIdentifier, Error> {
+        Ok(ObjectIdentifier {
+            content: self.read_oid_content(FieldKind::ObjectIdentifier)?,
+        })
+    }
+
+    /// Decode and normalize one natural universal RELATIVE-OID field.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns canonical nonempty base-128 content in the
+    /// existing owned relative-OID wrapper.
+    ///
+    /// # Errors
+    /// Returns missing aggregate mode, constructed/empty/unterminated BER,
+    /// retained/output/work/scratch, checked-size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 8.20. Version: 2026-11-01. Responsible: runtime maintainers.
+    /// History: flat record OID gate. Example: `let oid = reader.read_relative_oid()?`.
+    pub fn read_relative_oid(&mut self) -> Result<RelativeOid, Error> {
+        Ok(RelativeOid {
+            content: self.read_oid_content(FieldKind::RelativeOid)?,
+        })
+    }
+
     /// Decode and flatten the current bounded BER BIT STRING field.
     ///
     /// # Parameters
@@ -4480,6 +4658,45 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
             Some(_) => Err(invalid("record field reader does not match current kind")),
             None => Err(invalid("SEQUENCE has no current field")),
         }
+    }
+
+    /// Decode one primitive OID field with the record's shared operation budget.
+    ///
+    /// # Parameters and returns
+    /// `kind` selects OBJECT IDENTIFIER or RELATIVE-OID. Returns canonical
+    /// content after charging scan and copy passes and retained capacity.
+    ///
+    /// # Errors
+    /// Returns aggregate-mode, field/form, malformed content, resource, size,
+    /// or allocation errors. The pending field is consumed only on success.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 base-128 OID content. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat record OID gate.
+    /// Example: called by the public OID reader methods.
+    fn read_oid_content(&mut self, kind: FieldKind) -> Result<Vec<u8>, Error> {
+        self.context.require_aggregate_scratch()?;
+        let field = self.current_field(kind)?;
+        if field.constructed {
+            return Err(invalid("BER OID fields must use primitive form"));
+        }
+        let content = self
+            .input
+            .get(field.content_start..field.content_end)
+            .ok_or_else(|| invalid("BER OID content span is outside record input"))?;
+        let limits = self.context.remaining_decode_limits()?;
+        let normalized_len = scan_oid_content(content, &limits, &mut self.context.work_used)?;
+        self.context.charge(content.len())?;
+        let normalized = copy_oid_content(
+            content,
+            normalized_len,
+            self.context.retained_capacity,
+            &limits,
+        )?;
+        self.context
+            .retain_decoded(normalized.len(), normalized.capacity())?;
+        self.current = None;
+        Ok(normalized)
     }
 
     /// Resolve one effective wire tag against the bounded field descriptor list.
@@ -4901,6 +5118,40 @@ impl<'input, 'tags, 'context> SetReader<'input, 'tags, 'context> {
     /// Example: `let value = reader.read_ia5_string()?`.
     pub fn read_ia5_string(&mut self) -> Result<Ia5String, Error> {
         self.inner.read_ia5_string()
+    }
+
+    /// Decode and normalize one OBJECT IDENTIFIER SET member.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns the canonical owned OID value.
+    ///
+    /// # Errors
+    /// Returns aggregate-mode, malformed BER, retained/output/work/scratch,
+    /// checked-size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 8.19 and BER SET. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat record OID gate.
+    /// Example: `let value = reader.read_object_identifier()?`.
+    pub fn read_object_identifier(&mut self) -> Result<ObjectIdentifier, Error> {
+        self.inner.read_object_identifier()
+    }
+
+    /// Decode and normalize one RELATIVE-OID SET member.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns the canonical owned relative-OID value.
+    ///
+    /// # Errors
+    /// Returns aggregate-mode, malformed BER, retained/output/work/scratch,
+    /// checked-size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 8.20 and BER SET. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat record OID gate.
+    /// Example: `let value = reader.read_relative_oid()?`.
+    pub fn read_relative_oid(&mut self) -> Result<RelativeOid, Error> {
+        self.inner.read_relative_oid()
     }
 
     /// Decode and flatten the current bounded BIT STRING SET member.
@@ -7371,12 +7622,12 @@ fn scan_oid_content(content: &[u8], limits: &Limits, work: &mut usize) -> Result
     if content.is_empty() {
         return Err(invalid("OID content must not be empty"));
     }
+    charge_work(work, content.len(), limits)?;
     if content.last().is_some_and(|octet| octet & 0x80 != 0) {
         return Err(invalid(
             "OID content ends with an unterminated base-128 arc",
         ));
     }
-    charge_work(work, content.len(), limits)?;
     let mut normalized_len = 0_usize;
     let mut at_arc_start = true;
     for octet in content {
@@ -8922,6 +9173,8 @@ const fn intrinsic_tag(kind: FieldKind) -> Tag {
         FieldKind::BitString => Tag::universal(3),
         FieldKind::OctetString => Tag::universal(4),
         FieldKind::Ia5String => Tag::universal(22),
+        FieldKind::ObjectIdentifier => Tag::universal(TAG_OBJECT_IDENTIFIER),
+        FieldKind::RelativeOid => Tag::universal(TAG_RELATIVE_OID),
         FieldKind::Null => Tag::universal(5),
         FieldKind::Enumerated => Tag::universal(10),
         FieldKind::Sequence => Tag::universal(16),
@@ -15900,6 +16153,593 @@ mod tests {
         }
     }
 
+    /// Encode and decode both natural OID record fields in canonical form.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks the C sequence vectors and exact consumed prefix.
+    ///
+    /// # Errors
+    /// Panics on a runtime error or any wire/value mismatch.
+    ///
+    /// # Source, version, history, example
+    /// Source: approved flat-record OID gate. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: OID record regression.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn oid_record_sequence_der_cer_round_trip_and_prefix() {
+        let limits = Limits::default();
+        let oid = ObjectIdentifier::try_from_content(&[0x2a, 0x81, 0], &limits).unwrap();
+        let relative = RelativeOid::try_from_content(&[0x81, 0], &limits).unwrap();
+        let fields = [
+            RecordField::new(Tag::universal(6), FieldKind::ObjectIdentifier).unwrap(),
+            RecordField::new(Tag::universal(13), FieldKind::RelativeOid).unwrap(),
+        ];
+        for (rule, expected) in [
+            (
+                RecordEncoding::Der,
+                &[0x30, 9, 6, 3, 0x2a, 0x81, 0, 13, 2, 0x81, 0][..],
+            ),
+            (
+                RecordEncoding::Cer,
+                &[0x30, 0x80, 6, 3, 0x2a, 0x81, 0, 13, 2, 0x81, 0, 0, 0][..],
+            ),
+        ] {
+            let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+            let mut writer = SequenceWriter::new(rule, &mut context).unwrap();
+            writer.write_object_identifier(&oid).unwrap();
+            writer.write_relative_oid(&relative).unwrap();
+            let encoded = writer.finish().unwrap();
+            assert_eq!(encoded.bytes, expected);
+            let mut suffixed = encoded.bytes.clone();
+            suffixed.extend_from_slice(&[0xff]);
+            let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+            let mut reader = SequenceReader::new_tagged(&suffixed, &fields, &mut context).unwrap();
+            assert_eq!(reader.next_tagged_field().unwrap(), Some(fields[0].tag()));
+            assert_eq!(
+                reader.read_object_identifier().unwrap().as_content(),
+                oid.as_content()
+            );
+            assert_eq!(reader.next_tagged_field().unwrap(), Some(fields[1].tag()));
+            assert_eq!(
+                reader.read_relative_oid().unwrap().as_content(),
+                relative.as_content()
+            );
+            assert_eq!(reader.next_tagged_field().unwrap(), None);
+            assert_eq!(reader.finish().unwrap().consumed_bytes, expected.len());
+        }
+    }
+
+    /// Keep OID SET BER order permissive and DER/CER output sorted by tag.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks reversed BER fields, canonical writer order, and
+    /// strict CER comparison under one operation context.
+    ///
+    /// # Errors
+    /// Panics on an unexpected order, value, or canonicality result.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET component ordering and OID gate. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: OID record regression.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn oid_record_set_accepts_ber_order_and_rejects_noncanonical_cer() {
+        let limits = Limits::default();
+        let oid = ObjectIdentifier::try_from_content(&[0x2a, 0x81, 0], &limits).unwrap();
+        let relative = RelativeOid::try_from_content(&[0x81, 0], &limits).unwrap();
+        let fields = [
+            RecordField::new(Tag::universal(13), FieldKind::RelativeOid).unwrap(),
+            RecordField::new(Tag::universal(6), FieldKind::ObjectIdentifier).unwrap(),
+        ];
+        let reversed = [0x31, 9, 13, 2, 0x81, 0, 6, 3, 0x2a, 0x81, 0];
+        let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut reader = SetReader::new_tagged(&reversed, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(fields[0].tag()));
+        assert_eq!(
+            reader.read_relative_oid().unwrap().as_content(),
+            relative.as_content()
+        );
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(fields[1].tag()));
+        assert_eq!(
+            reader.read_object_identifier().unwrap().as_content(),
+            oid.as_content()
+        );
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        let consumed = reader.finish().unwrap().consumed_bytes;
+
+        let mut writer = SetWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer.write_object_identifier(&oid).unwrap();
+        writer.write_relative_oid(&relative).unwrap();
+        let canonical = writer.finish().unwrap();
+        assert_eq!(
+            canonical.bytes,
+            [0x31, 0x80, 6, 3, 0x2a, 0x81, 0, 13, 2, 0x81, 0, 0, 0]
+        );
+        assert!(context
+            .verify_canonical(&reversed, consumed, &canonical.bytes)
+            .is_err());
+    }
+
+    /// Normalize BER high-tag and redundant-arc aliases in record fields.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks both OID kinds, strict CER rejection, and suffixes.
+    ///
+    /// # Errors
+    /// Panics on incorrect canonical content, prefix size, or CER acceptance.
+    ///
+    /// # Source, version, history, example
+    /// Source: C BER OID aliases and approved record gate. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: OID record regression.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn oid_record_ber_normalizes_aliases_and_cer_rejects_them() {
+        let limits = Limits::default();
+        let vectors: &[(&[u8], FieldKind, &[u8])] = &[
+            (
+                &[0x30, 0x80, 0x1f, 6, 4, 0x2a, 0x80, 0x81, 0, 0, 0],
+                FieldKind::ObjectIdentifier,
+                &[0x2a, 0x81, 0],
+            ),
+            (
+                &[0x30, 0x80, 0x1f, 13, 3, 0x80, 0x81, 0, 0, 0],
+                FieldKind::RelativeOid,
+                &[0x81, 0],
+            ),
+        ];
+        for (input, kind, expected) in vectors {
+            let tag = intrinsic_tag(*kind);
+            let fields = [RecordField::new(tag, *kind).unwrap()];
+            let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+            let mut reader = SequenceReader::new_tagged(input, &fields, &mut context).unwrap();
+            assert_eq!(reader.next_tagged_field().unwrap(), Some(tag));
+            let value = match kind {
+                FieldKind::ObjectIdentifier => reader
+                    .read_object_identifier()
+                    .unwrap()
+                    .as_content()
+                    .to_vec(),
+                FieldKind::RelativeOid => reader.read_relative_oid().unwrap().as_content().to_vec(),
+                _ => unreachable!(),
+            };
+            assert_eq!(value, *expected);
+            assert_eq!(reader.next_tagged_field().unwrap(), None);
+            let consumed = reader.finish().unwrap().consumed_bytes;
+            let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+            match kind {
+                FieldKind::ObjectIdentifier => {
+                    let value = ObjectIdentifier::try_from_content(&value, &limits).unwrap();
+                    writer.write_object_identifier(&value).unwrap();
+                }
+                FieldKind::RelativeOid => {
+                    let value = RelativeOid::try_from_content(&value, &limits).unwrap();
+                    writer.write_relative_oid(&value).unwrap();
+                }
+                _ => unreachable!(),
+            }
+            let canonical = writer.finish().unwrap();
+            assert!(context
+                .verify_canonical(input, consumed, &canonical.bytes)
+                .is_err());
+        }
+    }
+
+    /// Keep large OID arcs primitive across the short/long length boundary.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Tests 127-, 128-, and 1001-octet content lengths through
+    /// DER/CER record writers and a CER reader round trip.
+    ///
+    /// # Errors
+    /// Panics on a wrong length header, constructed form, or decoded value.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 OID form and C boundary vectors. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: OID record regression.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn oid_record_large_arcs_keep_primitive_length_boundaries() {
+        let limits = Limits::default();
+        let field = RecordField::new(Tag::universal(6), FieldKind::ObjectIdentifier).unwrap();
+        let fields = [field];
+        for (content_len, length_header) in [
+            (127, &[0x7f][..]),
+            (128, &[0x81, 0x80][..]),
+            (1001, &[0x82, 0x03, 0xe9][..]),
+        ] {
+            let mut arc_content = vec![0x81; content_len - 1];
+            arc_content.push(0);
+            let value = ObjectIdentifier::try_from_content(&arc_content, &limits).unwrap();
+
+            let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+            let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+            writer.write_object_identifier(&value).unwrap();
+            let der = writer.finish().unwrap();
+            let field_size = 1 + length_header.len() + content_len;
+            let der_child_at = 1 + length_size(field_size);
+            assert_eq!(der.bytes[der_child_at], 6);
+            assert_eq!(
+                &der.bytes[der_child_at + 1..der_child_at + 1 + length_header.len()],
+                length_header
+            );
+
+            let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+            let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+            writer.write_object_identifier(&value).unwrap();
+            let cer = writer.finish().unwrap();
+            assert_eq!(cer.bytes[2], 6);
+            assert_eq!(&cer.bytes[3..3 + length_header.len()], length_header);
+            let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+            let mut reader = SequenceReader::new_tagged(&cer.bytes, &fields, &mut context).unwrap();
+            assert_eq!(reader.next_tagged_field().unwrap(), Some(field.tag()));
+            assert_eq!(
+                reader.read_object_identifier().unwrap().as_content(),
+                arc_content
+            );
+            assert_eq!(reader.next_tagged_field().unwrap(), None);
+            assert_eq!(reader.finish().unwrap().consumed_bytes, cer.bytes.len());
+
+            let relative = RelativeOid::try_from_content(&arc_content, &limits).unwrap();
+            let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+            let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+            writer.write_relative_oid(&relative).unwrap();
+            let cer = writer.finish().unwrap();
+            assert_eq!(cer.bytes[2], 13);
+            assert_eq!(&cer.bytes[3..3 + length_header.len()], length_header);
+            let relative_field =
+                RecordField::new(Tag::universal(13), FieldKind::RelativeOid).unwrap();
+            let relative_fields = [relative_field];
+            let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+            let mut reader =
+                SequenceReader::new_tagged(&cer.bytes, &relative_fields, &mut context).unwrap();
+            assert_eq!(
+                reader.next_tagged_field().unwrap(),
+                Some(relative_field.tag())
+            );
+            assert_eq!(
+                reader.read_relative_oid().unwrap().as_content(),
+                arc_content
+            );
+            assert_eq!(reader.next_tagged_field().unwrap(), None);
+            assert_eq!(reader.finish().unwrap().consumed_bytes, cer.bytes.len());
+        }
+    }
+
+    /// Bound malformed OID field traversal and all single-byte wire mutations.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks every proper prefix and byte replacement for both
+    /// OID kinds, requiring that untrusted input never panics.
+    ///
+    /// # Errors
+    /// Panics only when a runtime decoder unwinds on malformed bytes.
+    ///
+    /// # Source, version, history, example
+    /// Source: BER mutation hardening and OID field gate. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: OID record regression.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn oid_record_mutations_and_truncations_do_not_panic() {
+        let vectors: &[(&[u8], FieldKind)] = &[
+            (&[0x30, 5, 6, 3, 0x2a, 0x81, 0], FieldKind::ObjectIdentifier),
+            (&[0x30, 4, 13, 2, 0x81, 0], FieldKind::RelativeOid),
+            (
+                &[0x30, 0x80, 0x1f, 6, 4, 0x2a, 0x80, 0x81, 0, 0, 0],
+                FieldKind::ObjectIdentifier,
+            ),
+        ];
+        let limits = Limits::default();
+        for (wire, kind) in vectors {
+            let decode = |input: &[u8]| -> Result<(), Error> {
+                let tag = intrinsic_tag(*kind);
+                let field = RecordField::new(tag, *kind)?;
+                let fields = [field];
+                let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+                let mut reader = SequenceReader::new_tagged(input, &fields, &mut context)?;
+                if reader.next_tagged_field()?.is_some() {
+                    match kind {
+                        FieldKind::ObjectIdentifier => {
+                            reader.read_object_identifier()?;
+                        }
+                        FieldKind::RelativeOid => {
+                            reader.read_relative_oid()?;
+                        }
+                        _ => return Err(invalid("test has an unsupported OID field kind")),
+                    }
+                }
+                let _ = reader.next_tagged_field()?;
+                reader.finish()?;
+                Ok(())
+            };
+            for end in 0..wire.len() {
+                assert!(std::panic::catch_unwind(|| decode(&wire[..end])).is_ok());
+            }
+            for index in 0..wire.len() {
+                for replacement in 0_u8..=u8::MAX {
+                    let mut mutated = wire.to_vec();
+                    mutated[index] = replacement;
+                    assert!(std::panic::catch_unwind(|| decode(&mutated)).is_ok());
+                }
+            }
+        }
+    }
+
+    /// Enforce OID record context, form, duplicate, and schema-tag rules.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks absent optionals, malformed values, duplicate
+    /// fields, natural-tag restrictions, and writer rollback.
+    ///
+    /// # Errors
+    /// Panics on accepted malformed data or a missed exact resource boundary.
+    ///
+    /// # Source, version, history, example
+    /// Source: approved OID record resource policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: OID record regression.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn oid_record_rejects_bad_context_forms_and_duplicate_fields() {
+        let defaults = Limits::default();
+        let fields = [
+            RecordField::new(Tag::universal(6), FieldKind::ObjectIdentifier).unwrap(),
+            RecordField::new(Tag::universal(13), FieldKind::RelativeOid).unwrap(),
+        ];
+        let empty = [0x30, 0];
+        let mut flat = RecordContext::new(&defaults);
+        assert!(SequenceReader::new_tagged(&empty, &fields, &mut flat).is_err());
+        let mut aggregate = RecordContext::new_with_aggregate_scratch(&defaults);
+        let mut absent = SequenceReader::new_tagged(&empty, &fields, &mut aggregate).unwrap();
+        assert_eq!(absent.next_tagged_field().unwrap(), None);
+        assert_eq!(absent.finish().unwrap().consumed_bytes, empty.len());
+        let mut flat = RecordContext::new(&defaults);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut flat).unwrap();
+        let oid = ObjectIdentifier::try_from_content(&[42], &defaults).unwrap();
+        assert!(writer.write_object_identifier(&oid).is_err());
+        assert_eq!(writer.bytes, [0x30, 0]);
+
+        for (malformed, kind) in [
+            (&[0x30, 2, 6, 0][..], FieldKind::ObjectIdentifier),
+            (&[0x30, 3, 13, 1, 0x80][..], FieldKind::RelativeOid),
+            (
+                &[0x30, 4, 0x26, 0x80, 0, 0][..],
+                FieldKind::ObjectIdentifier,
+            ),
+            (&[0x30, 4, 0x2d, 0x80, 0, 0][..], FieldKind::RelativeOid),
+        ] {
+            let tag = intrinsic_tag(kind);
+            let one_field = [RecordField::new(tag, kind).unwrap()];
+            let mut context = RecordContext::new_with_aggregate_scratch(&defaults);
+            let mut reader =
+                SequenceReader::new_tagged(malformed, &one_field, &mut context).unwrap();
+            assert_eq!(reader.next_tagged_field().unwrap(), Some(tag));
+            let result = match kind {
+                FieldKind::ObjectIdentifier => reader.read_object_identifier().map(|_| ()),
+                FieldKind::RelativeOid => reader.read_relative_oid().map(|_| ()),
+                _ => Err(invalid("test has an unsupported OID field kind")),
+            };
+            assert!(result.is_err());
+            assert!(reader.next_tagged_field().is_err());
+        }
+        assert!(RecordField::new(Tag::context_specific(1), FieldKind::ObjectIdentifier).is_err());
+        assert!(
+            RecordField::new_explicit(Tag::context_specific(1), FieldKind::RelativeOid).is_err()
+        );
+
+        let duplicate = [0x31, 6, 6, 1, 42, 6, 1, 43];
+        let oid_field = [fields[0]];
+        let mut duplicate_context = RecordContext::new_with_aggregate_scratch(&defaults);
+        let mut duplicate_reader =
+            SetReader::new_tagged(&duplicate, &oid_field, &mut duplicate_context).unwrap();
+        assert_eq!(
+            duplicate_reader.next_tagged_field().unwrap(),
+            Some(fields[0].tag())
+        );
+        assert_eq!(
+            duplicate_reader
+                .read_object_identifier()
+                .unwrap()
+                .as_content(),
+            [42]
+        );
+        assert!(duplicate_reader.next_tagged_field().is_err());
+
+        let unknown = [0x30, 2, 5, 0];
+        let mut unknown_context = RecordContext::new_with_aggregate_scratch(&defaults);
+        let mut unknown_reader =
+            SequenceReader::new_tagged(&unknown, &fields[..1], &mut unknown_context).unwrap();
+        assert!(unknown_reader.next_tagged_field().is_err());
+    }
+
+    /// Enforce exact OID record input, payload, output, and scratch boundaries.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks exact and one-below limits plus suffix accounting.
+    ///
+    /// # Errors
+    /// Panics if a boundary is accepted or rejected incorrectly.
+    ///
+    /// # Source, version, history, example
+    /// Source: OID aggregate resource policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: OID record resource tests.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn oid_record_resource_boundaries_are_exact() {
+        let defaults = Limits::default();
+        let field = RecordField::new(Tag::universal(6), FieldKind::ObjectIdentifier).unwrap();
+        let fields = [field];
+        let one_oid = [0x30, 3, 6, 1, 42];
+        let exact_input = Limits {
+            max_input_bytes: one_oid.len(),
+            ..defaults
+        };
+        let mut context = RecordContext::new_with_aggregate_scratch(&exact_input);
+        assert!(SequenceReader::new_tagged(&one_oid, &fields, &mut context).is_ok());
+        let mut suffixed = one_oid.to_vec();
+        suffixed.push(0xff);
+        let mut context = RecordContext::new_with_aggregate_scratch(&exact_input);
+        assert!(SequenceReader::new_tagged(&suffixed, &fields, &mut context).is_err());
+
+        let exact_payload = Limits {
+            max_output_bytes: 1,
+            ..defaults
+        };
+        let mut context = RecordContext::new_with_aggregate_scratch(&exact_payload);
+        let mut reader = SequenceReader::new_tagged(&one_oid, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(field.tag()));
+        assert_eq!(reader.read_object_identifier().unwrap().as_content(), [42]);
+        let below_payload = Limits {
+            max_output_bytes: 0,
+            ..defaults
+        };
+        let mut context = RecordContext::new_with_aggregate_scratch(&below_payload);
+        let mut reader = SequenceReader::new_tagged(&one_oid, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(field.tag()));
+        assert!(reader.read_object_identifier().is_err());
+
+        let mut scratch_exact = RecordContext::new_with_aggregate_scratch(&defaults);
+        scratch_exact.retained_capacity = MAX_RECORD_SCRATCH_BYTES - 1;
+        let mut reader = SequenceReader::new_tagged(&one_oid, &fields, &mut scratch_exact).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(field.tag()));
+        assert_eq!(reader.read_object_identifier().unwrap().as_content(), [42]);
+        let mut scratch_below = RecordContext::new_with_aggregate_scratch(&defaults);
+        scratch_below.retained_capacity = MAX_RECORD_SCRATCH_BYTES;
+        let mut reader = SequenceReader::new_tagged(&one_oid, &fields, &mut scratch_below).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(field.tag()));
+        assert!(reader.read_object_identifier().is_err());
+
+        let exact_output = Limits {
+            max_output_bytes: one_oid.len(),
+            ..defaults
+        };
+        let mut context = RecordContext::new_with_aggregate_scratch(&exact_output);
+        let oid = ObjectIdentifier::try_from_content(&[42], &defaults).unwrap();
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer.write_object_identifier(&oid).unwrap();
+        assert_eq!(writer.finish().unwrap().bytes, one_oid);
+        let below_output = Limits {
+            max_output_bytes: one_oid.len() - 1,
+            ..defaults
+        };
+        let mut context = RecordContext::new_with_aggregate_scratch(&below_output);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        assert!(writer.write_object_identifier(&oid).is_err());
+        assert_eq!(writer.bytes, [0x30, 0]);
+
+        let mut context = RecordContext::new_with_aggregate_scratch(&defaults);
+        context.retained_capacity = MAX_RECORD_SCRATCH_BYTES - 2;
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        assert!(writer.write_object_identifier(&oid).is_err());
+        assert_eq!(writer.bytes, [0x30, 0]);
+    }
+
+    /// Meter inspection of malformed trailing base-128 groups before rejection.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Gives the parser exactly enough work to reach the field,
+    /// then proves content validation requires another charged octet.
+    ///
+    /// # Errors
+    /// Panics if malformed OID content is inspected beyond the work ceiling.
+    ///
+    /// # Source, version, history, example
+    /// Source: OID parser cumulative work policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: OID record resource tests.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn oid_record_charges_malformed_content_scan_before_error() {
+        let input = [0x30, 3, 6, 1, 0x80];
+        let field = RecordField::new(Tag::universal(6), FieldKind::ObjectIdentifier).unwrap();
+        let fields = [field];
+        let defaults = Limits::default();
+        let mut context = RecordContext::new_with_aggregate_scratch(&defaults);
+        let mut reader = SequenceReader::new_tagged(&input, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(field.tag()));
+        let before_content_scan = reader.context.work_used;
+
+        let limited = Limits {
+            max_work_bits: before_content_scan,
+            ..defaults
+        };
+        let mut context = RecordContext::new_with_aggregate_scratch(&limited);
+        let mut reader = SequenceReader::new_tagged(&input, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(field.tag()));
+        assert!(matches!(
+            reader.read_object_identifier(),
+            Err(Error::LimitExceeded {
+                resource: Resource::WorkBits,
+                ..
+            })
+        ));
+    }
+
+    /// Bound OID record parsing, normalization, and strict CER re-encoding work.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Pins the complete parse/copy/encode/compare work total.
+    ///
+    /// # Errors
+    /// Panics if the fixed exact work budget changes or one-below succeeds.
+    ///
+    /// # Source, version, history, example
+    /// Source: cumulative `RecordContext` policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: OID record work regression.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn oid_record_strict_cer_shares_cumulative_work_budget() {
+        let canonical = [0x30, 0x80, 6, 3, 0x2a, 0x81, 0, 0, 0];
+        let field = RecordField::new(Tag::universal(6), FieldKind::ObjectIdentifier).unwrap();
+        let fields = [field];
+        let limits = Limits::default();
+        let mut measured = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut reader = SequenceReader::new_tagged(&canonical, &fields, &mut measured).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(field.tag()));
+        let oid = reader.read_object_identifier().unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        let consumed = reader.finish().unwrap().consumed_bytes;
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut measured).unwrap();
+        writer.write_object_identifier(&oid).unwrap();
+        let encoded = writer.finish().unwrap();
+        measured
+            .verify_canonical(&canonical, consumed, &encoded.bytes)
+            .unwrap();
+        let work = measured.work_used;
+        assert_eq!(work, 296);
+
+        let exact = Limits {
+            max_work_bits: work,
+            ..limits
+        };
+        let mut context = RecordContext::new_with_aggregate_scratch(&exact);
+        let mut reader = SequenceReader::new_tagged(&canonical, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(field.tag()));
+        let oid = reader.read_object_identifier().unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        let consumed = reader.finish().unwrap().consumed_bytes;
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer.write_object_identifier(&oid).unwrap();
+        let encoded = writer.finish().unwrap();
+        context
+            .verify_canonical(&canonical, consumed, &encoded.bytes)
+            .unwrap();
+
+        let below = Limits {
+            max_work_bits: work - 1,
+            ..limits
+        };
+        let mut context = RecordContext::new_with_aggregate_scratch(&below);
+        let mut reader = SequenceReader::new_tagged(&canonical, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(field.tag()));
+        let oid = reader.read_object_identifier().unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        let consumed = reader.finish().unwrap().consumed_bytes;
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer.write_object_identifier(&oid).unwrap();
+        let encoded = writer.finish().unwrap();
+        assert!(context
+            .verify_canonical(&canonical, consumed, &encoded.bytes)
+            .is_err());
+    }
+
     /// Preserve raw bytes in BER/DER and apply the repertoire rule only in CER.
     ///
     /// # Parameters and returns
@@ -16481,7 +17321,7 @@ mod tests {
         assert!(matches!(
             flat_writer.write_ia5_string(&value),
             Err(Error::InvalidEncoding {
-                reason: "record IA5String requires aggregate scratch accounting"
+                reason: "record variable-length fields require aggregate scratch accounting"
             })
         ));
         let field = RecordField::new(Tag::universal(22), FieldKind::Ia5String).unwrap();

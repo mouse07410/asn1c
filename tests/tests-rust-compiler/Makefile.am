@@ -107,6 +107,24 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/Ia5RecordTaggedRoot.asn1 \
     $(srcdir)/ia5_record_conformance.rs \
     $(srcdir)/c_ia5_record.c \
+    $(srcdir)/OidRecord.asn1 \
+    $(srcdir)/OidRecordAlias.asn1 \
+    $(srcdir)/OidRecordConstrained.asn1 \
+    $(srcdir)/OidRecordDefault.asn1 \
+    $(srcdir)/OidRecordImported.asn1 \
+    $(srcdir)/OidRecordImportedBase.asn1 \
+    $(srcdir)/OidRecordMixedIa5.asn1 \
+    $(srcdir)/OidRecordMultiple.asn1 \
+    $(srcdir)/OidRecordNested.asn1 \
+    $(srcdir)/OidRecordRelativeAlias.asn1 \
+    $(srcdir)/OidRecordRelativeConstrained.asn1 \
+    $(srcdir)/OidRecordRelativeDefault.asn1 \
+    $(srcdir)/OidRecordRelativeMultiple.asn1 \
+    $(srcdir)/OidRecordRelativeTagged.asn1 \
+    $(srcdir)/OidRecordTagged.asn1 \
+    $(srcdir)/OidRecordTaggedRoot.asn1 \
+    $(srcdir)/oid_record_conformance.rs \
+    $(srcdir)/c_oid_record.c \
     $(srcdir)/RestrictedStrings.asn1 \
     $(srcdir)/RestrictedStringsAlias.asn1 \
     $(srcdir)/RestrictedStringsConstrained.asn1 \

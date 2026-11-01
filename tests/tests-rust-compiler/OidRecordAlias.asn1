@@ -1,0 +1,4 @@
+OidRecordAlias DEFINITIONS ::= BEGIN
+OidAlias ::= OBJECT IDENTIFIER
+Bad ::= SEQUENCE { oid OidAlias }
+END

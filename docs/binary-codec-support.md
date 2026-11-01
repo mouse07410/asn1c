@@ -170,8 +170,8 @@ content bytes, including subidentifiers larger than machine integers. BER
 normalizes redundant leading base-128 groups. Rust rejects empty or
 unterminated content that C BER may retain; strict CER requires the minimal
 primitive encoding. These roots use finite input, output, work, and aggregate
-scratch limits. Tagged, constrained, aliased, imported, and member OID forms
-remain outside the Rust slice.
+scratch limits. Tagged, constrained, aliased, imported, and other member OID
+forms remain outside the Rust slice.
 Direct untagged, unconstrained IA5String roots support BER prefix decoding,
 DER encoding, CER encoding, and strict CER decoding under BER/CER-only
 selection. BER and DER preserve arbitrary content bytes as the C codecs do;
@@ -265,6 +265,16 @@ the OPTIONAL member is absent. The aggregate cap counts record-owned output
 and retained decoded storage; caller-owned spare input capacity is excluded.
 Tagged or constrained IA5 fields, nested records, multiple IA5 fields, and
 mixed-codec record forms remain gated.
+Flat untagged SEQUENCE and SET records under BER/CER-only selection may also
+contain one natural OBJECT IDENTIFIER and one natural RELATIVE-OID field, each
+required or OPTIONAL, with supported scalar siblings. Their BER readers
+normalize redundant base-128 groups under the shared record budget; DER/CER
+write primitive definite child TLVs, and strict CER checks the consumed
+prefix. The repaired C CER validator accepts required inline OID fields. C
+BER retains malformed empty or unterminated OID content and redundant groups;
+Rust rejects the malformed forms and normalizes redundant groups, as its
+direct OID codec does. Tagged, constrained, nested, referenced, imported,
+mixed-IA5, and mixed-codec OID record forms remain gated.
 One inline primitive CHOICE child with unique BOOLEAN, NULL, or bounded `i64`
 INTEGER alternatives is supported under BER/CER-only selection. An untagged
 SEQUENCE parent accepts a natural or one context-specific EXPLICIT CHOICE;

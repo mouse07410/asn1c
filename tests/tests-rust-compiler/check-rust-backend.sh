@@ -3013,7 +3013,8 @@ if ! "$test_tmp/c-unconstrained-strings"; then
 fi
 
 # Direct OID values accept BER/CER only and keep canonical content private.
-for fixture in OidValuesAlias OidValuesConstrained OidValuesField \
+# Natural flat record fields are qualified by the OidRecord fixtures below.
+for fixture in OidValuesAlias OidValuesConstrained \
     OidValuesImport OidValuesTagged RelativeOidConstrained RelativeOidTagged; do
     rejected_out="$test_tmp/rejected-$fixture"
     if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
@@ -3109,6 +3110,130 @@ if ! cc $oid_cflags -I"$oid_c" "$oid_c"/*.c "$test_srcdir/c_oid.c" \
 fi
 if ! "$test_tmp/c-oid"; then
     echo "FAIL: C OID DER/CER vectors or BER compatibility probes failed"
+    exit 1
+fi
+
+# Flat records may carry one direct OBJECT IDENTIFIER and RELATIVE-OID field.
+for fixture in OidRecordAlias OidRecordConstrained OidRecordDefault \
+    OidRecordMixedIa5 OidRecordMultiple OidRecordNested \
+    OidRecordRelativeAlias OidRecordRelativeConstrained \
+    OidRecordRelativeDefault OidRecordRelativeMultiple OidRecordRelativeTagged \
+    OidRecordTagged OidRecordTaggedRoot; do
+    rejected_out="$test_tmp/rejected-$fixture"
+    if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$rejected_out" "$test_srcdir/$fixture.asn1" \
+        >"$test_tmp/$fixture.log" 2>&1; then
+        echo "FAIL: Rust backend accepted unsupported OID record shape $fixture"
+        exit 1
+    fi
+    test ! -e "$rejected_out"
+done
+
+oid_record_import="$test_tmp/rejected-OidRecordImported"
+if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$oid_record_import" "$test_srcdir/OidRecordImported.asn1" \
+    "$test_srcdir/OidRecordImportedBase.asn1" \
+    >"$test_tmp/OidRecordImported.log" 2>&1; then
+    echo "FAIL: Rust backend accepted imported OID record field"
+    exit 1
+fi
+test ! -e "$oid_record_import"
+
+for selection in mixed uper; do
+    rejected_out="$test_tmp/rejected-oid-record-$selection"
+    if [ "$selection" = mixed ]; then
+        if "$asn1c_bin" --rust -S "$skeletons" -D "$rejected_out" \
+            "$test_srcdir/OidRecord.asn1" \
+            >"$test_tmp/oid-record-$selection.log" 2>&1; then
+            echo "FAIL: mixed codecs accepted OID record fields"
+            exit 1
+        fi
+    else
+        if "$asn1c_bin" --rust -gen-UPER -no-gen-BER -no-gen-CER -S "$skeletons" \
+            -D "$rejected_out" "$test_srcdir/OidRecord.asn1" \
+            >"$test_tmp/oid-record-$selection.log" 2>&1; then
+            echo "FAIL: UPER-only selection accepted OID record fields"
+            exit 1
+        fi
+    fi
+    test ! -e "$rejected_out"
+done
+
+oid_record_rust="$test_tmp/oid-record-rust"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$oid_record_rust" "$test_srcdir/OidRecord.asn1"
+mkdir "$oid_record_rust/tests"
+cp "$test_srcdir/oid_record_conformance.rs" "$oid_record_rust/tests/"
+oid_record_source="$oid_record_rust/src/oid_record.rs"
+for api in write_object_identifier write_relative_oid read_object_identifier \
+    read_relative_oid new_with_aggregate_scratch; do
+    grep -F "$api" "$oid_record_source" >/dev/null
+done
+test "$(grep -c 'new_with_aggregate_scratch' "$oid_record_source")" -ge 12
+if grep -F '#[derive(Clone' "$oid_record_source" >/dev/null; then
+    echo "FAIL: OID record wrappers derive infallible Clone"
+    exit 1
+fi
+if ! (cd "$oid_record_rust" && \
+    CARGO_TARGET_DIR="$test_tmp/target-oid-record" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-oid-record" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/oid-record-rust.log" 2>&1; then
+    cat "$test_tmp/oid-record-rust.log"
+    echo "FAIL: OID record conformance or strict Clippy"
+    exit 1
+fi
+
+for codec in BER CER; do
+    if [ "$codec" = BER ]; then
+        oid_record_unwanted='encode_cer|decode_cer'
+        "$asn1c_bin" --rust -gen-BER -no-gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$test_tmp/oid-record-$codec-only" "$test_srcdir/OidRecord.asn1"
+    else
+        oid_record_unwanted='encode_der|decode_ber'
+        "$asn1c_bin" --rust -gen-CER -no-gen-BER -no-gen-UPER -S "$skeletons" \
+            -D "$test_tmp/oid-record-$codec-only" "$test_srcdir/OidRecord.asn1"
+    fi
+    oid_record_codec_out="$test_tmp/oid-record-$codec-only"
+    if (cargo check --offline --manifest-path "$oid_record_codec_out/Cargo.toml" && \
+        cargo clippy --offline --manifest-path "$oid_record_codec_out/Cargo.toml" \
+        --all-targets --all-features -- -W clippy::pedantic \
+        -W clippy::nursery -D warnings) \
+        >"$test_tmp/oid-record-$codec-only.log" 2>&1; then
+        :
+    else
+        cat "$test_tmp/oid-record-$codec-only.log"
+        echo "FAIL: OID record $codec-only strict Clippy"
+        exit 1
+    fi
+    if grep -E "pub fn ($oid_record_unwanted)" \
+        "$oid_record_codec_out/src/oid_record.rs" >/dev/null; then
+        echo "FAIL: OID record $codec-only output has unselected methods"
+        exit 1
+    fi
+done
+
+oid_record_c="$test_tmp/oid-record-c"
+mkdir "$oid_record_c"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$oid_record_c" "$test_srcdir/OidRecord.asn1" \
+    >"$test_tmp/oid-record-c-generate.log" 2>&1
+oid_record_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$oid_record_c/Makefile.am.libasncodec")
+rm -f "$oid_record_c/converter-example.c" "$oid_record_c/pdu_collection.c"
+if ! cc $oid_record_cflags -I"$oid_record_c" "$oid_record_c"/*.c \
+    "$test_srcdir/c_oid_record.c" -lm -o "$test_tmp/c-oid-record" \
+    >"$test_tmp/oid-record-c-compile.log" 2>&1; then
+    cat "$test_tmp/oid-record-c-compile.log"
+    echo "FAIL: C OID record differential fixture did not compile"
+    exit 1
+fi
+if ! "$test_tmp/c-oid-record"; then
+    echo "FAIL: C OID record DER/CER vectors or BER content probes failed"
     exit 1
 fi
 

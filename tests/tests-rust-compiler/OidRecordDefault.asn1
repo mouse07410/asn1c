@@ -1,0 +1,3 @@
+OidRecordDefault DEFINITIONS ::= BEGIN
+Bad ::= SEQUENCE { oid OBJECT IDENTIFIER DEFAULT { 1 2 3 } }
+END
