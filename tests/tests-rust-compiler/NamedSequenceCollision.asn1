@@ -1,0 +1,4 @@
+NamedSequenceCollision DEFINITIONS ::= BEGIN
+Inner ::= SEQUENCE { value BOOLEAN }
+Packet ::= SEQUENCE { child [4] IMPLICIT Inner, other [4] IMPLICIT BOOLEAN }
+END

@@ -1,0 +1,19 @@
+NamedSequenceEmpty DEFINITIONS ::= BEGIN
+Empty ::= SEQUENCE { }
+RequiredOnly ::= SEQUENCE {
+    child Empty
+}
+OptionalOnly ::= SEQUENCE {
+    child Empty OPTIONAL
+}
+RequiredPacket ::= SEQUENCE {
+    child Empty,
+    enabled BOOLEAN DEFAULT FALSE,
+    count INTEGER (0..5) DEFAULT 0
+}
+OptionalPacket ::= SEQUENCE {
+    child Empty OPTIONAL,
+    enabled BOOLEAN DEFAULT FALSE,
+    count INTEGER (0..5) DEFAULT 0
+}
+END

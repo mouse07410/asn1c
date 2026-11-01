@@ -1,0 +1,4 @@
+NamedSequenceTargetOf DEFINITIONS ::= BEGIN
+Inner ::= SEQUENCE OF BOOLEAN
+Packet ::= SEQUENCE { child Inner }
+END

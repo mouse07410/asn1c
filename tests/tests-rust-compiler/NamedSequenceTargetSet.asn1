@@ -1,0 +1,4 @@
+NamedSequenceTargetSet DEFINITIONS ::= BEGIN
+Inner ::= SET { value BOOLEAN }
+Packet ::= SEQUENCE { child Inner }
+END

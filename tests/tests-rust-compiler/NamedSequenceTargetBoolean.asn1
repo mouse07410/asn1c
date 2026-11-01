@@ -1,0 +1,4 @@
+NamedSequenceTargetBoolean DEFINITIONS ::= BEGIN
+Inner ::= BOOLEAN
+Packet ::= SEQUENCE { child Inner }
+END

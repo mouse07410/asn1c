@@ -30,8 +30,8 @@ BER/CER-only untagged flat records additionally qualify one natural IA5String
 member, one natural non-IA5 restricted character-string member, up to one
 natural OBJECT IDENTIFIER and one natural RELATIVE-OID member, or one natural
 unconstrained `BigInteger` member, with the resource and schema gates below.
-One same-module bounded INTEGER reference member also qualifies under its
-separate gate below.
+One same-module bounded INTEGER reference member or one same-module named
+SEQUENCE child also qualifies under its separate gate below.
 
 The flat SET slice uses the same six direct field kinds under BER/CER-only
 selection. Its BER reader accepts arbitrary member order;
@@ -999,7 +999,7 @@ generated C/Rust differential vectors; and negative schemas that demonstrate
 rejection before publication. Imports and broader reference graphs follow
 only after this bounded reference ownership model passes those checks.
 
-### Same-module named SEQUENCE child (next composition gate)
+### Same-module named SEQUENCE child (qualified composition slice)
 
 Accept one reference from an untagged flat SEQUENCE or SET to a distinct,
 same-module, untagged, nonrecursive named SEQUENCE assignment. An empty target
@@ -1036,6 +1036,10 @@ For `Inner ::= SEQUENCE { number INTEGER (0..5), flag BOOLEAN }` with child
 `30 80 30 80 02 01 02 01 01 ff 00 00 84 01 ff 00 00`.
 Changing the child to `[3] IMPLICIT` replaces its `30` identifier with `a3`;
 `[3] EXPLICIT` wraps the intrinsic SEQUENCE and its matching EOC under CER.
+For well-formed constructed high-tag aliases, C BER accepts `3f 10` in place
+of natural `30` and `bf 03` in place of context-specific `a3`; strict CER
+rejects both nonminimal identifiers. The primitive `1f 10` identifier with
+an indefinite length is malformed and fails BER.
 Natural SET uses outer `31`; C BER accepts reversed member order, while
 strict CER rejects it. The absent child yields DER
 `30/31 03 84 01 ff` and CER `30/31 80 84 01 ff 00 00`.
@@ -1049,6 +1053,47 @@ truncations, unknown/duplicate fields, out-of-range child leaves, exact
 work/scratch/depth limits, mutation tests, and no-publication schema gates.
 The earlier EXPLICIT mixed-length C BER divergence applies to this named
 child too; well-framed Rust BER may accept it, while strict CER rejects it.
+
+### Same-module named SET child (next composition gate)
+
+Accept one direct same-module reference to a distinct, untagged, nonrecursive
+named SET with one through six existing supported primitive leaves. The child
+may be required or OPTIONAL in an untagged flat SEQUENCE or SET, with its
+natural tag 17, one resolved context-specific IMPLICIT member tag, or one
+EXPLICIT wrapper. Keep existing parent scalar siblings and literal scalar
+DEFAULT handling, the six-field parent cap, and BER/CER-only selection.
+Reject empty named SET targets before output publication: the unmodified C
+generator emits an empty enum and missing tag map that fail compilation.
+Also reject aliases, imports, recursive or constrained targets, target
+DEFAULT/extensions/references/nested members/CHOICE/collections, multiple
+named children, ambiguous effective tags, and mixed codecs.
+
+Reuse the named-target ownership checks and shared nested `RecordContext`
+from the SEQUENCE gate. Resolve the target kind to `FieldKind::Set` and tag 17;
+select `write_nested_set` and `read_nested_set` based on that resolved target,
+since the member AST is still `A1TC_REFERENCE`. Emit private field helpers for
+a referenced top-level named SET without emitting unused helpers for other
+top-level SET assignments. The child SET writer sorts its own effective member
+tags independently of the parent SET sort; BER accepts either order at both
+levels, while strict CER compares the fully canonical re-encoding. Charge
+child work, output, retained values, wrappers, and strict comparison to the
+one parent context even when an OPTIONAL child is absent.
+
+Live generated C vectors for a child SET with `[0] IMPLICIT INTEGER 2` and
+`[1] IMPLICIT BOOLEAN TRUE`: natural SEQUENCE DER
+`30 08 31 06 80 01 02 81 01 ff`, CER
+`30 80 31 80 80 01 02 81 01 ff 00 00 00 00`; `[3] IMPLICIT` child DER
+`30 08 a3 06 80 01 02 81 01 ff`, CER
+`30 80 a3 80 80 01 02 81 01 ff 00 00 00 00`; `[3] EXPLICIT` child DER
+`30 0a a3 08 31 06 80 01 02 81 01 ff`, CER
+`30 80 a3 80 31 80 80 01 02 81 01 ff 00 00 00 00 00 00`.
+For a parent SET with `[4] IMPLICIT BOOLEAN TRUE` and the EXPLICIT child,
+C DER is `31 0d a3 08 31 06 80 01 02 81 01 ff 84 01 ff`; CER is
+`31 80 a3 80 31 80 80 01 02 81 01 ff 00 00 00 00 84 01 ff 00 00`.
+Acceptance includes both independent SET sorts and reversed BER orders,
+optional absence, exact prefix consumption, malformed EOCs and wrappers,
+duplicates/unknown fields, limits and mutation tests, C differential vectors,
+strict CER canonicality, and no-publication schema gates.
 
 ## Decisions still required
 

@@ -1,0 +1,4 @@
+NamedSequenceExtension DEFINITIONS ::= BEGIN
+Inner ::= SEQUENCE { value BOOLEAN, ... }
+Packet ::= SEQUENCE { child Inner }
+END

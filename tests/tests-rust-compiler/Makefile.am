@@ -58,6 +58,28 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/NamedIntegerUnbounded.asn1 \
     $(srcdir)/named_integer_record_conformance.rs \
     $(srcdir)/c_named_integer_record.c \
+    $(srcdir)/NamedSequenceRecord.asn1 \
+    $(srcdir)/NamedSequenceEmpty.asn1 \
+    $(srcdir)/NamedSequenceAlias.asn1 \
+    $(srcdir)/NamedSequenceCollision.asn1 \
+    $(srcdir)/NamedSequenceDefault.asn1 \
+    $(srcdir)/NamedSequenceExtension.asn1 \
+    $(srcdir)/NamedSequenceImportBase.asn1 \
+    $(srcdir)/NamedSequenceImported.asn1 \
+    $(srcdir)/NamedSequenceMemberConstraint.asn1 \
+    $(srcdir)/NamedSequenceMultiple.asn1 \
+    $(srcdir)/NamedSequenceNested.asn1 \
+    $(srcdir)/NamedSequenceRecursive.asn1 \
+    $(srcdir)/NamedSequenceTaggedRoot.asn1 \
+    $(srcdir)/NamedSequenceTaggedTarget.asn1 \
+    $(srcdir)/NamedSequenceTargetBoolean.asn1 \
+    $(srcdir)/NamedSequenceTargetChoice.asn1 \
+    $(srcdir)/NamedSequenceTargetOf.asn1 \
+    $(srcdir)/NamedSequenceTargetSet.asn1 \
+    $(srcdir)/named_sequence_record_conformance.rs \
+    $(srcdir)/named_sequence_empty_conformance.rs \
+    $(srcdir)/c_named_sequence_record.c \
+    $(srcdir)/c_named_sequence_empty.c \
     $(srcdir)/ChoiceBooleanOnly.asn1 \
     $(srcdir)/ChoiceNullOnly.asn1 \
     $(srcdir)/ChoiceIntegerOnly.asn1 \

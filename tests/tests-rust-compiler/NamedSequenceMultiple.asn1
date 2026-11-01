@@ -1,0 +1,4 @@
+NamedSequenceMultiple DEFINITIONS ::= BEGIN
+Inner ::= SEQUENCE { value BOOLEAN }
+Packet ::= SEQUENCE { first Inner, second Inner }
+END

@@ -1,0 +1,4 @@
+NamedSequenceTaggedTarget DEFINITIONS ::= BEGIN
+Inner ::= [3] IMPLICIT SEQUENCE { value BOOLEAN }
+Packet ::= SEQUENCE { child Inner }
+END

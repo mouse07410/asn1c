@@ -1,0 +1,4 @@
+NamedSequenceImported DEFINITIONS ::= BEGIN
+IMPORTS Inner FROM NamedSequenceImportBase;
+Packet ::= SEQUENCE { child Inner }
+END

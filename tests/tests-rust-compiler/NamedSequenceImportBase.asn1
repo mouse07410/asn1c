@@ -1,0 +1,3 @@
+NamedSequenceImportBase DEFINITIONS ::= BEGIN
+Inner ::= SEQUENCE { value BOOLEAN }
+END

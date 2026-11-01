@@ -1,0 +1,53 @@
+NamedSequenceRecord DEFINITIONS ::= BEGIN
+Inner ::= SEQUENCE {
+    number INTEGER (0..5),
+    flag BOOLEAN
+}
+InnerLeaves ::= SEQUENCE {
+    number INTEGER (0..5),
+    flag BOOLEAN,
+    mode ENUMERATED { off(0), on(1) },
+    data [1] IMPLICIT OCTET STRING (SIZE(1)),
+    bits BIT STRING (SIZE(5))
+}
+PacketLeaves ::= SEQUENCE { child InnerLeaves }
+Packet ::= SEQUENCE {
+    before BOOLEAN DEFAULT FALSE,
+    child Inner,
+    after [4] IMPLICIT BOOLEAN
+}
+SequenceImplicit ::= SEQUENCE {
+    child [3] IMPLICIT Inner,
+    after [4] IMPLICIT BOOLEAN
+}
+SequenceExplicit ::= SEQUENCE {
+    child [3] EXPLICIT Inner,
+    after [4] IMPLICIT BOOLEAN
+}
+SequenceOptional ::= SEQUENCE {
+    child Inner OPTIONAL,
+    after [4] IMPLICIT BOOLEAN
+}
+SetPacket ::= SET {
+    after [4] IMPLICIT BOOLEAN,
+    child Inner,
+    before [0] IMPLICIT BOOLEAN
+}
+SetImplicit ::= SET {
+    child [3] IMPLICIT Inner,
+    after [4] IMPLICIT BOOLEAN
+}
+SetExplicit ::= SET {
+    child [3] EXPLICIT Inner,
+    after [4] IMPLICIT BOOLEAN
+}
+SetOptional ::= SET {
+    child Inner OPTIONAL,
+    after [4] IMPLICIT BOOLEAN
+}
+SetDefaults ::= SET {
+    child Inner,
+    enabled BOOLEAN DEFAULT FALSE,
+    count INTEGER (0..5) DEFAULT 2
+}
+END

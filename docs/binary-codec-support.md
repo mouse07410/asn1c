@@ -296,6 +296,16 @@ BIT/OCTET STRING siblings, within the six-field cap. Aliases, imports,
 parameters, target extensions/unions, member constraints, DEFAULT, nested
 forms, duplicate effective tags, and non-BER/CER codec selections fail before
 output publication.
+One same-module, untagged, nonrecursive named SEQUENCE may be a direct child
+of an untagged flat SEQUENCE or SET under BER/CER-only selection. The child
+may be empty or contain up to six already supported direct primitive leaves;
+it may be required or OPTIONAL with a natural, context IMPLICIT, or one
+EXPLICIT member tag. Parent scalar siblings retain their existing OPTIONAL
+and literal BOOLEAN/bounded INTEGER DEFAULT behavior. Generated code keeps
+the named child type and calls its private field helpers with one shared
+nested record context for BER decoding, DER/CER encoding, and strict CER
+comparison. Imports, aliases, recursion, multiple named children, nested
+target members, target DEFAULT/extensions, and mixed codecs remain gated.
 Flat untagged SEQUENCE and SET records may also contain one natural direct
 non-IA5 restricted character-string field, required or OPTIONAL, beside the
 existing supported scalar siblings, including finite bounded BIT/OCT STRING

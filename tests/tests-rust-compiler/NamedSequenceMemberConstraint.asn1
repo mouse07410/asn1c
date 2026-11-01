@@ -1,0 +1,6 @@
+NamedSequenceMemberConstraint DEFINITIONS ::= BEGIN
+Inner ::= SEQUENCE { value BOOLEAN }
+Packet ::= SEQUENCE {
+    child Inner (WITH COMPONENTS { value (TRUE) })
+}
+END

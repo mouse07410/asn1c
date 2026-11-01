@@ -1,0 +1,4 @@
+NamedSequenceTaggedRoot DEFINITIONS ::= BEGIN
+Inner ::= SEQUENCE { value BOOLEAN }
+Packet ::= [3] IMPLICIT SEQUENCE { child Inner }
+END

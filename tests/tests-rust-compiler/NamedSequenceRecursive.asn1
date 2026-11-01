@@ -1,0 +1,4 @@
+NamedSequenceRecursive DEFINITIONS ::= BEGIN
+Inner ::= SEQUENCE { child Inner OPTIONAL }
+Packet ::= SEQUENCE { child Inner }
+END

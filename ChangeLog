@@ -1,4 +1,9 @@
 Changes since v1.5.3:
+	* Support one same-module named SEQUENCE child in flat Rust BER/DER/CER
+	  SEQUENCE and SET records, including empty and OPTIONAL children. Keep
+	  natural, IMPLICIT, and EXPLICIT member tags and parent scalar DEFAULT
+	  omission under one nested record context; reject unsupported type graphs
+	  before publishing generated output.
 	* Let CBOR validate an OPEN TYPE wrapper's immediate storage without
 	  traversing every unused IOC arm. Keep selected-arm bounds checks and
 	  add a large-alphabet regression alongside the F1AP conversion test.

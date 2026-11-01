@@ -2741,7 +2741,7 @@ for fixture in SequenceBerCerApplication \
     SequenceBerCerNestedOf SequenceBerCerNestedAny \
     SequenceBerCerNestedDefault SequenceBerCerConstructedDefault \
     SequenceBerCerNestedExtension \
-    SequenceBerCerNestedReference SequenceBerCerMultipleNested \
+    SequenceBerCerMultipleNested \
     SequenceBerCerNestedCollision; do
     if "$asn1c_bin" --rust -gen-BER -no-gen-UPER -no-gen-CER \
         -S "$skeletons" -D "$test_tmp/rejected-$fixture" \
@@ -2751,6 +2751,15 @@ for fixture in SequenceBerCerApplication \
     fi
     test ! -e "$test_tmp/rejected-$fixture"
 done
+
+named_nested_legacy="$test_tmp/sequence-ber-cer-named-reference-positive"
+"$asn1c_bin" --rust -gen-BER -no-gen-UPER -no-gen-CER \
+    -S "$skeletons" -D "$named_nested_legacy" \
+    "$test_tmp/SequenceBerCerNestedReference.asn1"
+if [ ! -f "$named_nested_legacy/Cargo.toml" ]; then
+    echo "FAIL: supported named SEQUENCE child did not publish a Rust crate"
+    exit 1
+fi
 
 # Named BIT STRING roots require special trimming and remain outside this slice.
 if "$asn1c_bin" --rust -gen-BER -no-gen-UPER -no-gen-CER -S "$skeletons" \
@@ -4556,4 +4565,196 @@ if ! "$test_tmp/c-named-integer-record"; then
     exit 1
 fi
 
-echo "PASS: generated Rust UPER/CER/BER-DER and named INTEGER record slice"
+# Same-module named SEQUENCE targets use private callbacks and one nested context.
+named_sequence_rust="$test_tmp/named-sequence-rust"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$named_sequence_rust" "$test_srcdir/NamedSequenceRecord.asn1"
+mkdir "$named_sequence_rust/tests"
+cp "$test_srcdir/named_sequence_record_conformance.rs" "$named_sequence_rust/tests/"
+named_sequence_module="$named_sequence_rust/src/named_sequence_record.rs"
+for expected in 'pub struct Inner' 'pub struct PacketLeaves' 'InnerLeavesMode' \
+    'writer.write_nested_sequence' 'reader.read_nested_sequence' \
+    'InnerLeaves::decode_record_fields' 'RecordContext::new_nested'; do
+    if ! grep -F "$expected" "$named_sequence_module" >/dev/null; then
+        echo "FAIL: named SEQUENCE generated source omitted $expected"
+        exit 1
+    fi
+done
+if ! (cd "$named_sequence_rust" && \
+    cargo test --offline --manifest-path Cargo.toml && \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/named-sequence-rust.log" 2>&1; then
+    cat "$test_tmp/named-sequence-rust.log"
+    echo "FAIL: named SEQUENCE generated Rust tests or strict Clippy"
+    exit 1
+fi
+
+for codec in BER CER; do
+    named_sequence_codec="$test_tmp/named-sequence-$codec-only"
+    if [ "$codec" = BER ]; then
+        unwanted_methods='pub fn encode_cer|pub fn decode_cer'
+        "$asn1c_bin" --rust -gen-BER -no-gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$named_sequence_codec" "$test_srcdir/NamedSequenceRecord.asn1"
+    else
+        unwanted_methods='pub fn encode_der|pub fn decode_ber'
+        "$asn1c_bin" --rust -gen-CER -no-gen-BER -no-gen-UPER -S "$skeletons" \
+            -D "$named_sequence_codec" "$test_srcdir/NamedSequenceRecord.asn1"
+    fi
+    if ! (cd "$named_sequence_codec" && \
+        cargo clippy --offline --all-targets --all-features -- \
+        -W clippy::pedantic -W clippy::nursery -D warnings) \
+        >"$test_tmp/named-sequence-$codec-only.log" 2>&1; then
+        cat "$test_tmp/named-sequence-$codec-only.log"
+        echo "FAIL: named SEQUENCE $codec-only strict Clippy"
+        exit 1
+    fi
+    if grep -E "$unwanted_methods" "$named_sequence_codec/src/named_sequence_record.rs" \
+        >/dev/null; then
+        echo "FAIL: named SEQUENCE $codec-only output has unselected methods"
+        exit 1
+    fi
+done
+
+named_sequence_empty="$test_tmp/named-sequence-empty"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$named_sequence_empty" "$test_srcdir/NamedSequenceEmpty.asn1"
+mkdir "$named_sequence_empty/tests"
+cp "$test_srcdir/named_sequence_empty_conformance.rs" "$named_sequence_empty/tests/"
+if ! (cd "$named_sequence_empty" && \
+    cargo test --offline --manifest-path Cargo.toml && \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/named-sequence-empty.log" 2>&1; then
+    cat "$test_tmp/named-sequence-empty.log"
+    echo "FAIL: empty named SEQUENCE tests or strict Clippy"
+    exit 1
+fi
+
+for codec in BER CER; do
+    named_sequence_empty_codec="$test_tmp/named-sequence-empty-$codec-only"
+    if [ "$codec" = BER ]; then
+        unwanted_methods='pub fn encode_cer|pub fn decode_cer'
+        "$asn1c_bin" --rust -gen-BER -no-gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$named_sequence_empty_codec" "$test_srcdir/NamedSequenceEmpty.asn1"
+    else
+        unwanted_methods='pub fn encode_der|pub fn decode_ber'
+        "$asn1c_bin" --rust -gen-CER -no-gen-BER -no-gen-UPER -S "$skeletons" \
+            -D "$named_sequence_empty_codec" "$test_srcdir/NamedSequenceEmpty.asn1"
+    fi
+    if ! (cd "$named_sequence_empty_codec" && \
+        cargo clippy --offline --all-targets --all-features -- \
+        -W clippy::pedantic -W clippy::nursery -D warnings) \
+        >"$test_tmp/named-sequence-empty-$codec-only.log" 2>&1; then
+        cat "$test_tmp/named-sequence-empty-$codec-only.log"
+        echo "FAIL: empty named SEQUENCE $codec-only strict Clippy"
+        exit 1
+    fi
+    if grep -E "$unwanted_methods" \
+        "$named_sequence_empty_codec/src/named_sequence_empty.rs" >/dev/null; then
+        echo "FAIL: empty named SEQUENCE $codec-only output has unselected methods"
+        exit 1
+    fi
+done
+
+for fixture in NamedSequenceAlias NamedSequenceMultiple NamedSequenceNested \
+    NamedSequenceDefault NamedSequenceExtension NamedSequenceTaggedTarget \
+    NamedSequenceTaggedRoot NamedSequenceCollision NamedSequenceTargetBoolean \
+    NamedSequenceRecursive NamedSequenceTargetSet NamedSequenceTargetChoice \
+    NamedSequenceTargetOf NamedSequenceMemberConstraint; do
+    rejected="$test_tmp/rejected-$fixture"
+    if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$rejected" "$test_srcdir/$fixture.asn1" \
+        >"$test_tmp/rejected-$fixture.log" 2>&1; then
+        echo "FAIL: named SEQUENCE gate accepted unsupported $fixture"
+        exit 1
+    fi
+    if [ -e "$rejected" ]; then
+        echo "FAIL: unsupported named SEQUENCE $fixture published output"
+        exit 1
+    fi
+done
+
+rejected_named_sequence_import="$test_tmp/rejected-NamedSequenceImported"
+if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$rejected_named_sequence_import" "$test_srcdir/NamedSequenceImportBase.asn1" \
+    "$test_srcdir/NamedSequenceImported.asn1" \
+    >"$test_tmp/rejected-NamedSequenceImported.log" 2>&1; then
+    echo "FAIL: named SEQUENCE gate accepted an imported target"
+    exit 1
+fi
+if [ -e "$rejected_named_sequence_import" ]; then
+    echo "FAIL: imported named SEQUENCE target published output"
+    exit 1
+fi
+
+for selection in mixed uper; do
+    rejected="$test_tmp/rejected-named-sequence-codecs-$selection"
+    if [ "$selection" = mixed ]; then
+        if "$asn1c_bin" --rust -gen-BER -gen-CER -gen-UPER -S "$skeletons" \
+            -D "$rejected" "$test_srcdir/NamedSequenceRecord.asn1" \
+            >"$test_tmp/rejected-named-sequence-$selection.log" 2>&1; then
+            echo "FAIL: named SEQUENCE gate accepted mixed codecs"
+            exit 1
+        fi
+    else
+        if "$asn1c_bin" --rust -gen-UPER -no-gen-BER -no-gen-CER -S "$skeletons" \
+            -D "$rejected" "$test_srcdir/NamedSequenceRecord.asn1" \
+            >"$test_tmp/rejected-named-sequence-$selection.log" 2>&1; then
+            echo "FAIL: named SEQUENCE gate accepted UPER-only selection"
+            exit 1
+        fi
+    fi
+    if [ -e "$rejected" ]; then
+        echo "FAIL: rejected named SEQUENCE codec selection published output"
+        exit 1
+    fi
+done
+
+named_sequence_c="$test_tmp/named-sequence-c"
+mkdir "$named_sequence_c"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$named_sequence_c" "$test_srcdir/NamedSequenceRecord.asn1" \
+    >"$test_tmp/named-sequence-c-generate.log" 2>&1
+named_sequence_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$named_sequence_c/Makefile.am.libasncodec")
+rm -f "$named_sequence_c/converter-example.c" "$named_sequence_c/pdu_collection.c"
+if ! cc $named_sequence_cflags -I"$named_sequence_c" "$named_sequence_c"/*.c \
+    "$test_srcdir/c_named_sequence_record.c" -lm -o "$test_tmp/c-named-sequence-record" \
+    >"$test_tmp/named-sequence-c-compile.log" 2>&1; then
+    cat "$test_tmp/named-sequence-c-compile.log"
+    echo "FAIL: C named SEQUENCE differential fixture did not compile"
+    exit 1
+fi
+if ! "$test_tmp/c-named-sequence-record"; then
+    echo "FAIL: C named SEQUENCE DER/CER vectors or BER boundary cases failed"
+    exit 1
+fi
+
+named_sequence_empty_c="$test_tmp/named-sequence-empty-c"
+mkdir "$named_sequence_empty_c"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$named_sequence_empty_c" "$test_srcdir/NamedSequenceEmpty.asn1" \
+    >"$test_tmp/named-sequence-empty-c-generate.log" 2>&1
+named_sequence_empty_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$named_sequence_empty_c/Makefile.am.libasncodec")
+rm -f "$named_sequence_empty_c/converter-example.c" \
+    "$named_sequence_empty_c/pdu_collection.c"
+if ! cc $named_sequence_empty_cflags -I"$named_sequence_empty_c" \
+    "$named_sequence_empty_c"/*.c "$test_srcdir/c_named_sequence_empty.c" -lm \
+    -o "$test_tmp/c-named-sequence-empty" \
+    >"$test_tmp/named-sequence-empty-c-compile.log" 2>&1; then
+    cat "$test_tmp/named-sequence-empty-c-compile.log"
+    echo "FAIL: C empty named SEQUENCE fixture did not compile"
+    exit 1
+fi
+if ! "$test_tmp/c-named-sequence-empty"; then
+    echo "FAIL: C empty named SEQUENCE/default vectors failed"
+    exit 1
+fi
+
+echo "PASS: generated Rust UPER/CER/BER-DER and named record/SEQUENCE-child slices"

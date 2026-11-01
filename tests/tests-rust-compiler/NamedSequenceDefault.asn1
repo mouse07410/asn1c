@@ -1,0 +1,4 @@
+NamedSequenceDefault DEFINITIONS ::= BEGIN
+Inner ::= SEQUENCE { value BOOLEAN DEFAULT FALSE }
+Packet ::= SEQUENCE { child Inner }
+END

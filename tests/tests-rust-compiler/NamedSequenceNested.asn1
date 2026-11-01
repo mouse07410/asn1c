@@ -1,0 +1,4 @@
+NamedSequenceNested DEFINITIONS ::= BEGIN
+Inner ::= SEQUENCE { child SEQUENCE { value BOOLEAN } }
+Packet ::= SEQUENCE { child Inner }
+END

@@ -628,3 +628,35 @@ tagged target/root, nested, multiple-reference, duplicate-tag, DEFAULT, and
 unsupported target schemas fail before output publication. BER-only,
 CER-only, mixed-codec, and UPER-only selector behavior is checked; generated
 combined and codec-only crates run strict Clippy.
+
+One same-module untagged named SEQUENCE assignment may be used as the single
+required or OPTIONAL child of an untagged flat SEQUENCE or SET. The target may
+be empty or contain up to six direct BOOLEAN, NULL, bounded `i64` INTEGER,
+ENUMERATED, and finite bounded BIT/OCTET STRING leaves. Child fields support
+the existing natural, context-specific IMPLICIT, and one EXPLICIT tagging
+forms. Parent scalar siblings retain BOOLEAN and bounded INTEGER DEFAULT
+support; child DEFAULT is rejected. The generated public child type is
+encoded and decoded through private field callbacks with the parent's one
+nested `RecordContext`, including when an OPTIONAL child is absent.
+
+`NamedSequenceRecord.asn1`, `named_sequence_record_conformance.rs`, and
+`c_named_sequence_record.c` compare exact DER/CER bytes and values for natural,
+IMPLICIT, and EXPLICIT children under both SEQUENCE and SET parents. The
+five-leaf target covers an inline ENUMERATED plus tagged bounded OCTET STRING
+and bounded BIT STRING. Tests cover SET ordering, reversed BER members,
+OPTIONAL presence/absence, parent DEFAULT omission and nondefault values,
+high-tag aliases, malformed and mixed EXPLICIT frames, prefix suffixes,
+truncations, byte mutations, bounded child values, and a pinned shared-work
+limit. The C decoder rejects one validly framed mixed definite/indefinite
+EXPLICIT stack that generated Rust BER accepts; strict CER rejects that stack.
+Alias, import, recursive/nested, multiple-child, constrained/defaulted,
+extension, collision, tagged-root/target, and non-SEQUENCE target fixtures
+fail before output publication. Mixed and UPER-only selection is also rejected.
+
+`NamedSequenceEmpty.asn1`, `named_sequence_empty_conformance.rs`, and
+`c_named_sequence_empty.c` cover required and OPTIONAL empty children and
+parent BOOLEAN/INTEGER DEFAULT values. They compare present and absent DER/CER
+framing, verify explicit BER DEFAULT decoding and strict CER rejection, and
+compile the empty target under the exact strict Clippy settings. The main
+named-child crate runs generated tests and strict Clippy under combined,
+BER-only, and CER-only selection.

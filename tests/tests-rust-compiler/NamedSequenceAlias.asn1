@@ -1,0 +1,5 @@
+NamedSequenceAlias DEFINITIONS ::= BEGIN
+Inner ::= SEQUENCE { value BOOLEAN }
+Alias ::= Inner
+Packet ::= SEQUENCE { child Alias }
+END
