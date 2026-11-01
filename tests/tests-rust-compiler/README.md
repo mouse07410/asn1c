@@ -129,6 +129,27 @@ resource limits, SET reordering, and strict selector-only Clippy builds. C
 fixtures compare DER/CER encoding and decoding for explicit scalar SEQUENCE/SET
 members, inline EXPLICIT ENUMERATED members, and fragmented OCTET/BIT STRING
 values.
+
+The next BER/CER composition stage supports one nonrecursive inline SEQUENCE
+child inside a top-level SEQUENCE or BER/CER-only SET. The child may be required
+or OPTIONAL and may contain zero to six unique-tag direct primitive fields,
+including OPTIONAL IMPLICIT/EXPLICIT fields and bounded strings. Child
+extensions, references, imports, recursion, nested SET/CHOICE/OF/ANY,
+constructed DEFAULTs, tag collisions, ambiguous OPTIONAL dispatch, and
+unsupported codec combinations fail before publication. Natural, IMPLICIT, and
+EXPLICIT child tags, nested optional leaves, empty-child framing, and 1001-octet
+CER string fragmentation are covered by fixed generated-C DER/CER vectors. The
+mixed-codec SEQUENCE also round-trips through UPER, while the SET fixture remains
+BER/CER-only.
+Tests cover absent and present children, prefix consumption, malformed/truncated
+child boundaries, nested CER EOCs, canonical SET order, resource exhaustion,
+and strict Clippy. A BER EXPLICIT
+wrapper may use a different definite/indefinite form from its nested SEQUENCE;
+the Rust BER decoder accepts well-framed combinations, and strict CER rejects
+them after canonical re-encoding. The current C decoder rejects those mixed
+forms, so this case is documented as a C/Rust BER behavior divergence.
+Empty nested child records are tested in a separate BER/CER-only fixture;
+combining an empty nested child with UPER is gated before publication.
 The fixed-size string fixture covers standalone OCTET STRING and BIT STRING,
 zero-sized values, bit packing inside a mixed SEQUENCE, malformed lengths and
 pad bits, truncation, and whole-operation budgets. It also checks that the

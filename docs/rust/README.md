@@ -41,7 +41,8 @@ effective direct-field tags for BOOLEAN, NULL, bounded INTEGER, ENUMERATED,
 and bounded BIT/OCTET STRING also support BER/DER/CER. Resolved
 context-specific IMPLICIT and AUTOMATIC member tags and one context-specific
 EXPLICIT wrapper per direct field are supported within the C tag-number range.
-Root tags, multi-tag stacks, aliases, open types,
+One nonrecursive inline SEQUENCE child is also supported in an untagged
+SEQUENCE or BER/CER-only SET. Root tags, multi-tag stacks, aliases, open types,
 and broader constructed records do not yet have BER/DER/CER parity. See the
 [parity design](ber-der-cer-design.md).
 The same direct-field subset supports flat SET with an untagged outer type under a BER/CER-only

@@ -9,6 +9,8 @@ use crate::{BitStringValue, Decoded, Encoded, Error, Limits, Resource};
 /// Maximum constructed-TLV nesting accepted by this parser.
 /// Initial fixed cap aligned with the C codec's `ASN_STACK_OVERFLOW_LIMIT` (30).
 const MAX_DEPTH: usize = 30;
+/// Maximum simultaneous parent and child record buffer capacity.
+const MAX_RECORD_SCRATCH_BYTES: usize = 128 * 1024 * 1024;
 /// Maximum CER content octets in a primitive string value or fragment.
 const CER_FRAGMENT_MAX: usize = 1000;
 const TAG_BIT_STRING: u64 = 3;
@@ -204,6 +206,8 @@ pub enum FieldKind {
     Null,
     /// Signed numeric ENUMERATED field content.
     Enumerated,
+    /// Inline constructed SEQUENCE record content.
+    Sequence,
 }
 
 /// Wire tagging mode stored in a checked record descriptor.
@@ -236,6 +240,7 @@ impl FieldKind {
             Self::OctetString => TAG_OCTET_STRING,
             Self::Null => TAG_NULL,
             Self::Enumerated => TAG_ENUMERATED,
+            Self::Sequence => TAG_SEQUENCE,
         }
     }
 }
@@ -407,6 +412,7 @@ const fn field_kind_for_universal(tag: u64) -> Option<FieldKind> {
         TAG_OCTET_STRING => Some(FieldKind::OctetString),
         TAG_NULL => Some(FieldKind::Null),
         TAG_ENUMERATED => Some(FieldKind::Enumerated),
+        TAG_SEQUENCE => Some(FieldKind::Sequence),
         _ => None,
     }
 }
@@ -473,14 +479,23 @@ impl RecordKind {
 ///
 /// A context is created once for an encode or decode operation and may be
 /// reused for strict CER re-encoding and comparison. On decode, `max_output_bytes`
-/// also caps aggregate retained OCTET/BIT STRING payload storage.
+/// also caps cumulative OCTET/BIT STRING payload allocation charges. Nested
+/// callback failures roll back traversal but keep work and allocation charges.
 pub struct RecordContext {
     /// Copied caller ceilings for this complete operation.
     limits: Limits,
     /// Cumulative work; this is a state variable.
     work_used: usize,
-    /// Retained decoded string storage; this is a state variable.
+    /// Cumulative decoded string payload bytes charged to this operation; state variable.
     retained_bytes: usize,
+    /// Cumulative decoded string Vec capacity charged to this operation; state variable.
+    retained_capacity: usize,
+    /// Active nested record and explicit-wrapper depth; state variable.
+    depth: usize,
+    /// Active nested child records; this stage permits one; state variable.
+    nested_record_depth: usize,
+    /// Whether the caller opted into nested aggregate scratch accounting.
+    nested_accounting: bool,
 }
 
 /// One field header and content span in a flat SEQUENCE.
@@ -494,6 +509,10 @@ struct FieldSpan {
     tlv_start: usize,
     /// Exclusive encoded field end in caller input.
     tlv_end: usize,
+    /// First byte of the outer parent field, including an EXPLICIT wrapper.
+    field_start: usize,
+    /// Effective mode used by the parent field descriptor.
+    tagging: TaggingMode,
     /// Whether the field uses constructed encoding.
     constructed: bool,
     /// First content byte in caller input.
@@ -518,6 +537,8 @@ pub struct SequenceWriter<'context> {
     field_count: usize,
     /// Last tag for canonical SET component order; state variable.
     last_tag: Option<Tag>,
+    /// Parent buffer capacity retained while this nested writer is active.
+    parent_capacity: Option<usize>,
 }
 
 /// Encode flat SET fields under one bounded BER/DER/CER record context.
@@ -550,6 +571,10 @@ pub struct SequenceReader<'input, 'tags, 'context> {
     seen_mask: u8,
     /// Current child span awaiting a typed reader; state variable.
     current: Option<FieldSpan>,
+    /// Schema index of the pending child; state variable.
+    current_index: Option<usize>,
+    /// SEQUENCE index before the pending child; rollback snapshot state variable.
+    current_previous_index: Option<usize>,
     /// Exact consumed end once the outer boundary has been reached; state variable.
     consumed_end: Option<usize>,
 }
@@ -576,10 +601,52 @@ impl RecordContext {
     /// Example: `let mut context = RecordContext::new(&limits);`.
     #[must_use]
     pub const fn new(limits: &Limits) -> Self {
+        Self::with_nested_accounting(limits, false)
+    }
+
+    /// Create one operation context with nested-record scratch accounting.
+    ///
+    /// Generated types containing an inline SEQUENCE use this at the public
+    /// operation boundary, even when the child is OPTIONAL and absent.
+    ///
+    /// # Parameters and returns
+    /// `limits` supplies whole-input, complete-output, and cumulative-work
+    /// maxima. Returns a context enforcing aggregate nested scratch bounds.
+    ///
+    /// # Errors
+    /// This constructor cannot fail and raises no exception.
+    ///
+    /// # Source, version, history, example
+    /// Source: compatible nested record policy. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: inline SEQUENCE support.
+    /// Example: `let mut context = RecordContext::new_nested(&limits);`.
+    #[must_use]
+    pub const fn new_nested(limits: &Limits) -> Self {
+        Self::with_nested_accounting(limits, true)
+    }
+
+    /// Initialize the shared record counters while preserving the public Limits API.
+    ///
+    /// # Parameters and returns
+    /// `limits` supplies existing ceilings; `nested` enables aggregate scratch
+    /// accounting. Returns an unused operation context.
+    ///
+    /// # Errors
+    /// This helper cannot fail.
+    ///
+    /// # Source, version, history, example
+    /// Source: bounded record-operation policy. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: nested context opt-in.
+    /// Example: called by `new` and `new_nested`.
+    const fn with_nested_accounting(limits: &Limits, nested: bool) -> Self {
         Self {
             limits: *limits,
             work_used: 0,
             retained_bytes: 0,
+            retained_capacity: 0,
+            depth: 0,
+            nested_record_depth: 0,
+            nested_accounting: nested,
         }
     }
 
@@ -633,11 +700,58 @@ impl RecordContext {
         charge_work(&mut self.work_used, bytes, &self.limits)
     }
 
-    /// Return output limits remaining for one retained-string decode operation.
+    /// Reserve one or more bounded nested record layers.
     ///
     /// # Parameters and returns
-    /// Returns a copy with the retained-storage ceiling; work is charged
-    /// directly to this context during parsing.
+    /// `layers` counts nested SEQUENCE and EXPLICIT wrapper levels. Returns
+    /// success when the cumulative depth remains within `MAX_DEPTH`.
+    ///
+    /// # Errors
+    /// Returns `InvalidEncoding` when the finite nesting ceiling is exceeded.
+    ///
+    /// # Source, version, history, example
+    /// Source: bounded record traversal policy. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: nested record support.
+    /// Example: nested callbacks reserve one layer plus any wrapper.
+    fn enter_nested(&mut self, layers: usize) -> Result<(), Error> {
+        if !self.nested_accounting {
+            return Err(invalid("nested records require RecordContext::new_nested"));
+        }
+        if self.nested_record_depth != 0 {
+            return Err(invalid("nested records support one inline child level"));
+        }
+        let next_depth = self.depth.checked_add(layers).ok_or(Error::SizeOverflow)?;
+        if next_depth > MAX_DEPTH {
+            return Err(invalid("record nesting exceeds depth limit"));
+        }
+        self.depth = next_depth;
+        self.nested_record_depth += 1;
+        Ok(())
+    }
+
+    /// Release the nesting layers reserved by one completed callback.
+    ///
+    /// # Parameters and returns
+    /// `layers` is the count previously accepted by `enter_nested`. Returns
+    /// nothing; inconsistent release leaves the state at zero.
+    ///
+    /// # Errors
+    /// This cleanup helper cannot fail or panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: bounded record traversal policy. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: nested record support.
+    /// Example: called after every nested callback result.
+    const fn leave_nested(&mut self, layers: usize) {
+        self.depth = self.depth.saturating_sub(layers);
+        self.nested_record_depth = self.nested_record_depth.saturating_sub(1);
+    }
+
+    /// Return output limits remaining for one decoded-string allocation.
+    ///
+    /// # Parameters and returns
+    /// Returns a copy with remaining cumulative payload and scratch ceilings;
+    /// work is charged directly to this context during parsing.
     ///
     /// # Errors
     /// Returns `SizeOverflow` if the retained counter is inconsistent.
@@ -653,29 +767,44 @@ impl RecordContext {
             .max_output_bytes
             .checked_sub(self.retained_bytes)
             .ok_or(Error::SizeOverflow)?;
+        if self.nested_accounting {
+            let scratch_remaining = MAX_RECORD_SCRATCH_BYTES
+                .checked_sub(self.retained_capacity)
+                .ok_or(Error::SizeOverflow)?;
+            remaining.max_output_bytes = remaining.max_output_bytes.min(scratch_remaining);
+        }
         Ok(remaining)
     }
 
-    /// Retain decoded field bytes after a decoder has checked the remaining cap.
+    /// Charge decoded field allocation after a decoder checks the remaining cap.
     ///
     /// # Parameters and returns
-    /// `bytes` is the field's owned payload length; returns success when the
-    /// cumulative retained storage stays within `max_output_bytes`.
+    /// `bytes` is the field payload length; `capacity` is its Vec capacity.
+    /// Charges remain cumulative even when a callback fails or the value drops.
     ///
     /// # Errors
-    /// Returns checked-size or output-limit errors.
+    /// Returns checked-size or output-limit errors. Nested decodes also enforce
+    /// the fixed scratch cap against cumulative capacity charges.
     ///
     /// # Source, version, history, example
     /// Source: sequence decoded-storage policy. Version: 2026-10-31.
     /// Responsible: asn1c maintainers. History: bounded string fields.
-    /// Example: `context.retain_decoded(owned.len())?`.
-    fn retain_decoded(&mut self, bytes: usize) -> Result<(), Error> {
+    /// Example: `context.retain_decoded(owned.len(), owned.capacity())?`.
+    fn retain_decoded(&mut self, bytes: usize, capacity: usize) -> Result<(), Error> {
         let total = self
             .retained_bytes
             .checked_add(bytes)
             .ok_or(Error::SizeOverflow)?;
         check(Resource::OutputBytes, total, self.limits.max_output_bytes)?;
+        let total_capacity = self
+            .retained_capacity
+            .checked_add(capacity)
+            .ok_or(Error::SizeOverflow)?;
+        if self.nested_accounting {
+            check_scratch_total(total_capacity, MAX_RECORD_SCRATCH_BYTES)?;
+        }
         self.retained_bytes = total;
+        self.retained_capacity = total_capacity;
         Ok(())
     }
 
@@ -741,10 +870,28 @@ impl SequenceWriter<'_> {
     ) -> Result<SequenceWriter<'_>, Error> {
         let minimum_size = if rule == RecordEncoding::Cer { 4 } else { 2 };
         context.check_output(minimum_size)?;
+        if context.nested_accounting {
+            check_scratch_total(
+                context
+                    .retained_capacity
+                    .checked_add(2)
+                    .ok_or(Error::SizeOverflow)?,
+                MAX_RECORD_SCRATCH_BYTES,
+            )?;
+        }
         let mut bytes = Vec::new();
         bytes
             .try_reserve_exact(2)
             .map_err(|_| Error::AllocationFailed { requested_bytes: 2 })?;
+        if context.nested_accounting {
+            check_scratch_total(
+                context
+                    .retained_capacity
+                    .checked_add(bytes.capacity())
+                    .ok_or(Error::SizeOverflow)?,
+                MAX_RECORD_SCRATCH_BYTES,
+            )?;
+        }
         bytes.extend_from_slice(&[
             kind.identifier(),
             if rule == RecordEncoding::Cer { 0x80 } else { 0 },
@@ -762,7 +909,171 @@ impl SequenceWriter<'_> {
             seen_tags: [None; MAX_SEQUENCE_FIELDS],
             field_count: 0,
             last_tag: None,
+            parent_capacity: None,
         })
+    }
+
+    /// Begin a nested child encoder while the parent buffer remains allocated.
+    ///
+    /// # Parameters and returns
+    /// `rule` and `context` are inherited from the parent; `parent_capacity` is
+    /// its retained `Vec` capacity. Returns a child with combined scratch checks.
+    ///
+    /// # Errors
+    /// Returns output/scratch-limit, work-limit, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: shared nested record operation context. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: inline SEQUENCE support.
+    /// Example: called only from `write_nested_sequence`.
+    fn new_nested_writer(
+        rule: RecordEncoding,
+        context: &mut RecordContext,
+        parent_capacity: usize,
+    ) -> Result<SequenceWriter<'_>, Error> {
+        check_combined_capacities(parent_capacity, 2, context.retained_capacity)?;
+        let mut writer = Self::new_with_kind(rule, context, RecordKind::Sequence)?;
+        writer.parent_capacity = Some(parent_capacity);
+        writer.check_actual_nested_storage()?;
+        Ok(writer)
+    }
+
+    /// Check projected child length against combined retained parent capacity.
+    ///
+    /// # Parameters and returns
+    /// `child_len` is the projected complete child record size. Returns success
+    /// when parent capacity plus child size fits both internal ceilings.
+    ///
+    /// # Errors
+    /// Returns `LimitExceeded(OutputBytes)` or `SizeOverflow`.
+    ///
+    /// # Source, version, history, example
+    /// Source: aggregate nested scratch policy. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: inline SEQUENCE support.
+    /// Example: used before growing a nested child buffer.
+    fn check_nested_storage(&self, child_len: usize) -> Result<(), Error> {
+        if !self.context.nested_accounting {
+            return Ok(());
+        }
+        let total = self
+            .parent_capacity
+            .unwrap_or(0)
+            .checked_add(child_len)
+            .and_then(|size| size.checked_add(self.context.retained_capacity))
+            .ok_or(Error::SizeOverflow)?;
+        check_scratch_total(total, MAX_RECORD_SCRATCH_BYTES)
+    }
+
+    /// Check actual Vec capacities after an allocator reservation.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns success if retained parent and child capacities
+    /// fit the internal scratch and caller output ceilings.
+    ///
+    /// # Errors
+    /// Returns `LimitExceeded(OutputBytes)` or `SizeOverflow`.
+    ///
+    /// # Source, version, history, example
+    /// Source: aggregate nested scratch policy. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: inline SEQUENCE support.
+    /// Example: called immediately after child Vec growth.
+    fn check_actual_nested_storage(&self) -> Result<(), Error> {
+        self.check_nested_storage(self.bytes.capacity())
+    }
+
+    /// Encode one inline child record in this parent's operation and buffer.
+    ///
+    /// # Parameters
+    /// `field` supplies its natural, IMPLICIT, or EXPLICIT child tag;
+    /// `encode` writes the child's direct primitive members.
+    ///
+    /// # Returns
+    /// `Ok(())` after one complete child TLV has been committed to the parent.
+    ///
+    /// # Errors
+    /// Returns descriptor, callback, resource, work, size, or allocation errors.
+    /// The parent field list and bytes remain unchanged on failure.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 nested SEQUENCE framing. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: callback-based record stage.
+    /// Example: `writer.write_nested_sequence(field, |child| child.write_integer(1, 0, 2))?`.
+    pub fn write_nested_sequence<F>(&mut self, field: RecordField, encode: F) -> Result<(), Error>
+    where
+        F: FnOnce(&mut SequenceWriter<'_>) -> Result<(), Error>,
+    {
+        if field.kind != FieldKind::Sequence {
+            return Err(invalid("nested record descriptor must have SEQUENCE kind"));
+        }
+        validate_field_mode(field.tag, field.kind, field.tagging)?;
+        let layers = 1 + usize::from(field.tagging == TaggingMode::Explicit);
+        self.context.enter_nested(layers)?;
+        let parent_capacity = self.bytes.capacity();
+        let result = self.write_nested_sequence_inner(field, encode, parent_capacity);
+        self.context.leave_nested(layers);
+        result
+    }
+
+    /// Build a child value, apply its tag mode, then append it transactionally.
+    ///
+    /// # Parameters and returns
+    /// `field` and `encode` have the public callback method's meanings;
+    /// `parent_capacity` is retained during child allocation. Returns success.
+    ///
+    /// # Errors
+    /// Returns validation, callback, resource, size, or allocation errors.
+    /// Parent bytes and field metadata change only after all checks pass.
+    ///
+    /// # Source, version, history, example
+    /// Source: shared bounded record writer. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: inline SEQUENCE support.
+    /// Example: called by `write_nested_sequence`.
+    fn write_nested_sequence_inner<F>(
+        &mut self,
+        field: RecordField,
+        encode: F,
+        parent_capacity: usize,
+    ) -> Result<(), Error>
+    where
+        F: FnOnce(&mut SequenceWriter<'_>) -> Result<(), Error>,
+    {
+        let mut child = Self::new_nested_writer(self.rule, self.context, parent_capacity)?;
+        encode(&mut child)?;
+        let mut encoded = child.finish()?;
+        apply_nested_tagging(
+            &mut encoded.bytes,
+            field,
+            self.rule,
+            parent_capacity,
+            self.context.retained_capacity,
+            &self.context.limits,
+        )?;
+        self.prepare_field(field.tag, encoded.bytes.len())?;
+        let requested_len = self
+            .bytes
+            .len()
+            .checked_add(encoded.bytes.len())
+            .ok_or(Error::SizeOverflow)?;
+        let projected_parent_capacity = self.bytes.capacity().max(requested_len);
+        check_combined_capacities(
+            projected_parent_capacity,
+            encoded.bytes.capacity(),
+            self.context.retained_capacity,
+        )?;
+        self.bytes
+            .try_reserve_exact(encoded.bytes.len())
+            .map_err(|_| Error::AllocationFailed {
+                requested_bytes: requested_len,
+            })?;
+        check_combined_capacities(
+            self.bytes.capacity(),
+            encoded.bytes.capacity(),
+            self.context.retained_capacity,
+        )?;
+        self.bytes.extend_from_slice(&encoded.bytes);
+        self.remember_tag(field.tag)?;
+        self.last_tag = Some(field.tag);
+        Ok(())
     }
 
     /// Append one canonical BOOLEAN field with its universal tag.
@@ -1356,6 +1667,7 @@ impl SequenceWriter<'_> {
                     .and_then(|n| n.checked_add(content_len))
                     .ok_or(Error::SizeOverflow)?;
                 self.context.check_output(total_len)?;
+                self.check_nested_storage(total_len)?;
                 self.context.charge(length_len)?;
                 if content_len >= 128 {
                     self.context.charge(content_len)?;
@@ -1365,10 +1677,12 @@ impl SequenceWriter<'_> {
             RecordEncoding::Cer => {
                 let total_len = self.bytes.len().checked_add(2).ok_or(Error::SizeOverflow)?;
                 self.context.check_output(total_len)?;
+                self.check_nested_storage(total_len)?;
                 self.context.charge(2)?;
                 push(&mut self.bytes, &[0, 0], &self.context.limits)?;
             }
         }
+        self.check_actual_nested_storage()?;
         finish(self.bytes, &self.context.limits)
     }
 
@@ -1410,6 +1724,7 @@ impl SequenceWriter<'_> {
     /// Responsible: asn1c maintainers. History: tagged record support.
     /// Example: called after every successful field append.
     fn remember_tag(&mut self, tag: Tag) -> Result<(), Error> {
+        self.check_actual_nested_storage()?;
         let slot = self
             .seen_tags
             .get_mut(self.field_count)
@@ -1450,8 +1765,9 @@ impl SequenceWriter<'_> {
         let next_content = content_size
             .checked_add(field_size)
             .ok_or(Error::SizeOverflow)?;
-        self.context
-            .check_output(record_size(self.rule, next_content)?)?;
+        let total_size = record_size(self.rule, next_content)?;
+        self.context.check_output(total_size)?;
+        self.check_nested_storage(total_size)?;
         let work_bytes = field_size.checked_add(1).ok_or(Error::SizeOverflow)?;
         self.context.charge(work_bytes)?;
         Ok(())
@@ -1477,6 +1793,29 @@ impl<'context> SetWriter<'context> {
         Ok(Self {
             inner: SequenceWriter::new_with_kind(rule, context, RecordKind::Set)?,
         })
+    }
+
+    /// Append an inline SEQUENCE SET member with its declared effective tag.
+    ///
+    /// # Parameters
+    /// `field` describes the nested SEQUENCE tag; `encode` writes its children.
+    ///
+    /// # Returns
+    /// `Ok(())` after the complete member is appended in SET tag order.
+    ///
+    /// # Errors
+    /// Returns descriptor, callback, order, resource, size, or allocation errors.
+    /// Parent SET bytes and field state remain unchanged on failure.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET and constructed components. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: nested record support.
+    /// Example: `writer.write_nested_sequence(field, |child| encode_child(child))?`.
+    pub fn write_nested_sequence<F>(&mut self, field: RecordField, encode: F) -> Result<(), Error>
+    where
+        F: FnOnce(&mut SequenceWriter<'_>) -> Result<(), Error>,
+    {
+        self.inner.write_nested_sequence(field, encode)
     }
 
     /// Append one BOOLEAN member in increasing universal-tag order.
@@ -1920,6 +2259,69 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
         context: &'context mut RecordContext,
         kind: RecordKind,
     ) -> Result<Self, Error> {
+        Self::new_with_outer_tag(
+            input,
+            expected_tags,
+            tagged_fields,
+            context,
+            kind,
+            Tag::universal(u32::try_from(kind.universal_tag()).map_err(|_| Error::SizeOverflow)?),
+        )
+    }
+
+    /// Construct a nested SEQUENCE reader with its caller's effective root tag.
+    ///
+    /// # Parameters and returns
+    /// `input` is exactly one bounded child TLV; `fields` lists its direct
+    /// members; `context` is shared with the parent; `outer_tag` is either the
+    /// natural universal tag or an IMPLICIT replacement. Returns a cursor.
+    ///
+    /// # Errors
+    /// Returns the same bounded framing and descriptor errors as the public
+    /// constructors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 nested record boundaries. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: nested record support.
+    /// Example: called by `read_nested_sequence` with its checked field span.
+    fn new_nested(
+        input: &'input [u8],
+        fields: &'tags [RecordField],
+        context: &'context mut RecordContext,
+        outer_tag: Tag,
+    ) -> Result<Self, Error> {
+        Self::new_with_outer_tag(
+            input,
+            &[],
+            Some(fields),
+            context,
+            RecordKind::Sequence,
+            outer_tag,
+        )
+    }
+
+    /// Parse a record whose outer tag is supplied by a schema descriptor.
+    ///
+    /// # Parameters and returns
+    /// `input`, descriptor slices, `context`, and `kind` have the same roles as
+    /// `new_with_kind`; `outer_tag` supplies its effective constructed tag.
+    /// Returns a reader over the verified record body.
+    ///
+    /// # Errors
+    /// Returns input-limit, descriptor, framing, tag/form, size, and work errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 implicit SEQUENCE tags. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: nested record support.
+    /// Example: called by existing and nested reader constructors.
+    fn new_with_outer_tag(
+        input: &'input [u8],
+        expected_tags: &'tags [u64],
+        tagged_fields: Option<&'tags [RecordField]>,
+        context: &'context mut RecordContext,
+        kind: RecordKind,
+        outer_tag: Tag,
+    ) -> Result<Self, Error> {
         check(
             Resource::InputBytes,
             input.len(),
@@ -1958,7 +2360,10 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
         }
         let work = &mut context.work_used;
         let header = parse_header(input, 0, input.len(), work, true, &context.limits)?;
-        if header.class != 0 || header.tag != kind.universal_tag() || !header.constructed {
+        if header.class != outer_tag.class as u8
+            || header.tag != u64::from(outer_tag.number)
+            || !header.constructed
+        {
             return Err(invalid(
                 "BER record has the wrong constructed universal tag",
             ));
@@ -1987,6 +2392,8 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
             last_tag_index: None,
             seen_mask: 0,
             current: None,
+            current_index: None,
+            current_previous_index: None,
             consumed_end: None,
         })
     }
@@ -2035,7 +2442,7 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
         if self.consumed_end.is_some() {
             return Ok(None);
         }
-        if self.indefinite && is_eoc(self.input, self.cursor, self.input.len()) {
+        if self.indefinite && is_eoc(self.input, self.cursor, self.content_bound) {
             self.context.charge(2)?;
             self.cursor = self.cursor.checked_add(2).ok_or(Error::SizeOverflow)?;
             self.consumed_end = Some(self.cursor);
@@ -2074,13 +2481,13 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
         }
         self.context.charge(1)?;
         let start = self.cursor;
-        let (field, end) = match field_tagging {
+        let (mut field, end) = match field_tagging {
             TaggingMode::Implicit => {
                 let end = scan(
                     self.input,
                     start,
                     self.content_bound,
-                    1,
+                    2,
                     &mut self.context.work_used,
                     false,
                     &self.context.limits,
@@ -2097,11 +2504,111 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
                 &self.context.limits,
             )?,
         };
+        field.field_start = start;
+        field.tagging = field_tagging;
+        self.current_previous_index = self.last_tag_index;
+        self.current_index = Some(index);
         self.current = Some(field);
         self.last_tag_index = Some(index);
         self.seen_mask |= field_mask;
         self.cursor = end;
         Ok(Some(effective_tag))
+    }
+
+    /// Decode the current inline SEQUENCE with this operation's shared context.
+    ///
+    /// # Parameters
+    /// `child_fields` lists the child's direct field descriptors; `decode`
+    /// consumes them through a bounded child reader and returns the child value.
+    ///
+    /// # Returns
+    /// The callback's value after runtime verification of the exact child span.
+    ///
+    /// # Errors
+    /// Returns wrong field kind, malformed/trailing child data, callback,
+    /// resource, depth, size, or work errors. Parent traversal rolls back on
+    /// every error, while work and decoded-allocation charges remain cumulative.
+    /// Callback side effects and captured values are outside this rollback.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 nested SEQUENCE decoding. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: callback-based record stage.
+    /// Example: `reader.read_nested_sequence(&fields, |child| decode_child(child))?`.
+    pub fn read_nested_sequence<T, F>(
+        &mut self,
+        child_fields: &[RecordField],
+        decode: F,
+    ) -> Result<T, Error>
+    where
+        F: FnOnce(&mut SequenceReader<'_, '_, '_>) -> Result<T, Error>,
+    {
+        let pending = self.current;
+        let result = (|| {
+            let field = self.current_field(FieldKind::Sequence)?;
+            if !field.constructed {
+                return Err(invalid("nested SEQUENCE field must use constructed form"));
+            }
+            let child_input = self
+                .input
+                .get(field.tlv_start..field.tlv_end)
+                .ok_or_else(|| invalid("nested SEQUENCE span is outside parent input"))?;
+            let root_tag = field.tag;
+            let layers = 1 + usize::from(field.tagging == TaggingMode::Explicit);
+            self.context.enter_nested(layers)?;
+            let child_result = {
+                let context = &mut *self.context;
+                SequenceReader::new_nested(child_input, child_fields, context, root_tag).and_then(
+                    |mut child| {
+                        let value = decode(&mut child)?;
+                        let completed = child.finish()?;
+                        if completed.consumed_bytes != child_input.len() {
+                            return Err(invalid("nested SEQUENCE has trailing encoded data"));
+                        }
+                        Ok(value)
+                    },
+                )
+            };
+            self.context.leave_nested(layers);
+            child_result
+        })();
+        match result {
+            Ok(value) => {
+                self.current = None;
+                self.current_index = None;
+                self.current_previous_index = None;
+                Ok(value)
+            }
+            Err(error) => {
+                if let Some(field) = pending {
+                    self.rollback_nested_field(field);
+                }
+                Err(error)
+            }
+        }
+    }
+
+    /// Restore parent traversal to the first byte of a failed nested field.
+    ///
+    /// # Parameters and returns
+    /// `field` is the pending child span and carries its pre-wrapper start.
+    /// Returns nothing after restoring parent traversal state. Work and
+    /// decoded-allocation charges remain cumulative.
+    ///
+    /// # Errors
+    /// This bounded state restoration cannot fail or panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: nested decode traversal contract. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: callback-based record stage.
+    /// Example: called when the nested callback or child finalization fails.
+    const fn rollback_nested_field(&mut self, field: FieldSpan) {
+        if let Some(index) = self.current_index.take() {
+            self.seen_mask &= !(1_u8 << index);
+        }
+        self.cursor = field.field_start;
+        self.last_tag_index = self.current_previous_index.take();
+        self.current = None;
+        self.consumed_end = None;
     }
 
     /// Decode the current primitive BOOLEAN field and consume it.
@@ -2240,7 +2747,8 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
             return Err(invalid("OCTET STRING field has trailing encoded data"));
         }
         validate_size(decoded.value.len(), lower, upper)?;
-        self.context.retain_decoded(decoded.value.len())?;
+        self.context
+            .retain_decoded(decoded.value.len(), decoded.value.capacity())?;
         self.current = None;
         Ok(decoded.value)
     }
@@ -2283,8 +2791,10 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
             return Err(invalid("BIT STRING field has trailing encoded data"));
         }
         validate_size(decoded.value.bit_len(), lower_bits, upper_bits)?;
-        self.context
-            .retain_decoded(decoded.value.as_bytes().len())?;
+        self.context.retain_decoded(
+            decoded.value.as_bytes().len(),
+            decoded.value.storage_capacity(),
+        )?;
         self.current = None;
         Ok(decoded.value)
     }
@@ -2441,6 +2951,34 @@ impl<'input, 'tags, 'context> SetReader<'input, 'tags, 'context> {
                 RecordKind::Set,
             )?,
         })
+    }
+
+    /// Decode the current inline SEQUENCE SET member in a bounded callback.
+    ///
+    /// # Parameters
+    /// `child_fields` describes direct child members; `decode` consumes them
+    /// through a child reader sharing this SET operation context.
+    ///
+    /// # Returns
+    /// The callback's value after exact child boundary and EOC validation.
+    ///
+    /// # Errors
+    /// Returns field, callback, malformed child, resource, depth, size, or work
+    /// errors. Parent SET traversal rolls back on failure.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 nested SET component decoding. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: nested record support.
+    /// Example: `reader.read_nested_sequence(&fields, |child| decode_child(child))?`.
+    pub fn read_nested_sequence<T, F>(
+        &mut self,
+        child_fields: &[RecordField],
+        decode: F,
+    ) -> Result<T, Error>
+    where
+        F: FnOnce(&mut SequenceReader<'_, '_, '_>) -> Result<T, Error>,
+    {
+        self.inner.read_nested_sequence(child_fields, decode)
     }
 
     /// Advance to the next SET member, returning its universal tag number.
@@ -3297,6 +3835,9 @@ fn field_span(
     tag: Tag,
     kind: FieldKind,
 ) -> Result<FieldSpan, Error> {
+    if kind == FieldKind::Sequence && !header.constructed {
+        return Err(invalid("BER SEQUENCE field must use constructed form"));
+    }
     let content_end = match header.length {
         Some(length) => header
             .content
@@ -3309,6 +3850,8 @@ fn field_span(
         kind,
         tlv_start: start,
         tlv_end: end,
+        field_start: start,
+        tagging: TaggingMode::Implicit,
         constructed: header.constructed,
         content_start: header.content,
         content_end,
@@ -3364,10 +3907,17 @@ fn scan_explicit_member(
             "EXPLICIT wrapper child has the wrong universal tag",
         ));
     }
-    if !matches!(kind, FieldKind::BitString | FieldKind::OctetString) && child.constructed {
+    if kind == FieldKind::Sequence && !child.constructed {
+        return Err(invalid("EXPLICIT SEQUENCE child must use constructed form"));
+    }
+    if !matches!(
+        kind,
+        FieldKind::BitString | FieldKind::OctetString | FieldKind::Sequence
+    ) && child.constructed
+    {
         return Err(invalid("EXPLICIT scalar child must use primitive form"));
     }
-    let child_end = scan(input, child_start, child_bound, 2, work, false, limits)?;
+    let child_end = scan(input, child_start, child_bound, 3, work, false, limits)?;
     let wrapper_end = match definite_end {
         Some(end) if child_end == end => end,
         Some(_) => return Err(invalid("EXPLICIT wrapper must contain exactly one child")),
@@ -3986,6 +4536,7 @@ const fn intrinsic_tag(kind: FieldKind) -> Tag {
         FieldKind::OctetString => Tag::universal(4),
         FieldKind::Null => Tag::universal(5),
         FieldKind::Enumerated => Tag::universal(10),
+        FieldKind::Sequence => Tag::universal(16),
     }
 }
 
@@ -4018,6 +4569,269 @@ fn explicit_wrapper_size(
             .and_then(|n| n.checked_add(inner_size))
             .ok_or(Error::SizeOverflow),
     }
+}
+
+/// Apply a nested SEQUENCE field's natural, IMPLICIT, or EXPLICIT tag in place.
+///
+/// # Parameters and returns
+/// `bytes` is one complete canonical child SEQUENCE; `field` supplies its tag
+/// mode; `rule` selects DER/CER; `parent_capacity` remains live alongside it;
+/// `limits` supplies output bounds. Returns success after in-place wrapping.
+///
+/// # Errors
+/// Returns invalid descriptor, output/scratch-limit, size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 constructed tagging. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: inline SEQUENCE support.
+/// Example: called before a complete child is appended to its parent.
+fn apply_nested_tagging(
+    bytes: &mut Vec<u8>,
+    field: RecordField,
+    rule: RecordEncoding,
+    parent_capacity: usize,
+    retained_capacity: usize,
+    limits: &Limits,
+) -> Result<(), Error> {
+    validate_field_mode(field.tag, FieldKind::Sequence, field.tagging)?;
+    if field.tagging == TaggingMode::Implicit {
+        retag_nested_record(bytes, field.tag, parent_capacity, retained_capacity, limits)?;
+    } else {
+        wrap_nested_record(
+            bytes,
+            field.tag,
+            rule,
+            parent_capacity,
+            retained_capacity,
+            limits,
+        )?;
+    }
+    Ok(())
+}
+
+/// Replace a child's universal SEQUENCE identifier without reallocating scratch.
+///
+/// # Parameters and returns
+/// `bytes` holds the complete child; `tag` is its effective IMPLICIT tag;
+/// `parent_capacity` is retained parent storage; `limits` applies the cap.
+/// Returns success after replacing the first identifier.
+///
+/// # Errors
+/// Returns checked-size, output/scratch-limit, invalid-tag, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 IMPLICIT constructed tag replacement. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: inline SEQUENCE support.
+/// Example: called for natural and IMPLICIT child fields.
+fn retag_nested_record(
+    bytes: &mut Vec<u8>,
+    tag: Tag,
+    parent_capacity: usize,
+    retained_capacity: usize,
+    limits: &Limits,
+) -> Result<(), Error> {
+    let mut identifier = [0_u8; 6];
+    let identifier_len = encode_identifier_bytes(tag, true, &mut identifier)?;
+    let old_len = bytes.len();
+    let new_len = old_len
+        .checked_sub(1)
+        .and_then(|length| length.checked_add(identifier_len))
+        .ok_or(Error::SizeOverflow)?;
+    check(Resource::OutputBytes, new_len, limits.max_output_bytes)?;
+    check_combined_capacities(parent_capacity, new_len, retained_capacity)?;
+    if new_len > old_len {
+        bytes
+            .try_reserve_exact(new_len - old_len)
+            .map_err(|_| Error::AllocationFailed {
+                requested_bytes: new_len,
+            })?;
+    }
+    check_combined_capacities(parent_capacity, bytes.capacity(), retained_capacity)?;
+    if identifier_len > 1 {
+        bytes.resize(new_len, 0);
+        bytes.copy_within(1..old_len, identifier_len);
+    } else if new_len < old_len {
+        bytes.copy_within(1..old_len, 1);
+        bytes.truncate(new_len);
+    }
+    bytes[..identifier_len].copy_from_slice(&identifier[..identifier_len]);
+    Ok(())
+}
+
+/// Wrap one complete child SEQUENCE with a constructed EXPLICIT identifier.
+///
+/// # Parameters and returns
+/// `bytes` is the child TLV; `tag` is its wrapper; `rule` selects definite DER
+/// or indefinite CER; `parent_capacity` and `limits` bound combined storage.
+/// Returns success after shifting the child behind one wrapper header.
+///
+/// # Errors
+/// Returns checked-size, output/scratch-limit, invalid-tag, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 EXPLICIT constructed tags. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: inline SEQUENCE support.
+/// Example: called for EXPLICIT child fields before parent append.
+fn wrap_nested_record(
+    bytes: &mut Vec<u8>,
+    tag: Tag,
+    rule: RecordEncoding,
+    parent_capacity: usize,
+    retained_capacity: usize,
+    limits: &Limits,
+) -> Result<(), Error> {
+    let mut identifier = [0_u8; 6];
+    let identifier_len = encode_identifier_bytes(tag, true, &mut identifier)?;
+    let child_len = bytes.len();
+    let mut length_bytes = [0_u8; std::mem::size_of::<usize>() + 1];
+    let length_len = match rule {
+        RecordEncoding::Der => encode_length_bytes(child_len, &mut length_bytes)?,
+        RecordEncoding::Cer => 1,
+    };
+    let header_len = identifier_len
+        .checked_add(length_len)
+        .ok_or(Error::SizeOverflow)?;
+    let suffix_len = if rule == RecordEncoding::Cer { 2 } else { 0 };
+    let total_len = header_len
+        .checked_add(child_len)
+        .and_then(|length| length.checked_add(suffix_len))
+        .ok_or(Error::SizeOverflow)?;
+    check(Resource::OutputBytes, total_len, limits.max_output_bytes)?;
+    check_combined_capacities(parent_capacity, total_len, retained_capacity)?;
+    bytes
+        .try_reserve_exact(total_len.saturating_sub(child_len))
+        .map_err(|_| Error::AllocationFailed {
+            requested_bytes: total_len,
+        })?;
+    check_combined_capacities(parent_capacity, bytes.capacity(), retained_capacity)?;
+    bytes.resize(total_len, 0);
+    bytes.copy_within(0..child_len, header_len);
+    bytes[..identifier_len].copy_from_slice(&identifier[..identifier_len]);
+    if rule == RecordEncoding::Der {
+        bytes[identifier_len..header_len].copy_from_slice(&length_bytes[..length_len]);
+    } else {
+        bytes[identifier_len] = 0x80;
+        bytes[total_len - 2..].copy_from_slice(&[0, 0]);
+    }
+    Ok(())
+}
+
+/// Encode a checked class/number identifier into a fixed stack buffer.
+///
+/// # Parameters and returns
+/// `tag` supplies the class and number; `constructed` selects the form bit;
+/// `output` has capacity for the bounded C tag representation. Returns bytes used.
+///
+/// # Errors
+/// Returns `InvalidEncoding` when the tag exceeds the runtime's C-compatible range.
+///
+/// # Source, version, history, example
+/// Source: X.690 identifier encoding. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: nested wrapper encoder.
+/// Example: called by `retag_nested_record` and `wrap_nested_record`.
+fn encode_identifier_bytes(
+    tag: Tag,
+    constructed: bool,
+    output: &mut [u8; 6],
+) -> Result<usize, Error> {
+    tag.validate()?;
+    let class_and_form = ((tag.class as u8) << 6) | (u8::from(constructed) << 5);
+    if tag.number < 31 {
+        output[0] = class_and_form | u8::try_from(tag.number).map_err(|_| Error::SizeOverflow)?;
+        return Ok(1);
+    }
+    output[0] = class_and_form | 0x1f;
+    let mut groups = [0_u8; 5];
+    let mut count = 0_usize;
+    let mut number = tag.number;
+    loop {
+        groups[count] = u8::try_from(number & 0x7f).map_err(|_| Error::SizeOverflow)?;
+        count += 1;
+        number >>= 7;
+        if number == 0 {
+            break;
+        }
+    }
+    for index in (0..count).rev() {
+        let continuation = if index == 0 { 0 } else { 0x80 };
+        output[count - index] = groups[index] | continuation;
+    }
+    Ok(count + 1)
+}
+
+/// Encode the shortest definite length into a fixed stack buffer.
+///
+/// # Parameters and returns
+/// `length` is the content byte count; `output` holds its length octets.
+/// Returns the number of encoded octets.
+///
+/// # Errors
+/// Returns `SizeOverflow` if the encoded width cannot be represented.
+///
+/// # Source, version, history, example
+/// Source: X.690 definite lengths. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: nested explicit wrappers.
+/// Example: called when writing a DER EXPLICIT child header.
+fn encode_length_bytes(
+    length: usize,
+    output: &mut [u8; std::mem::size_of::<usize>() + 1],
+) -> Result<usize, Error> {
+    if length < 128 {
+        output[0] = u8::try_from(length).map_err(|_| Error::SizeOverflow)?;
+        return Ok(1);
+    }
+    let bytes = length.to_be_bytes();
+    let first = bytes
+        .iter()
+        .position(|byte| *byte != 0)
+        .ok_or(Error::SizeOverflow)?;
+    let count = bytes.len() - first;
+    output[0] = 0x80 | u8::try_from(count).map_err(|_| Error::SizeOverflow)?;
+    output[1..=count].copy_from_slice(&bytes[first..]);
+    Ok(count + 1)
+}
+
+/// Bound cumulative decode charges and simultaneous record buffers by the scratch cap.
+///
+/// # Parameters and returns
+/// `parent_capacity` and `child_capacity` are live Vec capacities;
+/// `retained_capacity` is the cumulative decoded-allocation charge. Returns
+/// success when their checked sum fits the fixed internal cap.
+///
+/// # Errors
+/// Returns checked-size or output-limit errors.
+///
+/// # Source, version, history, example
+/// Source: nested operation scratch policy. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: inline SEQUENCE support.
+/// Example: called before and after every nested buffer reservation.
+fn check_combined_capacities(
+    parent_capacity: usize,
+    child_capacity: usize,
+    retained_capacity: usize,
+) -> Result<(), Error> {
+    let total = parent_capacity
+        .checked_add(child_capacity)
+        .and_then(|size| size.checked_add(retained_capacity))
+        .ok_or(Error::SizeOverflow)?;
+    check_scratch_total(total, MAX_RECORD_SCRATCH_BYTES)
+}
+
+/// Check aggregate scratch accounting against a supplied ceiling.
+///
+/// # Parameters and returns
+/// `total` is the checked aggregate scratch amount; `ceiling` bounds it. Returns
+/// success when live writer capacities plus cumulative decode charges fit.
+///
+/// # Errors
+/// Returns `LimitExceeded(OutputBytes)` when the aggregate exceeds the ceiling.
+///
+/// # Source, version, history, example
+/// Source: bounded nested scratch accounting. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: nested callback resource gate.
+/// Example: `check_scratch_total(10, 10)?` accepts the exact boundary.
+const fn check_scratch_total(total: usize, ceiling: usize) -> Result<(), Error> {
+    check(Resource::OutputBytes, total, ceiling)
 }
 
 /// Append one canonical OCTET STRING child under its intrinsic universal tag.
@@ -4709,7 +5523,7 @@ fn append_payload(
         return Err(invalid("BER string exceeds its declared SIZE upper bound"));
     }
     check(Resource::OutputBytes, next, limits.max_output_bytes)?;
-    out.try_reserve(payload.len())
+    out.try_reserve_exact(payload.len())
         .map_err(|_| Error::AllocationFailed {
             requested_bytes: next,
         })?;
@@ -5444,7 +6258,7 @@ mod tests {
         }
     }
 
-    /// Decode constructed BER strings and enforce aggregate retained storage.
+    /// Decode constructed BER strings and enforce cumulative allocation charges.
     /// Source: X.690 BER constructed strings; version: 2026-10-31; vectors:
     /// definite/indefinite fragments and two fields. Returns: assertions.
     /// Errors: malformed or over-budget inputs return errors. Responsible:
@@ -6806,7 +7620,7 @@ mod tests {
         let tag = Tag::context_specific(0);
         let fields = [RecordField::new_explicit(tag, FieldKind::OctetString).unwrap()];
         let limits = Limits::default();
-        let accepted = nested_explicit_octets(MAX_DEPTH - 2);
+        let accepted = nested_explicit_octets(MAX_DEPTH - 3);
         let mut context = RecordContext::new(&limits);
         let mut reader = SequenceReader::new_tagged(&accepted, &fields, &mut context).unwrap();
         assert_eq!(reader.next_tagged_field().unwrap(), Some(tag));
@@ -6814,7 +7628,7 @@ mod tests {
         assert_eq!(reader.next_tagged_field().unwrap(), None);
         reader.finish().unwrap();
 
-        let too_deep = nested_explicit_octets(MAX_DEPTH - 1);
+        let too_deep = nested_explicit_octets(MAX_DEPTH - 2);
         let mut context = RecordContext::new(&limits);
         let mut reader = SequenceReader::new_tagged(&too_deep, &fields, &mut context).unwrap();
         assert!(reader.next_tagged_field().is_err());
@@ -6906,5 +7720,605 @@ mod tests {
 
         let der = [0x30, 5, 0xa0, 3, 1, 1, 0xff];
         assert!(explicit_boolean_cer_work(&der, usize::MAX).is_err());
+    }
+
+    /// Match natural, IMPLICIT, and EXPLICIT nested child vectors for DER/CER.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Verifies six supplied X.690 nested record vectors and decode.
+    ///
+    /// # Errors
+    /// Panics on encoding, decoding, or expected-vector mismatches.
+    ///
+    /// # Source, version, history, example
+    /// Source: C fixture vectors supplied for inline SEQUENCE stage.
+    /// Version: 2026-11-01. Responsible: runtime maintainers.
+    /// History: nested record acceptance tests. Example: run via `cargo test`.
+    #[test]
+    fn nested_sequence_tag_modes_match_der_cer_vectors() {
+        let modes = [
+            (
+                RecordField::new(Tag::universal(16), FieldKind::Sequence).unwrap(),
+                &[0x30, 0x0b, 2, 1, 1, 0x30, 3, 2, 1, 2, 1, 1, 0xff][..],
+                &[
+                    0x30, 0x80, 2, 1, 1, 0x30, 0x80, 2, 1, 2, 0, 0, 1, 1, 0xff, 0, 0,
+                ][..],
+            ),
+            (
+                RecordField::new(Tag::context_specific(3), FieldKind::Sequence).unwrap(),
+                &[0x30, 0x0b, 2, 1, 1, 0xa3, 3, 2, 1, 2, 1, 1, 0xff][..],
+                &[
+                    0x30, 0x80, 2, 1, 1, 0xa3, 0x80, 2, 1, 2, 0, 0, 1, 1, 0xff, 0, 0,
+                ][..],
+            ),
+            (
+                RecordField::new_explicit(Tag::context_specific(3), FieldKind::Sequence).unwrap(),
+                &[0x30, 0x0d, 2, 1, 1, 0xa3, 5, 0x30, 3, 2, 1, 2, 1, 1, 0xff][..],
+                &[
+                    0x30, 0x80, 2, 1, 1, 0xa3, 0x80, 0x30, 0x80, 2, 1, 2, 0, 0, 0, 0, 1, 1, 0xff,
+                    0, 0,
+                ][..],
+            ),
+            (
+                RecordField::new(Tag::context_specific(31), FieldKind::Sequence).unwrap(),
+                &[0x30, 0x0c, 2, 1, 1, 0xbf, 0x1f, 3, 2, 1, 2, 1, 1, 0xff][..],
+                &[
+                    0x30, 0x80, 2, 1, 1, 0xbf, 0x1f, 0x80, 2, 1, 2, 0, 0, 1, 1, 0xff, 0, 0,
+                ][..],
+            ),
+        ];
+        let child_fields = [RecordField::new(Tag::universal(2), FieldKind::Integer).unwrap()];
+        let limits = Limits::default();
+
+        for (field, der_expected, cer_expected) in modes {
+            for (rule, expected) in [
+                (RecordEncoding::Der, der_expected),
+                (RecordEncoding::Cer, cer_expected),
+            ] {
+                let mut context = RecordContext::new_nested(&limits);
+                let mut writer = SequenceWriter::new(rule, &mut context).unwrap();
+                writer.write_integer(1, 0, 3).unwrap();
+                writer
+                    .write_nested_sequence(field, |child| child.write_integer(2, 0, 3))
+                    .unwrap();
+                writer.write_boolean(true).unwrap();
+                let encoded = writer.finish().unwrap();
+                assert_eq!(encoded.bytes, expected);
+
+                let fields = [
+                    RecordField::new(Tag::universal(2), FieldKind::Integer).unwrap(),
+                    field,
+                    RecordField::new(Tag::universal(1), FieldKind::Boolean).unwrap(),
+                ];
+                let mut context = RecordContext::new_nested(&limits);
+                let mut reader =
+                    SequenceReader::new_tagged(&encoded.bytes, &fields, &mut context).unwrap();
+                assert_eq!(reader.next_tagged_field().unwrap(), Some(Tag::universal(2)));
+                assert_eq!(reader.read_integer(0, 3).unwrap(), 1);
+                assert_eq!(reader.next_tagged_field().unwrap(), Some(field.tag()));
+                let child_value = reader
+                    .read_nested_sequence(&child_fields, |child| {
+                        assert_eq!(child.next_tagged_field()?, Some(Tag::universal(2)));
+                        let value = child.read_integer(0, 3)?;
+                        if child.next_tagged_field()?.is_some() {
+                            return Err(invalid("nested fixture child has an extra field"));
+                        }
+                        Ok(value)
+                    })
+                    .unwrap();
+                assert_eq!(child_value, 2);
+                assert_eq!(reader.next_tagged_field().unwrap(), Some(Tag::universal(1)));
+                assert!(reader.read_boolean().unwrap());
+                assert_eq!(reader.next_tagged_field().unwrap(), None);
+                assert_eq!(reader.finish().unwrap().consumed_bytes, expected.len());
+            }
+        }
+    }
+
+    /// Accept independently definite/indefinite BER wrappers within their spans.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Reads mixed parent, EXPLICIT wrapper, and child lengths.
+    ///
+    /// # Errors
+    /// Panics if a valid BER value is rejected or a missing boundary is accepted.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 constructed BER framing decision. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: mixed wrapper tests.
+    /// Example: run via `cargo test`.
+    #[test]
+    fn nested_sequence_accepts_mixed_ber_lengths_and_checks_eocs() {
+        let wrapper =
+            RecordField::new_explicit(Tag::context_specific(3), FieldKind::Sequence).unwrap();
+        let fields = [
+            RecordField::new(Tag::universal(2), FieldKind::Integer).unwrap(),
+            wrapper,
+            RecordField::new(Tag::universal(1), FieldKind::Boolean).unwrap(),
+        ];
+        let child_fields = [RecordField::new(Tag::universal(2), FieldKind::Integer).unwrap()];
+        let mixed = [
+            0x30, 0x80, 2, 1, 1, 0xa3, 7, 0x30, 0x80, 2, 1, 2, 0, 0, 1, 1, 0xff, 0, 0,
+        ];
+        let limits = Limits::default();
+        let mut context = RecordContext::new_nested(&limits);
+        let mut reader = SequenceReader::new_tagged(&mixed, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(Tag::universal(2)));
+        assert_eq!(reader.read_integer(0, 3).unwrap(), 1);
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(wrapper.tag()));
+        assert_eq!(
+            reader
+                .read_nested_sequence(&child_fields, |child| {
+                    assert_eq!(child.next_tagged_field()?, Some(Tag::universal(2)));
+                    let value = child.read_integer(0, 3)?;
+                    assert_eq!(child.next_tagged_field()?, None);
+                    Ok(value)
+                })
+                .unwrap(),
+            2
+        );
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(Tag::universal(1)));
+        assert!(reader.read_boolean().unwrap());
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        let consumed = reader.finish().unwrap();
+        assert_eq!(consumed.consumed_bytes, mixed.len());
+        let mut canonical_writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        canonical_writer.write_integer(1, 0, 3).unwrap();
+        canonical_writer
+            .write_nested_sequence(wrapper, |child| child.write_integer(2, 0, 3))
+            .unwrap();
+        canonical_writer.write_boolean(true).unwrap();
+        let canonical = canonical_writer.finish().unwrap();
+        assert!(context
+            .verify_canonical(&mixed, consumed.consumed_bytes, &canonical.bytes)
+            .is_err());
+
+        // A child indefinite EOC cannot consume the enclosing parent's missing EOC.
+        let missing_parent_eoc = [0x30, 0x80, 0x30, 0x80, 2, 1, 2, 0, 0];
+        let natural_fields = [RecordField::new(Tag::universal(16), FieldKind::Sequence).unwrap()];
+        let mut context = RecordContext::new_nested(&limits);
+        let mut reader =
+            SequenceReader::new_tagged(&missing_parent_eoc, &natural_fields, &mut context).unwrap();
+        assert_eq!(
+            reader.next_tagged_field().unwrap(),
+            Some(natural_fields[0].tag())
+        );
+        let nested_fields = [RecordField::new(Tag::universal(2), FieldKind::Integer).unwrap()];
+        reader
+            .read_nested_sequence(&nested_fields, |child| {
+                assert_eq!(child.next_tagged_field()?, Some(Tag::universal(2)));
+                child.read_integer(0, 3)?;
+                assert_eq!(child.next_tagged_field()?, None);
+                Ok(())
+            })
+            .unwrap();
+        assert!(reader.next_tagged_field().is_err());
+
+        // An EXPLICIT wrapper must contain exactly one complete child TLV.
+        let extra_child = [0x30, 9, 0xa3, 7, 0x30, 3, 2, 1, 2, 5, 0];
+        let mut context = RecordContext::new_nested(&limits);
+        let extra_fields = [wrapper];
+        let mut reader =
+            SequenceReader::new_tagged(&extra_child, &extra_fields, &mut context).unwrap();
+        assert!(reader.next_tagged_field().is_err());
+    }
+
+    /// Verify nested read rollback and the shared one-child work/output budget.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Confirms the same parent field can be retried after a
+    /// callback error and checks nested depth plus output/work failures.
+    ///
+    /// # Errors
+    /// Panics on unexpected rollback, resource, or callback behavior.
+    ///
+    /// # Source, version, history, example
+    /// Source: nested operation transaction/resource contract.
+    /// Version: 2026-11-01. Responsible: runtime maintainers.
+    /// History: nested callback tests. Example: run via `cargo test`.
+    #[test]
+    fn nested_sequence_rolls_back_and_bounds_resources() {
+        let nested = RecordField::new(Tag::universal(16), FieldKind::Sequence).unwrap();
+        let child_fields = [RecordField::new(Tag::universal(2), FieldKind::Integer).unwrap()];
+        let fields = [nested];
+        let limits = Limits::default();
+        let mut context = RecordContext::new_nested(&limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer
+            .write_nested_sequence(nested, |child| {
+                assert!(child
+                    .write_nested_sequence(nested, |grandchild| {
+                        grandchild.write_integer(3, 0, 3)
+                    })
+                    .is_err());
+                child.write_integer(2, 0, 3)
+            })
+            .unwrap();
+        let encoded = writer.finish().unwrap();
+
+        let mut context = RecordContext::new_nested(&limits);
+        let mut reader = SequenceReader::new_tagged(&encoded.bytes, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(nested.tag()));
+        assert!(reader
+            .read_nested_sequence(&child_fields, |_| {
+                Err::<(), Error>(invalid("injected failure"))
+            })
+            .is_err());
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(nested.tag()));
+        assert_eq!(
+            reader
+                .read_nested_sequence(&child_fields, |child| {
+                    assert_eq!(child.next_tagged_field()?, Some(Tag::universal(2)));
+                    let value = child.read_integer(0, 3)?;
+                    assert_eq!(child.next_tagged_field()?, None);
+                    Ok(value)
+                })
+                .unwrap(),
+            2
+        );
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        reader.finish().unwrap();
+
+        let tiny_work = Limits {
+            max_work_bits: 15,
+            ..Limits::default()
+        };
+        let mut context = RecordContext::new_nested(&tiny_work);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        assert!(writer
+            .write_nested_sequence(nested, |child| child.write_integer(2, 0, 3))
+            .is_err());
+        assert_eq!(writer.bytes, [0x30, 0]);
+
+        let tight_output = Limits {
+            max_output_bytes: 6,
+            ..Limits::default()
+        };
+        let mut context = RecordContext::new_nested(&tight_output);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        assert!(writer
+            .write_nested_sequence(nested, |child| child.write_integer(2, 0, 3))
+            .is_err());
+        assert_eq!(writer.bytes, [0x30, 0]);
+
+        let mut flat_context = RecordContext::new(&limits);
+        let mut flat_writer = SequenceWriter::new(RecordEncoding::Der, &mut flat_context).unwrap();
+        assert!(flat_writer
+            .write_nested_sequence(nested, |child| child.write_integer(2, 0, 3))
+            .is_err());
+        assert_eq!(flat_writer.bytes, [0x30, 0]);
+    }
+
+    /// Keep decoded-allocation charges after a failed callback and retry.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Captures a successfully decoded string, returns an error,
+    /// then verifies the same field cannot use its already charged scratch twice.
+    ///
+    /// # Errors
+    /// Panics if traversal or cumulative scratch accounting is not preserved.
+    ///
+    /// # Source, version, history, example
+    /// Source: nested callback resource contract. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: monotonic allocation charges.
+    /// Example: run via `cargo test`.
+    #[test]
+    fn failed_nested_callback_keeps_string_allocation_charge() {
+        let nested = RecordField::new(Tag::universal(16), FieldKind::Sequence).unwrap();
+        let octets = RecordField::new(Tag::universal(4), FieldKind::OctetString).unwrap();
+        let fields = [nested];
+        let child_fields = [octets];
+        let input = [0x30, 6, 0x30, 4, 4, 2, b'a', b'b'];
+        let limits = Limits::default();
+        let mut context = RecordContext::new_nested(&limits);
+        context.retained_capacity = MAX_RECORD_SCRATCH_BYTES - 3;
+        let mut reader = SequenceReader::new_tagged(&input, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(nested.tag()));
+
+        let mut escaped = None;
+        assert!(reader
+            .read_nested_sequence(&child_fields, |child| {
+                assert_eq!(child.next_tagged_field()?, Some(octets.tag()));
+                escaped = Some(child.read_octet_string(2, 2)?);
+                Err::<(), Error>(invalid("injected callback failure"))
+            })
+            .is_err());
+        assert_eq!(escaped.as_deref(), Some(&b"ab"[..]));
+        assert!(reader.context.retained_capacity > MAX_RECORD_SCRATCH_BYTES - 3);
+
+        // Logical traversal rolls back, but retry cannot reclaim the charged allocation.
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(nested.tag()));
+        assert!(matches!(
+            reader.read_nested_sequence(&child_fields, |child| {
+                assert_eq!(child.next_tagged_field()?, Some(octets.tag()));
+                child.read_octet_string(2, 2).map(|_| ())
+            }),
+            Err(Error::LimitExceeded {
+                resource: Resource::OutputBytes,
+                ..
+            })
+        ));
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(nested.tag()));
+    }
+
+    /// Measure and enforce the simultaneous parent/child capacity boundary.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Derives the current Vec capacity sum, accepts that limit,
+    /// and rejects one byte less before parent logical commit.
+    ///
+    /// # Errors
+    /// Panics on an unexpected capacity-boundary or transaction result.
+    ///
+    /// # Source, version, history, example
+    /// Source: nested scratch allocation policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: nested resource tests.
+    /// Example: run via `cargo test`.
+    #[test]
+    fn nested_sequence_checks_aggregate_capacity_before_parent_commit() {
+        check_scratch_total(10, 10).unwrap();
+        assert!(check_scratch_total(11, 10).is_err());
+        check_combined_capacities(MAX_RECORD_SCRATCH_BYTES - 3, 2, 1).unwrap();
+        assert!(check_combined_capacities(MAX_RECORD_SCRATCH_BYTES - 2, 2, 1).is_err());
+
+        let nested = RecordField::new(Tag::universal(16), FieldKind::Sequence).unwrap();
+        let expected = [0x30, 5, 0x30, 3, 2, 1, 2];
+        let exact_limits = Limits {
+            max_output_bytes: expected.len(),
+            ..Limits::default()
+        };
+        let mut context = RecordContext::new_nested(&exact_limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer
+            .write_nested_sequence(nested, |child| child.write_integer(2, 0, 3))
+            .unwrap();
+        assert_eq!(writer.finish().unwrap().bytes, expected);
+
+        let below_limits = Limits {
+            max_output_bytes: expected.len() - 1,
+            ..Limits::default()
+        };
+        let mut context = RecordContext::new_nested(&below_limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        assert!(writer
+            .write_nested_sequence(nested, |child| child.write_integer(2, 0, 3))
+            .is_err());
+        assert_eq!(writer.bytes, [0x30, 0]);
+    }
+
+    /// Keep a decoded CER string allocation charged during nested re-encoding.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Decodes a nested OCTET STRING, re-encodes through the same
+    /// nested context, and checks strict canonical equality.
+    ///
+    /// # Errors
+    /// Panics on retained-capacity or canonical output mismatches.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 nested CER and shared operation accounting.
+    /// Version: 2026-11-01. Responsible: runtime maintainers.
+    /// History: retained-capacity overlap tests. Example: run via `cargo test`.
+    #[test]
+    fn nested_cer_retained_capacity_is_live_during_reencoding() {
+        let nested = RecordField::new(Tag::universal(16), FieldKind::Sequence).unwrap();
+        let parent_fields = [nested];
+        let child_fields = [RecordField::new(Tag::universal(4), FieldKind::OctetString).unwrap()];
+        let input = [0x30, 0x80, 0x30, 0x80, 4, 3, b'a', b'b', b'c', 0, 0, 0, 0];
+        let limits = Limits::default();
+        let mut context = RecordContext::new_nested(&limits);
+        let mut reader = SequenceReader::new_tagged(&input, &parent_fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(nested.tag()));
+        let value = reader
+            .read_nested_sequence(&child_fields, |child| {
+                assert_eq!(child.next_tagged_field()?, Some(Tag::universal(4)));
+                let value = child.read_octet_string(3, 3)?;
+                assert_eq!(child.next_tagged_field()?, None);
+                Ok(value)
+            })
+            .unwrap();
+        assert_eq!(value, b"abc");
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        let consumed = reader.finish().unwrap();
+        assert!(context.retained_capacity >= value.capacity());
+
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer
+            .write_nested_sequence(nested, |child| child.write_octet_string(&value, 3, 3))
+            .unwrap();
+        let canonical = writer.finish().unwrap();
+        context
+            .verify_canonical(&input, consumed.consumed_bytes, &canonical.bytes)
+            .unwrap();
+        assert_eq!(canonical.bytes, input);
+    }
+
+    /// Apply opt-in scratch accounting before and after nested child work.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Exercises near-cap retained allocation charges, decode prelimits,
+    /// root fields surrounding a child, and unchanged flat-context semantics.
+    ///
+    /// # Errors
+    /// Panics on an unexpected scratch-limit or compatibility result.
+    ///
+    /// # Source, version, history, example
+    /// Source: operation-wide nested scratch policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: nested budget regression.
+    /// Example: run via `cargo test`.
+    #[test]
+    fn nested_context_caps_retained_and_parent_storage() {
+        let nested = RecordField::new(Tag::universal(16), FieldKind::Sequence).unwrap();
+        let limits = Limits::default();
+        let mut before = RecordContext::new_nested(&limits);
+        before.retained_capacity = MAX_RECORD_SCRATCH_BYTES - 3;
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut before).unwrap();
+        assert!(writer.write_boolean(true).is_err());
+        assert_eq!(writer.bytes, [0x30, 0]);
+
+        let mut child_context = RecordContext::new_nested(&limits);
+        child_context.retained_capacity = MAX_RECORD_SCRATCH_BYTES - 3;
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut child_context).unwrap();
+        assert!(writer
+            .write_nested_sequence(nested, |child| child.write_integer(2, 0, 3))
+            .is_err());
+        assert_eq!(writer.bytes, [0x30, 0]);
+
+        let mut nested_context = RecordContext::new_nested(&limits);
+        nested_context.retained_capacity = MAX_RECORD_SCRATCH_BYTES - 10;
+        assert_eq!(
+            nested_context
+                .remaining_decode_limits()
+                .unwrap()
+                .max_output_bytes,
+            10
+        );
+        nested_context.retain_decoded(1, 10).unwrap();
+        assert!(nested_context.retain_decoded(1, 1).is_err());
+        assert_eq!(nested_context.retained_bytes, 1);
+
+        let flat_limits = Limits {
+            max_output_bytes: usize::MAX,
+            ..Limits::default()
+        };
+        let mut flat_context = RecordContext::new(&flat_limits);
+        flat_context
+            .retain_decoded(1, MAX_RECORD_SCRATCH_BYTES + 1)
+            .unwrap();
+        assert!(SequenceWriter::new(RecordEncoding::Der, &mut flat_context).is_ok());
+    }
+
+    /// Exercise nested DER/CER decoders with every truncation and byte mutation.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Every strict prefix must fail; each one-byte XOR mutation
+    /// is parsed to either a bounded value or a typed error without panicking.
+    ///
+    /// # Errors
+    /// Panics on a valid truncation, invalid full vector, or runtime panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: deterministic malformed nested-input mutation coverage.
+    /// Version: 2026-11-01. Responsible: runtime maintainers.
+    /// History: fuzz-like nested BER tests. Example: run via `cargo test`.
+    #[test]
+    fn nested_vectors_reject_truncations_and_bound_mutations() {
+        let nested = RecordField::new(Tag::universal(16), FieldKind::Sequence).unwrap();
+        let parent_fields = [
+            RecordField::new(Tag::universal(2), FieldKind::Integer).unwrap(),
+            nested,
+            RecordField::new(Tag::universal(1), FieldKind::Boolean).unwrap(),
+        ];
+        let child_fields = [RecordField::new(Tag::universal(2), FieldKind::Integer).unwrap()];
+        let vectors: &[&[u8]] = &[
+            &[0x30, 0x0b, 2, 1, 1, 0x30, 3, 2, 1, 2, 1, 1, 0xff],
+            &[
+                0x30, 0x80, 2, 1, 1, 0x30, 0x80, 2, 1, 2, 0, 0, 1, 1, 0xff, 0, 0,
+            ],
+        ];
+        let limits = Limits::default();
+        let decode = |input: &[u8]| -> Result<(), Error> {
+            let mut context = RecordContext::new_nested(&limits);
+            let mut reader = SequenceReader::new_tagged(input, &parent_fields, &mut context)?;
+            while let Some(tag) = reader.next_tagged_field()? {
+                match tag {
+                    Tag {
+                        class: TagClass::Universal,
+                        number: 2,
+                    } => {
+                        reader.read_integer(0, 3)?;
+                    }
+                    tag if tag == nested.tag() => {
+                        reader.read_nested_sequence(&child_fields, |child| {
+                            if child.next_tagged_field()?.is_none() {
+                                return Err(invalid("mutated child has no member"));
+                            }
+                            child.read_integer(0, 3)?;
+                            if child.next_tagged_field()?.is_some() {
+                                return Err(invalid("mutated child has an extra member"));
+                            }
+                            Ok(())
+                        })?;
+                    }
+                    Tag {
+                        class: TagClass::Universal,
+                        number: 1,
+                    } => {
+                        reader.read_boolean()?;
+                    }
+                    _ => return Err(invalid("mutated parent has an unknown field")),
+                }
+            }
+            reader.finish()?;
+            Ok(())
+        };
+
+        for vector in vectors {
+            for end in 0..vector.len() {
+                assert!(decode(&vector[..end]).is_err());
+            }
+            assert!(decode(vector).is_ok());
+            for index in 0..vector.len() {
+                let mut mutated = vector.to_vec();
+                mutated[index] ^= 1;
+                let _ = decode(&mutated);
+            }
+        }
+    }
+
+    /// Ensure nested SET components use their outer effective tag for ordering.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Verifies sorted SET bytes and decoded member selection.
+    ///
+    /// # Errors
+    /// Panics on an unexpected canonical vector, ordering result, or decode.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET component ordering and supplied C fixture.
+    /// Version: 2026-11-01. Responsible: runtime maintainers.
+    /// History: nested SET tests. Example: run via `cargo test`.
+    #[test]
+    fn nested_set_orders_by_outer_effective_tag() {
+        let integer = RecordField::new(Tag::context_specific(0), FieldKind::Integer).unwrap();
+        let boolean = RecordField::new(Tag::context_specific(1), FieldKind::Boolean).unwrap();
+        let child =
+            RecordField::new_explicit(Tag::context_specific(3), FieldKind::Sequence).unwrap();
+        let child_fields = [RecordField::new(Tag::universal(2), FieldKind::Integer).unwrap()];
+        let limits = Limits::default();
+        let mut context = RecordContext::new_nested(&limits);
+        let mut writer = SetWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer.write_integer_tagged(integer.tag(), 1, 0, 3).unwrap();
+        writer.write_boolean_tagged(boolean.tag(), true).unwrap();
+        writer
+            .write_nested_sequence(child, |nested| nested.write_integer(2, 0, 3))
+            .unwrap();
+        let encoded = writer.finish().unwrap();
+        assert_eq!(
+            encoded.bytes,
+            [0x31, 0x0d, 0x80, 1, 1, 0x81, 1, 0xff, 0xa3, 5, 0x30, 3, 2, 1, 2]
+        );
+
+        let fields = [integer, child, boolean];
+        let mut context = RecordContext::new_nested(&limits);
+        let mut reader = SetReader::new_tagged(&encoded.bytes, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(integer.tag()));
+        assert_eq!(reader.read_integer(0, 3).unwrap(), 1);
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(boolean.tag()));
+        assert!(reader.read_boolean().unwrap());
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(child.tag()));
+        assert_eq!(
+            reader
+                .read_nested_sequence(&child_fields, |nested| {
+                    assert_eq!(nested.next_tagged_field()?, Some(Tag::universal(2)));
+                    let value = nested.read_integer(0, 3)?;
+                    assert_eq!(nested.next_tagged_field()?, None);
+                    Ok(value)
+                })
+                .unwrap(),
+            2
+        );
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        assert_eq!(reader.finish().unwrap().consumed_bytes, encoded.bytes.len());
     }
 }

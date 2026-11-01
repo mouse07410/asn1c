@@ -134,6 +134,24 @@ impl BitStringValue {
         &self.bytes
     }
 
+    /// Return the retained capacity of the packed BIT STRING storage.
+    ///
+    /// # Parameters and returns
+    /// `self` is the validated value. Returns the owned Vec capacity without
+    /// exposing or copying its storage.
+    ///
+    /// # Errors
+    /// This accessor cannot fail.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: bounded runtime scratch accounting. Version/date:
+    /// 2026-11-01. Responsible party: asn1c maintainers. History: nested BER
+    /// record budgeting. Example: `let cap = bits.storage_capacity();`.
+    #[must_use]
+    pub(crate) const fn storage_capacity(&self) -> usize {
+        self.bytes.capacity()
+    }
+
     /// Consume the validated BIT STRING and return its packed octets.
     /// Inputs: `self` is the owned value. Returns its bytes without allocation.
     /// Errors: none. Source: packed BIT STRING representation.

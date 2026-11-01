@@ -1,0 +1,32 @@
+NestedRecords DEFINITIONS EXPLICIT TAGS ::= BEGIN
+
+S ::= SEQUENCE {
+    before INTEGER (0..10),
+    child SEQUENCE { x INTEGER (0..10) },
+    after BOOLEAN
+}
+
+I ::= SEQUENCE {
+    before INTEGER (0..10),
+    child [3] IMPLICIT SEQUENCE { x INTEGER (0..10) },
+    after BOOLEAN
+}
+
+E ::= SEQUENCE {
+    before INTEGER (0..10),
+    child [3] EXPLICIT SEQUENCE { x INTEGER (0..10) },
+    after BOOLEAN
+}
+
+O ::= SEQUENCE {
+    before [0] IMPLICIT BOOLEAN,
+    child SEQUENCE {
+        x INTEGER (0..10),
+        flag [2] IMPLICIT BOOLEAN OPTIONAL,
+        count [3] EXPLICIT INTEGER (0..10) OPTIONAL,
+        payload OCTET STRING (SIZE(1..1001)) OPTIONAL
+    } OPTIONAL,
+    after [1] IMPLICIT BOOLEAN
+}
+
+END

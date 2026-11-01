@@ -1,4 +1,8 @@
 Changes since v1.5.3:
+	* Add a bounded Rust BER/DER/CER inline SEQUENCE child in untagged SEQUENCE
+	  and BER/CER-only SET records. Share record limits across parent and child,
+	  support natural, IMPLICIT, and EXPLICIT child tags, and check nested EOCs,
+	  output ordering, canonical CER, and aggregate scratch storage.
 	* Avoid applying the parent EXPLICIT tag twice to inline generated C
 	  ENUMERATED members. Add exact DER/CER SEQUENCE and SET vectors and
 	  BER/CER decoding regressions with IMPLICIT and BOOLEAN controls.

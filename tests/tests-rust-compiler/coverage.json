@@ -1,6 +1,6 @@
 {
-  "suite": "generated Rust primitive codecs, fixed and bounded-size UPER strings, ENUMERATED, and nested UPER SEQUENCE slice",
-  "scope": "Only the listed nonextensible primitive subset is qualified.",
+  "suite": "generated Rust primitive codecs, structured BER/CER records, and packed encodings",
+  "scope": "Only the listed nonextensible primitive and constructed subsets are qualified.",
   "cases": [
     {
       "asn1_type": "BOOLEAN",
@@ -329,6 +329,51 @@
       "evidence": "TaggedSet.asn1; TaggedSetC.asn1; ExplicitSet.asn1; tagged_set_conformance.rs; explicit_set_conformance.rs; c_tagged_sequence.c; c_explicit_record.c; check-rust-backend.sh"
     },
     {
+      "asn1_type": "SEQUENCE",
+      "feature": "one inline child with supported primitive leaves, unique tags, and empty child records",
+      "codec": "UPER + BER/CER for nonempty children; BER/CER-only for empty children",
+      "variants": [
+        "natural, IMPLICIT, and EXPLICIT child SEQUENCE tags",
+        "required empty inline child SEQUENCE DER/CER framing",
+        "empty-child mixed UPER/BER/CER selection rejected before publication",
+        "required and OPTIONAL top-level child presence",
+        "required and OPTIONAL child primitive leaves with IMPLICIT and EXPLICIT tags",
+        "nested bounded OCTET STRING CER fragmentation at 1001 octets",
+        "BER mixed definite/indefinite EXPLICIT layers and strict CER rejection",
+        "malformed lengths, EOC placement, child boundaries, and prefix consumption",
+        "shared operation resource limits and preserved UPER methods",
+        "C and Rust DER/CER vectors for nested records and string fragments"
+      ],
+      "directions": [
+        "BER decode",
+        "DER encode",
+        "CER decode",
+        "CER encode",
+        "UPER encode/decode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "NestedBerCer.asn1; NestedEmptyBerCer.asn1; nested tests; c_nested_ber_cer.c; check-rust-backend.sh"
+    },
+    {
+      "asn1_type": "SET",
+      "feature": "one inline child with required primitive leaves and unique tags",
+      "codec": "BER decode / DER encode + CER decode and encode",
+      "variants": [
+        "EXPLICIT child wrapper sorted by its outer effective tag",
+        "DER/CER SET ordering with universal and context-specific neighbors",
+        "nested child boundary, canonicality, and resource checks",
+        "C and Rust DER/CER vector comparison"
+      ],
+      "directions": [
+        "BER decode",
+        "DER encode",
+        "CER decode",
+        "CER encode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "NestedSetBerCer.asn1; nested_set_ber_cer_conformance.rs; c_nested_ber_cer.c; check-rust-backend.sh"
+    },
+    {
       "asn1_type": "OCTET STRING, BIT STRING",
       "feature": "direct fixed SIZE(N), bounded OCTET SIZE(l..u), and bounded BIT SIZE(l..u), all below 65536; standalone and required or OPTIONAL SEQUENCE field",
       "codec": "UPER",
@@ -476,7 +521,7 @@
     {
       "family": "BER/DER shapes outside flat tagged SEQUENCE and SET slices",
       "status": "not_implemented",
-      "note": "Nested records, extensions, CHOICE, aliases, unsupported tag modes/classes, and other primitive types are not qualified."
+      "note": "Deeper nesting, extensions, CHOICE, aliases, unsupported tags, and other primitives are not qualified."
     },
     {
       "family": "APER/OER outside the primitive slice",
@@ -507,7 +552,7 @@
   "comparison_policy": {
     "C_role": "Current C implementation is a comparison implementation, not a protocol oracle.",
     "independent_checks": "Rust fixed vectors, malformed-input checks, budgets, and round trips",
-    "canonicality": "CER claims are limited to listed primitive encoder vectors and full-TLV bit counts."
+    "canonicality": "CER claims are limited to listed generated record and primitive vectors and full-TLV bit counts."
   },
   "compiler_boundary_checks": {
     "rejected_before_output": [
@@ -538,7 +583,7 @@
     ]
   },
   "observed_counts": {
-    "generated_rust_test_functions": 60,
+    "generated_rust_test_functions": 66,
     "live_c_rust_vectors_each_direction": 8,
     "single_octet_mutation_inputs": 796,
     "JER_single_octet_mutation_inputs": 256,
@@ -550,7 +595,7 @@
     "live_C_bounded_octet_JER_encode_vectors": 1,
     "live_C_bounded_string_encode_vectors": 3,
     "live_C_bounded_bit_string_encode_vectors": 4,
-    "live_C_ber_der_cer_encode_vectors": 16,
+    "live_C_ber_der_cer_encode_vectors": 34,
     "bounded_BIT_single_bit_mutation_inputs": 8
   }
 }

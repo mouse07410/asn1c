@@ -1966,6 +1966,114 @@ if cc $explicit_cflags -fsanitize=address -fno-omit-frame-pointer -g \
     fi
 fi
 
+# Verify one inline SEQUENCE child with mixed codec generation and shared context.
+nested_ber_cer_out="$test_tmp/nested-ber-cer-rust"
+"$asn1c_bin" --rust -gen-BER -S "$skeletons" -D "$nested_ber_cer_out" \
+    "$test_srcdir/NestedBerCer.asn1"
+mkdir "$nested_ber_cer_out/tests"
+cp "$test_srcdir/nested_ber_cer_conformance.rs" "$nested_ber_cer_out/tests/"
+if ! (cd "$nested_ber_cer_out" && \
+    CARGO_TARGET_DIR="$test_tmp/target-nested-ber-cer" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-nested-ber-cer" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/nested-ber-cer-check.log" 2>&1; then
+    cat "$test_tmp/nested-ber-cer-check.log"
+    echo "FAIL: nested mixed-codec SEQUENCE tests or strict Clippy"
+    exit 1
+fi
+for method in encode_der decode_ber encode_cer decode_cer encode_uper decode_uper; do
+    grep -F "pub fn $method" "$nested_ber_cer_out/src/nested_records.rs" >/dev/null
+done
+grep -F "RecordContext::new_nested(limits)" \
+    "$nested_ber_cer_out/src/nested_records.rs" >/dev/null
+
+# Empty children are checked in BER/CER-only output so UPER remains unaffected.
+nested_empty_out="$test_tmp/nested-empty-ber-cer-rust"
+"$asn1c_bin" --rust -gen-BER -no-gen-UPER -S "$skeletons" \
+    -D "$nested_empty_out" "$test_srcdir/NestedEmptyBerCer.asn1"
+mkdir "$nested_empty_out/tests"
+cp "$test_srcdir/nested_empty_ber_cer_conformance.rs" "$nested_empty_out/tests/"
+if ! (cd "$nested_empty_out" && \
+    CARGO_TARGET_DIR="$test_tmp/target-nested-empty-ber-cer" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-nested-empty-ber-cer" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/nested-empty-ber-cer-check.log" 2>&1; then
+    cat "$test_tmp/nested-empty-ber-cer-check.log"
+    echo "FAIL: empty nested BER/CER test or strict Clippy"
+    exit 1
+fi
+grep -F "RecordContext::new_nested(limits)" \
+    "$nested_empty_out/src/nested_empty_records.rs" >/dev/null
+if "$asn1c_bin" --rust -gen-BER -S "$skeletons" \
+    -D "$test_tmp/rejected-empty-child-mixed" \
+    "$test_srcdir/NestedEmptyBerCer.asn1" \
+    >"$test_tmp/empty-child-mixed.log" 2>&1; then
+    echo "FAIL: empty nested child mixed UPER/BER/CER selection was accepted"
+    exit 1
+fi
+test ! -e "$test_tmp/rejected-empty-child-mixed"
+
+# BER/CER SET stays isolated from UPER while exercising the same child callback.
+nested_set_out="$test_tmp/nested-set-ber-cer-rust"
+"$asn1c_bin" --rust -gen-BER -no-gen-UPER -S "$skeletons" \
+    -D "$nested_set_out" "$test_srcdir/NestedSetBerCer.asn1"
+mkdir "$nested_set_out/tests"
+cp "$test_srcdir/nested_set_ber_cer_conformance.rs" "$nested_set_out/tests/"
+if ! (cd "$nested_set_out" && \
+    CARGO_TARGET_DIR="$test_tmp/target-nested-set-ber-cer" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-nested-set-ber-cer" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/nested-set-ber-cer-check.log" 2>&1; then
+    cat "$test_tmp/nested-set-ber-cer-check.log"
+    echo "FAIL: nested BER/CER SET tests or strict Clippy"
+    exit 1
+fi
+grep -F "RecordContext::new_nested(limits)" \
+    "$nested_set_out/src/nested_set_records.rs" >/dev/null
+
+# Independently confirm the shared DER/CER vectors with generated C code.
+nested_c_out="$test_tmp/nested-records-c"
+mkdir "$nested_c_out"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -fwide-types -pdu=all \
+    -fgen-only-pdu-deps -no-gen-example -D "$nested_c_out" \
+    "$test_srcdir/NestedBerCer.asn1" "$test_srcdir/NestedSetBerCer.asn1" \
+    "$test_srcdir/NestedEmptyBerCer.asn1" \
+    >"$test_tmp/nested-records-c-generate.log" 2>&1
+nested_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$nested_c_out/Makefile.am.libasncodec")
+rm -f "$nested_c_out/converter-example.c" "$nested_c_out/pdu_collection.c"
+if ! cc $nested_cflags -I"$nested_c_out" "$nested_c_out"/*.c \
+    "$test_srcdir/c_nested_ber_cer.c" -lm -o "$test_tmp/c-nested-ber-cer" \
+    >"$test_tmp/c-nested-ber-cer-compile.log" 2>&1; then
+    cat "$test_tmp/c-nested-ber-cer-compile.log"
+    echo "FAIL: generated C nested BER/CER reference did not compile"
+    exit 1
+fi
+if ! "$test_tmp/c-nested-ber-cer"; then
+    echo "FAIL: C nested DER/CER vectors did not match"
+    exit 1
+fi
+if ! cc $nested_cflags -fsanitize=address,undefined -fno-omit-frame-pointer \
+    -I"$nested_c_out" "$nested_c_out"/*.c \
+    "$test_srcdir/c_nested_ber_cer.c" -lm -o "$test_tmp/c-nested-ber-cer-sanitized" \
+    >"$test_tmp/c-nested-ber-cer-sanitizer-build.log" 2>&1; then
+    echo "SKIP: C compiler does not support AddressSanitizer and UndefinedBehaviorSanitizer"
+else
+    if [ "$(uname -s)" = Darwin ]; then
+        ASAN_OPTIONS=detect_leaks=0 "$test_tmp/c-nested-ber-cer-sanitized"
+    else
+        "$test_tmp/c-nested-ber-cer-sanitized"
+    fi
+fi
+
 # Fail closed on SET shapes and codec combinations outside the current slice.
 cat >"$test_tmp/SetApplication.asn1" <<'EOF'
 SetApplication DEFINITIONS ::= BEGIN
@@ -2005,7 +2113,7 @@ END
 EOF
 cat >"$test_tmp/SetNested.asn1" <<'EOF'
 SetNested DEFINITIONS ::= BEGIN
-Packet ::= SET { child SEQUENCE { flag BOOLEAN } }
+Packet ::= SET { child SEQUENCE { nested SEQUENCE { flag BOOLEAN } } }
 END
 EOF
 cat >"$test_tmp/SetRepeatedTag.asn1" <<'EOF'
@@ -2140,7 +2248,9 @@ END
 EOF
 cat >"$test_tmp/SequenceBerCerNested.asn1" <<'EOF'
 SequenceBerCerNested DEFINITIONS ::= BEGIN
-Packet ::= SEQUENCE { child SEQUENCE { flag BOOLEAN } }
+Packet ::= SEQUENCE {
+    child SEQUENCE { nested SEQUENCE { number INTEGER (0..10) } }
+}
 END
 EOF
 cat >"$test_tmp/SequenceBerCerUnbounded.asn1" <<'EOF'
@@ -2212,6 +2322,67 @@ SequenceBerCerExtensibleEnum DEFINITIONS ::= BEGIN
 Packet ::= SEQUENCE { state ENUMERATED { idle(0), ..., busy(1) } }
 END
 EOF
+cat >"$test_tmp/SequenceBerCerNestedSet.asn1" <<'EOF'
+SequenceBerCerNestedSet DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { child SEQUENCE { item SET { value INTEGER (0..10) } } }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerNestedChoice.asn1" <<'EOF'
+SequenceBerCerNestedChoice DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { child SEQUENCE { item CHOICE { value INTEGER (0..10) } } }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerNestedOf.asn1" <<'EOF'
+SequenceBerCerNestedOf DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { child SEQUENCE { items SEQUENCE OF INTEGER (0..10) } }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerNestedAny.asn1" <<'EOF'
+SequenceBerCerNestedAny DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { child SEQUENCE { item ANY } }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerNestedDefault.asn1" <<'EOF'
+SequenceBerCerNestedDefault DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { child SEQUENCE { value INTEGER (0..10) DEFAULT 0 } }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerConstructedDefault.asn1" <<'EOF'
+SequenceBerCerConstructedDefault DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE {
+    child SEQUENCE { value INTEGER (0..10) } DEFAULT { value 0 }
+}
+END
+EOF
+cat >"$test_tmp/SequenceBerCerNestedExtension.asn1" <<'EOF'
+SequenceBerCerNestedExtension DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { child SEQUENCE { value INTEGER (0..10), ..., extra BOOLEAN } }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerNestedReference.asn1" <<'EOF'
+SequenceBerCerNestedReference DEFINITIONS ::= BEGIN
+Child ::= SEQUENCE { value INTEGER (0..10) }
+Packet ::= SEQUENCE { child Child }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerMultipleNested.asn1" <<'EOF'
+SequenceBerCerMultipleNested DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE {
+    first SEQUENCE { value INTEGER (0..10) },
+    second SEQUENCE { value BOOLEAN }
+}
+END
+EOF
+cat >"$test_tmp/SequenceBerCerNestedCollision.asn1" <<'EOF'
+SequenceBerCerNestedCollision DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE {
+    child SEQUENCE {
+        first [2] IMPLICIT INTEGER (0..10),
+        second [2] IMPLICIT BOOLEAN
+    }
+}
+END
+EOF
 for fixture in SequenceBerCerApplication \
     SequenceBerCerPrivate SequenceBerCerRepeatedContext SequenceBerCerTooHighTag \
     SequenceBerCerTaggedAny SequenceBerCerExplicitAlias \
@@ -2223,7 +2394,13 @@ for fixture in SequenceBerCerApplication \
     SequenceBerCerExtensibleString SequenceBerCerContaining \
     SequenceBerCerNamedBits SequenceBerCerTooMany \
     SequenceBerCerRepeatedOctets SequenceBerCerDisjointSize \
-    SequenceBerCerExtensibleEnum; do
+    SequenceBerCerExtensibleEnum \
+    SequenceBerCerNestedSet SequenceBerCerNestedChoice \
+    SequenceBerCerNestedOf SequenceBerCerNestedAny \
+    SequenceBerCerNestedDefault SequenceBerCerConstructedDefault \
+    SequenceBerCerNestedExtension \
+    SequenceBerCerNestedReference SequenceBerCerMultipleNested \
+    SequenceBerCerNestedCollision; do
     if "$asn1c_bin" --rust -gen-BER -no-gen-UPER -no-gen-CER \
         -S "$skeletons" -D "$test_tmp/rejected-$fixture" \
         "$test_tmp/$fixture.asn1" >"$test_tmp/$fixture.log" 2>&1; then

@@ -100,6 +100,7 @@ fresh directory after adding application code or running Cargo there.
 | Direct fixed/bounded OCTET STRING and BIT STRING | BER prefix decoding, DER encoding, CER encoding and strict CER decoding when selected; finite nonextensible SIZE below 65536 |
 | Flat SEQUENCE with untagged outer type | BER prefix decoding, DER encoding, CER encoding and strict CER decoding for empty records or up to six direct BOOLEAN, NULL, bounded i64 INTEGER, nonextensible ENUMERATED, and finite bounded BIT/OCTET STRING fields with distinct effective tags; untagged, resolved context-specific IMPLICIT or one EXPLICIT wrapper, or AUTOMATIC members; required, OPTIONAL, and literal BOOLEAN/INTEGER DEFAULT; one shared record budget |
 | Flat SET with untagged outer type | BER prefix decoding in any member order, effective-tag-ordered DER/CER encoding, and strict CER decoding for the same six direct field kinds; empty, required, OPTIONAL, and literal BOOLEAN/INTEGER DEFAULT records; resolved IMPLICIT/EXPLICIT/AUTOMATIC member tags; BER/CER-only codec selection |
+| One inline SEQUENCE child in an untagged SEQUENCE or SET | BER prefix decoding, DER encoding, CER encoding, and strict CER decoding; nonrecursive child with up to six direct supported primitive leaves, required/OPTIONAL members, and natural, resolved context-specific IMPLICIT or one EXPLICIT child tag; one shared record and scratch budget; SET and empty child require BER/CER-only selection |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in APER and OER encode/decode; each call begins at an octet boundary |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in JER encode/decode of one complete JSON primitive with -gen-JER |
 | Direct fixed OCTET/BIT STRING | Opt-in JER uppercase-hex encoding, case-insensitive complete-input decoding, exact packed size and zero-padding checks, and resource limits |
@@ -228,7 +229,7 @@ re-encodes through the same operation context before comparing the consumed
 prefix, so parsing, output, and comparison share the work limit. Constructed
 BER BIT/OCTET STRING fields are flattened under that limit, and `max_output_bytes`
 also caps cumulative retained decoded string bytes. The generator rejects
-root-tagged, nested, colliding-effective-tag, extensible, or unsupported field forms.
+root-tagged, deeper nested, colliding-effective-tag, extensible, or unsupported field forms.
 
 The flat SET slice uses the same six direct field kinds and record context.
 BER accepts members in any order, rejects duplicates and unknown tags, and
@@ -244,8 +245,24 @@ the C runtime's packed-tag limit on this target. BER accepts C-compatible
 nonminimal high-tag aliases; strict CER rejects them. Constructed tagged
 strings retain universal fragment tags. Two fields of the same primitive
 kind are permitted when their effective class/number pairs differ. Root tags,
-multi-tag stacks, references, imports, and nested records remain outside this
-slice.
+multi-tag stacks, references, imports, and broader nested records remain outside
+this slice.
+
+The nested record slice permits one nonrecursive inline SEQUENCE child in an
+untagged SEQUENCE or BER/CER-only SET. Child leaves use the supported direct
+primitive types and required or OPTIONAL presence. The child may keep its
+natural SEQUENCE tag, replace it with a resolved context-specific IMPLICIT tag,
+or be enclosed by one resolved context-specific EXPLICIT wrapper. Parent and
+child use one `RecordContext`; nested operations opt into a fixed aggregate
+scratch cap without changing flat record limits. BER accepts independently
+definite or indefinite constructed layers when their lengths and EOCs match;
+strict CER requires the canonical indefinite form. The C decoder currently
+rejects some valid mixed EXPLICIT layer forms, as recorded in the
+[parity design](ber-der-cer-design.md).
+An empty inline child is supported under BER/CER-only selection. Mixed UPER
+with BER/CER currently requires a nonempty child because the generated empty
+UPER helper does not pass the required strict Clippy checks; that selection is
+rejected before output publication.
 
 `Encoded` carries output bytes and meaningful bit length. `Decoded<T>` carries
 the value and consumed bits and bytes. Prefix decoding may leave a suffix;

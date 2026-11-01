@@ -1,0 +1,5 @@
+NestedEmptyRecords DEFINITIONS ::= BEGIN
+
+Empty ::= SEQUENCE { child SEQUENCE {} }
+
+END

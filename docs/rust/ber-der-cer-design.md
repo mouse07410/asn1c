@@ -18,13 +18,13 @@ NULL, bounded INTEGER, ENUMERATED, and finite bounded BIT/OCTET STRING fields.
 Required and OPTIONAL members and literal BOOLEAN/INTEGER DEFAULT members
 share one operation budget. Resolved context-specific IMPLICIT and AUTOMATIC
 member tags and one context-specific EXPLICIT wrapper per direct member are
-supported. Nested records and broader primitive members
-remain in the staged parity matrix below.
+supported. One nonrecursive inline SEQUENCE child is also qualified below;
+broader nested records and primitive members remain in the parity matrix.
 
 The flat SET slice uses the same six direct field kinds under BER/CER-only
 selection. Its BER reader accepts arbitrary member order;
 the DER/CER writer emits ascending effective tags. Broader SET shapes,
-collections, nested records, and multi-tag stacks remain future stages.
+collections, broader nested records, and multi-tag stacks remain future stages.
 
 ## Architecture and interfaces
 
@@ -96,28 +96,42 @@ outer identifier, and unmatched EOCs. Constructed BIT/OCTET STRING children
 may have their own nested EOCs; wrapper traversal must match each level.
 Strict CER comparison rejects a definite wrapper or noncanonical child. The
 generator continues rejecting references, multi-tag chains, other
-classes, nested records, and unsupported codec combinations until their
+classes, broader nested records, and unsupported codec combinations until their
 representation and tests are complete.
 
-### Next compositional stage: inline nested SEQUENCE
+### Inline nested SEQUENCE (qualified slice)
 
-The next record stage should accept one nonrecursive inline SEQUENCE member
-inside a SEQUENCE or SET. Initially allow required and OPTIONAL members and
-the existing direct primitive leaf kinds; keep constructed DEFAULT,
-extensions, references, imports, CHOICE, and collections gated. Validate the
+The current record stage accepts one nonrecursive inline SEQUENCE member
+inside a SEQUENCE or SET. It allows required and OPTIONAL members and the
+existing direct primitive leaf kinds; constructed DEFAULT, extensions,
+references, imports, CHOICE, and collections remain gated. It validates the
 entire inline tree before generation, including effective-tag collisions,
 optional dispatch ambiguity, field and node counts, and nesting depth.
+An empty child is qualified only for BER/CER-only selection until the existing
+UPER empty-child helpers pass strict Clippy; mixed UPER/BER/CER generation for
+that shape fails before publication.
 
 Nested readers and writers must borrow one `RecordContext`. A child reader
 receives an input span bounded by its parent and must consume that span
 exactly, including the matching EOC for an indefinite value. A child writer
 must account for its retained output along with parent output and wrappers;
 if it buffers a child, its simultaneous scratch storage needs an explicit
-limit. The generated child methods must not call their own public entry points
-with fresh limits. DER uses definite child lengths, while CER uses an
-indefinite child and EOC; an EXPLICIT field adds another wrapper layer.
+limit. That scratch count includes decoded string capacity charges during
+strict CER re-encoding; charges remain spent if a nested callback fails, since
+the callback may have captured a decoded value. Keep the internal aggregate
+scratch ceiling separate from `max_output_bytes`, which still caps complete
+output and retained decoded payloads individually. The generated child methods
+must not call their own public entry points with fresh limits. DER uses
+definite child lengths, while CER uses an indefinite child and EOC; an
+EXPLICIT field adds another wrapper layer.
 
-The acceptance tests need generated C/Rust vectors for natural, IMPLICIT, and
+Use an opt-in nested operation context at the root so scratch accounting starts
+before the first parent field and continues after the child callback, including
+when an OPTIONAL child is absent. Reject nested callbacks on a flat context.
+This preserves the existing flat record resource contract for callers that
+configure output limits above the new internal scratch ceiling.
+
+The acceptance tests include generated C/Rust vectors for natural, IMPLICIT, and
 EXPLICIT child tags, absent and present children, nested CER EOCs, SET order,
 string fragmentation, and DER length transitions. Reject truncated and extra
 EOCs, child lengths crossing a parent boundary, duplicate or unknown fields,
@@ -244,6 +258,15 @@ implements every conceivable ASN.1 feature.
   `03 02 03 A7` decodes to payload `A0` with three unused bits). These cases
   need explicit differential tests and a compatibility decision; strict CER
   must reject their noncanonical encodings by byte comparison.
+  A generated C probe for an EXPLICIT inline SEQUENCE child accepted wholly
+  definite and wholly indefinite wrapper stacks, but rejected stacks where
+  the EXPLICIT wrapper and its inner SEQUENCE used different length forms.
+  This held with either definite or indefinite parent SEQUENCE length. X.690
+  sections 8.1.3.2(b) and 8.14 permit each constructed layer to choose its
+  length form independently. The nested Rust BER reader should accept a
+  well-framed mixed stack and record this C decoder divergence in its tests;
+  strict CER rejects it because CER requires indefinite constructed layers.
+  See [ITU-T X.690 (02/2021)](https://www.itu.int/rec/T-REC-X.690/en).
 * **Constraint timing and generated invariants:** C BER decoding generally
   decodes first and leaves constraint checking to `asn_check_constraints`,
   whereas Rust's bounded `decode_integer_ber` checks the range during decode.

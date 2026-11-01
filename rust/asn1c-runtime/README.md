@@ -140,10 +140,10 @@ SEQUENCE fields follow declaration order, while SET fields must be written in
 ascending effective-tag order. `RecordContext::verify_canonical` charges the
 final byte comparison after callers re-encode with that same context. This
 record API accepts at most six fields with unique effective tags. During
-decode, `max_output_bytes` also caps aggregate retained
-BIT/OCTET STRING payload bytes across fields. DER string fields are primitive;
-CER uses 1000-content-octet fragments, counting the BIT STRING unused-count
-octet. Tagged record containers, extensions, and nested records remain outside
+decode, `max_output_bytes` also caps aggregate retained BIT/OCTET STRING
+payload bytes across fields. DER string fields are primitive; CER uses
+1000-content-octet fragments, counting the BIT STRING unused-count octet.
+Tagged record containers, extensions, and deeper record trees remain outside
 this slice.
 
 The record API also supports fixed effective tags with a separate `FieldKind`
@@ -167,6 +167,40 @@ BER wrappers, require exactly one matching universal child, and charge wrapper
 parsing, child decoding, and strict CER re-encoding to the same record context.
 Explicit BIT/OCTET STRING children use their regular universal primitive or
 fragmented CER form inside the wrapper.
+
+The record API supports one inline SEQUENCE child inside a flat SEQUENCE or SET.
+The child may use its natural tag, one IMPLICIT tag, or one context-specific
+EXPLICIT wrapper, and contains up to six direct supported primitive members.
+Generated required/OPTIONAL checks remain type-specific. `write_nested_sequence`
+and `read_nested_sequence` use callbacks so the child shares its parent's
+`RecordContext`; child decoding receives only the validated inner TLV span and
+must consume that span exactly, including its own EOC. A failed read callback
+rolls the parent cursor and field-seen state back to the nested field start.
+Work and decoded-allocation charges remain cumulative after failure, even if a
+decoded value is dropped; callback side effects and captured values are not
+rolled back.
+BER accepts independently definite or indefinite parent, EXPLICIT-wrapper, and
+child lengths when each boundary and EOC is correctly matched. Strict CER
+rejects noncanonical mixed forms through canonical re-encoding comparison.
+DER writes definite nested lengths; CER writes indefinite nested records and
+EXPLICIT wrappers. SET output order uses each child's outer effective tag.
+
+Nested record callbacks are limited to one child level. Generated operations
+for schemas containing a child use `RecordContext::new_nested` from the public
+operation boundary, even when an OPTIONAL child is absent. `RecordContext::new`
+retains the existing flat-record behavior, and nested callbacks fail closed
+when used with that flat context.
+
+The opt-in nested context caps live parent/child record-buffer capacities plus
+cumulative decoded string-buffer capacity charges at 128 MiB. Charges are
+conservative and remain after a failed callback because its values may have
+escaped through callback side effects. This fixed scratch cap is separate from
+`max_output_bytes`, which continues to bound complete encoded output and
+cumulative decoded payload lengths. Capacity rounded above the requested
+length counts against the scratch ceiling. Projected sizes are checked before
+allocation; actual capacities are checked immediately after reservation and
+before the parent field commits. Child parsing, encoding, and canonical
+comparison use the same operation work budget.
 
 Run the crate checks from the repository root:
 

@@ -156,8 +156,13 @@ context-specific EXPLICIT wrapper per direct field are supported through the
 C tag-number limit; high-tag BER aliases are accepted, while strict CER
 requires the shortest identifier. EXPLICIT wrappers contain one intrinsic
 universal child; tagged constructed strings use universal identifiers for
-their fragments. Root tags, multi-tag stacks, aliases, nested records, and
-broader C forms remain outside this slice.
+their fragments. One nonrecursive inline SEQUENCE child is supported inside
+an untagged SEQUENCE or BER/CER-only SET, with up to six direct supported
+primitive leaves and required/OPTIONAL presence. Child record tags may be
+natural, resolved context-specific IMPLICIT, or one EXPLICIT wrapper. Parent
+and child share one record context and an opt-in fixed aggregate scratch cap.
+Root tags, multi-tag stacks, aliases, and broader C forms remain outside this
+slice.
 Rust codec defaults include UPER and CER; `-no-gen-UPER` selects CER-only
 generation. See [the Rust implementation matrix](rust/implementation.md#implemented-boundary)
 and [parity design](rust/ber-der-cer-design.md) for the remaining C-supported

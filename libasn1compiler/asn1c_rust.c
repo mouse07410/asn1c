@@ -36,6 +36,9 @@
 #define RUST_SEQUENCE_DEPTH_LIMIT 16
 #define RUST_SEQUENCE_NODE_LIMIT 64
 #define RUST_SEQUENCE_WORK_LIMIT 256
+#define RUST_BER_CER_FIELD_LIMIT 6
+#define RUST_BER_CER_NODE_LIMIT 2
+#define RUST_BER_CER_WORK_LIMIT 12
 #define RUST_MODULE_NESTED_NAME_LIMIT 4096
 
 /*
@@ -103,18 +106,25 @@ static int rust_sequence_member_shape_valid(const asn1p_expr_t *);
 static int rust_ber_cer_member_tag(const asn1p_expr_t *, int *, uint32_t *);
 static int rust_ber_cer_member_explicit(const asn1p_expr_t *);
 static int rust_ber_cer_has_tagged_members(asn1p_expr_t *);
+static int rust_ber_cer_has_nested_sequence(asn1p_expr_t *);
+static int rust_ber_cer_has_empty_nested_sequence(asn1p_expr_t *);
 static int rust_ber_cer_tag_compare(const asn1p_expr_t *, const asn1p_expr_t *);
 static int rust_ber_cer_duplicate_tag(asn1p_expr_t *, asn1p_expr_t *);
 static int rust_ber_cer_member_shape_valid(asn1p_expr_t *);
 static int rust_check_ber_cer_member(asn1p_module_t *, asn1p_expr_t *,
-                                    asn1p_expr_t *, int);
+                                    asn1p_expr_t *, int, size_t *);
+static int rust_check_ber_cer_nested_sequence(asn1p_module_t *, asn1p_expr_t *,
+                                               size_t *);
+static int rust_ber_cer_nested_sequence_shape_valid(asn1p_expr_t *);
 static const char *rust_ber_cer_field_kind(const asn1p_expr_t *);
 static const char *rust_ber_cer_tag_class(int);
 static int rust_format_tag_number(char *, size_t, uint32_t);
 static int rust_ber_cer_tag_local(const asn1p_expr_t *, char *, size_t);
 static int rust_write_ber_cer_tag_locals(FILE *, asn1p_expr_t *);
+static int rust_write_ber_cer_reader_tag_locals(FILE *, asn1p_expr_t *);
 static int rust_write_ber_cer_tag(FILE *, const asn1p_expr_t *);
 static int rust_write_ber_cer_field_descriptors(FILE *, asn1p_expr_t *, const char *);
+static int rust_write_ber_cer_field_descriptor(FILE *, asn1p_expr_t *, const char *);
 static int rust_sequence_default_literal(asn1p_expr_t *, char *, size_t);
 static int rust_sequence_has_presence(const asn1p_expr_t *);
 static int rust_check_sequence_name(asn1p_module_t *, asn1p_expr_t *, asn1p_expr_t *);
@@ -169,14 +179,19 @@ static int rust_write_enumerated_jer(FILE *, asn1p_expr_t *);
 static int rust_write_enumerated_ber_cer(FILE *, asn1p_expr_t *, int);
 static int rust_write_integer_ber(FILE *, const char *, const char *);
 static int rust_write_sequence(FILE *, const char *, asn1p_expr_t *, int, uint64_t);
-static int rust_write_sequence_ber_cer(FILE *, const char *, asn1p_expr_t *, uint64_t);
+static int rust_write_sequence_ber_cer(FILE *, const char *, asn1p_expr_t *, int,
+                                       uint64_t);
 static int rust_write_set_ber_cer(FILE *, const char *, asn1p_expr_t *, uint64_t);
 static int rust_write_set_ber_cer_decode_method(FILE *, asn1p_expr_t *, int);
 static int rust_write_set_ber_cer_decode_helper(FILE *, const char *, asn1p_expr_t *);
 static int rust_write_set(FILE *, const char *, asn1p_expr_t *, uint64_t);
 static int rust_write_sequence_ber_cer_encode_field(FILE *, const char *, asn1p_expr_t *);
 static int rust_write_sequence_ber_cer_decode_field(FILE *, const char *, asn1p_expr_t *, int);
-static int rust_write_sequence_ber_cer_decode_method(FILE *, const char *, asn1p_expr_t *, int);
+static int rust_write_sequence_ber_cer_decode_method(FILE *, asn1p_expr_t *, int);
+static int rust_write_sequence_ber_cer_decode_fields(FILE *, const char *, asn1p_expr_t *);
+static int rust_write_nested_ber_cer_fields(FILE *, asn1p_expr_t *, const char *);
+static int rust_write_nested_ber_cer_decode_value(FILE *, const char *, asn1p_expr_t *,
+                                                  const char *);
 static uint64_t rust_sequence_ber_cer_tag(const asn1p_expr_t *);
 static int rust_write_sequence_ber_cer_enum_match(FILE *, const char *,
                                                  asn1p_expr_t *, const char *);
@@ -1049,6 +1064,13 @@ rust_check_sequence(asn1p_module_t *module, asn1p_expr_t *expr,
         return -1;
     }
     if(rust_check_sequence_tree(module, expr, stack, 0, &nodes, &work)) return -1;
+    if((codecs & RUST_CODEC_UPER)
+       && (codecs & (RUST_CODEC_BER | RUST_CODEC_CER))
+       && rust_ber_cer_has_empty_nested_sequence(expr)) {
+        rust_diagnostic(module, expr,
+                        "empty inline BER/CER child SEQUENCE cannot be selected with UPER");
+        return -1;
+    }
     if((codecs & (RUST_CODEC_BER | RUST_CODEC_CER))
        && rust_check_sequence_ber_cer(module, expr)) return -1;
     return (codecs & RUST_CODEC_CBOR) ? rust_check_cbor_sequence(module, expr) : 0;
@@ -1068,6 +1090,8 @@ rust_check_set_ber_cer(asn1p_module_t *module, asn1p_expr_t *expr,
                        uint64_t codecs) {
     asn1p_expr_t *member;
     size_t count = 0;
+    size_t nodes = 1;
+    size_t work = 0;
     const uint64_t supported = RUST_CODEC_BER | RUST_CODEC_CER;
     if(expr->expr_type != ASN_CONSTR_SET || !(codecs & supported)
        || (codecs & ~supported) || expr->reference
@@ -1079,7 +1103,10 @@ rust_check_set_ber_cer(asn1p_module_t *module, asn1p_expr_t *expr,
         return -1;
     }
     TQ_FOR(member, &expr->members, next) {
-        if(++count > 6 || rust_check_ber_cer_member(module, expr, member, 1)) return -1;
+        if(++count > RUST_BER_CER_FIELD_LIMIT || ++work > RUST_BER_CER_WORK_LIMIT
+           || (member->expr_type == ASN_CONSTR_SEQUENCE
+               && ++nodes > RUST_BER_CER_NODE_LIMIT)
+           || rust_check_ber_cer_member(module, expr, member, 1, &work)) return -1;
     }
     return 0;
 }
@@ -1101,6 +1128,8 @@ static int
 rust_check_sequence_ber_cer(asn1p_module_t *module, asn1p_expr_t *expr) {
     asn1p_expr_t *member;
     size_t count = 0;
+    size_t nodes = 1;
+    size_t work = 0;
     if(expr->expr_type != ASN_CONSTR_SEQUENCE || expr->reference
        || expr->tag.tag_class != TC_NOCLASS) {
         rust_diagnostic(module, expr,
@@ -1108,7 +1137,10 @@ rust_check_sequence_ber_cer(asn1p_module_t *module, asn1p_expr_t *expr) {
         return -1;
     }
     TQ_FOR(member, &expr->members, next) {
-        if(++count > 6 || rust_check_ber_cer_member(module, expr, member, 0)) return -1;
+        if(++count > RUST_BER_CER_FIELD_LIMIT || ++work > RUST_BER_CER_WORK_LIMIT
+           || (member->expr_type == ASN_CONSTR_SEQUENCE
+               && ++nodes > RUST_BER_CER_NODE_LIMIT)
+           || rust_check_ber_cer_member(module, expr, member, 0, &work)) return -1;
     }
     return 0;
 }
@@ -1145,10 +1177,23 @@ rust_ber_cer_member_shape_valid(asn1p_expr_t *member) {
  */
 static int
 rust_check_ber_cer_member(asn1p_module_t *module, asn1p_expr_t *expr,
-                          asn1p_expr_t *member, int set) {
+                          asn1p_expr_t *member, int set, size_t *work) {
     if(!rust_ber_cer_member_shape_valid(member)
-       || (set && rust_check_sequence_name(module, expr, member))
-       || rust_check_sequence_member(module, member)) {
+       || (set && rust_check_sequence_name(module, expr, member))) {
+        rust_diagnostic(module, member,
+                        "BER/CER record needs direct supported fields with universal or "
+                        "resolved context-specific IMPLICIT or EXPLICIT tags and supported markers");
+        return -1;
+    }
+    if(member->expr_type == ASN_CONSTR_SEQUENCE) {
+        if(member->marker.flags == EM_DEFAULT
+           || rust_check_ber_cer_nested_sequence(module, member, work)) {
+            rust_diagnostic(module, member,
+                            "BER/CER constructed fields need one inline, nonrecursive SEQUENCE "
+                            "with required or OPTIONAL primitive children");
+            return -1;
+        }
+    } else if(rust_check_sequence_member(module, member)) {
         rust_diagnostic(module, member,
                         "BER/CER record needs direct supported fields with universal or "
                         "resolved context-specific IMPLICIT or EXPLICIT tags and supported markers");
@@ -1160,6 +1205,63 @@ rust_check_ber_cer_member(asn1p_module_t *module, asn1p_expr_t *expr,
         return -1;
     }
     return 0;
+}
+
+/*
+ * Validate one inline child SEQUENCE at the bounded BER/CER composition depth.
+ * Inputs: module supplies diagnostics; sequence is one constructed component.
+ * Returns zero for unique-tag primitive children or -1 for unsupported shapes.
+ * Errors: references, extensions, DEFAULT, nested constructors, and field/work
+ * excess fail closed. Source: approved inline SEQUENCE generator stage.
+ * Version/date: 2026-11-01. Author: asn1c maintainers. History: nested BER/CER.
+ * Example: a child with one bounded INTEGER is accepted.
+ */
+static int
+rust_check_ber_cer_nested_sequence(asn1p_module_t *module,
+                                   asn1p_expr_t *sequence, size_t *work) {
+    asn1p_expr_t *member;
+    size_t count = 0;
+    if(!work || !rust_ber_cer_nested_sequence_shape_valid(sequence)) return -1;
+    TQ_FOR(member, &sequence->members, next) {
+        if(++count > RUST_BER_CER_FIELD_LIMIT
+           || ++*work > RUST_BER_CER_WORK_LIMIT
+           || member->expr_type == ASN_CONSTR_SEQUENCE
+           || member->marker.flags == EM_DEFAULT
+           || !rust_ber_cer_member_shape_valid(member)
+           || rust_check_sequence_name(module, sequence, member)
+           || rust_check_sequence_member(module, member)
+           || rust_ber_cer_duplicate_tag(sequence, member)) {
+            rust_diagnostic(module, member,
+                            "nested BER/CER SEQUENCE children must be unique-tag required or "
+                            "OPTIONAL primitive fields");
+            return -1;
+        }
+    }
+    return 0;
+}
+
+/*
+ * Validate structural properties of one inline nested SEQUENCE.
+ * Inputs: sequence is the parser node for the constructed child.
+ * Returns one for inline SEQUENCE metadata without references or extensions;
+ * an empty child is valid. Errors: malformed metadata returns zero. Source:
+ * approved BER/CER slice.
+ * Version/date: 2026-11-01. Author: asn1c maintainers. History: nested gate.
+ * Example: an inline child without extensions passes this structural check.
+ */
+static int
+rust_ber_cer_nested_sequence_shape_valid(asn1p_expr_t *sequence) {
+    if(!sequence) return 0;
+    return sequence->expr_type == ASN_CONSTR_SEQUENCE
+        && !sequence->reference
+        && !sequence->constraints
+        && !sequence->combined_constraints
+        && !sequence->lhs_params
+        && !sequence->ioc_table
+        && (sequence->marker.flags == EM_NOMARK
+            || sequence->marker.flags == EM_OPTIONAL)
+        && !sequence->rhs_pspecs
+        && sequence->encoding_control.encoding_type == EC_NONE;
 }
 
 /*
@@ -1179,6 +1281,7 @@ rust_sequence_ber_cer_tag(const asn1p_expr_t *member) {
     case ASN_BASIC_OCTET_STRING: return 4;
     case ASN_BASIC_NULL: return 5;
     case ASN_BASIC_ENUMERATED: return 10;
+    case ASN_CONSTR_SEQUENCE: return 16;
     default: return 0;
     }
 }
@@ -1242,6 +1345,40 @@ rust_ber_cer_has_tagged_members(asn1p_expr_t *expr) {
 }
 
 /*
+ * Detect whether a record needs nested scratch accounting at operation start.
+ * Inputs: expr owns the record's direct fields. Returns one when a child
+ * SEQUENCE occurs, otherwise zero. Errors: none. Source: runtime context policy.
+ * Version/date: 2026-11-01. Author: asn1c maintainers. History: nested records.
+ * Example: an OPTIONAL child uses nested accounting even when absent.
+ */
+static int
+rust_ber_cer_has_nested_sequence(asn1p_expr_t *expr) {
+    asn1p_expr_t *member;
+    if(!expr) return 0;
+    TQ_FOR(member, &expr->members, next) {
+        if(member->expr_type == ASN_CONSTR_SEQUENCE) return 1;
+    }
+    return 0;
+}
+
+/*
+ * Detect empty inline children whose UPER helper shape is not qualified.
+ * Inputs: expr owns the root record's direct fields. Returns one on an empty
+ * inline SEQUENCE child, otherwise zero. Errors: none. Source: Rust codec gate.
+ * Version/date: 2026-11-01. Author: asn1c maintainers. History: nested records.
+ * Example: an empty child remains accepted when the caller selects BER/CER only.
+ */
+static int
+rust_ber_cer_has_empty_nested_sequence(asn1p_expr_t *expr) {
+    asn1p_expr_t *member;
+    if(!expr) return 0;
+    TQ_FOR(member, &expr->members, next) {
+        if(member->expr_type == ASN_CONSTR_SEQUENCE && !member->members.tq_head) return 1;
+    }
+    return 0;
+}
+
+/*
  * Compare two validated fields by effective class and tag number.
  * Parameters: left and right are checked direct fields. Returns negative,
  * zero, or positive for canonical SET order. Source: X.690 SET tag ordering.
@@ -1298,6 +1435,7 @@ rust_ber_cer_field_kind(const asn1p_expr_t *member) {
     case ASN_BASIC_OCTET_STRING: return "OctetString";
     case ASN_BASIC_NULL: return "Null";
     case ASN_BASIC_ENUMERATED: return "Enumerated";
+    case ASN_CONSTR_SEQUENCE: return "Sequence";
     default: return NULL;
     }
 }
@@ -1401,6 +1539,35 @@ rust_write_ber_cer_tag_locals(FILE *stream, asn1p_expr_t *expr) {
 }
 
 /*
+ * Emit every member tag local used by descriptor-backed child dispatch.
+ * Inputs: stream receives Rust; expr owns validated direct fields. Returns
+ * zero or -1. Errors: invalid tags or output failure. Source: runtime Tag API.
+ * Version/date: 2026-11-01. Author: asn1c maintainers. History: nested readers.
+ * Example: declare universal and context-specific tags before `next_tagged_field`.
+ */
+static int
+rust_write_ber_cer_reader_tag_locals(FILE *stream, asn1p_expr_t *expr) {
+    asn1p_expr_t *member;
+    TQ_FOR(member, &expr->members, next) {
+        int class_code;
+        uint32_t number;
+        char local[48];
+        char formatted_number[16];
+        const char *class_name;
+        if(rust_ber_cer_member_tag(member, &class_code, &number)
+           || rust_ber_cer_tag_local(member, local, sizeof(local))
+           || rust_format_tag_number(formatted_number, sizeof(formatted_number), number))
+            return -1;
+        class_name = rust_ber_cer_tag_class(class_code);
+        if(!class_name || fprintf(stream,
+            "        let %s = ::asn1c_runtime::ber::Tag::new(\n"
+            "            ::asn1c_runtime::ber::TagClass::%s, %s)?;\n",
+            local, class_name, formatted_number) < 0) return -1;
+    }
+    return 0;
+}
+
+/*
  * Emit a checked runtime Tag constructor for one validated member.
  * Parameters: stream receives Rust; member owns the resolved tag.
  * Returns zero or -1 on invalid input or output failure. Source: runtime Tag.
@@ -1435,7 +1602,7 @@ static int
 rust_write_ber_cer_field_descriptors(FILE *stream, asn1p_expr_t *expr,
                                      const char *indent) {
     asn1p_expr_t *member;
-    if(fprintf(stream,
+    if(expr->members.tq_head && fprintf(stream,
         "%suse ::asn1c_runtime::ber::{FieldKind, RecordField};\n", indent) < 0)
         return -1;
     TQ_FOR(member, &expr->members, next) {
@@ -1466,6 +1633,38 @@ rust_write_ber_cer_field_descriptors(FILE *stream, asn1p_expr_t *expr,
                 indent, constructor, local, kind) < 0) return -1;
     }
     return fprintf(stream, "%s];\n", indent) < 0 ? -1 : 0;
+}
+
+/*
+ * Emit one nested reader descriptor as a self-contained Rust expression.
+ * Inputs: stream receives Rust; member supplies the validated tag and kind;
+ * indent prefixes continuation lines. Returns zero or -1. Errors: unsupported
+ * tags/kinds or output failure. Source: shared record reader descriptors.
+ * Version/date: 2026-11-01. Author: asn1c maintainers. History: nested records.
+ * Example: emit one universal INTEGER descriptor for a child reader.
+ */
+static int
+rust_write_ber_cer_field_descriptor(FILE *stream, asn1p_expr_t *member,
+                                    const char *indent) {
+    int class_code;
+    uint32_t number;
+    char formatted_number[16];
+    const char *class_name = NULL;
+    const char *kind = rust_ber_cer_field_kind(member);
+    const char *constructor = rust_ber_cer_member_explicit(member)
+                            ? "new_explicit" : "new";
+    if(!kind || rust_ber_cer_member_tag(member, &class_code, &number)
+       || rust_format_tag_number(formatted_number, sizeof(formatted_number), number))
+        return -1;
+    class_name = rust_ber_cer_tag_class(class_code);
+    if(!class_name) return -1;
+    return fprintf(stream,
+        "%s::asn1c_runtime::ber::RecordField::%s(\n"
+        "%s    ::asn1c_runtime::ber::Tag::new(\n"
+        "%s        ::asn1c_runtime::ber::TagClass::%s, %s)?,\n"
+        "%s    ::asn1c_runtime::ber::FieldKind::%s)?,\n",
+        indent, constructor, indent, indent, class_name, formatted_number,
+        indent, kind) < 0 ? -1 : 0;
 }
 
 /*
@@ -3405,6 +3604,8 @@ rust_write_sequence(FILE *stream, const char *name, asn1p_expr_t *expr,
         return -1;
     }
     if(!top_level) {
+        if((codecs & (RUST_CODEC_BER | RUST_CODEC_CER))
+           && rust_write_sequence_ber_cer(stream, name, expr, 0, codecs)) return -1;
         if(fputs("}\n\n", stream) == EOF) return -1;
         return 0;
     }
@@ -3449,7 +3650,7 @@ rust_write_sequence(FILE *stream, const char *name, asn1p_expr_t *expr,
     }
     if((codecs & RUST_CODEC_CBOR) && rust_write_sequence_cbor(stream, expr)) return -1;
     if((codecs & (RUST_CODEC_BER | RUST_CODEC_CER))
-       && rust_write_sequence_ber_cer(stream, name, expr, codecs)) return -1;
+       && rust_write_sequence_ber_cer(stream, name, expr, 1, codecs)) return -1;
     if(fputs("}\n\n", stream) == EOF) return -1;
     return 0;
 }
@@ -3465,9 +3666,11 @@ rust_write_sequence(FILE *stream, const char *name, asn1p_expr_t *expr,
  */
 static int
 rust_write_sequence_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr,
-                            uint64_t codecs) {
-    asn1p_expr_t *member;
+                            int top_level, uint64_t codecs) {
     const char *writer_mut = expr->members.tq_head ? "mut " : "";
+    if(rust_write_nested_ber_cer_fields(stream, expr, parent)
+       || rust_write_sequence_ber_cer_decode_fields(stream, parent, expr)) return -1;
+    if(!top_level) return 0;
     if(rust_write_method_doc(stream, "Encode this SEQUENCE using the selected record rule.",
         "`self` supplies fields; `limits` bounds the complete operation.",
         "Returns one complete SEQUENCE TLV.",
@@ -3479,13 +3682,11 @@ rust_write_sequence_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr
         "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
         "        let %swriter = ::asn1c_runtime::ber::SequenceWriter::new(rule, context)?;\n",
         writer_mut) < 0) return -1;
-    if(rust_write_ber_cer_tag_locals(stream, expr)) return -1;
-    if(!expr->members.tq_head && fputs("        let _ = self;\n", stream) == EOF)
+    if(!expr->members.tq_head
+       && fputs("        let _ = self;\n", stream) == EOF) return -1;
+    if(expr->members.tq_head
+       && fputs("        self.encode_record_fields(&mut writer)?;\n", stream) == EOF)
         return -1;
-    TQ_FOR(member, &expr->members, next) {
-        if(rust_write_sequence_ber_cer_encode_field(stream, parent, member))
-            return -1;
-    }
     if(fputs("        writer.finish()\n    }\n\n", stream) == EOF) return -1;
     if(codecs & RUST_CODEC_BER) {
         if(rust_write_method_doc(stream, "Encode this SEQUENCE using DER.",
@@ -3493,14 +3694,15 @@ rust_write_sequence_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr
             "Returns the complete DER SEQUENCE TLV.",
             "Returns an error for invalid values or exhausted resources.",
             "`let encoded = value.encode_der(&Default::default())?;")) return -1;
-        if(fputs(
+        if(fprintf(stream,
             "    pub fn encode_der(&self, limits: &::asn1c_runtime::Limits) ->\n"
             "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
-            "        let mut context = ::asn1c_runtime::ber::RecordContext::new(limits);\n"
+            "        let mut context = ::asn1c_runtime::ber::RecordContext::%s(limits);\n"
             "        self.encode_record_with_rule(\n"
             "            ::asn1c_runtime::ber::RecordEncoding::Der, &mut context)\n"
-            "    }\n\n", stream) == EOF) return -1;
-        if(rust_write_sequence_ber_cer_decode_method(stream, parent, expr, 0)) return -1;
+            "    }\n\n",
+            rust_ber_cer_has_nested_sequence(expr) ? "new_nested" : "new") < 0) return -1;
+        if(rust_write_sequence_ber_cer_decode_method(stream, expr, 0)) return -1;
     }
     if(codecs & RUST_CODEC_CER) {
         if(rust_write_method_doc(stream, "Encode this SEQUENCE using CER.",
@@ -3508,16 +3710,54 @@ rust_write_sequence_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr
             "Returns the complete CER SEQUENCE TLV.",
             "Returns an error for invalid values or exhausted resources.",
             "`let encoded = value.encode_cer(&Default::default())?;")) return -1;
-        if(fputs(
+        if(fprintf(stream,
             "    pub fn encode_cer(&self, limits: &::asn1c_runtime::Limits) ->\n"
             "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
-            "        let mut context = ::asn1c_runtime::ber::RecordContext::new(limits);\n"
+            "        let mut context = ::asn1c_runtime::ber::RecordContext::%s(limits);\n"
             "        self.encode_record_with_rule(\n"
             "            ::asn1c_runtime::ber::RecordEncoding::Cer, &mut context)\n"
-            "    }\n\n", stream) == EOF) return -1;
-        if(rust_write_sequence_ber_cer_decode_method(stream, parent, expr, 1)) return -1;
+            "    }\n\n",
+            rust_ber_cer_has_nested_sequence(expr) ? "new_nested" : "new") < 0) return -1;
+        if(rust_write_sequence_ber_cer_decode_method(stream, expr, 1)) return -1;
     }
     return 0;
+}
+
+/*
+ * Emit a private SEQUENCE field encoder that borrows an existing writer.
+ * Inputs: stream receives Rust; expr owns validated primitive child fields;
+ * parent identifies nested type names. Returns zero or -1. Errors: output
+ * failures are reported to the caller. Source: shared record context API.
+ * Version/date: 2026-11-01. Author: asn1c maintainers. History: nested BER/CER.
+ * Example: a parent's callback writes one inline child's fields here.
+ */
+static int
+rust_write_nested_ber_cer_fields(FILE *stream, asn1p_expr_t *expr,
+                                 const char *parent) {
+    asn1p_expr_t *member;
+    int uses_self = 0;
+    if(!expr->members.tq_head) return 0;
+    TQ_FOR(member, &expr->members, next) {
+        if(member->expr_type != ASN_CONSTR_SEQUENCE || member->members.tq_head
+           || member->marker.flags == EM_OPTIONAL) uses_self = 1;
+    }
+    if(rust_write_method_doc(stream,
+        "Append this SEQUENCE's fields to a caller-owned record writer.",
+        "`self` supplies values; `writer` shares the parent's operation context.",
+        "Returns success after all fields are appended.",
+        "Returns an error for invalid values or exhausted resources.",
+        "`self.encode_record_fields(child_writer)?;")) return -1;
+    if(fputs(
+        "    fn encode_record_fields(&self,\n"
+        "        writer: &mut ::asn1c_runtime::ber::SequenceWriter<'_>) ->\n"
+        "        ::core::result::Result<(), ::asn1c_runtime::Error> {\n",
+        stream) == EOF) return -1;
+    if(!uses_self && fputs("        let _ = self;\n", stream) == EOF) return -1;
+    if(rust_write_ber_cer_tag_locals(stream, expr)) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        if(rust_write_sequence_ber_cer_encode_field(stream, parent, member)) return -1;
+    }
+    return fputs("        Ok(())\n    }\n\n", stream) == EOF ? -1 : 0;
 }
 
 /*
@@ -3564,6 +3804,8 @@ rust_write_set_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr,
     size_t i;
     asn1p_expr_t *member;
     int has_members = expr->members.tq_head != 0;
+    const char *context_constructor = rust_ber_cer_has_nested_sequence(expr)
+                                    ? "new_nested" : "new";
     if(rust_ber_cer_sort_set_fields(expr, sorted,
                                     sizeof(sorted) / sizeof(sorted[0]), &count)) return -1;
     if(rust_write_method_doc(stream, "Encode this SET using the selected record rule.",
@@ -3593,13 +3835,13 @@ rust_write_set_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr,
             "Returns the complete DER SET TLV.",
             "Returns an error for invalid values or exhausted resources.",
             "`let encoded = value.encode_der(&Default::default())?;")) return -1;
-        if(fputs(
+        if(fprintf(stream,
             "    pub fn encode_der(&self, limits: &::asn1c_runtime::Limits) ->\n"
             "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
-            "        let mut context = ::asn1c_runtime::ber::RecordContext::new(limits);\n"
+            "        let mut context = ::asn1c_runtime::ber::RecordContext::%s(limits);\n"
             "        self.encode_record_with_rule(\n"
             "            ::asn1c_runtime::ber::RecordEncoding::Der, &mut context)\n"
-            "    }\n\n", stream) == EOF) return -1;
+            "    }\n\n", context_constructor) < 0) return -1;
         if(rust_write_set_ber_cer_decode_method(stream, expr, 0)) return -1;
     }
     if(codecs & RUST_CODEC_CER) {
@@ -3608,13 +3850,13 @@ rust_write_set_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr,
             "Returns the complete CER SET TLV.",
             "Returns an error for invalid values or exhausted resources.",
             "`let encoded = value.encode_cer(&Default::default())?;")) return -1;
-        if(fputs(
+        if(fprintf(stream,
             "    pub fn encode_cer(&self, limits: &::asn1c_runtime::Limits) ->\n"
             "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
-            "        let mut context = ::asn1c_runtime::ber::RecordContext::new(limits);\n"
+            "        let mut context = ::asn1c_runtime::ber::RecordContext::%s(limits);\n"
             "        self.encode_record_with_rule(\n"
             "            ::asn1c_runtime::ber::RecordEncoding::Cer, &mut context)\n"
-            "    }\n\n", stream) == EOF) return -1;
+            "    }\n\n", context_constructor) < 0) return -1;
         if(rust_write_set_ber_cer_decode_method(stream, expr, 1)) return -1;
     }
     return 0;
@@ -3633,6 +3875,7 @@ rust_write_set_ber_cer_decode_helper(FILE *stream, const char *parent,
                                      asn1p_expr_t *member) {
     char *name = rust_identifier(member->Identifier, 1);
     char *nested_type = member->expr_type == ASN_BASIC_ENUMERATED
+        || member->expr_type == ASN_CONSTR_SEQUENCE
         ? rust_nested_type_name(parent, member) : NULL;
     const char *type = member->expr_type == ASN_BASIC_BOOLEAN ? "bool"
         : member->expr_type == ASN_BASIC_NULL ? "()"
@@ -3845,6 +4088,8 @@ static int
 rust_write_set_ber_cer_decode_method(FILE *stream, asn1p_expr_t *expr, int cer) {
     const char *suffix = cer ? "cer" : "ber";
     int tagged = rust_ber_cer_has_tagged_members(expr);
+    const char *context_constructor = rust_ber_cer_has_nested_sequence(expr)
+                                    ? "new_nested" : "new";
     if(rust_write_method_doc(stream, cer
         ? "Strictly decode one CER SET prefix."
         : "Decode one BER SET prefix.",
@@ -3857,8 +4102,8 @@ rust_write_set_ber_cer_decode_method(FILE *stream, asn1p_expr_t *expr, int cer) 
     if(fprintf(stream,
         "    pub fn decode_%s(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
         "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
-        "        let mut context = ::asn1c_runtime::ber::RecordContext::new(limits);\n"
-        "        let (value, consumed) = {\n", suffix) < 0) return -1;
+        "        let mut context = ::asn1c_runtime::ber::RecordContext::%s(limits);\n"
+        "        let (value, consumed) = {\n", suffix, context_constructor) < 0) return -1;
     if(rust_write_set_ber_cer_reader(stream, expr, tagged)
        || rust_write_set_ber_cer_decode_slots(stream, expr)
        || rust_write_set_ber_cer_dispatch(stream, expr, tagged)
@@ -3892,7 +4137,13 @@ rust_write_set(FILE *stream, const char *name, asn1p_expr_t *expr,
                uint64_t codecs) {
     asn1p_expr_t *member;
     TQ_FOR(member, &expr->members, next) {
-        if(member->expr_type == ASN_BASIC_ENUMERATED) {
+        if(member->expr_type == ASN_CONSTR_SEQUENCE) {
+            char *nested_name = rust_nested_type_name(name, member);
+            int ret = nested_name
+                ? rust_write_all_sequences(stream, nested_name, member, 0, codecs) : -1;
+            free(nested_name);
+            if(ret) return -1;
+        } else if(member->expr_type == ASN_BASIC_ENUMERATED) {
             char *enum_name = rust_nested_type_name(name, member);
             int ret = enum_name ? 0 : -1;
             if(ret == 0 && strchr(enum_name, '_')
@@ -4133,7 +4384,7 @@ rust_write_ber_cer_bits(FILE *stream, asn1p_expr_t *member, const char *value,
 }
 
 /*
- * Emit one primitive SEQUENCE write for a required or present field.
+ * Emit one BER/CER field write for a required or present field.
  * Parameters: stream receives Rust; parent/member/value identify the field.
  * Returns zero or -1. Source: X.690 field encodings. Version/date: 2026-10-31.
  * Author: asn1c maintainers. History: direct, implicit, and explicit fields.
@@ -4154,6 +4405,31 @@ rust_write_sequence_ber_cer_encode_value(FILE *stream, const char *parent,
         tag_argument = tag_local;
     }
     switch(member->expr_type) {
+    case ASN_CONSTR_SEQUENCE: {
+        char *nested_type = rust_nested_type_name(parent, member);
+        const char *constructor = explicit_tag ? "new_explicit" : "new";
+        const char *tag_expression = tagged ? tag_local
+            : "::asn1c_runtime::ber::Tag::universal(16)";
+        int ret;
+        if(!nested_type) return -1;
+        if(!member->members.tq_head) {
+            ret = fprintf(stream,
+                "        writer.write_nested_sequence(\n"
+                "            ::asn1c_runtime::ber::RecordField::%s(\n"
+                "                %s, ::asn1c_runtime::ber::FieldKind::Sequence)?,\n"
+                "            |_child_writer| Ok(()))?;\n",
+                constructor, tag_expression) < 0 ? -1 : 0;
+        } else {
+            ret = fprintf(stream,
+                "        writer.write_nested_sequence(\n"
+                "            ::asn1c_runtime::ber::RecordField::%s(\n"
+                "                %s, ::asn1c_runtime::ber::FieldKind::Sequence)?,\n"
+                "            |child_writer| %s.encode_record_fields(child_writer))?;\n",
+                constructor, tag_expression, value) < 0 ? -1 : 0;
+        }
+        free(nested_type);
+        return ret;
+    }
     case ASN_BASIC_BOOLEAN:
         return rust_write_ber_cer_boolean(stream, value, tag_argument, tagged, explicit_tag);
     case ASN_BASIC_NULL:
@@ -4204,6 +4480,8 @@ rust_write_sequence_ber_cer_encode_optional(FILE *stream, const char *parent,
     if(member->expr_type == ASN_BASIC_OCTET_STRING)
         strcpy(value, "value.as_slice()");
     else if(member->expr_type == ASN_BASIC_BIT_STRING)
+        strcpy(value, "value");
+    else if(member->expr_type == ASN_CONSTR_SEQUENCE)
         strcpy(value, "value");
     else
         strcpy(value, "*value");
@@ -4298,11 +4576,11 @@ rust_write_sequence_ber_cer_encode_field(FILE *stream, const char *parent,
  * Example: decode_ber accepts one prefix and reports consumed bytes.
  */
 static int
-rust_write_sequence_ber_cer_decode_method(FILE *stream, const char *parent,
-                                          asn1p_expr_t *expr, int cer) {
-    asn1p_expr_t *member;
+rust_write_sequence_ber_cer_decode_method(FILE *stream, asn1p_expr_t *expr,
+                                          int cer) {
     const char *suffix = cer ? "cer" : "ber";
-    int tagged = rust_ber_cer_has_tagged_members(expr);
+    const char *context_constructor = rust_ber_cer_has_nested_sequence(expr)
+                                    ? "new_nested" : "new";
     if(rust_write_method_doc(stream, cer
         ? "Strictly decode one CER SEQUENCE prefix."
         : "Decode one BER SEQUENCE prefix.",
@@ -4315,39 +4593,15 @@ rust_write_sequence_ber_cer_decode_method(FILE *stream, const char *parent,
     if(fprintf(stream,
         "    pub fn decode_%s(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
         "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
-        "        let mut context = ::asn1c_runtime::ber::RecordContext::new(limits);\n"
-        "        let (value, consumed) = {\n", suffix) < 0) return -1;
-    if(tagged) {
-        if(rust_write_ber_cer_field_descriptors(stream, expr, "            ")
-           || fputs("            let mut reader = ::asn1c_runtime::ber::SequenceReader::new_tagged(\n"
-                    "                input, &__asn1c_expected_fields, &mut context)?;\n"
-                    "            let mut __asn1c_next_tag = reader.next_tagged_field()?;\n",
-                    stream) == EOF) return -1;
-    } else {
-        if(fputs("            let mut reader = ::asn1c_runtime::ber::SequenceReader::new(\n"
-                 "                input, &[", stream) == EOF) return -1;
-        TQ_FOR(member, &expr->members, next) {
-            if(fprintf(stream, "%s%llu", member == TQ_FIRST(&expr->members) ? "" : ", ",
-                       (unsigned long long)rust_sequence_ber_cer_tag(member)) < 0) return -1;
-        }
-        if(fputs("], &mut context)?;\n"
-                 "            let mut __asn1c_next_tag = reader.next_field()?;\n", stream) == EOF)
-            return -1;
-    }
-    if(fputs("            let value = Self {\n", stream) == EOF) return -1;
-    TQ_FOR(member, &expr->members, next) {
-        if(rust_write_sequence_ber_cer_decode_field(stream, parent, member, tagged))
-            return -1;
-    }
-    if(fputs("            };\n"
-             "            if __asn1c_next_tag.is_some() {\n"
-             "                return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
-             "                    reason: \"unexpected trailing SEQUENCE field\",\n"
-             "                });\n"
-             "            }\n"
-             "            let consumed = reader.finish()?;\n"
-             "            (value, consumed)\n"
-             "        };\n", stream) == EOF) return -1;
+        "        let mut context = ::asn1c_runtime::ber::RecordContext::%s(limits);\n"
+        "        let (value, consumed) = {\n", suffix, context_constructor) < 0) return -1;
+    if(rust_write_ber_cer_field_descriptors(stream, expr, "            ")
+       || fputs("            let mut reader = ::asn1c_runtime::ber::SequenceReader::new_tagged(\n"
+                "                input, &__asn1c_expected_fields, &mut context)?;\n"
+                "            let value = Self::decode_record_fields(&mut reader)?;\n"
+                "            let consumed = reader.finish()?;\n"
+                "            (value, consumed)\n"
+                "        };\n", stream) == EOF) return -1;
     if(cer) {
         if(fputs(
             "        let canonical = value.encode_record_with_rule(\n"
@@ -4362,6 +4616,49 @@ rust_write_sequence_ber_cer_decode_method(FILE *stream, const char *parent,
         "            consumed_bytes: consumed.consumed_bytes,\n"
         "        })\n"
         "    }\n\n", stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Emit a private bounded-child field decoder with no fresh public context.
+ * Inputs: stream receives Rust; parent names inline enums; expr owns validated
+ * fields. Returns zero or -1. Errors: malformed fields flow from the runtime.
+ * Source: shared nested record reader API. Version/date: 2026-11-01.
+ * Author: asn1c maintainers. History: nested BER/CER. Example: decode child fields.
+ */
+static int
+rust_write_sequence_ber_cer_decode_fields(FILE *stream, const char *parent,
+                                          asn1p_expr_t *expr) {
+    asn1p_expr_t *member;
+    if(rust_write_method_doc(stream,
+        "Decode fields from a reader bounded by the parent record.",
+        "`reader` shares the parent's input boundary and operation context.",
+        "Returns validated fields after consuming the schema components.",
+        "Returns an error for missing, duplicate, unknown, or malformed fields.",
+        "`let child = Child::decode_record_fields(child_reader)?;")) return -1;
+    if(fputs(
+        "    fn decode_record_fields(\n"
+        "        reader: &mut ::asn1c_runtime::ber::SequenceReader<'_, '_, '_>) ->\n"
+        "        ::core::result::Result<Self, ::asn1c_runtime::Error> {\n", stream)
+        == EOF) return -1;
+    if(expr->members.tq_head
+       && rust_write_ber_cer_reader_tag_locals(stream, expr)) return -1;
+    if(fprintf(stream, "        let %s__asn1c_next_tag = reader.next_tagged_field()?;\n"
+                "        let value = Self {\n",
+               expr->members.tq_head ? "mut " : "") < 0) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        if(rust_write_sequence_ber_cer_decode_field(stream, parent, member, 1))
+            return -1;
+    }
+    if(fputs(
+        "        };\n"
+        "        if __asn1c_next_tag.is_some() {\n"
+        "            return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+        "                reason: \"unexpected trailing SEQUENCE field\",\n"
+        "            });\n"
+        "        }\n"
+        "        Ok(value)\n"
+        "    }\n\n", stream) == EOF) return -1;
+    return 0;
 }
 
 /*
@@ -4445,6 +4742,8 @@ static int
 rust_write_sequence_ber_cer_decode_value(FILE *stream, const char *parent,
                                          asn1p_expr_t *member, const char *indent) {
     switch(member->expr_type) {
+    case ASN_CONSTR_SEQUENCE:
+        return rust_write_nested_ber_cer_decode_value(stream, parent, member, indent);
     case ASN_BASIC_BOOLEAN:
         return fprintf(stream, "%slet value = reader.read_boolean()?;\n", indent) < 0
             ? -1 : 0;
@@ -4464,6 +4763,49 @@ rust_write_sequence_ber_cer_decode_value(FILE *stream, const char *parent,
     default:
         return -1;
     }
+}
+
+/*
+ * Emit one child decoder call with descriptors for its direct components.
+ * Inputs: stream/parent/member/indent identify generated Rust and the child
+ * schema. Returns zero or -1. Errors: descriptor or output failures. Source:
+ * shared bounded reader callback API. Version/date: 2026-11-01.
+ * Author: asn1c maintainers. History: nested BER/CER. Example: decode Child.
+ */
+static int
+rust_write_nested_ber_cer_decode_value(FILE *stream, const char *parent,
+                                       asn1p_expr_t *member,
+                                       const char *indent) {
+    asn1p_expr_t *child;
+    char *nested_type = rust_nested_type_name(parent, member);
+    size_t indent_length = strlen(indent);
+    char child_indent[32];
+    int written;
+    if(!nested_type || indent_length + 4 >= sizeof(child_indent)) {
+        free(nested_type);
+        return -1;
+    }
+    memcpy(child_indent, indent, indent_length);
+    memcpy(child_indent + indent_length, "    ", 5);
+    written = fprintf(stream, "%slet __asn1c_child_fields = [\n", indent);
+    if(written < 0) {
+        free(nested_type);
+        return -1;
+    }
+    TQ_FOR(child, &member->members, next) {
+        if(rust_write_ber_cer_field_descriptor(stream, child, child_indent)) {
+            free(nested_type);
+            return -1;
+        }
+    }
+    written = fprintf(stream,
+        "%s];\n%slet value = reader.read_nested_sequence(\n"
+        "%s    &__asn1c_child_fields,\n"
+        "%s    %s::decode_record_fields,\n"
+        "%s)?;\n",
+        indent, indent, indent, indent, nested_type, indent);
+    free(nested_type);
+    return written < 0 ? -1 : 0;
 }
 
 /*

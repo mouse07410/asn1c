@@ -1,0 +1,9 @@
+NestedSetRecords DEFINITIONS EXPLICIT TAGS ::= BEGIN
+
+T ::= SET {
+    before [0] IMPLICIT INTEGER (0..10),
+    child [3] EXPLICIT SEQUENCE { x INTEGER (0..10) },
+    after [1] IMPLICIT BOOLEAN
+}
+
+END
