@@ -1,0 +1,3 @@
+RestrictedStringRecordImportedBase DEFINITIONS ::= BEGIN
+Text ::= UTF8String
+END

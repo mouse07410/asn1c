@@ -1,0 +1,3 @@
+RestrictedStringRecordDuplicateAlias DEFINITIONS ::= BEGIN
+Packet ::= SET { first TeletexString, second T61String }
+END

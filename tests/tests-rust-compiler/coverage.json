@@ -211,6 +211,28 @@
       "evidence": "RestrictedStrings.asn1; restricted_strings_conformance.rs; c_restricted_strings.c"
     },
     {
+      "asn1_type": "Restricted character-string flat-record members",
+      "feature": "one natural direct non-IA5 field in an untagged SEQUENCE or SET",
+      "codec": "BER/DER and CER only",
+      "variants": [
+        "all supported kinds with distinct Teletex/T61 and Visible/ISO646 identities",
+        "required and OPTIONAL fields plus bounded explicit OCTET/implicit BIT siblings",
+        "aggregate scratch remains selected when an OPTIONAL string is absent",
+        "per-kind CER validation, 999/1000/1001 and multi-fragment boundaries",
+        "aligned BMP and UniversalString lengths; UTF8 sequence across a fragment",
+        "constructed BER, malformed fragments, prefix, and input/output limits",
+        "aliases, tags, constraints, DEFAULT, extensions, imports, and codec negatives"
+      ],
+      "directions": [
+        "DER encode",
+        "BER prefix decode",
+        "CER encode",
+        "strict CER prefix decode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "RestrictedStringRecord.asn1; restricted_string_record_conformance.rs; c_restricted_string_record.c"
+    },
+    {
       "asn1_type": "UTCTime",
       "feature": "direct untagged unconstrained root; raw BER/DER and canonical UTC CER",
       "codec": "BER/DER and CER only",
@@ -941,7 +963,7 @@
     ]
   },
   "observed_counts": {
-    "generated_rust_test_functions": 210,
+    "generated_rust_test_functions": 218,
     "generated_choice_test_functions": 4,
     "live_C_choice_canonical_vectors_each_direction": 5,
     "live_C_choice_BER_alias_vectors": 9,
@@ -984,6 +1006,12 @@
     "live_C_restricted_string_vectors_each_direction": 78,
     "live_C_restricted_string_invalid_CER_vectors": 7,
     "restricted_string_constructed_BER_types": 13,
+    "generated_restricted_string_record_test_functions": 8,
+    "live_C_restricted_string_record_vectors_each_direction": 36,
+    "restricted_string_record_malformed_BER_rejection_vectors": 2,
+    "restricted_string_record_invalid_CER_content_kinds": 6,
+    "restricted_string_record_negative_schema_fixtures": 19,
+    "restricted_string_record_aggregate_context_sites": 72,
     "live_C_UTCTime_vectors_each_direction": 9,
     "live_C_UTCTime_invalid_CER_vectors": 5,
     "live_C_GeneralizedTime_vectors_each_direction": 11,

@@ -1,0 +1,3 @@
+RestrictedStringRecordCharacterString DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { value CHARACTER STRING, flag BOOLEAN }
+END

@@ -150,6 +150,29 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/RestrictedStringsUnsupported.asn1 \
     $(srcdir)/restricted_strings_conformance.rs \
     $(srcdir)/c_restricted_strings.c \
+    $(srcdir)/RestrictedStringRecord.asn1 \
+    $(srcdir)/RestrictedStringRecordAlias.asn1 \
+    $(srcdir)/RestrictedStringRecordBigInteger.asn1 \
+    $(srcdir)/RestrictedStringRecordCharacterString.asn1 \
+    $(srcdir)/RestrictedStringRecordChoice.asn1 \
+    $(srcdir)/RestrictedStringRecordConstrained.asn1 \
+    $(srcdir)/RestrictedStringRecordDefault.asn1 \
+    $(srcdir)/RestrictedStringRecordDuplicateAlias.asn1 \
+    $(srcdir)/RestrictedStringRecordDuplicateVisible.asn1 \
+    $(srcdir)/RestrictedStringRecordExtension.asn1 \
+    $(srcdir)/RestrictedStringRecordExplicit.asn1 \
+    $(srcdir)/RestrictedStringRecordIa5.asn1 \
+    $(srcdir)/RestrictedStringRecordImported.asn1 \
+    $(srcdir)/RestrictedStringRecordImportedBase.asn1 \
+    $(srcdir)/RestrictedStringRecordMultiple.asn1 \
+    $(srcdir)/RestrictedStringRecordNested.asn1 \
+    $(srcdir)/RestrictedStringRecordOid.asn1 \
+    $(srcdir)/RestrictedStringRecordTagged.asn1 \
+    $(srcdir)/RestrictedStringRecordTaggedRoot.asn1 \
+    $(srcdir)/RestrictedStringRecordUnboundedBits.asn1 \
+    $(srcdir)/RestrictedStringRecordVariable.asn1 \
+    $(srcdir)/restricted_string_record_conformance.rs \
+    $(srcdir)/c_restricted_string_record.c \
     $(srcdir)/UtcTimeValues.asn1 \
     $(srcdir)/UtcTimeAlias.asn1 \
     $(srcdir)/UtcTimeConstrained.asn1 \

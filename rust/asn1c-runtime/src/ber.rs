@@ -609,6 +609,8 @@ pub enum FieldKind {
     Null,
     /// Raw `IA5String` content, validated only by CER encoding.
     Ia5String,
+    /// Raw restricted character-string content with the selected CER validator.
+    CharacterString(CharacterStringKind),
     /// Canonical base-128 OBJECT IDENTIFIER content.
     ObjectIdentifier,
     /// Canonical base-128 RELATIVE-OID content.
@@ -643,13 +645,14 @@ impl FieldKind {
     /// Source: X.690 universal primitive tags. Version: 2026-11-01.
     /// Responsible: asn1c maintainers. History: tagged record support.
     /// Example: `FieldKind::Boolean.universal_tag() == 1`.
-    const fn universal_tag(self) -> u64 {
+    fn universal_tag(self) -> u64 {
         match self {
             Self::Boolean => TAG_BOOLEAN,
             Self::Integer | Self::BigInteger => TAG_INTEGER,
             Self::BitString => TAG_BIT_STRING,
             Self::OctetString => TAG_OCTET_STRING,
             Self::Ia5String => TAG_IA5_STRING,
+            Self::CharacterString(kind) => u64::from(kind.tag_number()),
             Self::ObjectIdentifier => 6,
             Self::RelativeOid => 13,
             Self::Null => TAG_NULL,
@@ -771,6 +774,18 @@ impl RecordField {
 /// Example: called by `RecordField::new` and all tagged writers.
 fn validate_field_descriptor(tag: Tag, kind: FieldKind) -> Result<(), Error> {
     tag.validate()?;
+    if let FieldKind::CharacterString(string_kind) = kind {
+        if string_kind == CharacterStringKind::Ia5String {
+            return Err(invalid(
+                "record generic character-string fields exclude IA5String",
+            ));
+        }
+        if tag.class != TagClass::Universal || tag.number != string_kind.tag_number() {
+            return Err(invalid(
+                "record restricted character strings require their natural universal tag",
+            ));
+        }
+    }
     if matches!(
         kind,
         FieldKind::Ia5String
@@ -817,6 +832,7 @@ fn validate_field_mode(tag: Tag, kind: FieldKind, mode: TaggingMode) -> Result<(
                     | FieldKind::ObjectIdentifier
                     | FieldKind::RelativeOid
                     | FieldKind::BigInteger
+                    | FieldKind::CharacterString(_)
             ) {
                 return Err(invalid(
                     "record variable-length and unconstrained INTEGER fields do not support EXPLICIT tagging",
@@ -2476,34 +2492,46 @@ impl SequenceWriter<'_> {
     /// Responsible: runtime maintainers. History: flat record IA5 gate.
     /// Example: `writer.write_ia5_string(&value)?`.
     pub fn write_ia5_string(&mut self, value: &Ia5String) -> Result<(), Error> {
-        self.context.require_aggregate_scratch()?;
-        let tag = Tag::universal(22);
-        validate_field_descriptor(tag, FieldKind::Ia5String)?;
-        let bytes = value.as_bytes();
-        if self.rule == RecordEncoding::Cer {
-            validate_ia5_content(bytes, &self.context.limits, &mut self.context.work_used)?;
+        self.write_character_string_field(
+            FieldKind::Ia5String,
+            CharacterStringKind::Ia5String,
+            value.as_bytes(),
+        )
+    }
+
+    /// Append one typed restricted character string under its natural tag.
+    ///
+    /// `expected_kind` comes from the generated descriptor. The stored value
+    /// kind must match it before any work is charged or bytes are committed.
+    ///
+    /// # Parameters and returns
+    /// `expected_kind` fixes the schema validator/tag; `value` owns raw content.
+    /// Returns success after committing one canonical primitive or CER-fragmented
+    /// record field.
+    ///
+    /// # Errors
+    /// Returns kind mismatch, aggregate-mode, CER validation, ordering, resource,
+    /// size, or allocation errors. Failed bytes and field state roll back.
+    ///
+    /// # Source, version, history, example
+    /// Source: flat restricted character-string record contract. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: restricted-string field gate.
+    /// Example: `writer.write_character_string(kind, &value)?`.
+    pub fn write_character_string(
+        &mut self,
+        expected_kind: CharacterStringKind,
+        value: &CharacterString,
+    ) -> Result<(), Error> {
+        if expected_kind == CharacterStringKind::Ia5String || value.kind() != expected_kind {
+            return Err(invalid(
+                "record character-string value kind does not match its descriptor",
+            ));
         }
-        let field_size = if self.rule == RecordEncoding::Cer {
-            ia5_cer_encoded_len(bytes.len())?
-        } else {
-            tagged_primitive_field_size(tag, bytes.len())?
-        };
-        self.prepare_field(tag, field_size)?;
-        let start = self.bytes.len();
-        if let Err(error) = self.write_ia5_tlv(bytes) {
-            self.bytes.truncate(start);
-            return Err(error);
-        }
-        if self.bytes.len().checked_sub(start) != Some(field_size) {
-            self.bytes.truncate(start);
-            return Err(Error::SizeOverflow);
-        }
-        if let Err(error) = self.remember_tag(tag) {
-            self.bytes.truncate(start);
-            return Err(error);
-        }
-        self.last_tag = Some(tag);
-        Ok(())
+        self.write_character_string_field(
+            FieldKind::CharacterString(expected_kind),
+            expected_kind,
+            value.as_bytes(),
+        )
     }
 
     /// Append one natural universal OBJECT IDENTIFIER field.
@@ -3063,30 +3091,97 @@ impl SequenceWriter<'_> {
         Ok(())
     }
 
-    /// Write one canonical primitive or constructed CER `IA5String` field.
+    /// Write one canonical restricted character-string field.
     ///
     /// # Parameters and returns
-    /// `content` is raw IA5 bytes already validated for CER when required.
-    /// Returns success after the full field TLV is appended.
+    /// `field_kind` is the matching IA5 or generic descriptor; `kind` selects
+    /// its natural tag and validator; `content` is raw BER/DER bytes. Returns
+    /// success after the full primitive or constructed CER field is appended.
     ///
     /// # Errors
-    /// Returns output/scratch-limit, checked-size, or allocation errors.
+    /// Returns aggregate-mode, descriptor, validator, order, output/scratch,
+    /// checked-size, or allocation errors.
     ///
     /// # Source, version, history, example
-    /// Source: X.690 CER `IA5String` fragmentation. Version: 2026-11-01.
-    /// Responsible: runtime maintainers. History: flat record IA5 gate.
-    /// Example: called by `write_ia5_string` after all preflight checks.
-    fn write_ia5_tlv(&mut self, content: &[u8]) -> Result<(), Error> {
+    /// Source: X.690 CER character-string fragmentation. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: shared IA5/restricted fields.
+    /// Example: called by `write_character_string` after validation.
+    fn write_character_string_field(
+        &mut self,
+        field_kind: FieldKind,
+        kind: CharacterStringKind,
+        content: &[u8],
+    ) -> Result<(), Error> {
+        self.context.require_aggregate_scratch()?;
+        let tag = Tag::universal(kind.tag_number());
+        validate_field_descriptor(tag, field_kind)?;
+        if self.rule == RecordEncoding::Cer {
+            validate_character_string_content(
+                kind,
+                content,
+                &self.context.limits,
+                &mut self.context.work_used,
+            )?;
+        }
+        let field_size = if self.rule == RecordEncoding::Cer {
+            character_string_cer_encoded_len(kind, content.len())?
+        } else {
+            tagged_primitive_field_size(tag, content.len())?
+        };
+        self.prepare_field(tag, field_size)?;
+        let start = self.bytes.len();
+        if let Err(error) = self.write_character_string_tlv(kind, content) {
+            self.bytes.truncate(start);
+            return Err(error);
+        }
+        if self.bytes.len().checked_sub(start) != Some(field_size) {
+            self.bytes.truncate(start);
+            return Err(Error::SizeOverflow);
+        }
+        if let Err(error) = self.remember_tag(tag) {
+            self.bytes.truncate(start);
+            return Err(error);
+        }
+        self.last_tag = Some(tag);
+        Ok(())
+    }
+
+    /// Append a checked natural tag and canonical BER/CER character-string form.
+    ///
+    /// # Parameters and returns
+    /// `kind` selects the outer universal identifier; `content` is raw payload
+    /// already validated for CER. Returns success after appending one field.
+    ///
+    /// # Errors
+    /// Returns checked-size or record output/scratch/allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 character-string BER/CER forms. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: restricted-string record gate.
+    /// Example: called by `write_character_string_field`.
+    fn write_character_string_tlv(
+        &mut self,
+        kind: CharacterStringKind,
+        content: &[u8],
+    ) -> Result<(), Error> {
+        let tag = Tag::universal(kind.tag_number());
+        let mut identifier = [0_u8; 6];
+        let identifier_len = encode_identifier_bytes(tag, false, &mut identifier)?;
         if self.rule != RecordEncoding::Cer || content.len() <= CER_FRAGMENT_MAX {
-            self.push_record_bytes(&[0x16])?;
+            self.push_record_bytes(&identifier[..identifier_len])?;
             let (length, length_len) = canonical_length_octets(content.len())?;
             self.push_record_bytes(&length[..length_len])?;
             return self.push_record_bytes(content);
         }
 
-        self.push_record_bytes(&[0x36, 0x80])?;
+        encode_identifier_bytes(tag, true, &mut identifier)?;
+        self.push_record_bytes(&identifier[..identifier_len])?;
+        self.push_record_bytes(&[0x80])?;
+        let mut fragment_identifier = [0_u8; 6];
+        let fragment_identifier_len =
+            encode_identifier_bytes(Tag::universal(4), false, &mut fragment_identifier)?;
         for fragment in content.chunks(CER_FRAGMENT_MAX) {
-            self.push_record_bytes(&[0x04])?;
+            self.push_record_bytes(&fragment_identifier[..fragment_identifier_len])?;
             let (length, length_len) = canonical_length_octets(fragment.len())?;
             self.push_record_bytes(&length[..length_len])?;
             self.push_record_bytes(fragment)?;
@@ -3394,6 +3489,28 @@ impl<'context> SetWriter<'context> {
     /// Example: `writer.write_ia5_string(&value)?`.
     pub fn write_ia5_string(&mut self, value: &Ia5String) -> Result<(), Error> {
         self.inner.write_ia5_string(value)
+    }
+
+    /// Append one typed restricted character string in natural SET tag order.
+    ///
+    /// # Parameters and returns
+    /// `expected_kind` fixes the schema descriptor; `value` supplies its
+    /// matching raw bytes. Returns success after canonical field output.
+    ///
+    /// # Errors
+    /// Returns kind mismatch, aggregate-mode, CER validation, order, resource,
+    /// size, or allocation errors. Failed writes roll back.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET character-string ordering. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: restricted-string field gate.
+    /// Example: `writer.write_character_string(kind, &value)?`.
+    pub fn write_character_string(
+        &mut self,
+        expected_kind: CharacterStringKind,
+        value: &CharacterString,
+    ) -> Result<(), Error> {
+        self.inner.write_character_string(expected_kind, value)
     }
 
     /// Append one natural universal OBJECT IDENTIFIER member in SET tag order.
@@ -3980,7 +4097,10 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
             if fields.iter().any(|field| {
                 matches!(
                     field.kind,
-                    FieldKind::ObjectIdentifier | FieldKind::RelativeOid | FieldKind::BigInteger
+                    FieldKind::ObjectIdentifier
+                        | FieldKind::RelativeOid
+                        | FieldKind::BigInteger
+                        | FieldKind::CharacterString(_)
                 )
             }) {
                 context.require_aggregate_scratch()?;
@@ -4529,12 +4649,15 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
         let field = self.current_field(FieldKind::OctetString)?;
         let encoded = &self.input[field.tlv_start..field.tlv_end];
         let limits = self.context.remaining_decode_limits()?;
-        let decoded = decode_octet_ber_with_tag_work(
+        let decoded = decode_octet_ber_with_tag_work_and_capacity(
             encoded,
             field.tag,
             &limits,
             &mut self.context.work_used,
             Some(upper),
+            self.context
+                .aggregate_scratch
+                .then_some(self.context.retained_capacity),
         )?;
         if decoded.consumed_bytes != encoded.len() {
             return Err(invalid("OCTET STRING field has trailing encoded data"));
@@ -4561,20 +4684,87 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
     /// Responsible: runtime maintainers. History: flat record IA5 gate.
     /// Example: `let value = reader.read_ia5_string()?`.
     pub fn read_ia5_string(&mut self) -> Result<Ia5String, Error> {
+        Ok(Ia5String {
+            bytes: self.read_character_string_bytes(
+                FieldKind::Ia5String,
+                CharacterStringKind::Ia5String,
+            )?,
+        })
+    }
+
+    /// Decode the current natural restricted character-string field.
+    ///
+    /// `expected_kind` must be the same semantic variant stored in its
+    /// `RecordField`; aliases sharing a wire tag remain distinct schema kinds.
+    ///
+    /// # Parameters and returns
+    /// `expected_kind` selects the descriptor, validator, and natural tag.
+    /// Returns the decoded raw bytes moved into a kind-preserving wrapper.
+    ///
+    /// # Errors
+    /// Returns kind/descriptor mismatch, malformed BER, aggregate/output/work/
+    /// scratch, size, or allocation errors. The pending field stays on failure.
+    ///
+    /// # Source, version, history, example
+    /// Source: flat restricted character-string record contract. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: restricted-string field gate.
+    /// Example: `let value = reader.read_character_string(kind)?`.
+    pub fn read_character_string(
+        &mut self,
+        expected_kind: CharacterStringKind,
+    ) -> Result<CharacterString, Error> {
+        if expected_kind == CharacterStringKind::Ia5String {
+            return Err(invalid(
+                "generic record character-string reader excludes IA5String",
+            ));
+        }
+        Ok(CharacterString {
+            kind: expected_kind,
+            bytes: self.read_character_string_bytes(
+                FieldKind::CharacterString(expected_kind),
+                expected_kind,
+            )?,
+        })
+    }
+
+    /// Decode one raw string payload using shared record storage and work limits.
+    ///
+    /// # Parameters and returns
+    /// `field_kind` and `kind` must describe the same natural string field.
+    /// Returns the flattened content buffer after exact-span and capacity checks.
+    ///
+    /// # Errors
+    /// Returns aggregate-mode, descriptor, BER, resource, size, or allocation
+    /// errors. It consumes the current field only on success.
+    ///
+    /// # Source, version, history, example
+    /// Source: shared IA5/restricted string record decoder. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat record string gate.
+    /// Example: called by `read_ia5_string` and `read_character_string`.
+    fn read_character_string_bytes(
+        &mut self,
+        field_kind: FieldKind,
+        kind: CharacterStringKind,
+    ) -> Result<Vec<u8>, Error> {
         self.context.require_aggregate_scratch()?;
-        let field = self.current_field(FieldKind::Ia5String)?;
+        let field = self.current_field(field_kind)?;
         let encoded = &self.input[field.tlv_start..field.tlv_end];
         let limits = self.context.remaining_decode_limits()?;
-        let decoded = decode_ia5_ber_bytes(encoded, &limits, &mut self.context.work_used)?;
+        let retained_capacity = self.context.retained_capacity;
+        let decoded = decode_character_string_ber_bytes_with_capacity(
+            encoded,
+            kind,
+            &limits,
+            &mut self.context.work_used,
+            Some(retained_capacity),
+        )?;
         if decoded.consumed_bytes != encoded.len() {
-            return Err(invalid("IA5String field has trailing encoded data"));
+            return Err(invalid("character-string field has trailing encoded data"));
         }
         self.context
             .retain_decoded(decoded.value.len(), decoded.value.capacity())?;
         self.current = None;
-        Ok(Ia5String {
-            bytes: decoded.value,
-        })
+        Ok(decoded.value)
     }
 
     /// Decode and normalize one natural universal OBJECT IDENTIFIER field.
@@ -4661,12 +4851,15 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
         let encoded = &self.input[field.tlv_start..field.tlv_end];
         let limits = self.context.remaining_decode_limits()?;
         let payload_cap = packed_storage_len(upper_bits);
-        let decoded = decode_bit_ber_with_tag_work(
+        let decoded = decode_bit_ber_with_tag_work_and_capacity(
             encoded,
             field.tag,
             &limits,
             &mut self.context.work_used,
             Some(payload_cap),
+            self.context
+                .aggregate_scratch
+                .then_some(self.context.retained_capacity),
         )?;
         if decoded.consumed_bytes != encoded.len() {
             return Err(invalid("BIT STRING field has trailing encoded data"));
@@ -5236,6 +5429,27 @@ impl<'input, 'tags, 'context> SetReader<'input, 'tags, 'context> {
         self.inner.read_ia5_string()
     }
 
+    /// Decode one natural restricted character-string SET member.
+    ///
+    /// # Parameters and returns
+    /// `expected_kind` selects the schema descriptor and its C CER validator.
+    /// Returns the kind-preserving owned value.
+    ///
+    /// # Errors
+    /// Returns kind/descriptor mismatch, malformed BER, resource, size, or
+    /// allocation errors. The pending field stays on failure.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET character-string fields. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: restricted-string field gate.
+    /// Example: `let value = reader.read_character_string(kind)?`.
+    pub fn read_character_string(
+        &mut self,
+        expected_kind: CharacterStringKind,
+    ) -> Result<CharacterString, Error> {
+        self.inner.read_character_string(expected_kind)
+    }
+
     /// Decode and normalize one OBJECT IDENTIFIER SET member.
     ///
     /// # Parameters and returns
@@ -5370,6 +5584,8 @@ struct FlattenBudget<'limits, 'work> {
     work: &'work mut usize,
     /// Optional SIZE upper bound checked before payload appends.
     max_payload: Option<usize>,
+    /// Other live aggregate capacity included in allocation preflights, if enabled.
+    aggregate_capacity: Option<usize>,
 }
 
 /// Decode one BER ENUMERATED prefix to a signed numeric value.
@@ -6391,13 +6607,38 @@ fn decode_character_string_ber_bytes(
     limits: &Limits,
     work: &mut usize,
 ) -> Result<Decoded<Vec<u8>>, Error> {
+    decode_character_string_ber_bytes_with_capacity(input, kind, limits, work, None)
+}
+
+/// Decode one string with an optional prior record allocation charge.
+///
+/// # Parameters and returns
+/// `input`, `kind`, `limits`, and `work` select and meter BER framing;
+/// `aggregate_capacity` is live record storage or `None` for direct values.
+/// Returns flattened content and exact prefix consumption.
+///
+/// # Errors
+/// Returns malformed framing, work/output/scratch, size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: shared string decoder and record aggregate policy. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: record string scratch enforcement.
+/// Example: IA5 and generic record readers pass their retained capacity.
+fn decode_character_string_ber_bytes_with_capacity(
+    input: &[u8],
+    kind: CharacterStringKind,
+    limits: &Limits,
+    work: &mut usize,
+    aggregate_capacity: Option<usize>,
+) -> Result<Decoded<Vec<u8>>, Error> {
     let decode_limits = character_string_decode_limits(limits);
-    let decoded = decode_octet_ber_with_tag_work(
+    let decoded = decode_octet_ber_with_tag_work_and_capacity(
         input,
         Tag::universal(kind.tag_number()),
         &decode_limits,
         work,
         None,
+        aggregate_capacity,
     )?;
     check_character_string_scratch(decoded.value.capacity())?;
     Ok(decoded)
@@ -8204,6 +8445,31 @@ fn decode_octet_ber_with_tag_work(
     work: &mut usize,
     max_payload: Option<usize>,
 ) -> Result<Decoded<Vec<u8>>, Error> {
+    decode_octet_ber_with_tag_work_and_capacity(input, tag, limits, work, max_payload, None)
+}
+
+/// Decode and flatten OCTET STRING while accounting for existing aggregate capacity.
+///
+/// # Parameters and returns
+/// `input`, `tag`, `limits`, `work`, and `max_payload` retain their normal roles;
+/// `aggregate_capacity` is already-live record storage or `None` for scalar use.
+/// Returns owned payload and exact prefix consumption.
+///
+/// # Errors
+/// Returns malformed framing, resource, overflow, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: aggregate record string storage policy. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: incremental scratch enforcement.
+/// Example: record readers pass `Some(context.retained_capacity)`.
+fn decode_octet_ber_with_tag_work_and_capacity(
+    input: &[u8],
+    tag: Tag,
+    limits: &Limits,
+    work: &mut usize,
+    max_payload: Option<usize>,
+    aggregate_capacity: Option<usize>,
+) -> Result<Decoded<Vec<u8>>, Error> {
     let (header, end, bits) = parse_root_tag_with_work(input, tag, true, limits, work)?;
     let mut value = Vec::new();
     {
@@ -8211,6 +8477,7 @@ fn decode_octet_ber_with_tag_work(
             limits,
             work,
             max_payload,
+            aggregate_capacity,
         };
         flatten_octets(input, &header, end, 0, &mut value, &mut budget)?;
     }
@@ -8418,6 +8685,31 @@ fn decode_bit_ber_with_tag_work(
     work: &mut usize,
     max_payload: Option<usize>,
 ) -> Result<Decoded<BitStringValue>, Error> {
+    decode_bit_ber_with_tag_work_and_capacity(input, tag, limits, work, max_payload, None)
+}
+
+/// Decode and flatten BIT STRING with optional prior aggregate capacity.
+///
+/// # Parameters and returns
+/// `input`, `tag`, `limits`, `work`, and `max_payload` describe the BER value;
+/// `aggregate_capacity` is already-live record storage or `None` for scalar use.
+/// Returns packed bits and exact prefix consumption.
+///
+/// # Errors
+/// Returns malformed framing/padding, resource, overflow, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: aggregate record BIT STRING storage policy. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: incremental scratch enforcement.
+/// Example: record readers pass `Some(context.retained_capacity)`.
+fn decode_bit_ber_with_tag_work_and_capacity(
+    input: &[u8],
+    tag: Tag,
+    limits: &Limits,
+    work: &mut usize,
+    max_payload: Option<usize>,
+    aggregate_capacity: Option<usize>,
+) -> Result<Decoded<BitStringValue>, Error> {
     let (header, end, bits) = parse_root_tag_with_work(input, tag, true, limits, work)?;
     let mut value = BitAccumulator {
         bytes: Vec::new(),
@@ -8431,6 +8723,7 @@ fn decode_bit_ber_with_tag_work(
             limits,
             work,
             max_payload,
+            aggregate_capacity,
         };
         flatten_bits(input, &header, end, 0, &mut value, &mut budget)?;
     }
@@ -8895,6 +9188,7 @@ fn flatten_octets(
             &input[head.content..stop],
             budget.max_payload,
             budget.limits,
+            budget.aggregate_capacity,
         )?;
         return Ok(());
     }
@@ -8963,7 +9257,13 @@ fn flatten_bits(
         }
         let offset = value.bytes.len();
         charge_work(budget.work, payload.len(), budget.limits)?;
-        append_payload(&mut value.bytes, payload, budget.max_payload, budget.limits)?;
+        append_payload(
+            &mut value.bytes,
+            payload,
+            budget.max_payload,
+            budget.limits,
+            budget.aggregate_capacity,
+        )?;
         if unused > 0 && !payload.is_empty() {
             charge_work(budget.work, 1, budget.limits)?;
         }
@@ -9306,6 +9606,7 @@ const fn intrinsic_tag(kind: FieldKind) -> Tag {
         FieldKind::BitString => Tag::universal(3),
         FieldKind::OctetString => Tag::universal(4),
         FieldKind::Ia5String => Tag::universal(22),
+        FieldKind::CharacterString(kind) => Tag::universal(kind.tag_number()),
         FieldKind::ObjectIdentifier => Tag::universal(TAG_OBJECT_IDENTIFIER),
         FieldKind::RelativeOid => Tag::universal(TAG_RELATIVE_OID),
         FieldKind::Null => Tag::universal(5),
@@ -12045,6 +12346,7 @@ fn append_payload(
     payload: &[u8],
     max_payload: Option<usize>,
     limits: &Limits,
+    aggregate_capacity: Option<usize>,
 ) -> Result<(), Error> {
     let next = out
         .len()
@@ -12054,10 +12356,23 @@ fn append_payload(
         return Err(invalid("BER string exceeds its declared SIZE upper bound"));
     }
     check(Resource::OutputBytes, next, limits.max_output_bytes)?;
+    if let Some(retained) = aggregate_capacity {
+        let projected_capacity = out.capacity().max(next);
+        let projected = retained
+            .checked_add(projected_capacity)
+            .ok_or(Error::SizeOverflow)?;
+        check_scratch_total(projected, MAX_RECORD_SCRATCH_BYTES)?;
+    }
     out.try_reserve_exact(payload.len())
         .map_err(|_| Error::AllocationFailed {
             requested_bytes: next,
         })?;
+    if let Some(retained) = aggregate_capacity {
+        let actual = retained
+            .checked_add(out.capacity())
+            .ok_or(Error::SizeOverflow)?;
+        check_scratch_total(actual, MAX_RECORD_SCRATCH_BYTES)?;
+    }
     out.extend_from_slice(payload);
     Ok(())
 }
@@ -18383,6 +18698,771 @@ mod tests {
         let first = writer.write_octet_string(&octets, 1, 1);
         let second = first.and_then(|()| writer.write_ia5_string(&ia5));
         assert!(second.is_err() || writer.finish().is_err());
+    }
+
+    /// Exercise generic restricted character strings in flat SEQUENCE and SET records.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks C-derived DER/CER vectors, BER dispatch, SET ordering,
+    /// alias identity, and exact prefix consumption.
+    ///
+    /// # Errors
+    /// Panics if record codecs change bytes, field identity, order, or prefix use.
+    ///
+    /// # Source, version, history, example
+    /// Source: restricted-string record design and C vectors. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat generic string field gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn flat_record_character_string_sequence_and_set_vectors() {
+        let limits = Limits::default();
+        let utf8 = CharacterStringKind::Utf8String;
+        let value = CharacterString::try_from_bytes(utf8, b"A", &limits).unwrap();
+        let sequence_fields = [
+            RecordField::new(Tag::universal(12), FieldKind::CharacterString(utf8)).unwrap(),
+            RecordField::new(Tag::universal(1), FieldKind::Boolean).unwrap(),
+        ];
+
+        // DER preserves declaration order for the mixed SEQUENCE.
+        let mut der_context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut der_writer = SequenceWriter::new(RecordEncoding::Der, &mut der_context).unwrap();
+        der_writer.write_character_string(utf8, &value).unwrap();
+        der_writer.write_boolean(true).unwrap();
+        assert_eq!(
+            der_writer.finish().unwrap().bytes,
+            [0x30, 6, 0x0c, 1, b'A', 1, 1, 0xff]
+        );
+
+        // CER uses an indefinite outer record while the short string stays primitive.
+        let mut cer_context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut cer_writer = SequenceWriter::new(RecordEncoding::Cer, &mut cer_context).unwrap();
+        cer_writer.write_character_string(utf8, &value).unwrap();
+        cer_writer.write_boolean(true).unwrap();
+        let cer = cer_writer.finish().unwrap();
+        let expected_cer = [0x30, 0x80, 0x0c, 1, b'A', 1, 1, 0xff, 0, 0];
+        assert_eq!(cer.bytes, expected_cer);
+
+        // Read and re-encode the same CER prefix through one shared context.
+        let mut read_context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut reader =
+            SequenceReader::new_tagged(&expected_cer, &sequence_fields, &mut read_context).unwrap();
+        assert_eq!(
+            reader.next_tagged_field().unwrap(),
+            Some(Tag::universal(12))
+        );
+        let decoded = reader.read_character_string(utf8).unwrap();
+        assert_eq!(decoded.kind(), utf8);
+        assert_eq!(decoded.as_bytes(), b"A");
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(Tag::universal(1)));
+        assert!(reader.read_boolean().unwrap());
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        let consumed = reader.finish().unwrap().consumed_bytes;
+        let mut reencoder = SequenceWriter::new(RecordEncoding::Cer, &mut read_context).unwrap();
+        reencoder.write_character_string(utf8, &decoded).unwrap();
+        reencoder.write_boolean(true).unwrap();
+        let canonical = reencoder.finish().unwrap();
+        read_context
+            .verify_canonical(&expected_cer, consumed, &canonical.bytes)
+            .unwrap();
+    }
+
+    /// Check restricted character-string SET ordering, presence, and duplicate rejection.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks expected C DER/CER vectors and arbitrary BER order.
+    ///
+    /// # Errors
+    /// Panics if SET ordering, optional absence, duplicate detection, or kind dispatch differs.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET ordering and C vectors. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat generic string field gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn flat_record_character_string_set_vectors_and_order() {
+        let limits = Limits::default();
+        let printable = CharacterStringKind::PrintableString;
+        let text = CharacterString::try_from_bytes(printable, b"A", &limits).unwrap();
+        let set_fields = [
+            RecordField::new(Tag::universal(19), FieldKind::CharacterString(printable)).unwrap(),
+            RecordField::new(Tag::universal(1), FieldKind::Boolean).unwrap(),
+        ];
+        let mut der_context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut der_writer = SetWriter::new(RecordEncoding::Der, &mut der_context).unwrap();
+        der_writer.write_boolean(true).unwrap();
+        der_writer.write_character_string(printable, &text).unwrap();
+        assert_eq!(
+            der_writer.finish().unwrap().bytes,
+            [0x31, 6, 1, 1, 0xff, 0x13, 1, b'A']
+        );
+
+        let mut cer_context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut cer_writer = SetWriter::new(RecordEncoding::Cer, &mut cer_context).unwrap();
+        cer_writer.write_boolean(true).unwrap();
+        cer_writer.write_character_string(printable, &text).unwrap();
+        assert_eq!(
+            cer_writer.finish().unwrap().bytes,
+            [0x31, 0x80, 1, 1, 0xff, 0x13, 1, b'A', 0, 0]
+        );
+
+        // Optional string absence retains BOOLEAN output and CER root framing.
+        let mut absent_context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut absent_writer = SetWriter::new(RecordEncoding::Der, &mut absent_context).unwrap();
+        absent_writer.write_boolean(true).unwrap();
+        let absent_encoded = absent_writer.finish().unwrap();
+        assert_eq!(absent_encoded.bytes, [0x31, 3, 1, 1, 0xff]);
+        let mut absent_cer_context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut absent_cer_writer =
+            SetWriter::new(RecordEncoding::Cer, &mut absent_cer_context).unwrap();
+        absent_cer_writer.write_boolean(true).unwrap();
+        assert_eq!(
+            absent_cer_writer.finish().unwrap().bytes,
+            [0x31, 0x80, 1, 1, 0xff, 0, 0]
+        );
+        let mut absent_reader_context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut absent_reader = SetReader::new_tagged(
+            &absent_encoded.bytes,
+            &set_fields,
+            &mut absent_reader_context,
+        )
+        .unwrap();
+        absent_reader.next_tagged_field().unwrap();
+        assert!(absent_reader.read_boolean().unwrap());
+        assert_eq!(absent_reader.next_tagged_field().unwrap(), None);
+        absent_reader.finish().unwrap();
+
+        // SET BER accepts reversed members and preserves the selected value kind.
+        let reversed = [0x31, 6, 0x13, 1, b'A', 1, 1, 0xff];
+        let mut set_reader_context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut set_reader =
+            SetReader::new_tagged(&reversed, &set_fields, &mut set_reader_context).unwrap();
+        assert_eq!(
+            set_reader.next_tagged_field().unwrap(),
+            Some(Tag::universal(19))
+        );
+        let decoded_text = set_reader.read_character_string(printable).unwrap();
+        assert_eq!(decoded_text.kind(), printable);
+        assert_eq!(decoded_text.as_bytes(), b"A");
+        assert_eq!(
+            set_reader.next_tagged_field().unwrap(),
+            Some(Tag::universal(1))
+        );
+        assert!(set_reader.read_boolean().unwrap());
+        assert_eq!(set_reader.next_tagged_field().unwrap(), None);
+        assert_eq!(set_reader.finish().unwrap().consumed_bytes, reversed.len());
+        let mut set_canonical_writer =
+            SetWriter::new(RecordEncoding::Cer, &mut set_reader_context).unwrap();
+        set_canonical_writer.write_boolean(true).unwrap();
+        set_canonical_writer
+            .write_character_string(printable, &decoded_text)
+            .unwrap();
+        let set_canonical = set_canonical_writer.finish().unwrap();
+        assert!(set_reader_context
+            .verify_canonical(&reversed, reversed.len(), &set_canonical.bytes)
+            .is_err());
+
+        // Distinct SET occurrences cannot reuse one logical string descriptor.
+        let duplicate = [0x31, 6, 0x13, 1, b'A', 0x13, 1, b'B'];
+        let string_only = [set_fields[0]];
+        let mut duplicate_context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut duplicate_reader =
+            SetReader::new_tagged(&duplicate, &string_only, &mut duplicate_context).unwrap();
+        duplicate_reader.next_tagged_field().unwrap();
+        duplicate_reader.read_character_string(printable).unwrap();
+        assert!(duplicate_reader.next_tagged_field().is_err());
+    }
+
+    /// Share one aggregate context across bounded OCTET/BIT and generic SEQUENCE fields.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Encodes and strictly re-encodes a mixed CER record.
+    ///
+    /// # Errors
+    /// Panics if a bounded sibling or generic string leaves the shared budget.
+    ///
+    /// # Source, version, history, example
+    /// Source: mixed restricted-string record gate. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: mixed sibling budget regression.
+    /// Example: run with cargo test.
+    #[test]
+    fn flat_record_character_string_shares_bounded_sequence_storage() {
+        let limits = Limits::default();
+        let kind = CharacterStringKind::ObjectDescriptor;
+        let value = CharacterString::try_from_bytes(kind, b"x", &limits).unwrap();
+        let fields = [
+            RecordField::new(Tag::universal(4), FieldKind::OctetString).unwrap(),
+            RecordField::new(Tag::universal(3), FieldKind::BitString).unwrap(),
+            RecordField::new(Tag::universal(7), FieldKind::CharacterString(kind)).unwrap(),
+        ];
+        let expected = [
+            0x30, 0x80, 4, 2, 0xaa, 0xbb, 3, 2, 7, 0x80, 7, 1, b'x', 0, 0,
+        ];
+
+        let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer.write_octet_string(&[0xaa, 0xbb], 2, 2).unwrap();
+        writer.write_bit_string(&[0x80], 1, 1, 1).unwrap();
+        writer.write_character_string(kind, &value).unwrap();
+        assert_eq!(writer.finish().unwrap().bytes, expected);
+
+        // Decode all three payload types and retain their allocations together.
+        let mut decode_context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut reader =
+            SequenceReader::new_tagged(&expected, &fields, &mut decode_context).unwrap();
+        reader.next_tagged_field().unwrap();
+        let octets = reader.read_octet_string(2, 2).unwrap();
+        reader.next_tagged_field().unwrap();
+        let bits = reader.read_bit_string(1, 1).unwrap();
+        reader.next_tagged_field().unwrap();
+        let text = reader.read_character_string(kind).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        let consumed = reader.finish().unwrap().consumed_bytes;
+        assert_eq!(decode_context.retained_bytes, 4);
+        assert!(decode_context.retained_capacity >= decode_context.retained_bytes);
+
+        // Strict re-encoding shares prior decoded capacity with its output.
+        let mut reencoder = SequenceWriter::new(RecordEncoding::Cer, &mut decode_context).unwrap();
+        reencoder.write_octet_string(&octets, 2, 2).unwrap();
+        reencoder
+            .write_bit_string(bits.as_bytes(), 1, 1, 1)
+            .unwrap();
+        reencoder.write_character_string(kind, &text).unwrap();
+        let canonical = reencoder.finish().unwrap();
+        decode_context
+            .verify_canonical(&expected, consumed, &canonical.bytes)
+            .unwrap();
+        assert_eq!(canonical.bytes, expected);
+    }
+
+    /// Share one aggregate context across bounded OCTET/BIT and generic SET fields.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Decodes reversed BER order and re-encodes canonical CER order.
+    ///
+    /// # Errors
+    /// Panics if SET dispatch, retained storage, or strict comparison is inconsistent.
+    ///
+    /// # Source, version, history, example
+    /// Source: mixed restricted-string SET gate. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: mixed sibling budget regression.
+    /// Example: run with cargo test.
+    #[test]
+    fn flat_record_character_string_shares_bounded_set_storage() {
+        let limits = Limits::default();
+        let kind = CharacterStringKind::ObjectDescriptor;
+        let fields = [
+            RecordField::new(Tag::universal(7), FieldKind::CharacterString(kind)).unwrap(),
+            RecordField::new(Tag::universal(4), FieldKind::OctetString).unwrap(),
+            RecordField::new(Tag::universal(3), FieldKind::BitString).unwrap(),
+        ];
+        let reversed = [
+            0x31, 0x80, 7, 1, b'x', 4, 2, 0xaa, 0xbb, 3, 2, 7, 0x80, 0, 0,
+        ];
+        let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut reader = SetReader::new_tagged(&reversed, &fields, &mut context).unwrap();
+
+        // SET traversal accepts wire order independently of descriptor order.
+        reader.next_tagged_field().unwrap();
+        let text = reader.read_character_string(kind).unwrap();
+        reader.next_tagged_field().unwrap();
+        let octets = reader.read_octet_string(2, 2).unwrap();
+        reader.next_tagged_field().unwrap();
+        let bits = reader.read_bit_string(1, 1).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        let consumed = reader.finish().unwrap().consumed_bytes;
+        assert_eq!(context.retained_bytes, 4);
+
+        // The shared context sorts output by effective universal tag for CER.
+        let mut writer = SetWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer.write_bit_string(bits.as_bytes(), 1, 1, 1).unwrap();
+        writer.write_octet_string(&octets, 2, 2).unwrap();
+        writer.write_character_string(kind, &text).unwrap();
+        let canonical = writer.finish().unwrap();
+        assert_eq!(
+            canonical.bytes,
+            [0x31, 0x80, 3, 2, 7, 0x80, 4, 2, 0xaa, 0xbb, 7, 1, b'x', 0, 0]
+        );
+        assert!(context
+            .verify_canonical(&reversed, consumed, &canonical.bytes)
+            .is_err());
+    }
+
+    /// Check generic record kind validation, aliases, and pre-commit rollback.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Uses mismatched values, descriptors, and optional absence.
+    ///
+    /// # Errors
+    /// Panics if invalid kinds commit bytes/state or aggregate mode is bypassed.
+    ///
+    /// # Source, version, history, example
+    /// Source: typed record descriptor contract. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat generic string field gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn flat_record_character_string_kind_checks_are_transactional() {
+        let limits = Limits::default();
+        let utf8 = CharacterStringKind::Utf8String;
+        let numeric = CharacterStringKind::NumericString;
+        let wrong_value = CharacterString::try_from_bytes(numeric, b"1", &limits).unwrap();
+        let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        let before_work = writer.context.work_used;
+        assert!(writer.write_character_string(utf8, &wrong_value).is_err());
+        assert_eq!(writer.bytes, [0x30, 0]);
+        assert_eq!(writer.context.work_used, before_work);
+
+        let generic_ia5 =
+            CharacterString::try_from_bytes(CharacterStringKind::Ia5String, b"A", &limits).unwrap();
+        assert!(writer
+            .write_character_string(CharacterStringKind::Ia5String, &generic_ia5)
+            .is_err());
+        assert_eq!(writer.bytes, [0x30, 0]);
+
+        // Tag 20 aliases keep distinct semantic identity despite sharing a wire tag.
+        let alias_value =
+            CharacterString::try_from_bytes(CharacterStringKind::T61String, b"x", &limits).unwrap();
+        assert!(writer
+            .write_character_string(CharacterStringKind::TeletexString, &alias_value)
+            .is_err());
+        assert_eq!(writer.bytes, [0x30, 0]);
+
+        // Generic character-string descriptors require aggregate mode even when absent.
+        let fields =
+            [RecordField::new(Tag::universal(12), FieldKind::CharacterString(utf8)).unwrap()];
+        let empty_sequence = [0x30, 0];
+        let mut flat_context = RecordContext::new(&limits);
+        assert!(SequenceReader::new_tagged(&empty_sequence, &fields, &mut flat_context).is_err());
+        let mut aggregate = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut reader =
+            SequenceReader::new_tagged(&empty_sequence, &fields, &mut aggregate).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        assert_eq!(reader.finish().unwrap().consumed_bytes, 2);
+
+        // A wrong expected kind leaves the matching BER field pending.
+        let input = [0x30, 3, 0x0c, 1, b'A'];
+        let mut decode_context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut reader = SequenceReader::new_tagged(&input, &fields, &mut decode_context).unwrap();
+        reader.next_tagged_field().unwrap();
+        assert!(reader.read_character_string(numeric).is_err());
+        assert_eq!(reader.read_character_string(utf8).unwrap().as_bytes(), b"A");
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        reader.finish().unwrap();
+
+        // A CER repertoire error changes neither the outer buffer nor work count.
+        let invalid_value =
+            CharacterString::try_from_bytes(CharacterStringKind::NumericString, b"A", &limits)
+                .unwrap();
+        let mut cer_context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut cer_writer = SequenceWriter::new(RecordEncoding::Cer, &mut cer_context).unwrap();
+        let before_work = cer_writer.context.work_used;
+        assert!(cer_writer
+            .write_character_string(numeric, &invalid_value)
+            .is_err());
+        assert_eq!(cer_writer.bytes, [0x30, 0x80]);
+        assert_eq!(cer_writer.context.work_used, before_work + 8);
+    }
+
+    /// Flatten constructed character strings and preserve exact parent prefixes.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Exercises nested definite/indefinite BER, aliases, malformed
+    /// children, truncations, and noncanonical CER framing.
+    ///
+    /// # Errors
+    /// Panics if valid fragments are rejected or malformed/prefix cases change.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 BER restricted string fragments. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat generic string field gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn flat_record_character_string_constructed_ber_and_prefixes() {
+        let limits = Limits::default();
+        let kind = CharacterStringKind::Utf8String;
+        let fields =
+            [RecordField::new(Tag::universal(12), FieldKind::CharacterString(kind)).unwrap()];
+        let nested = [
+            0x30, 0x80, 0x2c, 0x80, 4, 1, b'A', 0x24, 3, 4, 1, b'B', 0, 0, 0, 0, 0xff,
+        ];
+        let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut reader = SequenceReader::new_tagged(&nested, &fields, &mut context).unwrap();
+        assert_eq!(
+            reader.next_tagged_field().unwrap(),
+            Some(Tag::universal(12))
+        );
+        let value = reader.read_character_string(kind).unwrap();
+        assert_eq!(value.as_bytes(), b"AB");
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        assert_eq!(reader.finish().unwrap().consumed_bytes, nested.len() - 1);
+
+        // Empty constructed BER normalizes to an owned empty value.
+        let empty_constructed = [0x30, 4, 0x2c, 2, 4, 0];
+        let mut empty_context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut empty_reader =
+            SequenceReader::new_tagged(&empty_constructed, &fields, &mut empty_context).unwrap();
+        empty_reader.next_tagged_field().unwrap();
+        assert_eq!(
+            empty_reader.read_character_string(kind).unwrap().as_bytes(),
+            []
+        );
+        assert_eq!(empty_reader.next_tagged_field().unwrap(), None);
+        assert_eq!(
+            empty_reader.finish().unwrap().consumed_bytes,
+            empty_constructed.len()
+        );
+
+        // BER accepts an aliased high-tag spelling; canonical CER rejects it.
+        let alias = [0x30, 5, 0x1f, 0x80, 0x0c, 1, b'A'];
+        let mut alias_context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut alias_reader =
+            SequenceReader::new_tagged(&alias, &fields, &mut alias_context).unwrap();
+        alias_reader.next_tagged_field().unwrap();
+        let alias_value = alias_reader.read_character_string(kind).unwrap();
+        assert_eq!(alias_value.as_bytes(), b"A");
+        assert_eq!(alias_reader.next_tagged_field().unwrap(), None);
+        let alias_end = alias_reader.finish().unwrap().consumed_bytes;
+        let mut alias_encoder =
+            SequenceWriter::new(RecordEncoding::Cer, &mut alias_context).unwrap();
+        alias_encoder
+            .write_character_string(kind, &alias_value)
+            .unwrap();
+        let canonical = alias_encoder.finish().unwrap();
+        assert!(alias_context
+            .verify_canonical(&alias, alias_end, &canonical.bytes)
+            .is_err());
+
+        let malformed: &[&[u8]] = &[
+            &[0x30, 5, 0x2c, 3, 0x0c, 1, b'A'],
+            &[0x30, 0x80, 0x2c, 0x80, 0, 1, 0, 0],
+            &[0x30, 0x80, 0x2c, 0x80, 4, 1, b'A'],
+            &[0x30, 4, 0x2c, 2, 0, 0],
+            &[0x30, 2, 0x2c, 0x80],
+        ];
+        for input in malformed {
+            assert!(decode_character_string_record(input, &fields, kind, &limits).is_err());
+        }
+    }
+
+    /// Apply aggregate scratch limits incrementally to all record string flatteners.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Synthetic prior storage leaves less room than a two-byte
+    /// fragmented payload, without allocating a large test buffer.
+    ///
+    /// # Errors
+    /// Panics if OCTET, BIT, IA5, or generic strings bypass the shared cap.
+    ///
+    /// # Source, version, history, example
+    /// Source: flat record retained-plus-output scratch policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: incremental flatten cap fix.
+    /// Example: run with cargo test.
+    #[test]
+    fn flat_record_string_flatteners_include_prior_retained_capacity() {
+        let limits = Limits::default();
+        let octets = [0x24, 0x80, 4, 1, b'A', 4, 1, b'B', 0, 0];
+        let bits = [0x23, 0x80, 3, 2, 0, 0x80, 3, 2, 0, 0x40, 0, 0];
+        let ia5 = [0x36, 0x80, 4, 1, b'A', 4, 1, b'B', 0, 0];
+        let generic = [0x2c, 0x80, 4, 1, b'A', 4, 1, b'B', 0, 0];
+
+        // Each record starts with an indefinite wrapper around the fragmented value.
+        let fields = [
+            (
+                octets.as_slice(),
+                RecordField::new(Tag::universal(4), FieldKind::OctetString).unwrap(),
+                0,
+            ),
+            (
+                bits.as_slice(),
+                RecordField::new(Tag::universal(3), FieldKind::BitString).unwrap(),
+                1,
+            ),
+            (
+                ia5.as_slice(),
+                RecordField::new(Tag::universal(22), FieldKind::Ia5String).unwrap(),
+                2,
+            ),
+            (
+                generic.as_slice(),
+                RecordField::new(
+                    Tag::universal(12),
+                    FieldKind::CharacterString(CharacterStringKind::Utf8String),
+                )
+                .unwrap(),
+                3,
+            ),
+        ];
+
+        for (encoded, field, decoder) in fields {
+            let mut wire = vec![0x30, 0x80];
+            wire.extend_from_slice(encoded);
+            wire.extend([0, 0]);
+            let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+            let fields = [field];
+            let mut reader = SequenceReader::new_tagged(&wire, &fields, &mut context).unwrap();
+            reader.next_tagged_field().unwrap();
+            reader.context.retained_capacity = MAX_RECORD_SCRATCH_BYTES - 1;
+            let result = match decoder {
+                0 => reader.read_octet_string(0, 2).map(|_| ()),
+                1 => reader.read_bit_string(0, 16).map(|_| ()),
+                2 => reader.read_ia5_string().map(|_| ()),
+                _ => reader
+                    .read_character_string(CharacterStringKind::Utf8String)
+                    .map(|_| ()),
+            };
+            assert!(result.is_err());
+            assert!(reader.next_tagged_field().is_err());
+        }
+    }
+
+    /// Check string record output, decode, and strict CER resource boundaries.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Tests exact and one-below input, output, payload, and work.
+    ///
+    /// # Errors
+    /// Panics if a record operation ignores a configured limit or changes work.
+    ///
+    /// # Source, version, history, example
+    /// Source: shared record resource contract. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: restricted-string field gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn flat_record_character_string_limits_and_strict_work_are_exact() {
+        let kind = CharacterStringKind::Utf8String;
+        let value = CharacterString::try_from_bytes(kind, b"A", &Limits::default()).unwrap();
+        let fields =
+            [RecordField::new(Tag::universal(12), FieldKind::CharacterString(kind)).unwrap()];
+
+        // First measure the write operation, then pin its exact whole-record caps.
+        let mut baseline_context = RecordContext::new_with_aggregate_scratch(&Limits::default());
+        let mut baseline = SequenceWriter::new(RecordEncoding::Der, &mut baseline_context).unwrap();
+        baseline.write_character_string(kind, &value).unwrap();
+        let expected = baseline.finish().unwrap();
+        let output_size = expected.bytes.len();
+        let write_work = baseline_context.work_used;
+        assert_eq!(expected.bytes, [0x30, 3, 0x0c, 1, b'A']);
+
+        let exact_write = Limits {
+            max_output_bytes: output_size,
+            max_work_bits: write_work,
+            ..Limits::default()
+        };
+        let mut exact_context = RecordContext::new_with_aggregate_scratch(&exact_write);
+        let mut exact_writer =
+            SequenceWriter::new(RecordEncoding::Der, &mut exact_context).unwrap();
+        exact_writer.write_character_string(kind, &value).unwrap();
+        assert_eq!(exact_writer.finish().unwrap().bytes, expected.bytes);
+        let mut low_output = RecordContext::new_with_aggregate_scratch(&Limits {
+            max_output_bytes: output_size - 1,
+            ..exact_write
+        });
+        let mut low_writer = SequenceWriter::new(RecordEncoding::Der, &mut low_output).unwrap();
+        assert!(low_writer.write_character_string(kind, &value).is_err());
+        let mut low_work = RecordContext::new_with_aggregate_scratch(&Limits {
+            max_work_bits: write_work - 1,
+            ..exact_write
+        });
+        let mut low_writer = SequenceWriter::new(RecordEncoding::Der, &mut low_work).unwrap();
+        if low_writer.write_character_string(kind, &value).is_ok() {
+            assert!(low_writer.finish().is_err());
+        }
+
+        // Decoding charges the entire supplied input and retained value bytes.
+        let wire = [0x30, 3, 0x0c, 1, b'A', 0xff];
+        let exact_input = Limits {
+            max_input_bytes: wire.len(),
+            max_output_bytes: 1,
+            ..Limits::default()
+        };
+        let mut input_context = RecordContext::new_with_aggregate_scratch(&exact_input);
+        assert!(SequenceReader::new_tagged(&wire, &fields, &mut input_context).is_ok());
+        let mut low_input = RecordContext::new_with_aggregate_scratch(&Limits {
+            max_input_bytes: wire.len() - 1,
+            ..exact_input
+        });
+        assert!(SequenceReader::new_tagged(&wire, &fields, &mut low_input).is_err());
+
+        let mut output_context = RecordContext::new_with_aggregate_scratch(&exact_input);
+        let mut reader = SequenceReader::new_tagged(&wire, &fields, &mut output_context).unwrap();
+        reader.next_tagged_field().unwrap();
+        assert_eq!(reader.read_character_string(kind).unwrap().as_bytes(), b"A");
+        let mut no_payload = RecordContext::new_with_aggregate_scratch(&Limits {
+            max_output_bytes: 0,
+            ..exact_input
+        });
+        let mut reader = SequenceReader::new_tagged(&wire, &fields, &mut no_payload).unwrap();
+        reader.next_tagged_field().unwrap();
+        assert!(reader.read_character_string(kind).is_err());
+
+        // Parse, flatten, validate, re-encode, and compare this short CER prefix.
+        let cer = [0x30, 0x80, 0x0c, 1, b'A', 0, 0];
+        let mut context = RecordContext::new_with_aggregate_scratch(&Limits::default());
+        let mut reader = SequenceReader::new_tagged(&cer, &fields, &mut context).unwrap();
+        reader.next_tagged_field().unwrap();
+        let decoded = reader.read_character_string(kind).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        let consumed = reader.finish().unwrap().consumed_bytes;
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer.write_character_string(kind, &decoded).unwrap();
+        let canonical = writer.finish().unwrap();
+        context
+            .verify_canonical(&cer, consumed, &canonical.bytes)
+            .unwrap();
+        assert_eq!(context.work_used, 30 * 8);
+        let mut low_work = RecordContext::new_with_aggregate_scratch(&Limits {
+            max_work_bits: 30 * 8 - 1,
+            ..Limits::default()
+        });
+        let low_result = (|| {
+            let mut reader = SequenceReader::new_tagged(&cer, &fields, &mut low_work)?;
+            reader.next_tagged_field()?;
+            let value = reader.read_character_string(kind)?;
+            assert_eq!(reader.next_tagged_field()?, None);
+            let used = reader.finish()?.consumed_bytes;
+            let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut low_work)?;
+            writer.write_character_string(kind, &value)?;
+            let canonical = writer.finish()?;
+            low_work.verify_canonical(&cer, used, &canonical.bytes)
+        })();
+        assert!(low_result.is_err());
+    }
+
+    /// Check record CER's primitive/constructed string length transitions.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Encodes, strictly decodes, and re-encodes 999/1000/1001/
+    /// 2001-byte values using one aggregate record context.
+    ///
+    /// # Errors
+    /// Panics if fragmentation boundaries, output length, or strict comparison differ.
+    ///
+    /// # Source, version, history, example
+    /// Source: C CER character-string vectors. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: restricted-string field gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn flat_record_character_string_cer_fragments_at_1000_octets() {
+        let kind = CharacterStringKind::ObjectDescriptor;
+        let fields =
+            [RecordField::new(Tag::universal(7), FieldKind::CharacterString(kind)).unwrap()];
+        let cases = [
+            (127, 133),
+            (128, 135),
+            (999, 1007),
+            (1000, 1008),
+            (1001, 1015),
+            (2001, 2019),
+        ];
+        let limits = Limits::default();
+        for (content_len, record_len) in cases {
+            let payload = vec![0xa5; content_len];
+            let value = CharacterString::try_from_bytes(kind, &payload, &limits).unwrap();
+            let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+            let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+            writer.write_character_string(kind, &value).unwrap();
+            let encoded = writer.finish().unwrap();
+            assert_eq!(encoded.bytes.len(), record_len);
+            assert_eq!(&encoded.bytes[..2], &[0x30, 0x80]);
+            if content_len <= 1000 {
+                assert_eq!(encoded.bytes[2], 7);
+                if content_len == 127 {
+                    assert_eq!(&encoded.bytes[2..4], &[7, 127]);
+                }
+                if content_len == 128 {
+                    assert_eq!(&encoded.bytes[2..5], &[7, 0x81, 0x80]);
+                }
+            } else {
+                assert_eq!(&encoded.bytes[2..6], &[0x27, 0x80, 4, 0x82]);
+            }
+
+            let mut decode_context = RecordContext::new_with_aggregate_scratch(&limits);
+            let mut reader =
+                SequenceReader::new_tagged(&encoded.bytes, &fields, &mut decode_context).unwrap();
+            reader.next_tagged_field().unwrap();
+            let decoded = reader.read_character_string(kind).unwrap();
+            assert_eq!(decoded.as_bytes(), payload);
+            assert_eq!(reader.next_tagged_field().unwrap(), None);
+            let consumed = reader.finish().unwrap().consumed_bytes;
+            let mut reencoder =
+                SequenceWriter::new(RecordEncoding::Cer, &mut decode_context).unwrap();
+            reencoder.write_character_string(kind, &decoded).unwrap();
+            let canonical = reencoder.finish().unwrap();
+            decode_context
+                .verify_canonical(&encoded.bytes, consumed, &canonical.bytes)
+                .unwrap();
+            assert_eq!(canonical.bytes, encoded.bytes);
+        }
+    }
+
+    /// Run truncation and single-byte mutations through the generic record reader.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Attempts every proper prefix and every byte replacement
+    /// for primitive and constructed character-string records.
+    ///
+    /// # Errors
+    /// Panics only if untrusted mutated BER unwinds from the runtime.
+    ///
+    /// # Source, version, history, example
+    /// Source: record BER parser mutation hardening. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: restricted-string field gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn flat_record_character_string_mutations_and_truncations_do_not_panic() {
+        let kind = CharacterStringKind::Utf8String;
+        let fields =
+            [RecordField::new(Tag::universal(12), FieldKind::CharacterString(kind)).unwrap()];
+        let vectors: &[&[u8]] = &[
+            &[0x30, 3, 0x0c, 1, b'A'],
+            &[0x30, 0x80, 0x2c, 0x80, 4, 1, b'A', 0, 0, 0, 0],
+        ];
+        let limits = Limits::default();
+        for vector in vectors {
+            for end in 0..vector.len() {
+                let input = &vector[..end];
+                let _ = decode_character_string_record(input, &fields, kind, &limits);
+            }
+            for index in 0..vector.len() {
+                for replacement in 0_u8..=u8::MAX {
+                    let mut mutated = vector.to_vec();
+                    mutated[index] = replacement;
+                    let _ = decode_character_string_record(&mutated, &fields, kind, &limits);
+                }
+            }
+        }
+    }
+
+    /// Decode one character-string record prefix for mutation tests.
+    ///
+    /// # Parameters and returns
+    /// input, fields, and kind define a record; limits supplies budgets.
+    /// Returns success only when the first field and record boundary both decode.
+    ///
+    /// # Errors
+    /// Returns any descriptor, BER, type, or resource error without panicking.
+    ///
+    /// # Source, version, history, example
+    /// Source: test-only flat record dispatch. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: mutation coverage helper.
+    /// Example: called by the record mutation regression.
+    fn decode_character_string_record(
+        input: &[u8],
+        fields: &[RecordField],
+        kind: CharacterStringKind,
+        limits: &Limits,
+    ) -> Result<(), Error> {
+        let mut context = RecordContext::new_with_aggregate_scratch(limits);
+        let mut reader = SequenceReader::new_tagged(input, fields, &mut context)?;
+        if reader.next_tagged_field()?.is_none() {
+            return Err(invalid("mutation fixture has no string field"));
+        }
+        let _ = reader.read_character_string(kind)?;
+        if reader.next_tagged_field()?.is_some() {
+            return Err(invalid("mutation fixture has an unexpected second field"));
+        }
+        let _ = reader.finish()?;
+        Ok(())
     }
 
     /// Enforce exact constructor, DER, and CER encoder resource limits.

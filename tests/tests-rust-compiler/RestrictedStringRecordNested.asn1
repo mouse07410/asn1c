@@ -1,0 +1,6 @@
+RestrictedStringRecordNested DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE {
+    value UTF8String,
+    child SEQUENCE { flag BOOLEAN }
+}
+END

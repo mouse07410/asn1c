@@ -93,7 +93,7 @@ static int rust_check_collection(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_oid_codecs(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_ia5_codecs(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_character_string(asn1p_module_t *, asn1p_expr_t *, uint64_t);
-static const char *rust_character_string_kind(asn1p_expr_t *);
+static const char *rust_character_string_kind(const asn1p_expr_t *);
 static int rust_check_utc_time(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_generalized_time(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static asn1p_expr_t *rust_contained_primitive(asn1p_module_t *, asn1p_expr_t *);
@@ -140,6 +140,8 @@ static int rust_ber_cer_has_tagged_members(asn1p_expr_t *);
 static int rust_ber_cer_has_nested_record(asn1p_expr_t *);
 static int rust_ber_cer_has_variable_content_member(asn1p_expr_t *);
 static int rust_ber_cer_has_big_integer_member(asn1p_expr_t *);
+static int rust_ber_cer_has_character_string_member(asn1p_expr_t *);
+static int rust_ber_cer_field_kind_expression(const asn1p_expr_t *, char *, size_t);
 static const char *rust_ber_cer_context_constructor(asn1p_expr_t *);
 static int rust_check_ber_cer_ia5_record(asn1p_module_t *, asn1p_expr_t *,
                                          uint64_t);
@@ -147,6 +149,13 @@ static int rust_check_ber_cer_ia5_member(asn1p_module_t *, asn1p_expr_t *);
 static int rust_check_ber_cer_oid_record(asn1p_module_t *, asn1p_expr_t *,
                                          uint64_t);
 static int rust_check_ber_cer_oid_member(asn1p_module_t *, asn1p_expr_t *);
+static int rust_check_ber_cer_character_string_record(asn1p_module_t *,
+                                                      asn1p_expr_t *, uint64_t);
+static int rust_check_ber_cer_character_string_member(asn1p_module_t *,
+                                                     asn1p_expr_t *);
+static int rust_ber_cer_character_string_record_scan(asn1p_expr_t *, size_t *, int *);
+static int rust_check_ber_cer_character_string_siblings(asn1p_module_t *,
+                                                       asn1p_expr_t *);
 static int rust_check_ber_cer_big_integer_record(asn1p_module_t *, asn1p_expr_t *,
                                                  uint64_t);
 static int rust_check_ber_cer_big_integer_member(asn1p_module_t *, asn1p_expr_t *);
@@ -538,6 +547,117 @@ rust_check_ber_cer_oid_record(asn1p_module_t *module, asn1p_expr_t *expr,
         }
     }
     return 0;
+}
+
+/*
+ * Validate one direct restricted character-string record member.
+ * Inputs: module supplies diagnostics; member is the fixed AST component.
+ * Returns zero for a natural required/OPTIONAL member, otherwise -1.
+ * Errors: constraints, tags, indirection, DEFAULT, and extensions fail closed.
+ * Source: approved restricted-string record gate. Version/date: 2026-11-01.
+ * Responsible: asn1c maintainers. History: typed record strings.
+ * Example: a direct optional UTF8String passes.
+ */
+static int
+rust_check_ber_cer_character_string_member(asn1p_module_t *module,
+                                           asn1p_expr_t *member) {
+    int supported_presence;
+    if(!module || !member || !rust_character_string_kind(member)) return -1;
+    supported_presence = member->marker.flags == EM_NOMARK
+                      || member->marker.flags == EM_OPTIONAL;
+    if(rust_sequence_member_shape_valid(member)
+       && member->tag.tag_class == TC_NOCLASS
+       && member->tag.tag_mode == TM_DEFAULT
+       && !member->constraints && !member->combined_constraints
+       && !member->reference && !member->members.tq_head
+       && member->encoding_control.encoding_type == EC_NONE
+       && supported_presence) return 0;
+    rust_diagnostic(module, member,
+        "restricted string record fields must be direct, natural, unconstrained, "
+        "and required or OPTIONAL");
+    return -1;
+}
+
+/*
+ * Count supported strings and detect other variable/default record fields.
+ * Inputs: expr owns flat members; count and excluded receive the results.
+ * Returns zero or -1 for invalid helper arguments. Errors: none.
+ * Source: approved restricted-string record gate. Version/date: 2026-11-01.
+ * Responsible: asn1c maintainers. History: fail-closed field scan.
+ * Example: UTF8String plus BOOLEAN returns count one and excluded zero.
+ */
+static int
+rust_ber_cer_character_string_record_scan(asn1p_expr_t *expr, size_t *count,
+                                          int *excluded) {
+    asn1p_expr_t *member;
+    if(!expr || !count || !excluded) return -1;
+    *count = 0;
+    *excluded = 0;
+    TQ_FOR(member, &expr->members, next) {
+        if(rust_character_string_kind(member)) (*count)++;
+        if(member->expr_type == ASN_STRING_IA5String
+           || member->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
+           || member->expr_type == ASN_BASIC_RELATIVE_OID
+           || member->expr_type == ASN_BASIC_CHARACTER_STRING
+           || (member->expr_type == ASN_BASIC_INTEGER && !member->constraints
+               && !member->combined_constraints)
+           || member->marker.flags == EM_DEFAULT) *excluded = 1;
+    }
+    return 0;
+}
+
+/*
+ * Validate allowed scalar siblings after the string root gate passes.
+ * Inputs: module supplies diagnostics; expr owns the record members.
+ * Returns zero when no nested or CHOICE child is present, otherwise -1.
+ * Errors: nested constructors and CHOICE receive a source diagnostic.
+ * Source: approved flat restricted-string record subset.
+ * Version/date: 2026-11-01. Responsible: asn1c maintainers.
+ * History: one variable field per record. Example: BOOLEAN remains eligible.
+ */
+static int
+rust_check_ber_cer_character_string_siblings(asn1p_module_t *module,
+                                             asn1p_expr_t *expr) {
+    asn1p_expr_t *member;
+    TQ_FOR(member, &expr->members, next) {
+        if(member->expr_type == ASN_CONSTR_SEQUENCE || member->expr_type == ASN_CONSTR_SET
+           || member->expr_type == ASN_CONSTR_CHOICE) {
+            rust_diagnostic(module, member,
+                "restricted-string records do not support nested records or CHOICE");
+            return -1;
+        }
+        if(rust_character_string_kind(member)
+           && rust_check_ber_cer_character_string_member(module, member)) return -1;
+    }
+    return 0;
+}
+
+/*
+ * Gate one non-IA5 restricted string in a flat BER/CER record.
+ * Inputs: module/expr identify the fixed record; codecs is its selected mask.
+ * Returns zero when absent or when the one-field shape passes, otherwise -1.
+ * Errors: root tags, other variable fields, multiple strings, and codecs reject.
+ * Source: approved restricted-string field design. Version/date: 2026-11-01.
+ * Responsible: asn1c maintainers. History: flat typed-string records.
+ * Example: one required UTF8String beside BOOLEAN passes.
+ */
+static int
+rust_check_ber_cer_character_string_record(asn1p_module_t *module,
+                                           asn1p_expr_t *expr, uint64_t codecs) {
+    const uint64_t supported = RUST_CODEC_BER | RUST_CODEC_CER;
+    size_t count;
+    int excluded;
+    if(!module || !expr
+       || rust_ber_cer_character_string_record_scan(expr, &count, &excluded)) return -1;
+    if(!count) return 0;
+    if(count > 1 || excluded || !(codecs & supported) || (codecs & ~supported)
+       || expr->tag.tag_class != TC_NOCLASS || expr->tag.tag_mode != TM_DEFAULT) {
+        rust_diagnostic(module, expr,
+            "restricted-string records require one untagged natural string, scalar "
+            "siblings, and BER/CER-only codecs");
+        return -1;
+    }
+    return rust_check_ber_cer_character_string_siblings(module, expr);
 }
 
 /*
@@ -1226,7 +1346,7 @@ rust_check_ia5_codecs(asn1p_module_t *module, asn1p_expr_t *expr,
  * restricted roots. Example: ASN_STRING_ISO646String maps to Iso646String.
  */
 static const char *
-rust_character_string_kind(asn1p_expr_t *expr) {
+rust_character_string_kind(const asn1p_expr_t *expr) {
     switch(expr->expr_type) {
     case ASN_STRING_ObjectDescriptor: return "ObjectDescriptor";
     case ASN_STRING_UTF8String: return "Utf8String";
@@ -1252,7 +1372,7 @@ rust_character_string_kind(asn1p_expr_t *expr) {
  * restricted roots. Example: T61String is kept distinct from TeletexString.
  */
 static const char *
-rust_character_string_name(asn1p_expr_t *expr) {
+rust_character_string_name(const asn1p_expr_t *expr) {
     switch(expr->expr_type) {
     case ASN_STRING_ObjectDescriptor: return "ObjectDescriptor";
     case ASN_STRING_UTF8String: return "UTF8String";
@@ -1766,6 +1886,7 @@ rust_check_sequence(asn1p_module_t *module, asn1p_expr_t *expr,
         return -1;
     }
     if(rust_check_ber_cer_ia5_record(module, expr, codecs)) return -1;
+    if(rust_check_ber_cer_character_string_record(module, expr, codecs)) return -1;
     if(rust_check_ber_cer_big_integer_record(module, expr, codecs)) return -1;
     if(rust_check_ber_cer_oid_record(module, expr, codecs)) return -1;
     if(rust_check_sequence_tree(module, expr, stack, 0, &nodes, &work, codecs)) return -1;
@@ -1811,6 +1932,7 @@ rust_check_set_ber_cer(asn1p_module_t *module, asn1p_expr_t *expr,
         return -1;
     }
     if(rust_check_ber_cer_ia5_record(module, expr, codecs)) return -1;
+    if(rust_check_ber_cer_character_string_record(module, expr, codecs)) return -1;
     if(rust_check_ber_cer_big_integer_record(module, expr, codecs)) return -1;
     if(rust_check_ber_cer_oid_record(module, expr, codecs)) return -1;
     TQ_FOR(member, &expr->members, next) {
@@ -1961,6 +2083,16 @@ rust_check_ber_cer_member(asn1p_module_t *module, asn1p_expr_t *expr,
         }
         return 0;
     }
+    if(rust_character_string_kind(member)) {
+        if(rust_check_ber_cer_character_string_member(module, member)
+           || (set && rust_check_sequence_name(module, expr, member))) return -1;
+        if(rust_ber_cer_duplicate_tag(expr, member)) {
+            rust_diagnostic(module, member,
+                            "BER/CER record fields must have unique effective tags");
+            return -1;
+        }
+        return 0;
+    }
     if(member->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
        || member->expr_type == ASN_BASIC_RELATIVE_OID) {
         if(rust_check_ber_cer_oid_member(module, member)
@@ -2101,6 +2233,19 @@ rust_sequence_ber_cer_tag(const asn1p_expr_t *member) {
     case ASN_BASIC_ENUMERATED: return 10;
     case ASN_BASIC_RELATIVE_OID: return 13;
     case ASN_STRING_IA5String: return 22;
+    case ASN_STRING_ObjectDescriptor: return 7;
+    case ASN_STRING_UTF8String: return 12;
+    case ASN_STRING_NumericString: return 18;
+    case ASN_STRING_PrintableString: return 19;
+    case ASN_STRING_TeletexString:
+    case ASN_STRING_T61String: return 20;
+    case ASN_STRING_VideotexString: return 21;
+    case ASN_STRING_GraphicString: return 25;
+    case ASN_STRING_VisibleString:
+    case ASN_STRING_ISO646String: return 26;
+    case ASN_STRING_GeneralString: return 27;
+    case ASN_STRING_UniversalString: return 28;
+    case ASN_STRING_BMPString: return 30;
     case ASN_CONSTR_SEQUENCE: return 16;
     case ASN_CONSTR_SET: return 17;
     default: return 0;
@@ -2250,10 +2395,11 @@ rust_ber_cer_has_nested_record(asn1p_expr_t *expr) {
 /*
  * Detect a member requiring aggregate runtime storage tracking.
  * Input: expr owns one record's direct members. Returns one when present.
- * Errors: none. Source: approved IA5, OID, and BigInteger record policies.
+ * Errors: none. Source: approved IA5, OID, BigInteger, and restricted-string
+ * record policies.
  * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
  * History: variable-content record gates. Example: absent BigInteger still selects
- * aggregate accounting for the record operation.
+ * aggregate accounting for the record operation, including optional strings.
  */
 static int
 rust_ber_cer_has_variable_content_member(asn1p_expr_t *expr) {
@@ -2263,6 +2409,7 @@ rust_ber_cer_has_variable_content_member(asn1p_expr_t *expr) {
         if(member->expr_type == ASN_STRING_IA5String
            || member->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
            || member->expr_type == ASN_BASIC_RELATIVE_OID
+           || rust_character_string_kind(member)
            || (member->expr_type == ASN_BASIC_INTEGER && !member->constraints
                && !member->combined_constraints)) return 1;
     }
@@ -2283,6 +2430,24 @@ rust_ber_cer_has_big_integer_member(asn1p_expr_t *expr) {
     TQ_FOR(member, &expr->members, next) {
         if(member->expr_type == ASN_BASIC_INTEGER && !member->constraints
            && !member->combined_constraints) return 1;
+    }
+    return 0;
+}
+
+/*
+ * Detect a kind-bearing string field that needs descriptor-based SET dispatch.
+ * Input: expr owns validated direct fields. Returns one when present.
+ * Errors: none. Source: CharacterString record descriptor policy.
+ * Version/date: 2026-11-01. Responsible: asn1c maintainers.
+ * History: preserve aliases with shared universal tags.
+ * Example: a T61String field returns one.
+ */
+static int
+rust_ber_cer_has_character_string_member(asn1p_expr_t *expr) {
+    asn1p_expr_t *member;
+    if(!expr) return 0;
+    TQ_FOR(member, &expr->members, next) {
+        if(rust_character_string_kind(member)) return 1;
     }
     return 0;
 }
@@ -2417,6 +2582,33 @@ rust_ber_cer_field_kind(const asn1p_expr_t *member) {
     case ASN_BASIC_RELATIVE_OID: return "RelativeOid";
     default: return NULL;
     }
+}
+
+/*
+ * Format a field-kind expression while preserving restricted-string identity.
+ * Inputs: member selects the descriptor; output/capacity receive Rust syntax.
+ * Returns zero or -1 for unsupported kinds or insufficient output space.
+ * Errors: none. Source: runtime FieldKind API. Version/date: 2026-11-01.
+ * Responsible: asn1c maintainers. History: built-in string aliases.
+ * Example: T61String becomes CharacterString(T61String).
+ */
+static int
+rust_ber_cer_field_kind_expression(const asn1p_expr_t *member, char *output,
+                                   size_t capacity) {
+    const char *character_kind = rust_character_string_kind(member);
+    const char *field_kind = rust_ber_cer_field_kind(member);
+    int written;
+    if(!output || !capacity) return -1;
+    if(character_kind) {
+        written = snprintf(output, capacity,
+            "CharacterString(::asn1c_runtime::CharacterStringKind::%s)",
+            character_kind);
+    } else if(field_kind) {
+        written = snprintf(output, capacity, "%s", field_kind);
+    } else {
+        return -1;
+    }
+    return written < 0 || (size_t)written >= capacity ? -1 : 0;
 }
 
 /*
@@ -2610,14 +2802,27 @@ rust_write_ber_cer_field_descriptors(FILE *stream, asn1p_expr_t *expr,
     if(fprintf(stream, "%slet __asn1c_expected_fields = [\n", indent) < 0) return -1;
     TQ_FOR(member, &expr->members, next) {
         if(member->expr_type == ASN_CONSTR_CHOICE) continue;
-        const char *kind = rust_ber_cer_field_kind(member);
+        char kind[112];
         const char *constructor = rust_ber_cer_member_explicit(member)
                                 ? "new_explicit" : "new";
         char local[48];
-        if(!kind || rust_ber_cer_tag_local(member, local, sizeof(local))
-           || fprintf(stream,
-                "%s    RecordField::%s(%s, FieldKind::%s)?,\n",
-                indent, constructor, local, kind) < 0) return -1;
+        if(rust_ber_cer_field_kind_expression(member, kind, sizeof(kind))
+           || rust_ber_cer_tag_local(member, local, sizeof(local))) return -1;
+        if(rust_character_string_kind(member)) {
+            if(fprintf(stream,
+                "%s    RecordField::%s(\n"
+                "%s        %s,\n"
+                "%s        FieldKind::CharacterString(\n"
+                "%s            ::asn1c_runtime::CharacterStringKind::%s,\n"
+                "%s        ),\n"
+                "%s    )?,\n",
+                indent, constructor, indent, local, indent, indent,
+                rust_character_string_kind(member), indent, indent) < 0) return -1;
+        } else if(fprintf(stream,
+            "%s    RecordField::%s(%s, FieldKind::%s)?,\n",
+            indent, constructor, local, kind) < 0) {
+            return -1;
+        }
     }
     return fprintf(stream, "%s];\n", indent) < 0 ? -1 : 0;
 }
@@ -2637,10 +2842,11 @@ rust_write_ber_cer_field_descriptor(FILE *stream, asn1p_expr_t *member,
     uint32_t number;
     char formatted_number[16];
     const char *class_name = NULL;
-    const char *kind = rust_ber_cer_field_kind(member);
+    char kind[112];
     const char *constructor = rust_ber_cer_member_explicit(member)
                             ? "new_explicit" : "new";
-    if(!kind || rust_ber_cer_member_tag(member, &class_code, &number)
+    if(rust_ber_cer_field_kind_expression(member, kind, sizeof(kind))
+       || rust_ber_cer_member_tag(member, &class_code, &number)
        || rust_format_tag_number(formatted_number, sizeof(formatted_number), number))
         return -1;
     class_name = rust_ber_cer_tag_class(class_code);
@@ -3310,6 +3516,14 @@ rust_check_sequence_tree_member(asn1p_module_t *module, asn1p_expr_t *parent,
             return -1;
         }
         return 0;
+    }
+    if(rust_character_string_kind(member)) {
+        if(depth != 0) {
+            rust_diagnostic(module, member,
+                "restricted character-string fields are supported only at the record root");
+            return -1;
+        }
+        return rust_check_ber_cer_character_string_member(module, member);
     }
     if(member->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
        || member->expr_type == ASN_BASIC_RELATIVE_OID) {
@@ -5834,6 +6048,7 @@ rust_write_set_ber_cer_decode_helper(FILE *stream, const char *parent,
           && rust_fixed_size(member, &(size_t){0}) == 0 ? "::std::vec::Vec<u8>"
         : member->expr_type == ASN_BASIC_BIT_STRING ? "::asn1c_runtime::BitStringValue"
         : member->expr_type == ASN_STRING_IA5String ? "::asn1c_runtime::Ia5String"
+        : rust_character_string_kind(member) ? "::asn1c_runtime::CharacterString"
         : member->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
           ? "::asn1c_runtime::ObjectIdentifier"
         : member->expr_type == ASN_BASIC_RELATIVE_OID
@@ -6154,6 +6369,7 @@ rust_write_set_ber_cer_decode_method(FILE *stream, const char *parent,
                    && expr->tag.tag_mode == TM_IMPLICIT;
     int tagged = tagged_root || rust_ber_cer_has_tagged_members(expr)
               || rust_ber_cer_has_big_integer_member(expr)
+              || rust_ber_cer_has_character_string_member(expr)
               || rust_ber_cer_choice_member(expr, NULL) != NULL;
     const char *context_constructor = rust_ber_cer_context_constructor(expr);
     if(rust_write_method_doc(stream, cer
@@ -6558,6 +6774,14 @@ rust_write_sequence_ber_cer_encode_value(FILE *stream, const char *parent,
         return fprintf(stream, "writer.write_relative_oid(%s)?;\n", value) < 0
             ? -1 : 0;
     default:
+        if(rust_character_string_kind(member)) {
+            const char *kind = rust_character_string_kind(member);
+            if(tagged || explicit_tag || !kind) return -1;
+            return fprintf(stream,
+                "writer.write_character_string(\n"
+                "    ::asn1c_runtime::CharacterStringKind::%s, %s)?;\n",
+                kind, value) < 0 ? -1 : 0;
+        }
         return -1;
     }
 }
@@ -6594,6 +6818,7 @@ rust_write_sequence_ber_cer_encode_optional(FILE *stream, const char *parent,
     else if(member->expr_type == ASN_STRING_IA5String
             || member->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
             || member->expr_type == ASN_BASIC_RELATIVE_OID
+            || rust_character_string_kind(member)
             || (member->expr_type == ASN_BASIC_INTEGER && !member->constraints
                 && !member->combined_constraints))
         strcpy(value, "value");
@@ -6658,6 +6883,7 @@ rust_write_sequence_ber_cer_encode_required(FILE *stream, const char *parent,
     else if(member->expr_type == ASN_STRING_IA5String
             || member->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
             || member->expr_type == ASN_BASIC_RELATIVE_OID
+            || rust_character_string_kind(member)
             || (member->expr_type == ASN_BASIC_INTEGER && !member->constraints
                 && !member->combined_constraints))
         written = snprintf(value, sizeof(value), "&self.%s", name);
@@ -6899,6 +7125,13 @@ rust_write_ber_cer_decode_bits(FILE *stream, asn1p_expr_t *member,
 static int
 rust_write_sequence_ber_cer_decode_value(FILE *stream, const char *parent,
                                          asn1p_expr_t *member, const char *indent) {
+    const char *character_kind = rust_character_string_kind(member);
+    if(character_kind) {
+        return fprintf(stream,
+            "%slet value = reader.read_character_string(\n"
+            "%s    ::asn1c_runtime::CharacterStringKind::%s)?;\n",
+            indent, indent, character_kind) < 0 ? -1 : 0;
+    }
     switch(member->expr_type) {
     case ASN_CONSTR_CHOICE: {
         asn1p_expr_t *alternative;
@@ -7903,6 +8136,8 @@ rust_write_sequence_field(FILE *stream, const char *parent,
                          ? "::asn1c_runtime::BitStringValue"
                        : member->expr_type == ASN_STRING_IA5String
                          ? "::asn1c_runtime::Ia5String"
+                       : rust_character_string_kind(member)
+                         ? "::asn1c_runtime::CharacterString"
                        : member->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
                          ? "::asn1c_runtime::ObjectIdentifier"
                        : member->expr_type == ASN_BASIC_RELATIVE_OID

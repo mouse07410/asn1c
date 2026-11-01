@@ -1,0 +1,4 @@
+RestrictedStringRecordImported DEFINITIONS ::= BEGIN
+IMPORTS Text FROM RestrictedStringRecordImportedBase;
+Packet ::= SEQUENCE { value Text, flag BOOLEAN }
+END

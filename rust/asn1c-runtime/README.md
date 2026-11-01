@@ -330,6 +330,23 @@ includes decoded IA5 capacity and record-owned output buffers; it does not add
 the capacity of a caller-owned IA5 input value. Direct top-level IA5 codecs use
 their own simultaneous value-plus-output scratch accounting.
 
+Flat records also support one natural restricted character-string field with
+FieldKind::CharacterString(kind), write_character_string(kind, value), and
+read_character_string(kind). The value kind must exactly match the descriptor,
+so Teletex/T61 and Visible/ISO646 aliases retain their declared identity even
+when they share a wire tag. The generic record API excludes IA5String, which
+continues through its source-compatible FieldKind::Ia5String methods.
+
+The character-string field uses the same flat RecordContext for BER fragment
+flattening and strict CER re-encoding. Its descriptor requires aggregate-scratch
+mode even when OPTIONAL is absent. Writers validate the C descriptor repertoire
+before CER commit and fragment values above 1000 content octets as universal
+tag-4 children; BER readers accept definite or indefinite nested tag-4 fragments
+and retain their capacity incrementally against the 128 MiB aggregate cap.
+CER validation runs after complete reassembly, including UTF8 sequences split
+across fragment boundaries. As with IA5 fields, record accounting includes
+record-owned decoded capacity and output but not caller-owned input capacity.
+
 For a flat SEQUENCE root with one context-specific IMPLICIT tag, use
 `SequenceReader::new_tagged_root(input, tag, fields, context)` and
 `SequenceWriter::finish_tagged_root(tag)`. These operations validate the root

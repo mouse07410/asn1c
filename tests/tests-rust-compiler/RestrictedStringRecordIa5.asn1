@@ -1,0 +1,3 @@
+RestrictedStringRecordIa5 DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { value UTF8String, ascii IA5String }
+END

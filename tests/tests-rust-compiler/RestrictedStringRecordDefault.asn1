@@ -1,0 +1,3 @@
+RestrictedStringRecordDefault DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { value UTF8String DEFAULT "A", flag BOOLEAN }
+END

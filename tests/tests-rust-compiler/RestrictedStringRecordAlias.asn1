@@ -1,0 +1,4 @@
+RestrictedStringRecordAlias DEFINITIONS ::= BEGIN
+Alias ::= UTF8String
+Packet ::= SEQUENCE { value Alias, flag BOOLEAN }
+END

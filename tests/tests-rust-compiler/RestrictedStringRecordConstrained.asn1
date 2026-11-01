@@ -1,0 +1,3 @@
+RestrictedStringRecordConstrained DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { value UTF8String (SIZE(1..4)), flag BOOLEAN }
+END

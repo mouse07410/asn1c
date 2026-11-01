@@ -1,0 +1,95 @@
+RestrictedStringRecord DEFINITIONS ::= BEGIN
+
+SequenceObjectDescriptor ::= SEQUENCE {
+    value ObjectDescriptor,
+    flag BOOLEAN
+}
+
+SequenceUtf8 ::= SEQUENCE {
+    value UTF8String,
+    flag BOOLEAN
+}
+
+SequenceUtf8Optional ::= SEQUENCE {
+    value UTF8String OPTIONAL,
+    flag BOOLEAN
+}
+
+SequenceUtf8BoundedSiblings ::= SEQUENCE {
+    value UTF8String,
+    payload [0] EXPLICIT OCTET STRING (SIZE(0..8)),
+    bits [1] IMPLICIT BIT STRING (SIZE(0..8)),
+    flag BOOLEAN
+}
+
+SequenceNumeric ::= SEQUENCE {
+    value NumericString,
+    flag BOOLEAN
+}
+
+SequencePrintable ::= SEQUENCE {
+    value PrintableString,
+    flag BOOLEAN
+}
+
+SequenceTeletex ::= SEQUENCE {
+    value TeletexString,
+    flag BOOLEAN
+}
+
+SequenceT61 ::= SEQUENCE {
+    value T61String,
+    flag BOOLEAN
+}
+
+SequenceVideotex ::= SEQUENCE {
+    value VideotexString,
+    flag BOOLEAN
+}
+
+SequenceGraphic ::= SEQUENCE {
+    value GraphicString,
+    flag BOOLEAN
+}
+
+SequenceVisible ::= SEQUENCE {
+    value VisibleString,
+    flag BOOLEAN
+}
+
+SequenceISO646 ::= SEQUENCE {
+    value ISO646String,
+    flag BOOLEAN
+}
+
+SequenceGeneral ::= SEQUENCE {
+    value GeneralString,
+    flag BOOLEAN
+}
+
+SequenceUniversal ::= SEQUENCE {
+    value UniversalString,
+    flag BOOLEAN
+}
+
+SequenceBMP ::= SEQUENCE {
+    value BMPString,
+    flag BOOLEAN
+}
+
+SetPrintableOptional ::= SET {
+    value PrintableString OPTIONAL,
+    flag BOOLEAN
+}
+
+SetT61Optional ::= SET {
+    value T61String OPTIONAL,
+    flag BOOLEAN
+}
+
+SetISO646Optional ::= SET {
+    value ISO646String OPTIONAL,
+    flag BOOLEAN
+}
+
+END

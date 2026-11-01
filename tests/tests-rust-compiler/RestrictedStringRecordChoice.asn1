@@ -1,0 +1,6 @@
+RestrictedStringRecordChoice DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE {
+    value UTF8String,
+    selection CHOICE { yes BOOLEAN, no NULL }
+}
+END

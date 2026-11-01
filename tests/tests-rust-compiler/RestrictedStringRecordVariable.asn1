@@ -1,0 +1,3 @@
+RestrictedStringRecordVariable DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { value UTF8String, tail OCTET STRING }
+END

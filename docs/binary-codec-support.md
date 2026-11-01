@@ -286,6 +286,19 @@ default C generation may use native `long`. C BER accepts empty INTEGER
 content that Rust rejects because `BigInteger` requires a nonempty value.
 Tagged, constrained, nested, referenced, imported, mixed semantic-field, and
 mixed-codec wide INTEGER record forms remain gated.
+Flat untagged SEQUENCE and SET records may also contain one natural direct
+non-IA5 restricted character-string field, required or OPTIONAL, beside the
+existing supported scalar siblings, including finite bounded BIT/OCT STRING
+members with their existing natural, IMPLICIT, or EXPLICIT tags. The runtime
+descriptor carries the exact
+`CharacterStringKind`, preserving Teletex/T61 and Visible/ISO646 identities
+even though each alias pair shares a wire tag. BER and DER preserve the raw
+field bytes; CER applies the C descriptor's repertoire or code-unit alignment
+checks after reassembly and uses universal tag-4 fragments. Generated record
+operations share aggregate scratch accounting even when an OPTIONAL field is
+absent. IA5/OID/BigInteger coexistence, multiple strings, aliases/references,
+imports, tags, constraints, DEFAULT, extensions, nested records, CHOICE, and
+mixed codec selections remain gated.
 One inline primitive CHOICE child with unique BOOLEAN, NULL, or bounded `i64`
 INTEGER alternatives is supported under BER/CER-only selection. An untagged
 SEQUENCE parent accepts a natural or one context-specific EXPLICIT CHOICE;

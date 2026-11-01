@@ -3593,8 +3593,7 @@ fi
 
 # Direct restricted character strings keep type tags fixed and CER checks exact.
 for fixture in RestrictedStringsAlias RestrictedStringsConstrained \
-    RestrictedStringsField RestrictedStringsImport RestrictedStringsTagged \
-    RestrictedStringsUnsupported; do
+    RestrictedStringsImport RestrictedStringsTagged RestrictedStringsUnsupported; do
     rejected_out="$test_tmp/rejected-$fixture"
     if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
         -D "$rejected_out" "$test_srcdir/$fixture.asn1" \
@@ -3602,8 +3601,19 @@ for fixture in RestrictedStringsAlias RestrictedStringsConstrained \
         echo "FAIL: Rust backend accepted unsupported restricted-string shape $fixture"
         exit 1
     fi
-    test ! -e "$rejected_out"
+    if [ -e "$rejected_out" ]; then
+        echo "FAIL: restricted-string rejection published output for $fixture"
+        exit 1
+    fi
 done
+
+restricted_field_out="$test_tmp/restricted-string-field-positive"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$restricted_field_out" "$test_srcdir/RestrictedStringsField.asn1"
+if [ ! -f "$restricted_field_out/Cargo.toml" ]; then
+    echo "FAIL: supported single restricted-string record did not publish a Rust crate"
+    exit 1
+fi
 
 restricted_mixed="$test_tmp/rejected-restricted-mixed"
 if "$asn1c_bin" --rust -S "$skeletons" -D "$restricted_mixed" \
@@ -3697,6 +3707,174 @@ if ! cc $restricted_cflags -I"$restricted_c" "$restricted_c"/*.c \
 fi
 if ! "$test_tmp/c-restricted"; then
     echo "FAIL: C restricted-string BER/DER/CER vectors failed"
+    exit 1
+fi
+
+# One natural restricted string composes with flat SEQUENCE/SET record fields.
+for fixture in RestrictedStringRecordAlias RestrictedStringRecordBigInteger \
+    RestrictedStringRecordCharacterString RestrictedStringRecordChoice \
+    RestrictedStringRecordConstrained RestrictedStringRecordDefault \
+    RestrictedStringRecordDuplicateAlias RestrictedStringRecordDuplicateVisible \
+    RestrictedStringRecordExtension RestrictedStringRecordExplicit \
+    RestrictedStringRecordIa5 \
+    RestrictedStringRecordMultiple RestrictedStringRecordNested \
+    RestrictedStringRecordOid RestrictedStringRecordTagged \
+    RestrictedStringRecordTaggedRoot RestrictedStringRecordUnboundedBits \
+    RestrictedStringRecordVariable; do
+    rejected_out="$test_tmp/rejected-$fixture"
+    if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$rejected_out" "$test_srcdir/$fixture.asn1" \
+        >"$test_tmp/$fixture.log" 2>&1; then
+        echo "FAIL: Rust backend accepted unsupported restricted-string record $fixture"
+        exit 1
+    fi
+    if [ -e "$rejected_out" ]; then
+        echo "FAIL: restricted-string rejection published output for $fixture"
+        exit 1
+    fi
+done
+restricted_record_import="$test_tmp/rejected-RestrictedStringRecordImported"
+if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$restricted_record_import" \
+    "$test_srcdir/RestrictedStringRecordImported.asn1" \
+    "$test_srcdir/RestrictedStringRecordImportedBase.asn1" \
+    >"$test_tmp/RestrictedStringRecordImported.log" 2>&1; then
+    echo "FAIL: Rust backend accepted an imported restricted-string field"
+    exit 1
+fi
+if [ -e "$restricted_record_import" ]; then
+    echo "FAIL: imported restricted-string rejection published output"
+    exit 1
+fi
+for selection in mixed uper; do
+    rejected_out="$test_tmp/rejected-restricted-record-$selection"
+    if [ "$selection" = mixed ]; then
+        if "$asn1c_bin" --rust -S "$skeletons" -D "$rejected_out" \
+            "$test_srcdir/RestrictedStringRecord.asn1" \
+            >"$test_tmp/restricted-record-$selection.log" 2>&1; then
+            echo "FAIL: mixed codecs accepted restricted-string record fields"
+            exit 1
+        fi
+    elif "$asn1c_bin" --rust -gen-UPER -no-gen-BER -no-gen-CER -S "$skeletons" \
+        -D "$rejected_out" "$test_srcdir/RestrictedStringRecord.asn1" \
+        >"$test_tmp/restricted-record-$selection.log" 2>&1; then
+        echo "FAIL: UPER-only selection accepted restricted-string record fields"
+        exit 1
+    fi
+    if [ -e "$rejected_out" ]; then
+        echo "FAIL: restricted-string codec rejection published output ($selection)"
+        exit 1
+    fi
+done
+
+restricted_record_rust="$test_tmp/restricted-string-record-rust"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$restricted_record_rust" "$test_srcdir/RestrictedStringRecord.asn1"
+mkdir "$restricted_record_rust/tests"
+cp "$test_srcdir/restricted_string_record_conformance.rs" \
+    "$restricted_record_rust/tests/"
+restricted_record_source="$restricted_record_rust/src/restricted_string_record.rs"
+for method in write_character_string read_character_string new_with_aggregate_scratch; do
+    if ! grep -F "$method" "$restricted_record_source" >/dev/null; then
+        echo "FAIL: generated restricted-string record source is missing $method"
+        exit 1
+    fi
+done
+if ! grep -F 'CharacterStringKind::T61String' "$restricted_record_source" \
+    >/dev/null || ! grep -F 'CharacterStringKind::TeletexString' \
+    "$restricted_record_source" >/dev/null; then
+    echo "FAIL: generated record descriptors collapse T61 and Teletex identities"
+    exit 1
+fi
+if ! grep -F 'CharacterStringKind::Iso646String' "$restricted_record_source" \
+    >/dev/null || ! grep -F 'CharacterStringKind::VisibleString' \
+    "$restricted_record_source" >/dev/null; then
+    echo "FAIL: generated record descriptors collapse ISO646 and Visible identities"
+    exit 1
+fi
+if grep -F '#[derive(Clone' "$restricted_record_source" >/dev/null; then
+    echo "FAIL: restricted-string record wrappers derive infallible Clone"
+    exit 1
+fi
+restricted_record_contexts=$(grep -c 'new_with_aggregate_scratch' \
+    "$restricted_record_source")
+if [ "$restricted_record_contexts" -ne 72 ]; then
+    echo "FAIL: expected 72 aggregate context sites, found $restricted_record_contexts"
+    exit 1
+fi
+restricted_record_writes=$(grep -c 'writer.write_character_string' \
+    "$restricted_record_source")
+if [ "$restricted_record_writes" -ne 18 ]; then
+    echo "FAIL: expected 18 generated string write sites, found $restricted_record_writes"
+    exit 1
+fi
+restricted_record_reads=$(grep -c 'reader.read_character_string' \
+    "$restricted_record_source")
+if [ "$restricted_record_reads" -ne 18 ]; then
+    echo "FAIL: expected 18 generated string read sites, found $restricted_record_reads"
+    exit 1
+fi
+if ! (cd "$restricted_record_rust" && \
+    CARGO_TARGET_DIR="$test_tmp/target-restricted-string-record" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-restricted-string-record" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/restricted-string-record-rust.log" 2>&1; then
+    cat "$test_tmp/restricted-string-record-rust.log"
+    echo "FAIL: restricted-string record conformance or strict Clippy"
+    exit 1
+fi
+
+for codec in BER CER; do
+    codec_out="$test_tmp/restricted-string-record-$codec-only"
+    if [ "$codec" = BER ]; then
+        unwanted='encode_cer|decode_cer'
+        "$asn1c_bin" --rust -gen-BER -no-gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$codec_out" "$test_srcdir/RestrictedStringRecord.asn1"
+    else
+        unwanted='encode_der|decode_ber'
+        "$asn1c_bin" --rust -gen-CER -no-gen-BER -no-gen-UPER -S "$skeletons" \
+            -D "$codec_out" "$test_srcdir/RestrictedStringRecord.asn1"
+    fi
+    if ! (cargo check --offline --manifest-path "$codec_out/Cargo.toml" && \
+        cargo clippy --offline --manifest-path "$codec_out/Cargo.toml" \
+        --all-targets --all-features -- -W clippy::pedantic \
+        -W clippy::nursery -D warnings) \
+        >"$test_tmp/restricted-string-record-$codec-only.log" 2>&1; then
+        cat "$test_tmp/restricted-string-record-$codec-only.log"
+        echo "FAIL: restricted-string record $codec-only strict Clippy"
+        exit 1
+    fi
+    if grep -E "pub fn ($unwanted)" \
+        "$codec_out/src/restricted_string_record.rs" >/dev/null; then
+        echo "FAIL: restricted-string record $codec-only output has unselected methods"
+        exit 1
+    fi
+done
+
+restricted_record_c="$test_tmp/restricted-string-record-c"
+mkdir "$restricted_record_c"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$restricted_record_c" \
+    "$test_srcdir/RestrictedStringRecord.asn1" \
+    >"$test_tmp/restricted-string-record-c-generate.log" 2>&1
+restricted_record_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$restricted_record_c/Makefile.am.libasncodec")
+rm -f "$restricted_record_c/converter-example.c" \
+    "$restricted_record_c/pdu_collection.c"
+if ! cc $restricted_record_cflags -I"$restricted_record_c" \
+    "$restricted_record_c"/*.c "$test_srcdir/c_restricted_string_record.c" \
+    -lm -o "$test_tmp/c-restricted-string-record" \
+    >"$test_tmp/restricted-string-record-c-compile.log" 2>&1; then
+    cat "$test_tmp/restricted-string-record-c-compile.log"
+    echo "FAIL: C restricted-string record differential fixture did not compile"
+    exit 1
+fi
+if ! "$test_tmp/c-restricted-string-record"; then
+    echo "FAIL: C restricted-string record BER/DER/CER vectors failed"
     exit 1
 fi
 

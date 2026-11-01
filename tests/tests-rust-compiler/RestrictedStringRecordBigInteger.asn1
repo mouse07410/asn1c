@@ -1,0 +1,3 @@
+RestrictedStringRecordBigInteger DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { value UTF8String, id INTEGER }
+END

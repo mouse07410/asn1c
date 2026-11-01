@@ -27,9 +27,9 @@ primitive CHOICE child in the qualified parent/tag combinations are also
 supported below; broader nested records and members remain in the parity
 matrix.
 BER/CER-only untagged flat records additionally qualify one natural IA5String
-member or up to one natural OBJECT IDENTIFIER and one natural RELATIVE-OID
-member, or one natural unconstrained `BigInteger` member, with the resource
-and schema gates described below.
+member, one natural non-IA5 restricted character-string member, up to one
+natural OBJECT IDENTIFIER and one natural RELATIVE-OID member, or one natural
+unconstrained `BigInteger` member, with the resource and schema gates below.
 
 The flat SET slice uses the same six direct field kinds under BER/CER-only
 selection. Its BER reader accepts arbitrary member order;
@@ -895,11 +895,12 @@ SET presence and ordering, malformed/constructed fields, tag aliases,
 suffixes, every truncation, exact resource limits, C vectors, and negative
 schema gates.
 
-### Restricted character-string fields in flat records (next qualified gate)
+### Restricted character-string fields in flat records (qualified slice)
 
 Extend BER/CER-only untagged, nonrecursive top-level SEQUENCE and SET records
 to one natural direct restricted character-string member, required or
-OPTIONAL, with existing scalar siblings and the six-field cap. Cover all
+OPTIONAL, with existing scalar siblings, including finite bounded BIT/OCTET
+STRING members, and the six-field cap. Cover all
 direct `CharacterStringKind` values except IA5String, which retains its
 existing field API. Preserve built-in Teletex/T61 and Visible/ISO646 names
 despite their shared wire tags. Reject two string members with the same
@@ -938,6 +939,58 @@ alignment edges, 999/1000/1001/2001 content boundaries, cross-fragment
 multibyte content, constructed BER and malformed fragments, SET reordering,
 duplicates, suffixes, all truncations, exact resource limits, C differential
 vectors, and no-publication schema gates.
+
+### Same-module named INTEGER fields (next reference gate)
+
+Accept one nonrecursive reference from an untagged flat SEQUENCE or SET member
+to a distinct same-module, untagged bounded `i64` INTEGER assignment that the
+Rust backend already emits. The referenced assignment must have one finite
+nonextensible range and no parameters, aliases, imports, DEFAULT, extension,
+or additional constraints on the referencing member. Retain its generated
+newtype as the public field value. Accept required or OPTIONAL presence and a
+natural identifier, one resolved context-specific IMPLICIT tag, or one
+resolved context-specific EXPLICIT wrapper on the referencing member, under
+BER/CER-only selection. Existing direct BOOLEAN, NULL, bounded INTEGER,
+nonextensible ENUMERATED, and finite bounded BIT/OCTET siblings and the
+six-field cap remain. IA5/OID/BigInteger/restricted-string, nested-record,
+CHOICE, and collection coexistence is outside this first reference gate.
+Reject alias chains, cross-module references, recursive or
+constructed targets, multiple references in one record, unsupported tag
+stacks, colliding effective tags, and mixed codec selections before output
+publication.
+
+Resolve and validate the target during the generator's schema gate, before
+emitting any Rust module. The record descriptor owns the member's effective
+wire tag and intrinsic INTEGER kind, while the named value owns its range.
+The fixer may copy the target range into the referencing member's
+`combined_constraints`; reject only an additional member-owned `constraints`
+node, then validate the resolved target range independently. Treat the
+member's `A1TC_REFERENCE` and `AMT_TYPEREF` shape explicitly instead of
+passing it through a direct-type-only member validator.
+Require exactly one contiguous finite target range: a min/max extraction
+alone must not widen a union of allowed values into an unintended interval.
+Encoding reads the newtype's checked value and writes it through the existing
+record context. Decoding reads through that same context, then constructs the
+named newtype with its range check; a range failure rejects the entire record.
+The C BER decoder may defer this constraint failure until
+`asn_check_constraints`; document that timing difference in differential
+tests rather than treating C's initial decode acceptance as a valid Rust
+value.
+Do not call the named type's public codec entry points with a fresh budget.
+The resolved target and generated name must be checked for collisions and
+cycles rather than inferred from a textual reference alone.
+
+The C reference for `Small ::= INTEGER (0..5)` and
+`Packet ::= SEQUENCE { n [3] EXPLICIT Small OPTIONAL, flag BOOLEAN }` with
+`n = 2` and `flag = TRUE` emits DER
+`30 08 a3 03 02 01 02 01 01 ff` and CER
+`30 80 a3 80 02 01 02 00 00 01 01 ff 00 00`.
+Acceptance needs natural, IMPLICIT, and EXPLICIT forms in SEQUENCE and SET;
+present and absent values; out-of-range BER values; duplicate, unknown, and
+colliding member tags; SET ordering; exact prefix and shared resource limits;
+generated C/Rust differential vectors; and negative schemas that demonstrate
+rejection before publication. Imports and broader reference graphs follow
+only after this bounded reference ownership model passes those checks.
 
 ## Decisions still required
 

@@ -1,0 +1,3 @@
+RestrictedStringRecordMultiple DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { text UTF8String, label PrintableString, flag BOOLEAN }
+END

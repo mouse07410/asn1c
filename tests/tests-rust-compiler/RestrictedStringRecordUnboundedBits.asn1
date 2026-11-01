@@ -1,0 +1,3 @@
+RestrictedStringRecordUnboundedBits DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { value UTF8String, tail BIT STRING }
+END

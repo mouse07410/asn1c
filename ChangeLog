@@ -1,4 +1,9 @@
 Changes since v1.5.3:
+	* Add one natural non-IA5 restricted character-string member to flat
+	  Rust BER/DER/CER SEQUENCE and SET records under BER/CER-only selection.
+	  Preserve Teletex/T61 and Visible/ISO646 identities, share aggregate
+	  scratch accounting, and validate canonical CER fields against C vectors.
+	  Reject unsupported shapes before publishing generated output.
 	* Add one natural unconstrained INTEGER field to Rust BER/DER/CER
 	  flat SEQUENCE and SET records under BER/CER-only selection. Use
 	  BigInteger without narrowing to i64, normalize BER sign padding

@@ -1,0 +1,3 @@
+RestrictedStringRecordExtension DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { value UTF8String, ..., flag BOOLEAN }
+END

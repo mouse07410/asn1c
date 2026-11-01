@@ -1,0 +1,3 @@
+RestrictedStringRecordTaggedRoot DEFINITIONS ::= BEGIN
+Packet ::= [3] IMPLICIT SEQUENCE { value UTF8String, flag BOOLEAN }
+END

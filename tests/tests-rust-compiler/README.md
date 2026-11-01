@@ -456,8 +456,31 @@ The live vectors cover all tags, empty values, 127/128 and 999/1000/1001-byte
 boundaries, aligned BMP/UniversalString boundaries, UTF8 legacy forms and a
 sequence split across a CER fragment, nested definite/indefinite BER, malformed
 children and EOCs, prefix consumption, repertoire failures, truncation, and
-limits. Aliases, tags, constraints, fields, imports, CHARACTER STRING, and
-mixed or non-BER/CER codec selection fail before output publication.
+limits. Aliases, tags, constraints, imports, CHARACTER STRING, and mixed or
+non-BER/CER codec selection fail before output publication. Flat record members
+are covered by the separate restricted-string record gate below.
+
+The restricted-string record gate composes one direct natural non-IA5
+`CharacterStringKind` member into a flat untagged SEQUENCE or SET with scalar
+siblings. Required and OPTIONAL fields are covered, including OPTIONAL absence
+in both record kinds. Teletex/T61 and Visible/ISO646 descriptors retain their
+distinct generated kinds despite shared universal tags. Every encode/decode
+operation selects aggregate-scratch accounting even when an OPTIONAL string is
+absent; strict CER re-encoding uses that same record context.
+Bounded OCTET STRING and BIT STRING siblings remain available through their
+existing explicit and implicit tags. A combined generated/C vector verifies
+these fields share record limits with the restricted string.
+
+`RestrictedStringsField.asn1` smoke-tests a one-field SEQUENCE. The broader
+`RestrictedStringRecord.asn1`, `restricted_string_record_conformance.rs`, and
+`c_restricted_string_record.c` compare all supported non-IA5 kinds in both
+directions. They cover primitive and fragmented CER vectors, UTF8 999/1000/1001
+and multi-fragment content, aligned BMP/Universal boundaries, optional SET
+presence and omission, BER constructed tag-4 fragments, prefix consumption,
+invalid CER repertoire/alignment, malformed children, and input/output limits.
+Aliases, fields, imports, tags, constraints, DEFAULT, extensions, nesting,
+CHOICE, IA5/OID/BigInteger coexistence, and mixed or non-BER/CER codecs fail
+before output publication.
 
 `UtcTimeValues.asn1`, `utc_time_conformance.rs`, and `c_utc_time.c` compare raw
 BER/DER preservation and canonical CER normalization for the direct untagged
