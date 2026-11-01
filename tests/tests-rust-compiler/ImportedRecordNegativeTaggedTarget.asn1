@@ -1,0 +1,8 @@
+ImportedTaggedTargetBase DEFINITIONS ::= BEGIN
+EXPORTS Bad;
+Bad ::= [0] IMPLICIT SEQUENCE { value INTEGER (0..5) }
+END
+ImportedTaggedTargetClient DEFINITIONS ::= BEGIN
+IMPORTS Bad FROM ImportedTaggedTargetBase;
+Packet ::= SEQUENCE { child Bad }
+END

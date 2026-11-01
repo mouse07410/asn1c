@@ -1,4 +1,11 @@
 Changes since v1.5.3:
+	* Compose direct imported SEQUENCE/SET children in Rust BER/DER/CER flat
+	  records using qualified types and shared crate-visible field callbacks.
+	  Validate unused imported targets and discover SET callbacks across modules.
+	  Add C/Rust vectors, exact shared limits, malformed and canonical cases,
+	  source-order/codec-selection checks, and no-publication schema negatives.
+	  Normalize dashed Rust type names to CamelCase, preserving existing interior
+	  case and rejecting normalized collisions without relaxing strict Clippy.
 	* Support one directly imported bounded INTEGER field in flat Rust
 	  BER/DER/CER SEQUENCE and SET records. Resolve by source module and symbol,
 	  preserve exported target ranges through qualified Rust paths, and share

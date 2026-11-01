@@ -1,0 +1,4 @@
+TypeNameKeywordCollision DEFINITIONS ::= BEGIN
+Self ::= INTEGER (0..5)
+Asn1-Self ::= BOOLEAN
+END

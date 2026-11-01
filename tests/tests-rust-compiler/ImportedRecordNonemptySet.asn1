@@ -1,0 +1,4 @@
+ImportedNonemptySetClient DEFINITIONS ::= BEGIN
+IMPORTS NonemptyRemoteSet FROM ImportedRecordBase;
+NonemptySetPair ::= SEQUENCE { child NonemptyRemoteSet }
+END

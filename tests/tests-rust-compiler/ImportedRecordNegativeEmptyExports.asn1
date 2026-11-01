@@ -1,0 +1,8 @@
+ImportedEmptyExportsBase DEFINITIONS ::= BEGIN
+EXPORTS;
+Bad ::= SEQUENCE { value INTEGER (0..5) }
+END
+ImportedEmptyExportsClient DEFINITIONS ::= BEGIN
+IMPORTS Bad FROM ImportedEmptyExportsBase;
+Packet ::= SEQUENCE { child Bad }
+END

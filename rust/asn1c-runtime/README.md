@@ -416,6 +416,10 @@ for schemas containing a child use `RecordContext::new_nested` from the public
 operation boundary, even when an OPTIONAL child is absent. `RecordContext::new`
 retains the existing flat-record behavior, and nested callbacks fail closed
 when used with that flat context.
+Direct imported record children use the same callbacks through crate-visible
+generated field helpers. Their source module supplies the type, while the
+parent retains the shared work, allocation, scratch, input, and output limits.
+No additional runtime nesting level is introduced by the module boundary.
 
 A generated directly imported bounded INTEGER field uses these same scalar
 record readers and writers. Its source module supplies the checked newtype;

@@ -1,0 +1,10 @@
+ImportedAssignedBase { iso org(3) dod(6) internet(1) private(4) enterprise(1) 9301 }
+    DEFINITIONS ::= BEGIN
+EXPORTS Bad;
+Bad ::= SEQUENCE { value INTEGER (0..5) }
+END
+ImportedAssignedClient DEFINITIONS ::= BEGIN
+IMPORTS Bad FROM ImportedAssignedBase
+    { iso org(3) dod(6) internet(1) private(4) enterprise(1) 9301 };
+Packet ::= SEQUENCE { child Bad }
+END

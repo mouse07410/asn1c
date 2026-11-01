@@ -1,0 +1,4 @@
+TypeNameNestedCollision DEFINITIONS ::= BEGIN
+Foo-Bar ::= SEQUENCE { child SEQUENCE { value INTEGER (0..5) } }
+FooBarChild ::= BOOLEAN
+END

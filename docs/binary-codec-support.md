@@ -293,7 +293,7 @@ newtype and uses the parent's shared BER/CER record context for reads and
 writes. Natural, context-specific IMPLICIT, and one EXPLICIT member tags are
 supported beside the existing scalar fields, including finite bounded
 BIT/OCTET STRING siblings, within the six-field cap. Aliases and imports outside
-the direct imported bounded-INTEGER record slice,
+the qualified direct INTEGER/named-record slices,
 parameters, target extensions/unions, member constraints, DEFAULT, nested
 forms, duplicate effective tags, and non-BER/CER codec selections fail before
 output publication.
@@ -308,14 +308,14 @@ EXPLICIT member tags work with the existing scalar/default siblings. Generated
 fields use a fully qualified source-module type path and the parent context
 for scalar reads and writes, so the target range and shared operation limits
 remain in force. The generator validates all declared imports even when they
-are unused. Aliases, re-exports, parameters, imported constructed types, extra
-imports, member constraints, assigned module identifiers, successor/descendant
+are unused. Aliases, re-exports, parameters, extra imports, member constraints,
+assigned module identifiers, successor/descendant
 import options, and non-BER/CER selections fail before Rust output publication.
 Tests compare C and Rust vectors for natural, OPTIONAL, tagged, SET ordering,
 DEFAULT, malformed, range, prefix, and exact resource-limit cases. Separate
 cases exercise same-spelled targets in distinct modules, both source orders,
 export behavior, and no-publication rejection.
-An untagged flat SEQUENCE or SET may contain one or two direct same-module
+An untagged flat SEQUENCE or SET may contain one or two direct local or imported
 named SEQUENCE/SET children under BER/CER-only selection. Each target is
 untagged and nonrecursive, has the existing direct primitive-leaf restrictions,
 and may be required or OPTIONAL with a natural tag, one resolved
@@ -324,11 +324,16 @@ referenced twice when the two effective outer tags differ. The parent retains
 its six-field cap, and the parent fields plus both targets' direct members
 share a twelve-member schema-work cap. Parent scalar siblings retain their
 OPTIONAL and literal BOOLEAN/bounded INTEGER DEFAULT behavior. Generated code
-keeps named public child types and calls their private field helpers with one
+keeps named public child types and calls their crate-visible field helpers with one
 shared nested record context for BER decoding, DER/CER encoding, and strict
 CER comparison. Each child SET sorts its members independently of parent SET
-ordering. Empty named SET targets remain rejected because generated C output
-does not compile them. Aliases, imports, recursion, more than two children,
+ordering. An imported target uses one declared import group/symbol from a
+supplied distinct module without imports; direct ownership, exports, unique
+module identity, and all target leaves are validated even for unused imports.
+Qualified paths preserve type identity and bounds. SET callback discovery scans
+all fixed modules and leaves unused SETs without dead callbacks. Empty named
+SET targets remain rejected because generated C output
+does not compile them. Aliases, broader imports, recursion, more than two children,
 mixed inline and named constructed children, nested target members, extensions,
 effective-tag collisions, and mixed codecs fail before Rust output publication.
 Flat untagged SEQUENCE and SET records may also contain one natural direct

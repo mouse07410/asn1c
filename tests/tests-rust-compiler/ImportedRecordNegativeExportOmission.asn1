@@ -1,0 +1,9 @@
+ImportedExportOmissionBase DEFINITIONS ::= BEGIN
+EXPORTS Other;
+Bad ::= SEQUENCE { value INTEGER (0..5) }
+Other ::= BOOLEAN
+END
+ImportedExportOmissionClient DEFINITIONS ::= BEGIN
+IMPORTS Bad FROM ImportedExportOmissionBase;
+Packet ::= SEQUENCE { child Bad }
+END

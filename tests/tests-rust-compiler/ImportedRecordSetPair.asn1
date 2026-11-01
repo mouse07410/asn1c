@@ -1,0 +1,11 @@
+ImportedSetPairClient DEFINITIONS ::= BEGIN
+IMPORTS NonemptyRemoteSet FROM ImportedRecordBase;
+LocalPairSeq ::= SEQUENCE {
+    number INTEGER (0..5),
+    flag BOOLEAN
+}
+SetPair ::= SET {
+    imported NonemptyRemoteSet,
+    local LocalPairSeq
+}
+END

@@ -1,0 +1,4 @@
+ImportedCommonAlphaClient DEFINITIONS ::= BEGIN
+IMPORTS Common FROM ImportedCommonAlphaSource;
+AlphaPacket ::= SEQUENCE { child Common }
+END

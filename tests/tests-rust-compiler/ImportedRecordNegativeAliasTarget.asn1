@@ -1,0 +1,9 @@
+ImportedAliasTargetBase DEFINITIONS ::= BEGIN
+EXPORTS Bad;
+Original ::= SEQUENCE { value INTEGER (0..5) }
+Bad ::= Original
+END
+ImportedAliasTargetClient DEFINITIONS ::= BEGIN
+IMPORTS Bad FROM ImportedAliasTargetBase;
+Packet ::= SEQUENCE { child Bad }
+END

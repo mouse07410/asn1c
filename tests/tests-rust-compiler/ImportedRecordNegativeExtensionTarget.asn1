@@ -1,0 +1,8 @@
+ImportedExtensionTargetBase DEFINITIONS ::= BEGIN
+EXPORTS Bad;
+Bad ::= SEQUENCE { value INTEGER (0..5), ..., extension BOOLEAN }
+END
+ImportedExtensionTargetClient DEFINITIONS ::= BEGIN
+IMPORTS Bad FROM ImportedExtensionTargetBase;
+Packet ::= SEQUENCE { child Bad }
+END

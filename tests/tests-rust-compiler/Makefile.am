@@ -149,6 +149,56 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/imported_integer_reserved_module.rs \
     $(srcdir)/imported_integer_same_names.rs \
     $(srcdir)/c_imported_bounded_integer.c \
+    $(srcdir)/ImportedRecordAlphaClient.asn1 \
+    $(srcdir)/ImportedRecordAlphaSource.asn1 \
+    $(srcdir)/ImportedRecordBase.asn1 \
+    $(srcdir)/ImportedRecordBetaClient.asn1 \
+    $(srcdir)/ImportedRecordBetaSource.asn1 \
+    $(srcdir)/ImportedRecordDefault.asn1 \
+    $(srcdir)/ImportedRecordEmpty.asn1 \
+    $(srcdir)/ImportedRecordEquivalent.asn1 \
+    $(srcdir)/ImportedRecordLegacyBase.asn1 \
+    $(srcdir)/ImportedRecordLegacyClients.asn1 \
+    $(srcdir)/ImportedRecordNegativeAggregateWork14.asn1 \
+    $(srcdir)/ImportedRecordNegativeAliasTarget.asn1 \
+    $(srcdir)/ImportedRecordNegativeAssignedIdentifier.asn1 \
+    $(srcdir)/ImportedRecordNegativeDefaultTarget.asn1 \
+    $(srcdir)/ImportedRecordNegativeDescendants.asn1 \
+    $(srcdir)/ImportedRecordNegativeDuplicateEffectiveTag.asn1 \
+    $(srcdir)/ImportedRecordNegativeDuplicateRawSource.asn1 \
+    $(srcdir)/ImportedRecordNegativeEmptyExports.asn1 \
+    $(srcdir)/ImportedRecordNegativeExportOmission.asn1 \
+    $(srcdir)/ImportedRecordNegativeExtensionTarget.asn1 \
+    $(srcdir)/ImportedRecordNegativeNestedSetImport.asn1 \
+    $(srcdir)/ImportedRecordNegativeNestedTarget.asn1 \
+    $(srcdir)/ImportedRecordNegativeParameterTarget.asn1 \
+    $(srcdir)/ImportedRecordNegativeParentSeven.asn1 \
+    $(srcdir)/ImportedRecordNegativePrivateMemberTag.asn1 \
+    $(srcdir)/ImportedRecordNegativeReexportTarget.asn1 \
+    $(srcdir)/ImportedRecordNegativeReferenceTarget.asn1 \
+    $(srcdir)/ImportedRecordNegativeSourceGraph.asn1 \
+    $(srcdir)/ImportedRecordNegativeSuccessors.asn1 \
+    $(srcdir)/ImportedRecordNegativeTaggedTarget.asn1 \
+    $(srcdir)/ImportedRecordNegativeUnsupportedLeaf.asn1 \
+    $(srcdir)/ImportedRecordNegativeUnusedNestedTarget.asn1 \
+    $(srcdir)/ImportedRecordNonemptySet.asn1 \
+    $(srcdir)/ImportedRecordOptionalOrder.asn1 \
+    $(srcdir)/ImportedRecordOwned.asn1 \
+    $(srcdir)/ImportedRecordRepeated.asn1 \
+    $(srcdir)/ImportedRecordSeqPair.asn1 \
+    $(srcdir)/ImportedRecordSetPair.asn1 \
+    $(srcdir)/ImportedRecordUnusedClient.asn1 \
+    $(srcdir)/ImportedRecordUnusedSource.asn1 \
+    $(srcdir)/imported_record_conformance.rs \
+    $(srcdir)/imported_record_legacy_conformance.rs \
+    $(srcdir)/imported_record_composition.c \
+    $(srcdir)/imported_record_owned_defaults.c \
+    $(srcdir)/imported_record_legacy.c \
+    $(srcdir)/TypeNameConformance.asn1 \
+    $(srcdir)/TypeNameKeywordCollision.asn1 \
+    $(srcdir)/TypeNameNestedCollision.asn1 \
+    $(srcdir)/TypeNameSameModuleCollision.asn1 \
+    $(srcdir)/type_name_conformance.rs \
     $(srcdir)/ChoiceBooleanOnly.asn1 \
     $(srcdir)/ChoiceNullOnly.asn1 \
     $(srcdir)/ChoiceIntegerOnly.asn1 \

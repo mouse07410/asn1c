@@ -1,0 +1,7 @@
+ImportedUnusedSource DEFINITIONS ::= BEGIN
+EXPORTS DormantSet;
+DormantSet ::= SET {
+    flag [0] IMPLICIT BOOLEAN,
+    count [1] IMPLICIT INTEGER (0..5)
+}
+END

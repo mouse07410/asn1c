@@ -1,0 +1,8 @@
+ImportedOptionalOrderClient DEFINITIONS ::= BEGIN
+IMPORTS RemoteSeq FROM ImportedRecordBase;
+OptionalOrder ::= SET {
+    explicitChild [3] EXPLICIT RemoteSeq OPTIONAL,
+    marker [0] IMPLICIT BOOLEAN,
+    implicitChild [2] IMPLICIT RemoteSeq
+}
+END

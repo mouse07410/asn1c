@@ -1,0 +1,8 @@
+ImportedDuplicateTagBase DEFINITIONS ::= BEGIN
+EXPORTS Bad;
+Bad ::= SEQUENCE { value INTEGER (0..5) }
+END
+ImportedDuplicateTagClient DEFINITIONS ::= BEGIN
+IMPORTS Bad FROM ImportedDuplicateTagBase;
+Packet ::= SEQUENCE { first Bad, second Bad OPTIONAL }
+END

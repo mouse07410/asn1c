@@ -1,0 +1,9 @@
+ImportedReferenceTargetBase DEFINITIONS ::= BEGIN
+EXPORTS Bad;
+Small ::= INTEGER (0..5)
+Bad ::= SEQUENCE { value Small }
+END
+ImportedReferenceTargetClient DEFINITIONS ::= BEGIN
+IMPORTS Bad FROM ImportedReferenceTargetBase;
+Packet ::= SEQUENCE { child Bad }
+END

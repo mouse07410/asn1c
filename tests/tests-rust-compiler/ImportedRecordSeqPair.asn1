@@ -1,0 +1,11 @@
+ImportedSeqPairClient DEFINITIONS ::= BEGIN
+IMPORTS RemoteSeq FROM ImportedRecordBase;
+LocalSet ::= SET {
+    number [0] IMPLICIT INTEGER (0..5),
+    flag [1] IMPLICIT BOOLEAN
+}
+SeqPair ::= SEQUENCE {
+    imported RemoteSeq,
+    local LocalSet
+}
+END

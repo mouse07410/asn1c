@@ -1,0 +1,8 @@
+ImportedParameterizedBase DEFINITIONS ::= BEGIN
+EXPORTS Bad;
+Bad { T } ::= SEQUENCE { value T }
+END
+ImportedParameterizedClient DEFINITIONS ::= BEGIN
+IMPORTS Bad FROM ImportedParameterizedBase;
+Packet ::= SEQUENCE { child Bad { INTEGER (0..5) } }
+END

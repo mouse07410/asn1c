@@ -1,0 +1,14 @@
+ImportedDescendantClient
+    { iso org(3) dod(6) internet(1) private(4) enterprise(1) 9304 }
+    DEFINITIONS ::= BEGIN
+IMPORTS Bad FROM ImportedDescendantBase
+    { iso org(3) dod(6) internet(1) private(4) enterprise(1) 9304 major-version-1(1) }
+    WITH DESCENDANTS;
+Packet ::= SEQUENCE { child Bad }
+END
+ImportedDescendantBase
+    { iso org(3) dod(6) internet(1) private(4) enterprise(1) 9304 major-version-1(1) }
+    DEFINITIONS ::= BEGIN
+EXPORTS Bad;
+Bad ::= SEQUENCE { value INTEGER (0..5) }
+END

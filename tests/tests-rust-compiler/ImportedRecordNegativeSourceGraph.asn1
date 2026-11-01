@@ -1,0 +1,13 @@
+ImportedGraphUpstream DEFINITIONS ::= BEGIN
+EXPORTS Small;
+Small ::= INTEGER (0..5)
+END
+ImportedGraphBase DEFINITIONS ::= BEGIN
+EXPORTS Bad;
+IMPORTS Small FROM ImportedGraphUpstream;
+Bad ::= SEQUENCE { value INTEGER (0..5) }
+END
+ImportedGraphClient DEFINITIONS ::= BEGIN
+IMPORTS Bad FROM ImportedGraphBase;
+Packet ::= SEQUENCE { child Bad }
+END

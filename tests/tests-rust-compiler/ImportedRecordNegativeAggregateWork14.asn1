@@ -1,0 +1,18 @@
+ImportedWorkBase DEFINITIONS ::= BEGIN
+EXPORTS Bad;
+Bad ::= SEQUENCE {
+    a BOOLEAN,
+    b NULL,
+    c INTEGER (0..5),
+    d ENUMERATED { red(0), blue(1) },
+    e OCTET STRING (SIZE(2)),
+    f BIT STRING (SIZE(3))
+}
+END
+ImportedWorkClient DEFINITIONS ::= BEGIN
+IMPORTS Bad FROM ImportedWorkBase;
+Packet ::= SEQUENCE {
+    first [6] IMPLICIT Bad OPTIONAL,
+    second [7] EXPLICIT Bad
+}
+END

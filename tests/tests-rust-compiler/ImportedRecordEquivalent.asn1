@@ -1,0 +1,15 @@
+ImportedEquivalentClient DEFINITIONS ::= BEGIN
+IMPORTS RemoteSeq FROM ImportedRecordBase;
+LocalEquivalentLeaf ::= SEQUENCE {
+    number INTEGER (0..5),
+    flag BOOLEAN OPTIONAL
+}
+LocalEquivalent ::= SEQUENCE {
+    child LocalEquivalentLeaf,
+    tail [4] IMPLICIT BOOLEAN
+}
+ImportedEquivalent ::= SEQUENCE {
+    child RemoteSeq,
+    tail [4] IMPLICIT BOOLEAN
+}
+END

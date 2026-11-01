@@ -1762,6 +1762,10 @@ for method in encode_der decode_ber encode_cer decode_cer; do
     grep -F "pub fn $method" "$set_ber_cer_source" >/dev/null
 done
 grep -F 'pub struct SetEmptyRecord' "$set_ber_cer_source" >/dev/null
+if grep -F '#[allow(non_camel_case_types)]' "$set_ber_cer_source" >/dev/null; then
+    echo "FAIL: generated SET output bypassed type-name linting"
+    exit 1
+fi
 
 # Keep BER-only and CER-only SET output independently under strict linting.
 set_ber_only="$test_tmp/set-ber-only"
@@ -4694,18 +4698,7 @@ if ! (cd "$named_sequence_set_child" && \
     exit 1
 fi
 
-rejected_named_sequence_import="$test_tmp/rejected-NamedSequenceImported"
-if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
-    -D "$rejected_named_sequence_import" "$test_srcdir/NamedSequenceImportBase.asn1" \
-    "$test_srcdir/NamedSequenceImported.asn1" \
-    >"$test_tmp/rejected-NamedSequenceImported.log" 2>&1; then
-    echo "FAIL: named SEQUENCE gate accepted an imported target"
-    exit 1
-fi
-if [ -e "$rejected_named_sequence_import" ]; then
-    echo "FAIL: imported named SEQUENCE target published output"
-    exit 1
-fi
+# Imported named SEQUENCE smoke coverage is grouped with imported records below.
 
 for selection in mixed uper; do
     rejected="$test_tmp/rejected-named-sequence-codecs-$selection"
@@ -4852,18 +4845,7 @@ for fixture in NamedSetAlias NamedSetCollision NamedSetEmpty NamedSetExtension \
     fi
 done
 
-named_set_import="$test_tmp/rejected-NamedSetImported"
-if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
-    -D "$named_set_import" "$test_srcdir/NamedSetImportBase.asn1" \
-    "$test_srcdir/NamedSetImported.asn1" \
-    >"$test_tmp/rejected-NamedSetImported.log" 2>&1; then
-    echo "FAIL: named SET gate accepted imported target"
-    exit 1
-fi
-if [ -e "$named_set_import" ]; then
-    echo "FAIL: imported named SET target published output"
-    exit 1
-fi
+# Imported named SET smoke coverage is grouped with imported records below.
 
 for selection in mixed uper; do
     rejected="$test_tmp/rejected-named-set-codecs-$selection"
@@ -5237,7 +5219,7 @@ done
 
 # Every unsupported declaration fails before publishing a generated project.
 for fixture in ImportedIntegerAlias ImportedIntegerReexport \
-    ImportedIntegerConstructed ImportedIntegerParameterized \
+    ImportedIntegerParameterized \
     ImportedIntegerMemberConstraint ImportedIntegerUnusedImport \
     ImportedIntegerUnusedNonExported ImportedIntegerUnusedUnsupported \
     ImportedIntegerMultipleSymbols ImportedIntegerUndeclaredSymbol \
@@ -5332,4 +5314,256 @@ if ! ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
     exit 1
 fi
 
-echo "PASS: generated Rust UPER/CER/BER-DER, named record pair, and import slices"
+# Former import rejections now compile through the qualified record gate.
+legacy_imports="$test_tmp/imported-record-former-negatives"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$legacy_imports" "$test_srcdir/ImportedIntegerConstructed.asn1" \
+    "$test_srcdir/NamedSequenceImportBase.asn1" "$test_srcdir/NamedSequenceImported.asn1" \
+    "$test_srcdir/NamedSetImportBase.asn1" "$test_srcdir/NamedSetImported.asn1"
+if ! (cd "$legacy_imports" && cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/imported-record-former-negatives.log" 2>&1; then
+    cat "$test_tmp/imported-record-former-negatives.log"
+    echo "FAIL: former imported record negatives or strict Clippy"
+    exit 1
+fi
+
+# Put all sources before all clients, then reverse those groups, without path splitting.
+record_sources='ImportedRecordBase ImportedRecordAlphaSource ImportedRecordBetaSource
+ImportedRecordUnusedSource ImportedRecordLegacyBase'
+record_clients='ImportedRecordAlphaClient ImportedRecordBetaClient ImportedRecordDefault
+ImportedRecordEmpty ImportedRecordEquivalent ImportedRecordLegacyClients ImportedRecordNonemptySet
+ImportedRecordOptionalOrder ImportedRecordOwned ImportedRecordRepeated ImportedRecordSeqPair
+ImportedRecordSetPair ImportedRecordUnusedClient'
+for order in source-first client-first; do
+    if [ "$order" = source-first ]; then
+        groups='source client'
+    else
+        groups='client source'
+    fi
+    set --
+    for group in $groups; do
+        if [ "$group" = source ]; then
+            fixtures=$record_sources
+        else
+            fixtures=$record_clients
+        fi
+        for fixture in $fixtures; do
+            set -- "$@" "$test_srcdir/$fixture.asn1"
+        done
+    done
+    record_rust="$test_tmp/imported-record-$order"
+    "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$record_rust" "$@"
+    mkdir "$record_rust/tests"
+    cp "$test_srcdir/imported_record_conformance.rs" \
+        "$test_srcdir/imported_record_legacy_conformance.rs" "$record_rust/tests/"
+    if ! (cd "$record_rust" && cargo test --offline --manifest-path Cargo.toml && \
+        cargo clippy --offline --all-targets --all-features -- \
+        -W clippy::pedantic -W clippy::nursery -D warnings) \
+        >"$test_tmp/imported-record-$order.log" 2>&1; then
+        cat "$test_tmp/imported-record-$order.log"
+        echo "FAIL: imported record $order tests or strict Clippy"
+        exit 1
+    fi
+    if grep -E 'fn (encode|decode)_record_fields' \
+        "$record_rust/src/imported_unused_source.rs" >/dev/null; then
+        echo "FAIL: unused imported SET emitted unused child callbacks"
+        exit 1
+    fi
+done
+
+# The same cross-module callbacks must compile for either selected codec alone.
+for selection in ber cer; do
+    selected="$test_tmp/imported-record-$selection-only"
+    if [ "$selection" = ber ]; then
+        "$asn1c_bin" --rust -gen-BER -no-gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$selected" "$@"
+        forbidden='pub fn .*_cer'
+    else
+        "$asn1c_bin" --rust -no-gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$selected" "$@"
+        forbidden='pub fn .*_(ber|der)'
+    fi
+    if grep -E "$forbidden" "$selected/src"/*.rs >/dev/null; then
+        echo "FAIL: imported record $selection selection exposed unselected codecs"
+        exit 1
+    fi
+    if ! (cd "$selected" && cargo clippy --offline --all-targets --all-features -- \
+        -W clippy::pedantic -W clippy::nursery -D warnings) \
+        >"$test_tmp/imported-record-$selection-only.log" 2>&1; then
+        cat "$test_tmp/imported-record-$selection-only.log"
+        echo "FAIL: imported record $selection selection strict Clippy"
+        exit 1
+    fi
+done
+
+# Parse each negative first, then require rejection without an output path.
+for schema in "$test_srcdir"/ImportedRecordNegative*.asn1; do
+    fixture=${schema##*/}
+    fixture=${fixture%.asn1}
+    rejected="$test_tmp/rejected-$fixture"
+    if ! "$asn1c_bin" -E "$schema" >"$test_tmp/parsed-$fixture.log" 2>&1; then
+        cat "$test_tmp/parsed-$fixture.log"
+        echo "FAIL: imported record negative $fixture has invalid syntax"
+        exit 1
+    fi
+    if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$rejected" "$schema" >"$test_tmp/rejected-$fixture.log" 2>&1; then
+        echo "FAIL: imported record accepted unsupported $fixture"
+        exit 1
+    fi
+    if [ -e "$rejected" ]; then
+        echo "FAIL: imported record rejection $fixture published output"
+        exit 1
+    fi
+done
+
+# Imports continue to reject mixed codec generation and UPER-only requests.
+for selection in mixed uper; do
+    rejected="$test_tmp/rejected-imported-record-$selection"
+    if [ "$selection" = mixed ]; then
+        if "$asn1c_bin" --rust -gen-BER -gen-CER -gen-UPER -S "$skeletons" \
+            -D "$rejected" "$@" >"$test_tmp/rejected-imported-record-$selection.log" 2>&1; then
+            echo "FAIL: imported records accepted mixed codecs"
+            exit 1
+        fi
+    else
+        if "$asn1c_bin" --rust -gen-UPER -no-gen-BER -no-gen-CER -S "$skeletons" \
+            -D "$rejected" "$@" >"$test_tmp/rejected-imported-record-$selection.log" 2>&1; then
+            echo "FAIL: imported records accepted UPER-only selection"
+            exit 1
+        fi
+    fi
+    if [ -e "$rejected" ]; then
+        echo "FAIL: unsupported imported record codec selection published output"
+        exit 1
+    fi
+done
+
+# Generated C supplies independent DER/CER values and malformed-input checks.
+record_c="$test_tmp/imported-record-c"
+mkdir "$record_c"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$record_c" "$@" >"$test_tmp/imported-record-c-generate.log" 2>&1
+record_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' "$record_c/Makefile.am.libasncodec")
+rm -f "$record_c/converter-example.c" "$record_c/pdu_collection.c"
+for harness in imported_record_composition imported_record_owned_defaults imported_record_legacy; do
+    if ! cc $record_cflags -I"$record_c" "$record_c"/*.c "$test_srcdir/$harness.c" \
+        -lm -o "$test_tmp/c-$harness" >"$test_tmp/$harness-compile.log" 2>&1; then
+        cat "$test_tmp/$harness-compile.log"
+        echo "FAIL: imported record C fixture $harness did not compile"
+        exit 1
+    fi
+    if ! "$test_tmp/c-$harness"; then
+        echo "FAIL: imported record C fixture $harness failed"
+        exit 1
+    fi
+    if ! cc -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer \
+        $record_cflags -I"$record_c" "$record_c"/*.c "$test_srcdir/$harness.c" \
+        -lm -o "$test_tmp/c-$harness-sanitize" \
+        >"$test_tmp/$harness-sanitize-compile.log" 2>&1; then
+        cat "$test_tmp/$harness-sanitize-compile.log"
+        echo "FAIL: imported record sanitizer fixture $harness did not compile"
+        exit 1
+    fi
+    if ! ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
+        "$test_tmp/c-$harness-sanitize"; then
+        echo "FAIL: imported record sanitizer fixture $harness failed"
+        exit 1
+    fi
+done
+
+# Dashed type names use lint-clean CamelCase while other naming stays stable.
+type_name_rust="$test_tmp/type-name-rust"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$type_name_rust" "$test_srcdir/TypeNameConformance.asn1"
+mkdir "$type_name_rust/tests"
+cp "$test_srcdir/type_name_conformance.rs" "$type_name_rust/tests/"
+for expected in 'pub mod foo_base;' 'pub mod foo_client;' 'pub mod type_name_naming;' \
+    'pub mod type_name_keyword;'; do
+    if ! grep -F "$expected" "$type_name_rust/src/lib.rs" >/dev/null; then
+        echo "FAIL: Rust type-name fixture omitted $expected"
+        exit 1
+    fi
+done
+for expected in 'pub struct FooBar' 'crate::foo_base::FooBar' 'pub some_enabled: bool'; do
+    if ! grep -F "$expected" "$type_name_rust/src/foo_client.rs" >/dev/null; then
+        echo "FAIL: Rust type-name fixture omitted $expected"
+        exit 1
+    fi
+done
+for expected in 'pub struct NamedRoot' 'pub struct NamedRootChildRecord' \
+    'pub child_record: NamedRootChildRecord' 'pub some_value: i64' \
+    'pub enum Color' 'RedBlue' 'Darkgreen'; do
+    if ! grep -F "$expected" "$type_name_rust/src/type_name_naming.rs" >/dev/null; then
+        echo "FAIL: Rust naming-style fixture omitted $expected"
+        exit 1
+    fi
+done
+grep -F 'pub struct FooBar' "$type_name_rust/src/foo_base.rs" >/dev/null
+grep -F 'pub struct Asn1Self' "$type_name_rust/src/type_name_keyword.rs" >/dev/null
+if grep -R -F '#[allow(non_camel_case_types)]' "$type_name_rust/src" >/dev/null; then
+    echo "FAIL: Rust type-name output added a naming lint allowance"
+    exit 1
+fi
+if ! (cd "$type_name_rust" && \
+    cargo test --offline --manifest-path Cargo.toml && \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/type-name-rust.log" 2>&1; then
+    cat "$test_tmp/type-name-rust.log"
+    echo "FAIL: Rust type-name tests or strict Clippy"
+    exit 1
+fi
+
+# Keep the naming change warning-free under individual BER and CER selections.
+for codec in BER CER; do
+    codec_output="$test_tmp/type-name-$codec-only"
+    if [ "$codec" = BER ]; then
+        unwanted='pub fn encode_cer|pub fn decode_cer'
+        "$asn1c_bin" --rust -gen-BER -no-gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$codec_output" "$test_srcdir/TypeNameConformance.asn1"
+    else
+        unwanted='pub fn encode_der|pub fn decode_ber'
+        "$asn1c_bin" --rust -gen-CER -no-gen-BER -no-gen-UPER -S "$skeletons" \
+            -D "$codec_output" "$test_srcdir/TypeNameConformance.asn1"
+    fi
+    if ! (cd "$codec_output" && cargo clippy --offline --all-targets --all-features -- \
+        -W clippy::pedantic -W clippy::nursery -D warnings) \
+        >"$test_tmp/type-name-$codec-only.log" 2>&1; then
+        cat "$test_tmp/type-name-$codec-only.log"
+        echo "FAIL: Rust type-name $codec-only strict Clippy"
+        exit 1
+    fi
+    if grep -E "$unwanted" "$codec_output/src"/*.rs >/dev/null; then
+        echo "FAIL: Rust type-name $codec-only output has unselected methods"
+        exit 1
+    fi
+done
+
+# Ambiguous normalized top-level, keyword, or nested names fail before staging.
+for fixture in TypeNameSameModuleCollision TypeNameKeywordCollision \
+    TypeNameNestedCollision; do
+    rejected="$test_tmp/rejected-$fixture"
+    if ! "$asn1c_bin" -E "$test_srcdir/$fixture.asn1" \
+        >"$test_tmp/parsed-$fixture.log" 2>&1; then
+        cat "$test_tmp/parsed-$fixture.log"
+        echo "FAIL: type-name collision fixture $fixture has invalid syntax"
+        exit 1
+    fi
+    if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$rejected" "$test_srcdir/$fixture.asn1" \
+        >"$test_tmp/rejected-$fixture.log" 2>&1; then
+        echo "FAIL: Rust type-name gate accepted collision fixture $fixture"
+        exit 1
+    fi
+    if [ -e "$rejected" ]; then
+        echo "FAIL: rejected type-name fixture $fixture published output"
+        exit 1
+    fi
+done
+
+echo "PASS: generated Rust binary codec, imported record, and naming slices"

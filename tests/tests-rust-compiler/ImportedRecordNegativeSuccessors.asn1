@@ -1,0 +1,14 @@
+ImportedSuccessorClient
+    { iso org(3) dod(6) internet(1) private(4) enterprise(1) 9302 }
+    DEFINITIONS ::= BEGIN
+IMPORTS Bad FROM ImportedSuccessorBase
+    { iso org(3) dod(6) internet(1) private(4) enterprise(1) 9302 minor-version-1(1) }
+    WITH SUCCESSORS;
+Packet ::= SEQUENCE { child Bad }
+END
+ImportedSuccessorBase
+    { iso org(3) dod(6) internet(1) private(4) enterprise(1) 9302 minor-version-5(5) }
+    DEFINITIONS ::= BEGIN
+EXPORTS Bad;
+Bad ::= SEQUENCE { value INTEGER (0..5) }
+END

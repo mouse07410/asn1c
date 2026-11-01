@@ -1,0 +1,4 @@
+TypeNameSameModuleCollision DEFINITIONS ::= BEGIN
+Foo-Bar ::= INTEGER (0..5)
+FooBar ::= BOOLEAN
+END

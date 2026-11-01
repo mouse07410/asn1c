@@ -1,0 +1,8 @@
+ImportedDefaultClient DEFINITIONS ::= BEGIN
+IMPORTS RemoteSeq FROM ImportedRecordBase;
+DefaultParent ::= SEQUENCE {
+    child RemoteSeq,
+    enabled BOOLEAN DEFAULT FALSE,
+    count INTEGER (0..5) DEFAULT 3
+}
+END

@@ -1,0 +1,8 @@
+ImportedRecordNestedSetSource DEFINITIONS ::= BEGIN
+EXPORTS External;
+External ::= INTEGER (0..10)
+END
+ImportedRecordNestedSetClient DEFINITIONS ::= BEGIN
+IMPORTS External FROM ImportedRecordNestedSetSource;
+Root ::= SEQUENCE { child SET { value External } }
+END

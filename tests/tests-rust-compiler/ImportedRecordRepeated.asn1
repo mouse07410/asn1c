@@ -1,0 +1,7 @@
+ImportedRepeatedClient DEFINITIONS ::= BEGIN
+IMPORTS RemoteSeq FROM ImportedRecordBase;
+RepeatedPair ::= SEQUENCE {
+    implicitChild [2] IMPLICIT RemoteSeq,
+    explicitChild [3] EXPLICIT RemoteSeq
+}
+END

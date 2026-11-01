@@ -1,0 +1,8 @@
+ImportedDefaultTargetBase DEFINITIONS ::= BEGIN
+EXPORTS Bad;
+Bad ::= SEQUENCE { value BOOLEAN DEFAULT FALSE }
+END
+ImportedDefaultTargetClient DEFINITIONS ::= BEGIN
+IMPORTS Bad FROM ImportedDefaultTargetBase;
+Packet ::= SEQUENCE { child Bad }
+END

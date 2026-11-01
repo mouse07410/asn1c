@@ -12,7 +12,7 @@ strings, direct UTCTime, direct qualified GeneralizedTime, direct primitive
 collections, and direct primitive CHOICE. See
 `rust/asn1c-runtime/README.md` and
 `libasn1compiler/asn1c_rust.c`. The generator rejects many schemas supported by
-C, including imports outside the direct bounded-INTEGER field slice, most
+C, including imports outside the qualified direct scalar/record slices, most
 references, most root tags, and multi-tag stacks. These
 rejections remain until the corresponding generated representation and codecs
 are implemented.
@@ -32,7 +32,8 @@ member, one natural non-IA5 restricted character-string member, up to one
 natural OBJECT IDENTIFIER and one natural RELATIVE-OID member, or one natural
 unconstrained `BigInteger` member, with the resource and schema gates below.
 One local or directly imported bounded INTEGER reference member or up to two
-same-module named SEQUENCE/SET children also qualify under their separate gates below.
+local/directly imported named SEQUENCE/SET children also qualify under their
+separate gates below.
 The two-child gate preserves six parent fields and twelve aggregate schema
 fields, distinct effective tags, and one shared operation context.
 
@@ -1074,7 +1075,7 @@ named children, ambiguous effective tags, and mixed codecs.
 Reuse the named-target ownership checks and shared nested `RecordContext`
 from the SEQUENCE gate. Resolve the target kind to `FieldKind::Set` and tag 17;
 select `write_nested_set` and `read_nested_set` based on that resolved target,
-since the member AST is still `A1TC_REFERENCE`. Emit private field helpers for
+since the member AST is still `A1TC_REFERENCE`. Emit shared field helpers for
 a referenced top-level named SET without emitting unused helpers for other
 top-level SET assignments. The child SET writer sorts its own effective member
 tags independently of the parent SET sort; BER accepts either order at both
@@ -1114,7 +1115,7 @@ effective tags, imports, aliases, recursive or extensible targets, target
 references or nested members, mixed inline and named constructed children,
 and unsupported codec combinations before publishing output.
 
-Both children use their existing private field helpers and enter through
+Both children use their existing field helpers and enter through
 the same parent `RecordContext`. `nested_record_depth` counts active nesting,
 so it returns to the parent depth after the first child callback. Charge
 work, retained values, output, and temporary buffers across both children
@@ -1154,7 +1155,7 @@ selection. Reuse the existing named INTEGER field limits, natural or
 context-specific IMPLICIT/EXPLICIT member tags, and supported scalar/default
 siblings. The first gate permits one IMPORTS group with one explicitly named
 symbol from a supplied, distinct module that has no imports. Reject aliases,
-re-exports, parameters, imported constructed types, additional member
+re-exports, parameters, additional member
 constraints, qualified references, assigned module identifiers, import
 successor/descendant options, and mixed codecs before publishing files.
 
@@ -1201,10 +1202,10 @@ parent SET ordering, suffix prefix consumption, strict CER rejection,
 out-of-range values, exact resource limits, same-spelled types in distinct
 source modules, both source-file orders, malformed input, and unsupported
 import metadata with no output publication. This gate establishes direct
-cross-module scalar ownership; imported records and transitive references
-require their own composition review.
+cross-module scalar ownership. Imported records use the qualified gate below;
+transitive references require their own composition review.
 
-### Imported named record child (next qualified composition gate)
+### Imported named record child (qualified composition slice)
 
 Extend direct import ownership to an untagged named SEQUENCE or nonempty SET
 whose leaves satisfy the existing named-record gate. Keep one declared import
@@ -1218,6 +1219,10 @@ local named record. Aliases, transitive or recursive graphs, child references,
 target nesting/defaults/extensions, mixed inline construction, and mixed codecs
 remain excluded before publication.
 
+Preflight validates the complete child-leaf restrictions even when no parent
+uses the imported symbol. A target with nested, DEFAULT, or reference leaves
+cannot bypass this gate through an unused import.
+
 Use the same qualified target-path builder for scalar and record references.
 Imported record fields and empty-child construction use
 `crate::<source_module>::<Target>`. Nonempty child field callbacks have
@@ -1225,6 +1230,12 @@ Imported record fields and empty-child construction use
 exposing a public runtime-helper API. Source SET callback discovery scans the
 complete fixed module tree, including accepted consumers in other modules;
 standalone unreferenced SETs retain their current helper-emission behavior.
+Every top-level SEQUENCE already uses both field callbacks for its standalone
+codecs, so those callbacks are uniformly crate-visible as an internal composition
+interface. Inline child callbacks remain private. SET standalone codecs use
+different helpers; their additional child callbacks are emitted only for
+referenced targets to avoid dead code. None of these callbacks is public to
+downstream crates.
 No callback may call the target's public codec or create another operation
 context. Cross-module composition adds no wire nesting level beyond the
 existing child and optional EXPLICIT wrapper.
@@ -1237,6 +1248,49 @@ strict CER comparison, shared limits, and C differential vectors. Unused
 supported imports must not produce dead callbacks. Negative schemas cover
 invalid exports, import metadata, source ownership, source imports, target
 forms, effective-tag collisions, aggregate caps, and no output publication.
+
+Type-name normalization uses the same CamelCase policy at declaration,
+reference, qualified-path, and collision-check sites. `Foo-Bar` becomes
+`FooBar`, while existing interior capitalization in `FooBar` is preserved.
+Reserved `Self` becomes `Asn1Self`. Module/field snake case and ENUMERATED
+variant naming retain their existing behavior. This corrects previously
+generated public names such as `Foo_Bar`; callers using those names must use
+the corrected name after regeneration. Same-module, keyword-derived, and
+nested/top-level normalized collisions fail before output publication.
+
+### Transparent bounded INTEGER alias (approved next slice)
+
+This design is approved for isolated implementation; it is not enabled in the
+current checkpoint. Under BER/CER-only selection, allow a same-module alias
+such as `Small ::= Base` where `Base ::= INTEGER (0..5)` is a direct untagged
+assignment with one finite contiguous `i64` range. Both alias and base must be
+exact members of the owning module, and the fixed reference must match the
+base assignment's raw identifier and pointer. Alias-before-base declaration
+order is valid. No recursive resolution is needed: an alias target that is
+itself a reference fails the gate.
+
+The alias must have no declared constraints, tags, parameters, presence marker,
+encoding controls, or additional members. Its inherited combined constraints
+are expected fixer metadata, not a new declared restriction. Reject constrained
+aliases rather than silently dropping their narrowed range. Keep imported
+aliases, alias chains, cycles, unsupported base types, and tagged bases outside
+this gate. Validate unused aliases as well as those referenced by records.
+
+Emit a documented `pub type Small = Base`. This deliberately gives both names
+the same Rust type identity, checked constructor, value accessor, and selected
+public codec methods. Parent records retain their declared alias spelling in
+field types and decoder constructors, but use the direct base assignment for
+tag and range decisions. Reuse the existing one-reference flat-record gate,
+member tag/presence restrictions, scalar/default siblings, and parent context;
+an alias must never start another operation budget.
+
+Acceptance requires C-derived natural, IMPLICIT, EXPLICIT, OPTIONAL, and SET
+vectors, endpoint and out-of-range checks, prefixes and malformed input,
+canonical CER rejection, alias-before-base generation, normalized collisions,
+unused unsupported alias rejection, and exact shared limits. Combined,
+BER-only, and CER-only output must pass the required strict Clippy command.
+No-publication negatives must include chains, cycles, added constraints, tagged
+aliases/bases, imported aliases, parameters, and unsupported codec selections.
 
 ## Decisions still required
 

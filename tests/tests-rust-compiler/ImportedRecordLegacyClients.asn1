@@ -1,0 +1,12 @@
+ImportedRecordConstructedClient DEFINITIONS ::= BEGIN
+IMPORTS IntegerChild FROM ImportedRecordLegacyBase;
+Packet ::= SEQUENCE { value IntegerChild }
+END
+ImportedRecordSequenceClient DEFINITIONS ::= BEGIN
+IMPORTS BooleanSequence FROM ImportedRecordLegacyBase;
+Packet ::= SEQUENCE { child BooleanSequence }
+END
+ImportedRecordSetClient DEFINITIONS ::= BEGIN
+IMPORTS BooleanSet FROM ImportedRecordLegacyBase;
+Packet ::= SEQUENCE { child BooleanSet }
+END

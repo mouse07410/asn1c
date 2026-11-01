@@ -1,0 +1,8 @@
+ImportedNestedTargetBase DEFINITIONS ::= BEGIN
+EXPORTS Bad;
+Bad ::= SEQUENCE { child SEQUENCE { value INTEGER (0..5) } }
+END
+ImportedNestedTargetClient DEFINITIONS ::= BEGIN
+IMPORTS Bad FROM ImportedNestedTargetBase;
+Packet ::= SEQUENCE { child Bad }
+END

@@ -1,0 +1,16 @@
+ImportedParentSevenBase DEFINITIONS ::= BEGIN
+EXPORTS Bad;
+Bad ::= SEQUENCE { value INTEGER (0..5) }
+END
+ImportedParentSevenClient DEFINITIONS ::= BEGIN
+IMPORTS Bad FROM ImportedParentSevenBase;
+Packet ::= SEQUENCE {
+    first [6] IMPLICIT Bad OPTIONAL,
+    second [7] EXPLICIT Bad,
+    a [0] IMPLICIT BOOLEAN,
+    b [1] IMPLICIT BOOLEAN,
+    c [2] IMPLICIT BOOLEAN,
+    d [3] IMPLICIT BOOLEAN,
+    e [4] IMPLICIT BOOLEAN
+}
+END

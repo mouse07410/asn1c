@@ -1,0 +1,7 @@
+ImportedOwnedClient DEFINITIONS ::= BEGIN
+IMPORTS RemoteOwned FROM ImportedRecordBase;
+OwnedPair ::= SEQUENCE {
+    implicitChild [2] IMPLICIT RemoteOwned,
+    explicitChild [3] EXPLICIT RemoteOwned
+}
+END

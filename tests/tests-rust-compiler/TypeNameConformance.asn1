@@ -1,0 +1,18 @@
+Foo-Base DEFINITIONS ::= BEGIN
+Foo-Bar ::= INTEGER (0..5)
+END
+Foo-Client DEFINITIONS ::= BEGIN
+IMPORTS Foo-Bar FROM Foo-Base;
+FooBar ::= BOOLEAN
+Packet ::= SEQUENCE { value Foo-Bar, some-enabled BOOLEAN }
+END
+TypeName-Naming DEFINITIONS ::= BEGIN
+Named-Root ::= SEQUENCE {
+    child-record SEQUENCE { some-value INTEGER (0..5) }
+}
+Color ::= ENUMERATED { red-blue(0), darkGreen(1) }
+END
+TypeName-Keyword DEFINITIONS ::= BEGIN
+Self ::= INTEGER (0..5)
+KeywordPacket ::= SEQUENCE { value Self }
+END

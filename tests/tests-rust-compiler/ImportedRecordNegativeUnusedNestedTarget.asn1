@@ -1,0 +1,9 @@
+ImportedNestedStandaloneBase DEFINITIONS ::= BEGIN
+EXPORTS Nested;
+Leaf ::= SEQUENCE { number INTEGER (0..5) }
+Nested ::= SEQUENCE { child Leaf }
+END
+ImportedNestedStandaloneClient DEFINITIONS ::= BEGIN
+IMPORTS Nested FROM ImportedNestedStandaloneBase;
+LocalOnly ::= SEQUENCE { flag BOOLEAN }
+END

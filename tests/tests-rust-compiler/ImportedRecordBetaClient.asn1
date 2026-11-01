@@ -1,0 +1,4 @@
+ImportedCommonBetaClient DEFINITIONS ::= BEGIN
+IMPORTS Common FROM ImportedCommonBetaSource;
+BetaPacket ::= SEQUENCE { child Common }
+END

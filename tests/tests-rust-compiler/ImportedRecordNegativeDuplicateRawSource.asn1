@@ -1,0 +1,16 @@
+ImportedDuplicateSource
+    { iso org(3) dod(6) internet(1) private(4) enterprise(1) 9303 1 }
+    DEFINITIONS ::= BEGIN
+EXPORTS Bad;
+Bad ::= SEQUENCE { value INTEGER (0..5) }
+END
+ImportedDuplicateSource
+    { iso org(3) dod(6) internet(1) private(4) enterprise(1) 9303 2 }
+    DEFINITIONS ::= BEGIN
+Other ::= SEQUENCE { value INTEGER (0..9) }
+END
+ImportedDuplicateClient DEFINITIONS ::= BEGIN
+IMPORTS Bad FROM ImportedDuplicateSource
+    { iso org(3) dod(6) internet(1) private(4) enterprise(1) 9303 1 };
+Packet ::= SEQUENCE { child Bad }
+END

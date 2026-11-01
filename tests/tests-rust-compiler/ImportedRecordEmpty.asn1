@@ -1,0 +1,4 @@
+ImportedEmptyClient DEFINITIONS ::= BEGIN
+IMPORTS EmptyRemoteSeq FROM ImportedRecordBase;
+EmptyPair ::= SEQUENCE { child EmptyRemoteSeq }
+END

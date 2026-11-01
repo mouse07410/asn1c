@@ -1,0 +1,4 @@
+ImportedCommonAlphaSource DEFINITIONS ::= BEGIN
+EXPORTS Common;
+Common ::= SEQUENCE { value INTEGER (0..3) }
+END

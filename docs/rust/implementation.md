@@ -59,7 +59,13 @@ For a source checkout, select its matching assets explicitly when necessary:
 The output contains `Cargo.toml`, `src/lib.rs`, one Rust source file per ASN.1
 module, and `runtime/` with a Cargo path dependency. The generated package is
 named `asn1c-generated`. Module names are normalized for Rust and namespace
-collisions are diagnosed. The default output directory is `asn1c-rust`.
+collisions are diagnosed. Type names use CamelCase: `Foo-Bar` becomes `FooBar`,
+existing interior capitals are preserved, and reserved `Self` becomes
+`Asn1Self`. Module and field snake case and ENUMERATED variant naming are
+unchanged. This corrects older generated public type names such as `Foo_Bar`;
+regenerated callers must use the corrected spelling. Normalized top-level,
+keyword, and nested-name collisions fail before publication. The default
+output directory is `asn1c-rust`.
 
 An ownership manifest records generated files. Output is staged before
 publication. Regeneration accepts an empty directory or a prior generated
@@ -120,7 +126,7 @@ fresh directory after adding application code or running Cargo there.
 | One natural unconstrained INTEGER field in a flat untagged SEQUENCE or SET | `BigInteger` owned value without i64 narrowing; BER sign normalization, primitive DER/CER tag-2 output, strict CER comparison, one aggregate record budget, required/OPTIONAL presence, scalar siblings, and BER/CER-only selection |
 | One same-module named bounded INTEGER field in a flat untagged SEQUENCE or SET | Checked generated newtype with one finite contiguous `i64` range; natural, resolved context IMPLICIT, or one EXPLICIT tag; required/OPTIONAL; supported scalar siblings including finite bounded BIT/OCTET; shared record context and BER/CER-only selection |
 | One directly imported bounded INTEGER field in a flat untagged SEQUENCE or SET | Required/OPTIONAL, natural/IMPLICIT/one EXPLICIT member tag, and supported scalar/default siblings; one explicitly named import from a distinct supplied module with no imports; direct finite contiguous `i64` target; module ownership, exports, paths, and all declared imports are validated; shared parent context; BER/CER-only selection |
-| One or two same-module named SEQUENCE/SET children in a flat untagged SEQUENCE or SET | Required/OPTIONAL nonrecursive untagged targets with existing direct-leaf restrictions; natural, context-specific IMPLICIT, or one EXPLICIT member tag; distinct effective tags permit a repeated target; up to six parent fields and twelve total parent/target members; parent scalar DEFAULT behavior retained; independently sorted SET levels, shared nested context, strict CER comparison; BER/CER-only selection |
+| One or two local or directly imported named SEQUENCE/SET children in a flat untagged SEQUENCE or SET | Required/OPTIONAL nonrecursive untagged targets with existing direct-leaf restrictions; natural, context-specific IMPLICIT, or one EXPLICIT member tag; distinct effective tags permit a repeated target; up to six parent fields and twelve total parent/target members; parent scalar DEFAULT behavior retained; one declared import group/symbol from a distinct supplied source without imports, qualified paths and validated exports/ownership/leaves, including unused targets; independently sorted SET levels, shared nested context, strict CER comparison; BER/CER-only selection |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in APER and OER encode/decode; each call begins at an octet boundary |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in JER encode/decode of one complete JSON primitive with -gen-JER |
 | Direct fixed OCTET/BIT STRING | Opt-in JER uppercase-hex encoding, case-insensitive complete-input decoding, exact packed size and zero-padding checks, and resource limits |
@@ -128,7 +134,7 @@ fresh directory after adding application code or running Cargo there.
 | Direct ENUMERATED | Opt-in JER quoted-name encode/decode; complete input, JSON whitespace, unknown-name and resource-limit checks |
 | Flat SET and SEQUENCE | XER-only basic encoder for direct BOOLEAN, bounded INTEGER, unconstrained IA5String and REAL DEFAULT 0.5 fields; OPTIONAL and supported DEFAULT fields use `Option` |
 | XER and CBOR/JER outside the listed slices | Planned; unavailable in Rust mode |
-| SET, collections, or CHOICE outside the listed slices; extensible, other unbounded SIZE forms, or disjoint string constraints; named-bit strings, extensible ENUMERATED, aliases, imports outside the listed imported bounded-INTEGER record slice, other top-level tagged types, and multi-tag member stacks | Planned; rejected in this slice |
+| SET, collections, or CHOICE outside the listed slices; extensible, other unbounded SIZE forms, or disjoint string constraints; named-bit strings, extensible ENUMERATED, aliases, imports outside the listed direct INTEGER/named-record slices, other top-level tagged types, and multi-tag member stacks | Planned; rejected in this slice |
 | Encoding controls, other information-object forms, parameterized types | Planned; rejected in this slice |
 | IOC-selected OPEN TYPE | UPER, APER, OER, CBOR; one local nonextensible set, bounded INTEGER selector, BOOLEAN or bounded INTEGER rows, and a two-field required SEQUENCE; APER selector 0..255 and row spans <=255 |
 | Other CONTAINING and OPEN TYPE forms | Unsupported; rejected before output publication |
@@ -149,14 +155,14 @@ read and write helper receives the parent's record context, preserving target
 range checks and shared resource accounting. Natural, resolved context-specific
 IMPLICIT, and one EXPLICIT member tag are supported with existing scalar
 siblings and literal BOOLEAN/INTEGER DEFAULT siblings. Every declared import
-is validated even when unused. Aliases, re-exports, parameters, imported
-constructed types, extra imports, member constraints, assigned module
-identifiers, import successor/descendant options, and unsupported module paths
+is validated even when unused. Aliases, re-exports, parameters, extra imports,
+member constraints, assigned module identifiers, import successor/descendant
+options, and unsupported module paths
 fail before output publication. Differential tests compare C and Rust
 DER/CER bytes and values across SEQUENCE/SET parents, OPTIONAL states, tags,
 defaults, limits, malformed values, suffixes, source orders, same-spelled
-target names, export rules, and no-publication negatives. Imports outside this
-narrow bounded INTEGER record slice remain unsupported.
+target names, export rules, and no-publication negatives. Imports outside the
+qualified direct INTEGER/named-record slices remain unsupported.
 
 For CBOR SEQUENCE, an omitted literal DEFAULT decodes to the default value.
 The Rust record does not retain whether that field appeared on the wire, so
@@ -198,7 +204,7 @@ ranks; unknown values and spare ranks are rejected. Inline nested SEQUENCE field
 deterministic public Rust record types. Nested record types and aggregate field
 work are bounded during generation; cycles and generated-name collisions are
 rejected. Constructed DEFAULTs, extensions, aliases, and imports outside the
-narrow imported bounded INTEGER field slice remain unsupported. DEFAULT is
+qualified direct INTEGER/named-record slices remain unsupported. DEFAULT is
 supported only for literal BOOLEAN and in-range finite
 bounded INTEGER values. Each record writes or reads its own OPTIONAL and
 DEFAULT presence bitmap immediately before that record's payload. Encoding
@@ -316,8 +322,8 @@ with BER/CER currently requires a nonempty child because the generated empty
 UPER helper does not pass the required strict Clippy checks; that selection is
 rejected before output publication.
 
-One or two same-module named SEQUENCE/SET assignments may be direct required
-or OPTIONAL children of a flat untagged SEQUENCE or SET. Targets are
+One or two local or directly imported named SEQUENCE/SET assignments may be
+direct required or OPTIONAL children of a flat untagged SEQUENCE or SET. Targets are
 nonrecursive and obey the existing direct primitive-leaf rules; named
 SEQUENCE targets may be empty, while named SETs must remain nonempty. Natural,
 one resolved context-specific IMPLICIT, or one
@@ -325,11 +331,16 @@ EXPLICIT wrapper may identify each child. Reusing a target is supported when
 the fields have distinct effective tags. The parent retains its six-field cap,
 and the parent plus both targets share a twelve-member schema-work cap. Parent
 scalar siblings and literal BOOLEAN/bounded INTEGER DEFAULT values keep their
-existing behavior. The generator emits private child field helpers only for
-referenced targets. One nested `RecordContext` tracks both children and the
+existing behavior. Imported targets use one explicitly declared symbol from a
+supplied distinct source module with no imports. Exports, direct assignment
+ownership, unique module identity, and all child leaves are validated even
+when the import is unused. Qualified type paths and crate-visible field
+callbacks permit cross-module calls under the same parent context. Source SET
+helper discovery scans the complete fixed module tree; unreferenced SETs emit
+no child callbacks. One nested `RecordContext` tracks both children and the
 parent, and each child SET sorts its fields independently of a parent SET.
 Empty named SETs remain unsupported because the generated C target does not
-compile them. Aliases, imports, parameters, constrained/tagged/recursive
+compile them. Aliases, broader imports, parameters, constrained/tagged/recursive
 targets, extensions, nested members, more than two children, mixed inline and
 named constructed children, effective-tag collisions, and mixed codecs fail
 before output publication.

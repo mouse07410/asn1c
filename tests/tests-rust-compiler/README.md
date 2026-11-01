@@ -728,7 +728,8 @@ out-of-range value separately from Rust's generated decoder rejection.
 Import-resolution fixtures verify omitted, `EXPORTS ALL`, and explicit export
 lists; the same `Small` spelling in different source modules; both source file
 orders; and a Rust reserved-word module path. Unsupported aliases, re-exports,
-transitive or constructed targets, parameters, member constraints, unused
+transitive targets, constructed targets outside the qualified record slice,
+parameters, member constraints, unused
 unsupported imports, unused non-exported targets, import/module identifiers
 and options, local raw-symbol collisions, and duplicate normalized/raw module
 names must fail without publishing output. Positive generation and strict
@@ -738,3 +739,33 @@ UPER-only selections fail before publication. The existing
 Supported unused imports compile and retain both modules' direct codecs.
 Each unsupported fixture is parsed first,
 so syntax errors cannot accidentally satisfy the no-publication checks.
+
+### Direct imported named record children and type names
+
+`ImportedRecord*.asn1`, `imported_record_conformance.rs`, and
+`imported_record_legacy_conformance.rs` cover direct imported SEQUENCE and
+nonempty SET children. The seven Rust tests compare fixed C vectors for
+natural local/imported pairs, repeated IMPLICIT/EXPLICIT references, OPTIONAL
+states, empty SEQUENCE targets, owned OCTET/BIT STRING leaves, scalar DEFAULT
+siblings, independent SET ordering, prefix/truncation behavior, malformed
+second children, and deterministic mutations. Local and imported equivalents
+must have identical exact encode/decode work thresholds; one-short input and
+output budgets fail. Both source orders and individual BER/CER selections pass
+exact strict Clippy. Unused imported SETs emit no unused child callbacks.
+
+`imported_record_composition.c`, `imported_record_owned_defaults.c`, and
+`imported_record_legacy.c` check sixteen DER/CER value pairs through C encoders
+and decoders, including correctly framed indefinite reversed SET order,
+defaults, independent target bounds, owned leaves, and exact prefixes. The
+harness runs all three normally and under ASan/UBSan. Twenty-two parse-valid
+negative schemas and unsupported codec selections must reject without an
+output path. Invalid unused imported targets are included. Former imported
+SEQUENCE/SET rejection fixtures now also receive positive compilation checks;
+imported references inside inline nested SET leaves remain rejected.
+
+`TypeNameConformance.asn1` and `type_name_conformance.rs` verify qualified
+`Foo-Bar`/local `FooBar` coexistence, reserved names, nested names, and unchanged
+module/field/ENUMERATED naming. Three parse-valid normalized-name collisions
+must fail before publication. The naming correction emits `FooBar` instead
+of `Foo_Bar`, preserves existing interior capitals, and uses `Asn1Self` for
+reserved `Self`; it introduces no lint allowances or compatibility aliases.

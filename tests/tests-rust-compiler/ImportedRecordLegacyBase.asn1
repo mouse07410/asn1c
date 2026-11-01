@@ -1,0 +1,6 @@
+ImportedRecordLegacyBase DEFINITIONS ::= BEGIN
+EXPORTS IntegerChild, BooleanSequence, BooleanSet;
+IntegerChild ::= SEQUENCE { value INTEGER (0..5) }
+BooleanSequence ::= SEQUENCE { flag BOOLEAN }
+BooleanSet ::= SET { flag BOOLEAN }
+END

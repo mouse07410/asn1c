@@ -1,0 +1,13 @@
+ImportedReexportUpstream DEFINITIONS ::= BEGIN
+EXPORTS Nested;
+Nested ::= SEQUENCE { value INTEGER (0..5) }
+END
+ImportedReexportRelay DEFINITIONS ::= BEGIN
+EXPORTS Nested;
+IMPORTS Nested FROM ImportedReexportUpstream;
+Marker ::= NULL
+END
+ImportedReexportClient DEFINITIONS ::= BEGIN
+IMPORTS Nested FROM ImportedReexportRelay;
+Packet ::= SEQUENCE { child Nested }
+END

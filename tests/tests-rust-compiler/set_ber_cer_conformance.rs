@@ -1,7 +1,7 @@
 //! Generated BER/DER/CER tests for flat direct-field SET values.
 
 use asn1c_generated::set_ber_cer::{
-    Hyphenated_set, Hyphenated_setState, SetAllRecord, SetAllRecordState, SetBoundaryRecord,
+    HyphenatedSet, HyphenatedSetState, SetAllRecord, SetAllRecordState, SetBoundaryRecord,
     SetEmptyRecord, SetPresenceRecord, SetPresenceRecordState,
 };
 use asn1c_runtime::{BitStringValue, Error, Limits, Resource};
@@ -74,19 +74,19 @@ fn required_fields_sort_by_universal_tag() {
 /// Parameters: none. Returns: no value; generated names and wire bytes are checked.
 /// Errors: enum generation or BER/CER codec failures fail this test.
 /// Original source: Rust identifier normalization for nested generated enums.
-/// Version/date: 2026-10-31. Author: asn1c maintainers. History: SET naming.
-/// Example: `Hyphenated-set` becomes the sanitized `Hyphenated_set` identifier.
+/// Version/date: 2026-10-31. Author: asn1c maintainers. History: SET naming; CamelCase correction 2026-11-01.
+/// Example: `Hyphenated-set` becomes the sanitized `HyphenatedSet` identifier.
 #[test]
 fn sanitized_parent_name_is_used_for_inline_enums() {
-    let value = Hyphenated_set {
-        state: Hyphenated_setState::Ready,
+    let value = HyphenatedSet {
+        state: HyphenatedSetState::Ready,
     };
     let der = [0x31, 0x03, 0x0a, 0x01, 0x08];
     let limits = Limits::default();
 
     assert_eq!(value.encode_der(&limits).unwrap().bytes, der);
     assert_eq!(
-        Hyphenated_set::decode_ber(&der, &limits).unwrap().value,
+        HyphenatedSet::decode_ber(&der, &limits).unwrap().value,
         value
     );
 }

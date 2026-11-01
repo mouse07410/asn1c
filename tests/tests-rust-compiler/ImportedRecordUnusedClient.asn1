@@ -1,0 +1,4 @@
+ImportedUnusedClient DEFINITIONS ::= BEGIN
+IMPORTS DormantSet FROM ImportedUnusedSource;
+LocalValue ::= SEQUENCE { flag BOOLEAN }
+END

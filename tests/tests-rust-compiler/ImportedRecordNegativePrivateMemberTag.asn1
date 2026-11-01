@@ -1,0 +1,8 @@
+ImportedPrivateTagBase DEFINITIONS ::= BEGIN
+EXPORTS Bad;
+Bad ::= SEQUENCE { value [PRIVATE 1] IMPLICIT BOOLEAN }
+END
+ImportedPrivateTagClient DEFINITIONS ::= BEGIN
+IMPORTS Bad FROM ImportedPrivateTagBase;
+Packet ::= SEQUENCE { child Bad }
+END

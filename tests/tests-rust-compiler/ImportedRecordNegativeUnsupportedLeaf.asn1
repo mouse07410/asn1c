@@ -1,0 +1,8 @@
+ImportedUnsupportedLeafBase DEFINITIONS ::= BEGIN
+EXPORTS Bad;
+Bad ::= SEQUENCE { value REAL }
+END
+ImportedUnsupportedLeafClient DEFINITIONS ::= BEGIN
+IMPORTS Bad FROM ImportedUnsupportedLeafBase;
+Packet ::= SEQUENCE { child Bad }
+END

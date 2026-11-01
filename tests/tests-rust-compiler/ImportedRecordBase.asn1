@@ -1,0 +1,20 @@
+ImportedRecordBase DEFINITIONS ::= BEGIN
+EXPORTS RemoteSeq, RemoteSet, EmptyRemoteSeq, NonemptyRemoteSet, RemoteOwned;
+RemoteSeq ::= SEQUENCE {
+    number INTEGER (0..5),
+    flag BOOLEAN OPTIONAL
+}
+RemoteSet ::= SET {
+    number [0] IMPLICIT INTEGER (0..5),
+    flag [1] IMPLICIT BOOLEAN
+}
+EmptyRemoteSeq ::= SEQUENCE {}
+NonemptyRemoteSet ::= SET {
+    number [0] IMPLICIT INTEGER (0..5),
+    flag [1] IMPLICIT BOOLEAN
+}
+RemoteOwned ::= SEQUENCE {
+    octets OCTET STRING (SIZE(2)),
+    bits BIT STRING (SIZE(3))
+}
+END
