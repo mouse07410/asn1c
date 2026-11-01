@@ -1,0 +1,3 @@
+ChoiceDuplicateTag DEFINITIONS ::= BEGIN
+Value ::= CHOICE { first BOOLEAN, second BOOLEAN }
+END

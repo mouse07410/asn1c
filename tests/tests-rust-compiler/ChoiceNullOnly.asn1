@@ -1,0 +1,3 @@
+ChoiceNullOnly DEFINITIONS ::= BEGIN
+Value ::= CHOICE { empty NULL }
+END

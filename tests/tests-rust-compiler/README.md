@@ -454,6 +454,25 @@ The C BER decoder may leave bounded INTEGER range checking to a later
 constraint check; generated Rust rejects an out-of-range collection element
 during decode. This timing difference is tested separately from canonical
 wire parity.
+
+The direct primitive CHOICE gate accepts an untagged, nonextensible top-level
+CHOICE containing one to three alternatives with unique intrinsic tags:
+unconstrained BOOLEAN, unconstrained NULL, or finite bounded-i64 INTEGER.
+Generated Rust exposes a typed enum and emits exactly the selected primitive
+TLV without an outer CHOICE wrapper. BER prefix decoding dispatches by
+universal tag; strict CER re-encodes the selected value under the same limits
+context and compares the consumed prefix.
+
+`PrimitiveChoice.asn1`, `choice_conformance.rs`, and `c_primitive_choice.c`
+compare exact C and Rust DER/CER bytes and decoded alternatives. They cover
+high-tag and long-length aliases, BER-compatible empty and multi-octet
+BOOLEAN values, redundant INTEGER sign bytes, strict CER rejection, suffix
+consumption, malformed identifiers, bounds, and resource limits. BOOLEAN-only,
+NULL-only, INTEGER-only, and BOOLEAN/NULL pair schemas are also compiled with
+BER-only and CER-only selection.
+Tagged, constrained, aliased, imported, nested, optional/default, extended,
+duplicate-tag, sanitized-name-collision, and mixed-codec CHOICE schemas fail
+before an output crate is published.
 Root SIZE constraints, root or element tags, aliases, imports, fields, nested
 types, extensions, unsupported constraints, and mixed or non-BER/CER codecs
 fail before output publication.

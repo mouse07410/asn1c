@@ -1,0 +1,4 @@
+ChoiceMemberAlias DEFINITIONS ::= BEGIN
+Flag ::= BOOLEAN
+Value ::= CHOICE { flag Flag, count INTEGER (-2..5) }
+END

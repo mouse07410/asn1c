@@ -1,0 +1,3 @@
+ChoiceDefault DEFINITIONS ::= BEGIN
+Value ::= CHOICE { flag BOOLEAN DEFAULT FALSE, count INTEGER (-2..5) }
+END

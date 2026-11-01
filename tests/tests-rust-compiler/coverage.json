@@ -207,6 +207,25 @@
       "evidence": "OfCollections.asn1; of_collections_conformance.rs; c_of_collections.c"
     },
     {
+      "asn1_type": "CHOICE",
+      "feature": "direct untagged root with one unique BOOLEAN, NULL, or bounded i64 INTEGER arm",
+      "codec": "BER/DER and CER only",
+      "variants": [
+        "typed enum alternatives with no outer wrapper TLV",
+        "exact C DER/CER output and BER/CER decode for each arm",
+        "high-tag, long-length, empty/multi-octet BOOLEAN, and redundant INTEGER BER aliases",
+        "strict CER alias rejection, prefix consumption, malformed tags, bounds, and limits",
+        "BOOLEAN-only, NULL-only, INTEGER-only, and BOOLEAN/NULL pair schemas under codec-only selection"
+      ],
+      "directions": [
+        "DER and CER encode",
+        "BER prefix decode",
+        "strict CER prefix decode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "PrimitiveChoice.asn1; choice_conformance.rs; c_primitive_choice.c"
+    },
+    {
       "asn1_type": "BIT STRING, OCTET STRING",
       "feature": "direct untagged unconstrained root values",
       "codec": "BER/DER and CER only",
@@ -720,9 +739,9 @@
   ],
   "not_yet_implemented_by_this_Rust_slice": [
     {
-      "family": "BER/DER shapes outside flat tagged SEQUENCE and SET slices",
+      "family": "BER/DER shapes outside the qualified direct CHOICE and tagged record slices",
       "status": "not_implemented",
-      "note": "Deeper nesting, extensions, CHOICE, aliases, unsupported tags, and other primitives are not qualified."
+      "note": "Deeper nesting, extensions, aliases, unsupported tags, and other primitives remain unqualified."
     },
     {
       "family": "APER/OER outside the primitive slice",
@@ -735,9 +754,9 @@
       "note": "XER supports only basic encoding of flat SET and SEQUENCE records with untagged or automatic-tagged direct BOOLEAN, bounded INTEGER, and unconstrained IA5String, and REAL DEFAULT 0.5 fields with finite limited values; decoding and mixed codec selection are unsupported. JER is qualified for listed primitives and strings."
     },
     {
-      "family": "constructed outside nested UPER SEQUENCE, extensible, fragmented or disjoint strings, named-bit strings, CHOICE, extensible ENUMERATED, REAL, open types",
+      "family": "constructed outside nested UPER SEQUENCE, extensible, fragmented or disjoint strings, named-bit strings, extensible ENUMERATED, REAL, open types",
       "status": "outside_first_slice",
-      "note": "No Rust correctness or interoperability claim is made beyond the listed INTEGER, SEQUENCE, and bounded string subsets."
+      "note": "No Rust correctness or interoperability claim is made beyond the listed primitive, CHOICE, collection, and record subsets."
     },
     {
       "family": "extensible constraints and cross-codec conversion",
@@ -791,7 +810,10 @@
     ]
   },
   "observed_counts": {
-    "generated_rust_test_functions": 182,
+    "generated_rust_test_functions": 186,
+    "generated_choice_test_functions": 4,
+    "live_C_choice_canonical_vectors_each_direction": 5,
+    "live_C_choice_BER_alias_vectors": 9,
     "live_c_rust_vectors_each_direction": 8,
     "single_octet_mutation_inputs": 796,
     "JER_single_octet_mutation_inputs": 256,

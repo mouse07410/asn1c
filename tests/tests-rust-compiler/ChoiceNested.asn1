@@ -1,0 +1,6 @@
+ChoiceNested DEFINITIONS ::= BEGIN
+Value ::= CHOICE {
+    flag BOOLEAN,
+    nested SEQUENCE { count INTEGER (-2..5) }
+}
+END

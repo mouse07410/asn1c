@@ -1,0 +1,4 @@
+ChoiceAlias DEFINITIONS ::= BEGIN
+Base ::= CHOICE { flag BOOLEAN, count INTEGER (-2..5) }
+Value ::= Base
+END

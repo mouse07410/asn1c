@@ -1,7 +1,7 @@
-# Initial Rust implementation
+# Rust implementation
 
-This is the first slice of the [stage-one plan](stage-one-plan.md), implemented
-with three supervised Luna agents. The full conversion remains incomplete.
+This document records the implemented slices of the
+[stage-one plan](stage-one-plan.md). The full conversion remains incomplete.
 The existing C parser and semantic fixer feed a separate Rust output backend.
 The matching runtime uses `std`, forbids unsafe Rust, and has no dependencies.
 
@@ -103,6 +103,7 @@ fresh directory after adding application code or running Cargo there.
 | Direct UTCTime | Untagged, unconstrained BER/CER-only root; BER prefix decoding preserves raw primitive or constructed content, DER preserves raw bytes, CER normalizes valid calendar/zone forms to `YYMMDDhhmmssZ`, and strict CER compares the canonical tag-23 prefix; private owned bytes and finite limits |
 | Direct GeneralizedTime | Untagged, unconstrained BER/CER-only root; BER preserves raw primitive or constructed content, DER/CER normalize valid explicitly zoned time to `YYYYMMDDhhmmss[.fraction]Z` with up to nine fractional digits, and strict CER compares the tag-24 prefix; private owned bytes and finite limits; host-local and permissive C DER cases remain outside the qualified subset |
 | Direct SEQUENCE OF and SET OF primitive elements | Untagged, unconstrained BER/CER-only roots with one direct BOOLEAN, NULL, or finite bounded `i64` INTEGER element; BER prefix decoding accepts order and duplicates, DER/CER encode with SET OF full-child TLV ordering, strict CER compares the canonical prefix, and a hard count plus finite work/scratch/output budgets bound collection handling |
+| Direct primitive CHOICE | Untagged, nonextensible BER/CER-only root with one through three unique intrinsic BOOLEAN, NULL, or finite bounded `i64` INTEGER alternatives; BER prefix decoding dispatches by tag, DER/CER emits the selected primitive TLV without an outer wrapper, and strict CER compares the canonical consumed prefix under one work budget |
 | Direct ENUMERATED | BER prefix decoding, DER encoding, CER encoding and strict CER decoding when selected |
 | Direct fixed/bounded OCTET STRING and BIT STRING | BER prefix decoding, DER encoding, CER encoding and strict CER decoding when selected; finite nonextensible SIZE below 65536 |
 | Direct unconstrained OCTET STRING and BIT STRING | BER prefix decoding, DER encoding, CER encoding, and strict CER decoding under BER/CER-only selection; untagged roots, owned values, complete-input and work limits; BIT STRING stores validated packed bytes and exact bit length |
@@ -118,7 +119,7 @@ fresh directory after adding application code or running Cargo there.
 | Direct ENUMERATED | Opt-in JER quoted-name encode/decode; complete input, JSON whitespace, unknown-name and resource-limit checks |
 | Flat SET and SEQUENCE | XER-only basic encoder for direct BOOLEAN, bounded INTEGER, unconstrained IA5String and REAL DEFAULT 0.5 fields; OPTIONAL and supported DEFAULT fields use `Option` |
 | XER and CBOR/JER outside the listed slices | Planned; unavailable in Rust mode |
-| SET outside the listed XER and BER/DER/CER slices, collections, CHOICE outside the listed CBOR slice, extensible, other unbounded SIZE forms, or disjoint string constraints, named-bit strings, extensible ENUMERATED, aliases, imports, other top-level tagged types, and multi-tag member stacks | Planned; rejected in this slice |
+| SET, collections, or CHOICE outside the listed slices; extensible, other unbounded SIZE forms, or disjoint string constraints; named-bit strings, extensible ENUMERATED, aliases, imports, other top-level tagged types, and multi-tag member stacks | Planned; rejected in this slice |
 | Encoding controls, other information-object forms, parameterized types | Planned; rejected in this slice |
 | IOC-selected OPEN TYPE | UPER, APER, OER, CBOR; one local nonextensible set, bounded INTEGER selector, BOOLEAN or bounded INTEGER rows, and a two-field required SEQUENCE; APER selector 0..255 and row spans <=255 |
 | Other CONTAINING and OPEN TYPE forms | Unsupported; rejected before output publication |

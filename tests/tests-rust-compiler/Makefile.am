@@ -16,6 +16,29 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/CborStrings.asn1 \
     $(srcdir)/CborSequenceStrings.asn1 \
     $(srcdir)/CborChoice.asn1 \
+    $(srcdir)/PrimitiveChoice.asn1 \
+    $(srcdir)/ChoiceBooleanOnly.asn1 \
+    $(srcdir)/ChoiceNullOnly.asn1 \
+    $(srcdir)/ChoiceIntegerOnly.asn1 \
+    $(srcdir)/ChoicePair.asn1 \
+    $(srcdir)/ChoiceAlias.asn1 \
+    $(srcdir)/ChoiceConstrainedBoolean.asn1 \
+    $(srcdir)/ChoiceDefault.asn1 \
+    $(srcdir)/ChoiceDuplicateTag.asn1 \
+    $(srcdir)/ChoiceExtension.asn1 \
+    $(srcdir)/ChoiceImport.asn1 \
+    $(srcdir)/ChoiceImportBase.asn1 \
+    $(srcdir)/ChoiceIntegerExtension.asn1 \
+    $(srcdir)/ChoiceIntegerUnion.asn1 \
+    $(srcdir)/ChoiceMemberAlias.asn1 \
+    $(srcdir)/ChoiceNameCollision.asn1 \
+    $(srcdir)/ChoiceNested.asn1 \
+    $(srcdir)/ChoiceOptional.asn1 \
+    $(srcdir)/ChoiceTaggedMember.asn1 \
+    $(srcdir)/ChoiceTaggedRoot.asn1 \
+    $(srcdir)/ChoiceUnboundedInteger.asn1 \
+    $(srcdir)/choice_conformance.rs \
+    $(srcdir)/c_primitive_choice.c \
     $(srcdir)/CborContaining.asn1 \
     $(srcdir)/OpenSelected.asn1 \
     $(srcdir)/BigInteger.asn1 \

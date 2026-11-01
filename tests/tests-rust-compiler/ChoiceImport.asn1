@@ -1,0 +1,4 @@
+ChoiceImport DEFINITIONS ::= BEGIN
+IMPORTS Flag FROM ChoiceImportBase;
+Value ::= CHOICE { flag Flag, count INTEGER (-2..5) }
+END

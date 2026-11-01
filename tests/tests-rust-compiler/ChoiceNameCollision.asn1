@@ -1,0 +1,3 @@
+ChoiceNameCollision DEFINITIONS ::= BEGIN
+Value ::= CHOICE { a-2 BOOLEAN, a2 NULL }
+END

@@ -607,6 +607,77 @@ cc -I"$test_tmp/cbor-choice-c" "$test_tmp/cbor-choice-c"/*.c \
     "$test_srcdir/c_cbor_choice.c" -lm -o "$test_tmp/c-cbor-choice"
 "$test_tmp/c-cbor-choice"
 
+# Direct primitive CHOICE uses a typed Rust enum and the selected primitive TLV.
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$test_tmp/primitive-choice-rust" "$test_srcdir/PrimitiveChoice.asn1"
+mkdir -p "$test_tmp/primitive-choice-rust/tests" "$test_tmp/primitive-choice-c"
+cp "$test_srcdir/choice_conformance.rs" "$test_tmp/primitive-choice-rust/tests/"
+cargo test --offline --manifest-path "$test_tmp/primitive-choice-rust/Cargo.toml"
+cargo clippy --offline --manifest-path "$test_tmp/primitive-choice-rust/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings
+"$asn1c_bin" -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$test_tmp/primitive-choice-c" "$test_srcdir/PrimitiveChoice.asn1"
+rm -f "$test_tmp/primitive-choice-c/converter-example.c" \
+    "$test_tmp/primitive-choice-c/pdu_collection.c"
+cc -I"$test_tmp/primitive-choice-c" "$test_tmp/primitive-choice-c"/*.c \
+    "$test_srcdir/c_primitive_choice.c" -lm -o "$test_tmp/c-primitive-choice"
+"$test_tmp/c-primitive-choice"
+
+# Single- and pair-alternative enums remain warning-free for codec-only output.
+for fixture in ChoiceBooleanOnly ChoiceNullOnly ChoiceIntegerOnly ChoicePair; do
+    for codec in BER CER; do
+        choice_out="$test_tmp/choice-$fixture-$codec"
+        if [ "$codec" = BER ]; then
+            "$asn1c_bin" --rust -gen-BER -no-gen-CER -no-gen-UPER -S "$skeletons" \
+                -D "$choice_out" "$test_srcdir/$fixture.asn1"
+        else
+            "$asn1c_bin" --rust -no-gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+                -D "$choice_out" "$test_srcdir/$fixture.asn1"
+        fi
+        cargo clippy --offline --manifest-path "$choice_out/Cargo.toml" \
+            --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings
+    done
+done
+
+# Unsupported CHOICE shapes and mixed codecs fail before crate publication.
+for fixture in ChoiceAlias ChoiceConstrainedBoolean ChoiceDefault ChoiceDuplicateTag \
+    ChoiceExtension ChoiceIntegerExtension ChoiceIntegerUnion ChoiceMemberAlias \
+    ChoiceNameCollision ChoiceNested ChoiceOptional ChoiceTaggedMember ChoiceTaggedRoot \
+    ChoiceUnboundedInteger; do
+    choice_out="$test_tmp/rejected-$fixture"
+    if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$choice_out" "$test_srcdir/$fixture.asn1" >"$test_tmp/$fixture.log" 2>&1; then
+        echo "FAIL: Rust backend accepted unsupported $fixture CHOICE" >&2
+        exit 1
+    fi
+    test ! -e "$choice_out"
+done
+choice_out="$test_tmp/rejected-ChoiceImport"
+if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$choice_out" "$test_srcdir/ChoiceImport.asn1" \
+    "$test_srcdir/ChoiceImportBase.asn1" >"$test_tmp/ChoiceImport.log" 2>&1; then
+    echo "FAIL: Rust backend accepted imported CHOICE arm" >&2
+    exit 1
+fi
+test ! -e "$choice_out"
+for codec_mode in mixed uper; do
+    choice_out="$test_tmp/rejected-choice-codecs-$codec_mode"
+    if [ "$codec_mode" = mixed ]; then
+        if "$asn1c_bin" --rust -gen-BER -gen-UPER -no-gen-CER -S "$skeletons" \
+            -D "$choice_out" "$test_srcdir/PrimitiveChoice.asn1" \
+            >"$test_tmp/choice-codecs.log" 2>&1; then
+            echo "FAIL: Rust backend accepted mixed CHOICE codecs" >&2
+            exit 1
+        fi
+    elif "$asn1c_bin" --rust -gen-UPER -no-gen-CER -S "$skeletons" \
+        -D "$choice_out" "$test_srcdir/PrimitiveChoice.asn1" \
+        >"$test_tmp/choice-codecs.log" 2>&1; then
+        echo "FAIL: Rust backend accepted UPER-only CHOICE" >&2
+        exit 1
+    fi
+    test ! -e "$choice_out"
+done
+
 # Typed local primitive CONTAINING uses inner CBOR bytes in an outer C-compatible string.
 "$asn1c_bin" --rust -gen-CBOR -no-gen-UPER -no-gen-CER -S "$skeletons" \
     -D "$test_tmp/cbor-containing-rust" "$test_srcdir/CborContaining.asn1"

@@ -226,6 +226,15 @@ check. BER BOOLEAN elements accept C-compatible empty or multi-octet content;
 strict CER requires one canonical content octet. Root SIZE constraints,
 tags, aliases, imports, nested elements, and
 broader C collection forms remain outside this qualified slice.
+Direct untagged, nonextensible CHOICE roots with one through three unique
+BOOLEAN, NULL, or finite bounded `i64` INTEGER alternatives also support BER
+prefix decoding, DER/CER encoding, and strict CER prefix decoding under
+BER/CER-only selection. The selected alternative is the complete wire value;
+there is no CHOICE wrapper. BER accepts C-compatible primitive aliases and
+BOOLEAN content forms, while strict CER requires the canonical selected TLV.
+Rust checks bounded INTEGER ranges during decoding, whereas C BER may defer
+the subtype check. Tagged, referenced, extensible, nested, and broader C
+CHOICE forms remain outside this qualified slice.
 Flat SET records with an untagged outer type and the same six direct field kinds are
 available when only BER and/or CER are selected. BER accepts members in any
 order; DER/CER emits them by ascending effective tag class and number, and strict CER rejects

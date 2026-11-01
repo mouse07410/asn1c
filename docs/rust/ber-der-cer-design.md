@@ -8,7 +8,8 @@ strict CER prefix decoding, for BOOLEAN, NULL, finite bounded `i64` INTEGER,
 unconstrained arbitrary-precision INTEGER, direct finite ENUMERATED, direct
 unconstrained OBJECT IDENTIFIER and RELATIVE-OID, and fixed, bounded, or direct
 unconstrained BIT/OCTET STRING values, direct untagged restricted character
-strings, direct UTCTime, and direct qualified GeneralizedTime. See
+strings, direct UTCTime, direct qualified GeneralizedTime, direct primitive
+collections, and direct primitive CHOICE. See
 `rust/asn1c-runtime/README.md` and
 `libasn1compiler/asn1c_rust.c`. The generator rejects many schemas supported by
 C, including imports, references, most root tags, and multi-tag stacks. These
@@ -26,8 +27,10 @@ broader nested records and primitive members remain in the parity matrix.
 
 The flat SET slice uses the same six direct field kinds under BER/CER-only
 selection. Its BER reader accepts arbitrary member order;
-the DER/CER writer emits ascending effective tags. Broader SET shapes,
-collections, broader nested records, and multi-tag stacks remain future stages.
+the DER/CER writer emits ascending effective tags. Direct untagged,
+unconstrained SEQUENCE OF and SET OF roots with one BOOLEAN, NULL, or bounded
+`i64` INTEGER element are also implemented. Broader SET and collection shapes,
+broader nested records, and multi-tag stacks remain future stages.
 
 A BER/CER-only flat SEQUENCE or SET may use one resolved context-specific
 IMPLICIT root tag in the C representable range. This replaces the outer
@@ -163,6 +166,53 @@ string fragmentation, and DER length transitions. Reject truncated and extra
 EOCs, child lengths crossing a parent boundary, duplicate or unknown fields,
 trailing child bytes, and cumulative resource exhaustion. Check exact prefix
 consumption and strict CER comparison at each outer boundary.
+
+### Inline nested SET (next qualified gate)
+
+Extend the existing one-child, nonrecursive inline record gate to a SET child
+within an untagged top-level SEQUENCE or SET. Retain the same six direct leaf
+kinds, required/OPTIONAL presence, distinct effective tags, and one nested
+child cap. Exclude child DEFAULT values, extensions, aliases, references,
+imports, recursive or multiple children, and wider tag stacks until their
+representation and shared-budget behavior are designed and tested.
+
+Represent the child record kind explicitly in the runtime field descriptor.
+The natural child identifier is universal constructed tag 17; a resolved
+context-specific IMPLICIT tag replaces that identifier, while one EXPLICIT
+context-specific wrapper contains the intrinsic tag-17 child. Reuse the nested
+`RecordContext` so parent and child parsing, writing, canonical comparison,
+retained decoded buffers, and temporary child output share one work and scratch
+budget. A nested SET reader dispatches leaf fields by effective tag in any BER
+order; its DER/CER writer sorts by effective tag class and number. Parent SET
+ordering still uses the outer effective tag of the child field. SET OF's
+complete-TLV ordering rule does not apply to SET fields.
+Generalize the current SEQUENCE-only `new_nested_writer`, `new_nested`,
+`write_nested_sequence`, `read_nested_sequence`, `intrinsic_tag`, nested tag
+application, and EXPLICIT-framing scanners before exposing SET callbacks.
+`SetWriter` relies on generated field order, so the child generator must emit
+its own sorted members independently of any parent SET sort. Preserve
+transactional parent rollback on nested failure.
+
+The C reference emits `30 08 31 06 80 01 02 81 01 ff` for an untagged
+SEQUENCE containing a SET child with `[0] IMPLICIT INTEGER 2` and `[1]
+IMPLICIT BOOLEAN TRUE`. Its CER form is
+`30 80 31 80 80 01 02 81 01 ff 00 00 00 00`. Replacing the child tag with
+`[3] IMPLICIT` changes `31` to `a3`; wrapping it with `[3] EXPLICIT` adds an
+outer `a3` and retains the inner `31`. C BER accepts reversed child fields;
+strict CER rejects that order and rejects the definite DER form. Acceptance
+must compare these natural, IMPLICIT, and EXPLICIT vectors in both directions,
+including parent SET ordering, absent OPTIONAL children, nested EOC matching,
+exact prefix consumption, malformed framing/duplicates, and resource limits.
+For a parent SET declared with `[4] IMPLICIT BOOLEAN` before `[3] EXPLICIT`
+SET, C DER instead emits the child first:
+`31 0d a3 08 31 06 80 01 02 81 01 ff 84 01 ff`; C CER emits
+`31 80 a3 80 31 80 80 01 02 81 01 ff 00 00 00 00 84 01 ff 00 00`.
+The parent and child sorts are independent.
+For EXPLICIT child wrappers that mix definite and indefinite constructed
+lengths, the existing C BER tag scanner rejects both layer orders. Follow the
+current nested SEQUENCE compatibility decision: a well-framed Rust BER parser
+may accept them, while strict CER rejects both by canonical comparison.
+The generator must reject excluded schemas before publishing output.
 
 Strict CER decoding uses BER decoding followed by canonical CER encoding and
 comparison with exactly the consumed prefix. This matches the architecture of

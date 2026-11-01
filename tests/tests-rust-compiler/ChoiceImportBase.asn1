@@ -1,0 +1,3 @@
+ChoiceImportBase DEFINITIONS ::= BEGIN
+Flag ::= BOOLEAN
+END

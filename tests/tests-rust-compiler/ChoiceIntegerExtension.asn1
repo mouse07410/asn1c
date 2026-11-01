@@ -1,0 +1,3 @@
+ChoiceIntegerExtension DEFINITIONS ::= BEGIN
+Value ::= CHOICE { count INTEGER (0..5, ...), flag BOOLEAN }
+END

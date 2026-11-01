@@ -2,7 +2,8 @@
 //!
 //! In addition to a limited PER/OER/CER/DER/BER codec slice, this crate covers
 //! BOOLEAN, NULL, bounded and arbitrary-precision signed INTEGER, direct
-//! ENUMERATED, OBJECT IDENTIFIER, RELATIVE-OID, direct character strings,
+//! ENUMERATED and primitive CHOICE, OBJECT IDENTIFIER, RELATIVE-OID,
+//! direct character strings,
 //! fixed and bounded-size UPER
 //! strings, fixed or bounded JER strings, and direct CBOR primitives and opaque
 //! ANY values.
@@ -42,21 +43,23 @@ pub use aper::{
 };
 pub use ber::{
     decode_bit_string_ber, decode_bit_string_cer, decode_character_string_ber,
-    decode_character_string_cer, decode_collection_ber, decode_collection_cer,
-    decode_enumerated_ber, decode_enumerated_cer, decode_generalized_time_ber,
-    decode_generalized_time_cer, decode_ia5_string_ber, decode_ia5_string_cer,
-    decode_object_identifier_ber, decode_object_identifier_cer, decode_octet_string_ber,
-    decode_octet_string_cer, decode_relative_oid_ber, decode_relative_oid_cer, decode_utc_time_ber,
-    decode_utc_time_cer, encode_bit_string_cer, encode_bit_string_der, encode_character_string_cer,
-    encode_character_string_der, encode_collection_cer, encode_collection_der,
+    decode_character_string_cer, decode_choice_ber, decode_choice_cer, decode_collection_ber,
+    decode_collection_cer, decode_enumerated_ber, decode_enumerated_cer,
+    decode_generalized_time_ber, decode_generalized_time_cer, decode_ia5_string_ber,
+    decode_ia5_string_cer, decode_object_identifier_ber, decode_object_identifier_cer,
+    decode_octet_string_ber, decode_octet_string_cer, decode_relative_oid_ber,
+    decode_relative_oid_cer, decode_utc_time_ber, decode_utc_time_cer, encode_bit_string_cer,
+    encode_bit_string_der, encode_character_string_cer, encode_character_string_der,
+    encode_choice_cer, encode_choice_der, encode_collection_cer, encode_collection_der,
     encode_enumerated_cer, encode_enumerated_der, encode_generalized_time_cer,
     encode_generalized_time_der, encode_ia5_string_cer, encode_ia5_string_der,
     encode_object_identifier_cer, encode_object_identifier_der, encode_octet_string_cer,
     encode_octet_string_der, encode_relative_oid_cer, encode_relative_oid_der, encode_utc_time_cer,
-    encode_utc_time_der, CharacterString, CharacterStringKind, CollectionElementKind,
-    CollectionInput, CollectionRootKind, CollectionValues, FieldKind, GeneralizedTime, Ia5String,
-    ObjectIdentifier, RecordContext, RecordEncoding, RecordField, RelativeOid, SequenceReader,
-    SequenceWriter, SetReader, SetWriter, Tag, TagClass, UtcTime, MAX_TAG_NUMBER,
+    encode_utc_time_der, CharacterString, CharacterStringKind, ChoiceAlternative, ChoiceValue,
+    CollectionElementKind, CollectionInput, CollectionRootKind, CollectionValues, FieldKind,
+    GeneralizedTime, Ia5String, ObjectIdentifier, RecordContext, RecordEncoding, RecordField,
+    RelativeOid, SequenceReader, SequenceWriter, SetReader, SetWriter, Tag, TagClass, UtcTime,
+    MAX_TAG_NUMBER,
 };
 pub use big_integer::{
     decode_big_integer_ber, decode_big_integer_cer, encode_big_integer_cer, encode_big_integer_der,

@@ -872,6 +872,128 @@ pub enum CollectionValues {
     Integer(Vec<i64>),
 }
 
+/// Describe one supported intrinsic alternative of a direct CHOICE.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ChoiceAlternative {
+    /// BOOLEAN encoded with universal tag 1.
+    Boolean,
+    /// NULL encoded with universal tag 5.
+    Null,
+    /// Bounded signed INTEGER encoded with universal tag 2.
+    BoundedInteger {
+        /// Inclusive minimum accepted integer value.
+        lower: i64,
+        /// Inclusive maximum accepted integer value.
+        upper: i64,
+    },
+}
+
+/// Selected scalar value of a direct primitive CHOICE.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ChoiceValue {
+    /// Selected BOOLEAN alternative.
+    Boolean(bool),
+    /// Selected NULL alternative.
+    Null,
+    /// Selected bounded signed INTEGER alternative.
+    Integer(i64),
+}
+
+/// Encode the selected primitive CHOICE alternative as DER.
+///
+/// # Parameters and returns
+/// `alternatives` is the 1–3 unique-tag descriptor slice; `value` selects the
+/// present arm; `limits` caps complete output and cumulative work. Returns the
+/// selected primitive TLV without an outer CHOICE wrapper.
+///
+/// # Errors
+/// Returns invalid descriptors/selection, integer range, resource, size, or
+/// allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 DER CHOICE dispatch. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct CHOICE gate.
+/// Example: `encode_choice_der(&arms, ChoiceValue::Boolean(true), limits)?`.
+pub fn encode_choice_der(
+    alternatives: &[ChoiceAlternative],
+    value: ChoiceValue,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    // state variable: carries output work for this standalone operation.
+    let mut work = 0;
+    encode_choice_tlv(alternatives, value, limits, &mut work)
+}
+
+/// Encode the selected primitive CHOICE alternative as CER.
+///
+/// # Parameters and returns
+/// `alternatives` is the 1–3 unique-tag descriptor slice; `value` selects the
+/// present arm; `limits` caps complete output and cumulative work. Returns the
+/// selected primitive TLV without an outer CHOICE wrapper.
+///
+/// # Errors
+/// Returns invalid descriptors/selection, integer range, resource, size, or
+/// allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 CER CHOICE dispatch. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct CHOICE gate.
+/// Example: `encode_choice_cer(&arms, ChoiceValue::Null, limits)?`.
+pub fn encode_choice_cer(
+    alternatives: &[ChoiceAlternative],
+    value: ChoiceValue,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    // state variable: carries output work for this standalone operation.
+    let mut work = 0;
+    encode_choice_tlv(alternatives, value, limits, &mut work)
+}
+
+/// Decode one BER primitive CHOICE alternative prefix.
+///
+/// # Parameters and returns
+/// `input` is the full available slice and may have a suffix; `alternatives`
+/// supplies the 1–3 unique-tag arms; `limits` bounds the whole input and work.
+/// Returns the selected scalar value and exact consumed prefix.
+///
+/// # Errors
+/// Returns unknown/wrong tags, malformed or truncated TLV, integer range,
+/// resource, size, or encoding errors.
+///
+/// # Source, version, history, example
+/// Source: C BER CHOICE tag dispatch and primitive decoders. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct CHOICE gate.
+/// Example: `decode_choice_ber(&wire, &arms, limits)?`.
+pub fn decode_choice_ber(
+    input: &[u8],
+    alternatives: &[ChoiceAlternative],
+    limits: &Limits,
+) -> Result<Decoded<ChoiceValue>, Error> {
+    decode_choice_with_rule(input, alternatives, false, limits)
+}
+
+/// Strictly decode one CER primitive CHOICE alternative prefix.
+///
+/// # Parameters and returns
+/// `input` is the full available slice and may have a suffix; `alternatives`
+/// supplies the 1–3 unique-tag arms; `limits` bounds the shared parse,
+/// re-encode, and compare work. Returns the selected value and exact prefix.
+///
+/// # Errors
+/// Returns all BER choice errors plus canonicality mismatch or re-encode limits.
+///
+/// # Source, version, history, example
+/// Source: C strict CER decode by BER/re-encode comparison. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct CHOICE gate.
+/// Example: `decode_choice_cer(&wire, &arms, limits)?`.
+pub fn decode_choice_cer(
+    input: &[u8],
+    alternatives: &[ChoiceAlternative],
+    limits: &Limits,
+) -> Result<Decoded<ChoiceValue>, Error> {
+    decode_choice_with_rule(input, alternatives, true, limits)
+}
+
 /// Encode one direct collection as DER, preserving SEQUENCE OF order or sorting SET OF.
 ///
 /// # Parameters and returns
@@ -7538,7 +7660,7 @@ fn is_eoc(input: &[u8], offset: usize, end: usize) -> bool {
         .is_some_and(|next| next < end && input[offset] == 0 && input[next] == 0)
 }
 
-/// Convert minimal or redundantly sign-extended BER contents to an i64.
+/// Convert minimal or redundantly sign-extended signed contents to an i64.
 ///
 /// # Parameters and returns
 /// `bytes` are signed two's-complement content octets; returns represented i64.
@@ -7548,18 +7670,18 @@ fn is_eoc(input: &[u8], offset: usize, end: usize) -> bool {
 ///
 /// # Source, version, history, example
 /// Source: X.690 signed integer content. Version: 2026-10-31.
-/// Responsible: maintainers. History: direct ENUMERATED support.
+/// Responsible: maintainers. History: ENUMERATED, collection, and CHOICE support.
 /// Example: `signed_value(&[0xff])? == -1`.
 fn signed_value(bytes: &[u8]) -> Result<i64, Error> {
     if bytes.is_empty() {
-        return Err(invalid("ENUMERATED content is empty"));
+        return Err(invalid("signed integer content is empty"));
     }
     let mut significant = bytes;
     while significant.len() > 8 {
         let first = significant[0];
         let next = significant[1];
         if !((first == 0 && next & 0x80 == 0) || (first == 0xff && next & 0x80 != 0)) {
-            return Err(invalid("ENUMERATED value exceeds i64 range"));
+            return Err(invalid("signed integer value exceeds i64 range"));
         }
         significant = &significant[1..];
     }
@@ -9639,6 +9761,30 @@ fn parse_collection_item(
 ) -> Result<(CollectionItem, usize), Error> {
     charge_work(work, 1, limits)?;
     let header = parse_collection_header(input, start, bound, work, limits)?;
+    parse_collection_item_header(input, header, bound, element, limits, work)
+}
+
+/// Decode scalar content using a header that has already been precharged.
+///
+/// # Parameters and returns
+/// `input`/`header`/`bound` locate the scalar; `element` selects its semantics;
+/// `limits` and `work` share the operation budget. Returns item and end offset.
+///
+/// # Errors
+/// Returns tag/form/content, range, truncation, work, or size errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 collection scalar decoder. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct CHOICE scalar reuse.
+/// Example: called after a collection or CHOICE dispatch parses its header.
+fn parse_collection_item_header(
+    input: &[u8],
+    header: Header,
+    bound: usize,
+    element: CollectionElementKind,
+    limits: &Limits,
+    work: &mut usize,
+) -> Result<(CollectionItem, usize), Error> {
     if header.class != 0 || header.tag != collection_element_tag(element) || header.constructed {
         return Err(invalid(
             "BER collection child has the wrong tag or primitive form",
@@ -9676,6 +9822,261 @@ fn parse_collection_item(
         }
     };
     Ok((item, end))
+}
+
+/// Validate the CHOICE descriptor slice before scanning input or allocating.
+///
+/// # Parameters and returns
+/// `alternatives` contains supported arms. Returns success for 1–3 unique tags
+/// and valid INTEGER bounds.
+///
+/// # Errors
+/// Returns `InvalidEncoding` for count/tag duplication or `InvalidBounds`.
+///
+/// # Source, version, history, example
+/// Source: direct ASN.1 CHOICE validation. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct CHOICE gate.
+/// Example: called at every public CHOICE operation boundary.
+fn validate_choice_alternatives(alternatives: &[ChoiceAlternative]) -> Result<(), Error> {
+    if alternatives.is_empty() || alternatives.len() > 3 {
+        return Err(invalid("CHOICE needs one through three alternatives"));
+    }
+    // state variable: records which intrinsic universal tags have appeared.
+    let mut seen_tags = 0_u8;
+    for alternative in alternatives {
+        let bit = match *alternative {
+            ChoiceAlternative::Boolean => 1,
+            ChoiceAlternative::Null => 2,
+            ChoiceAlternative::BoundedInteger { lower, upper } => {
+                if lower > upper {
+                    return Err(Error::InvalidBounds { lower, upper });
+                }
+                4
+            }
+        };
+        if seen_tags & bit != 0 {
+            return Err(invalid(
+                "CHOICE alternatives contain duplicate intrinsic tags",
+            ));
+        }
+        seen_tags |= bit;
+    }
+    Ok(())
+}
+
+/// Resolve a selected CHOICE value to its descriptor and scalar item.
+///
+/// # Parameters and returns
+/// `alternatives` are validated descriptors; `value` is the selected arm.
+/// Returns its collection scalar kind/item pair.
+///
+/// # Errors
+/// Returns `InvalidEncoding` when the selected arm is absent or mismatched, or
+/// a range error when the selected bounded INTEGER is outside its bounds.
+///
+/// # Source, version, history, example
+/// Source: direct typed CHOICE value mapping. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct CHOICE gate.
+/// Example: called by DER/CER choice encoders.
+fn choice_item_for_value(
+    alternatives: &[ChoiceAlternative],
+    value: ChoiceValue,
+) -> Result<(CollectionElementKind, CollectionItem), Error> {
+    match value {
+        ChoiceValue::Boolean(value) if alternatives.contains(&ChoiceAlternative::Boolean) => Ok((
+            CollectionElementKind::Boolean,
+            CollectionItem::Boolean(value),
+        )),
+        ChoiceValue::Null if alternatives.contains(&ChoiceAlternative::Null) => {
+            Ok((CollectionElementKind::Null, CollectionItem::Null))
+        }
+        ChoiceValue::Integer(value) => {
+            let Some(ChoiceAlternative::BoundedInteger { lower, upper }) =
+                alternatives.iter().find(|alternative| {
+                    matches!(alternative, ChoiceAlternative::BoundedInteger { .. })
+                })
+            else {
+                return Err(invalid("selected CHOICE INTEGER arm is absent"));
+            };
+            validate_integer(value, *lower, *upper)?;
+            Ok((
+                CollectionElementKind::BoundedInteger {
+                    lower: *lower,
+                    upper: *upper,
+                },
+                CollectionItem::Integer(value),
+            ))
+        }
+        _ => Err(invalid("selected CHOICE arm is absent")),
+    }
+}
+
+/// Convert an alternative descriptor to the scalar kind used by collection parsing.
+///
+/// # Parameters and returns
+/// `alternative` selects one intrinsic universal primitive. Returns its scalar kind.
+///
+/// # Errors
+/// Cannot fail because descriptor bounds were validated at operation entry.
+///
+/// # Source, version, history, example
+/// Source: direct CHOICE parser reuse. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct CHOICE gate.
+/// Example: called after tag-number dispatch.
+const fn choice_element_kind(alternative: ChoiceAlternative) -> CollectionElementKind {
+    match alternative {
+        ChoiceAlternative::Boolean => CollectionElementKind::Boolean,
+        ChoiceAlternative::Null => CollectionElementKind::Null,
+        ChoiceAlternative::BoundedInteger { lower, upper } => {
+            CollectionElementKind::BoundedInteger { lower, upper }
+        }
+    }
+}
+
+/// Encode one selected primitive arm through the shared operation work counter.
+///
+/// # Parameters and returns
+/// `alternatives` and `value` select a validated arm; `limits` bounds output;
+/// `work` accumulates encoder and any earlier strict-decode work. Returns its TLV.
+///
+/// # Errors
+/// Returns descriptor/selection/range, output/work, size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 canonical primitive encoding. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct CHOICE gate.
+/// Example: called by public DER/CER encoders and strict CER validation.
+fn encode_choice_tlv(
+    alternatives: &[ChoiceAlternative],
+    value: ChoiceValue,
+    limits: &Limits,
+    work: &mut usize,
+) -> Result<Encoded, Error> {
+    validate_choice_alternatives(alternatives)?;
+    let (element, item) = choice_item_for_value(alternatives, value)?;
+    let encoded = encode_collection_item(element, item)?;
+    let length = usize::from(encoded.len);
+    check(Resource::OutputBytes, length, limits.max_output_bytes)?;
+    charge_work(
+        work,
+        length.checked_add(1).ok_or(Error::SizeOverflow)?,
+        limits,
+    )?;
+    // state variable: owns the final selected primitive TLV.
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(length)
+        .map_err(|_| Error::AllocationFailed {
+            requested_bytes: length,
+        })?;
+    check(
+        Resource::OutputBytes,
+        bytes.capacity(),
+        limits.max_output_bytes,
+    )?;
+    append_collection_tlv(&mut bytes, &encoded)?;
+    Ok(Encoded {
+        bytes,
+        bit_len: length.checked_mul(8).ok_or(Error::SizeOverflow)?,
+    })
+}
+
+/// Decode one primitive CHOICE prefix and optionally require canonical CER.
+///
+/// # Parameters and returns
+/// `input` is the complete available slice; `alternatives` describe the allowed
+/// tags; `strict_cer` selects canonical comparison; `limits`/`work` share the
+/// complete operation budget. Returns selected scalar and prefix consumption.
+///
+/// # Errors
+/// Returns malformed/unknown tags, content, range, truncation, canonicality,
+/// input/work/output, or size errors.
+///
+/// # Source, version, history, example
+/// Source: C BER CHOICE dispatch and strict CER re-encoding. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct CHOICE gate.
+/// Example: called by `decode_choice_ber` and `decode_choice_cer`.
+fn decode_choice_with_rule(
+    input: &[u8],
+    alternatives: &[ChoiceAlternative],
+    strict_cer: bool,
+    limits: &Limits,
+) -> Result<Decoded<ChoiceValue>, Error> {
+    validate_choice_alternatives(alternatives)?;
+    check(Resource::InputBytes, input.len(), limits.max_input_bytes)?;
+    // state variable: accumulates dispatch, header, and scalar parse work.
+    let mut work = 0;
+    charge_work(&mut work, 1, limits)?;
+    let header = parse_collection_header(input, 0, input.len(), &mut work, limits)?;
+    let alternative = choice_alternative_for_tag(alternatives, header.class, header.tag)?;
+    let element = choice_element_kind(alternative);
+    let (item, consumed_bytes) =
+        parse_collection_item_header(input, header, input.len(), element, limits, &mut work)?;
+    let value = choice_value_from_item(item);
+    if strict_cer {
+        let canonical = encode_choice_tlv(alternatives, value, limits, &mut work)?;
+        ensure_canonical(input, consumed_bytes, &canonical.bytes, &mut work, limits)?;
+    }
+    let consumed_bits = consumed_bytes.checked_mul(8).ok_or(Error::SizeOverflow)?;
+    Ok(Decoded {
+        value,
+        consumed_bits,
+        consumed_bytes,
+    })
+}
+
+/// Dispatch a parsed CHOICE identifier to one supported alternative.
+///
+/// # Parameters and returns
+/// `alternatives` is the validated arm slice; `class`/`tag` are parsed metadata.
+/// Returns the matching descriptor.
+///
+/// # Errors
+/// Returns `InvalidEncoding` for non-universal, constructed, or unsupported tags.
+///
+/// # Source, version, history, example
+/// Source: C CHOICE tag-to-member mapping. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct CHOICE gate.
+/// Example: called before selected scalar parsing.
+fn choice_alternative_for_tag(
+    alternatives: &[ChoiceAlternative],
+    class: u8,
+    tag: u64,
+) -> Result<ChoiceAlternative, Error> {
+    if class != 0 {
+        return Err(invalid(
+            "CHOICE primitive alternative must use a universal tag",
+        ));
+    }
+    alternatives
+        .iter()
+        .copied()
+        .find(|alternative| match alternative {
+            ChoiceAlternative::Boolean => tag == TAG_BOOLEAN,
+            ChoiceAlternative::Null => tag == TAG_NULL,
+            ChoiceAlternative::BoundedInteger { .. } => tag == TAG_INTEGER,
+        })
+        .ok_or_else(|| invalid("BER identifier is not an alternative of this CHOICE"))
+}
+
+/// Convert a parsed collection scalar into the public CHOICE enum.
+///
+/// # Parameters and returns
+/// `item` is the selected internal scalar. Returns its public selected-value variant.
+///
+/// # Errors
+/// Returns an internal consistency error for an impossible item.
+///
+/// # Source, version, history, example
+/// Source: direct CHOICE decoder. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct CHOICE gate.
+/// Example: called after primitive range validation.
+const fn choice_value_from_item(item: CollectionItem) -> ChoiceValue {
+    match item {
+        CollectionItem::Boolean(value) => ChoiceValue::Boolean(value),
+        CollectionItem::Null => ChoiceValue::Null,
+        CollectionItem::Integer(value) => ChoiceValue::Integer(value),
+    }
 }
 
 /// Parse one collection identifier and precharge every identifier/length octet.
@@ -17045,6 +17446,343 @@ mod tests {
                             CollectionElementKind::Boolean,
                             &limits,
                         );
+                    })
+                    .is_ok());
+                }
+            }
+        }
+    }
+
+    /// Check DER and CER selected-arm vectors without an outer CHOICE TLV.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Encodes BOOLEAN, NULL, and bounded INTEGER selections.
+    ///
+    /// # Errors
+    /// Panics if primitive output differs from its canonical vector.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 primitive CHOICE encoding. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct CHOICE gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn choice_encoders_emit_selected_primitive_vectors() {
+        let alternatives = [
+            ChoiceAlternative::Boolean,
+            ChoiceAlternative::Null,
+            ChoiceAlternative::BoundedInteger {
+                lower: -2,
+                upper: 8,
+            },
+        ];
+        let limits = Limits::default();
+        for (value, expected) in [
+            (ChoiceValue::Boolean(true), &[1, 1, 0xff][..]),
+            (ChoiceValue::Null, &[5, 0][..]),
+            (ChoiceValue::Integer(-2), &[2, 1, 0xfe][..]),
+        ] {
+            assert_eq!(
+                encode_choice_der(&alternatives, value, &limits)
+                    .unwrap()
+                    .bytes,
+                expected
+            );
+            assert_eq!(
+                encode_choice_cer(&alternatives, value, &limits)
+                    .unwrap()
+                    .bytes,
+                expected
+            );
+            assert_eq!(
+                decode_choice_cer(expected, &alternatives, &limits)
+                    .unwrap()
+                    .value,
+                value
+            );
+        }
+    }
+
+    /// Check BER tag dispatch and exact prefix consumption for each arm.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Decodes three primitive prefixes followed by a suffix.
+    ///
+    /// # Errors
+    /// Panics if branch selection or consumed prefix is incorrect.
+    ///
+    /// # Source, version, history, example
+    /// Source: C BER CHOICE dispatch. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct CHOICE gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn choice_ber_dispatches_primitive_prefixes() {
+        let alternatives = [
+            ChoiceAlternative::Boolean,
+            ChoiceAlternative::Null,
+            ChoiceAlternative::BoundedInteger {
+                lower: -2,
+                upper: 8,
+            },
+        ];
+        let cases: &[(&[u8], ChoiceValue)] = &[
+            (&[1, 1, 0xff, 9], ChoiceValue::Boolean(true)),
+            (&[5, 0, 9], ChoiceValue::Null),
+            (&[2, 1, 8, 9], ChoiceValue::Integer(8)),
+        ];
+        for (wire, expected) in cases {
+            let decoded = decode_choice_ber(wire, &alternatives, &Limits::default()).unwrap();
+            assert_eq!(decoded.value, *expected);
+            assert_eq!(decoded.consumed_bytes, wire.len() - 1);
+            assert_eq!(decoded.consumed_bits, decoded.consumed_bytes * 8);
+        }
+    }
+
+    /// Check C-compatible BER aliases and strict CER canonical rejection.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Covers high tags, long lengths, BOOLEAN, and INTEGER aliases.
+    ///
+    /// # Errors
+    /// Panics if BER aliases fail or strict CER accepts a noncanonical prefix.
+    ///
+    /// # Source, version, history, example
+    /// Source: C BER scalar compatibility and CER re-encoding. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct CHOICE gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn choice_ber_aliases_decode_and_cer_rejects() {
+        let alternatives = [
+            ChoiceAlternative::Boolean,
+            ChoiceAlternative::Null,
+            ChoiceAlternative::BoundedInteger { lower: 0, upper: 2 },
+        ];
+        let aliases: &[(&[u8], ChoiceValue)] = &[
+            (&[0x1f, 1, 1, 1], ChoiceValue::Boolean(true)),
+            (&[0x1f, 5, 0], ChoiceValue::Null),
+            (&[0x1f, 2, 1, 1], ChoiceValue::Integer(1)),
+            (&[1, 0x81, 1, 0xff], ChoiceValue::Boolean(true)),
+            (&[1, 0], ChoiceValue::Boolean(false)),
+            (&[1, 2, 0, 1], ChoiceValue::Boolean(true)),
+            (&[2, 2, 0, 1], ChoiceValue::Integer(1)),
+        ];
+        for (wire, expected) in aliases {
+            assert_eq!(
+                decode_choice_ber(wire, &alternatives, &Limits::default())
+                    .unwrap()
+                    .value,
+                *expected
+            );
+            assert!(decode_choice_cer(wire, &alternatives, &Limits::default()).is_err());
+        }
+        let canonical = [1, 1, 0xff, 0x55];
+        assert_eq!(
+            decode_choice_cer(&canonical, &alternatives, &Limits::default())
+                .unwrap()
+                .consumed_bytes,
+            3
+        );
+    }
+
+    /// Reject invalid descriptors, unknown tags, constructed forms, and bad content.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Exercises malformed descriptors and primitive values.
+    ///
+    /// # Errors
+    /// Panics if malformed input or invalid selection is accepted.
+    ///
+    /// # Source, version, history, example
+    /// Source: direct CHOICE descriptor and BER validation. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct CHOICE gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn choice_rejects_invalid_descriptors_and_tlvs() {
+        let none: [ChoiceAlternative; 0] = [];
+        let duplicate = [ChoiceAlternative::Boolean, ChoiceAlternative::Boolean];
+        let too_many = [
+            ChoiceAlternative::Boolean,
+            ChoiceAlternative::Null,
+            ChoiceAlternative::BoundedInteger { lower: 0, upper: 1 },
+            ChoiceAlternative::Null,
+        ];
+        let reversed = [ChoiceAlternative::BoundedInteger { lower: 2, upper: 1 }];
+        assert!(encode_choice_der(&none, ChoiceValue::Null, &Limits::default()).is_err());
+        assert!(
+            encode_choice_der(&duplicate, ChoiceValue::Boolean(false), &Limits::default()).is_err()
+        );
+        assert!(
+            encode_choice_der(&too_many, ChoiceValue::Boolean(false), &Limits::default()).is_err()
+        );
+        assert!(encode_choice_der(&reversed, ChoiceValue::Integer(2), &Limits::default()).is_err());
+        let only_boolean = [ChoiceAlternative::Boolean];
+        assert!(encode_choice_der(&only_boolean, ChoiceValue::Null, &Limits::default()).is_err());
+        assert!(matches!(
+            decode_choice_ber(
+                &[],
+                &none,
+                &Limits {
+                    max_work_bits: 0,
+                    ..Limits::default()
+                },
+            ),
+            Err(Error::InvalidEncoding { .. })
+        ));
+        let alternatives = [
+            ChoiceAlternative::Boolean,
+            ChoiceAlternative::Null,
+            ChoiceAlternative::BoundedInteger { lower: 0, upper: 2 },
+        ];
+        let malformed: &[&[u8]] = &[
+            &[0x41, 1, 0xff],
+            &[0x21, 1, 0xff],
+            &[0x1f, 0x80],
+            &[0x1f, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f],
+            &[1, 0x80],
+            &[1, 0x82, 0],
+            &[5, 1, 0],
+            &[2, 0],
+            &[2, 1, 3],
+            &[2, 2, 1],
+            &[0x21, 0x80, 0, 0],
+            &[6, 0],
+            &[0, 0],
+        ];
+        for wire in malformed {
+            assert!(decode_choice_ber(wire, &alternatives, &Limits::default()).is_err());
+        }
+    }
+
+    /// Pin cumulative CHOICE output, input, BER, and strict CER work budgets.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Uses canonical BOOLEAN TRUE to establish fixed thresholds.
+    ///
+    /// # Errors
+    /// Panics if exact budgets fail or one-below budgets pass.
+    ///
+    /// # Source, version, history, example
+    /// Source: CHOICE operation resource policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct CHOICE gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn choice_resource_limits_are_exact() {
+        let alternatives = [ChoiceAlternative::Boolean];
+        let der_limits = Limits {
+            max_output_bytes: 3,
+            max_work_bits: 32,
+            ..Limits::default()
+        };
+        assert!(encode_choice_der(&alternatives, ChoiceValue::Boolean(true), &der_limits).is_ok());
+        assert!(encode_choice_der(
+            &alternatives,
+            ChoiceValue::Boolean(true),
+            &Limits {
+                max_output_bytes: 2,
+                ..der_limits
+            },
+        )
+        .is_err());
+        assert!(encode_choice_der(
+            &alternatives,
+            ChoiceValue::Boolean(true),
+            &Limits {
+                max_work_bits: 31,
+                ..der_limits
+            },
+        )
+        .is_err());
+
+        let wire = [1, 1, 0xff, 0x55];
+        let ber_limits = Limits {
+            max_input_bytes: wire.len(),
+            max_work_bits: 32,
+            ..Limits::default()
+        };
+        assert!(decode_choice_ber(&wire, &alternatives, &ber_limits).is_ok());
+        assert!(decode_choice_ber(
+            &wire,
+            &alternatives,
+            &Limits {
+                max_input_bytes: wire.len() - 1,
+                ..ber_limits
+            },
+        )
+        .is_err());
+        assert!(decode_choice_ber(
+            &wire,
+            &alternatives,
+            &Limits {
+                max_work_bits: 31,
+                ..ber_limits
+            },
+        )
+        .is_err());
+
+        let strict = [1, 1, 0xff];
+        let strict_limits = Limits {
+            max_input_bytes: strict.len(),
+            max_output_bytes: strict.len(),
+            max_work_bits: 88,
+        };
+        assert!(decode_choice_cer(&strict, &alternatives, &strict_limits).is_ok());
+        assert!(decode_choice_cer(
+            &strict,
+            &alternatives,
+            &Limits {
+                max_work_bits: 87,
+                ..strict_limits
+            },
+        )
+        .is_err());
+        assert!(decode_choice_cer(
+            &strict,
+            &alternatives,
+            &Limits {
+                max_output_bytes: 2,
+                ..strict_limits
+            },
+        )
+        .is_err());
+    }
+
+    /// Mutate and truncate CHOICE inputs without allowing decoder panics.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks every prefix and every single-octet replacement.
+    ///
+    /// # Errors
+    /// Panics only if a bounded BER/CER decoder unwinds on mutated input.
+    ///
+    /// # Source, version, history, example
+    /// Source: CHOICE decoder mutation hardening. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct CHOICE gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn choice_mutations_and_truncations_do_not_panic() {
+        let alternatives = [
+            ChoiceAlternative::Boolean,
+            ChoiceAlternative::Null,
+            ChoiceAlternative::BoundedInteger {
+                lower: -1,
+                upper: 1,
+            },
+        ];
+        let wires: &[&[u8]] = &[&[1, 1, 0xff], &[5, 0], &[2, 1, 0xff]];
+        for wire in wires {
+            for end in 0..wire.len() {
+                assert!(std::panic::catch_unwind(|| {
+                    let _ = decode_choice_ber(&wire[..end], &alternatives, &Limits::default());
+                    let _ = decode_choice_cer(&wire[..end], &alternatives, &Limits::default());
+                })
+                .is_ok());
+            }
+            for offset in 0..wire.len() {
+                for byte in 0_u8..=u8::MAX {
+                    let mut changed = wire.to_vec();
+                    changed[offset] = byte;
+                    assert!(std::panic::catch_unwind(|| {
+                        let _ = decode_choice_ber(&changed, &alternatives, &Limits::default());
+                        let _ = decode_choice_cer(&changed, &alternatives, &Limits::default());
                     })
                     .is_ok());
                 }

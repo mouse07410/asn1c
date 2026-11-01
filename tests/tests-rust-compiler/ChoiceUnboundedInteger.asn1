@@ -1,0 +1,3 @@
+ChoiceUnboundedInteger DEFINITIONS ::= BEGIN
+Value ::= CHOICE { flag BOOLEAN, count INTEGER }
+END

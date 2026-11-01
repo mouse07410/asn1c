@@ -1,0 +1,3 @@
+ChoicePair DEFINITIONS ::= BEGIN
+Value ::= CHOICE { flag BOOLEAN, empty NULL }
+END

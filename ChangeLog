@@ -1,4 +1,9 @@
 Changes since v1.5.3:
+	* Add direct untagged primitive CHOICE Rust BER/DER/CER support for
+	  unique BOOLEAN, NULL, and bounded INTEGER alternatives under BER/CER-only
+	  selection. Dispatch BER by the selected intrinsic tag, emit one selected
+	  DER/CER TLV, check strict CER against the consumed prefix, and reject
+	  unsupported or ambiguous schemas before publication.
 	* Add direct untagged SEQUENCE OF and SET OF Rust BER/DER/CER roots for
 	  BOOLEAN, NULL, and bounded INTEGER elements under BER/CER-only
 	  selection. Preserve SEQUENCE OF order, canonically sort full SET OF

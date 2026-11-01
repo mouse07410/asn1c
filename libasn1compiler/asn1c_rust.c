@@ -106,6 +106,14 @@ static int rust_check_sequence_ber_cer(asn1p_module_t *, asn1p_expr_t *, uint64_
 static int rust_check_set_ber_cer(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_cbor_sequence(asn1p_module_t *, asn1p_expr_t *);
 static int rust_check_cbor_choice(asn1p_module_t *, asn1p_expr_t *, uint64_t);
+static int rust_check_ber_cer_choice(asn1p_module_t *, asn1p_expr_t *, uint64_t);
+static int rust_check_ber_cer_choice_root(asn1p_module_t *, asn1p_expr_t *);
+static int rust_check_ber_cer_choice_codecs(asn1p_module_t *, asn1p_expr_t *, uint64_t);
+static int rust_check_ber_cer_choice_member(asn1p_module_t *, asn1p_expr_t *, unsigned *);
+static int rust_check_ber_cer_choice_member_shape(asn1p_module_t *, asn1p_expr_t *);
+static int rust_check_ber_cer_choice_member_kind(asn1p_module_t *, asn1p_expr_t *, unsigned *);
+static int rust_check_ber_cer_choice_integer(asn1p_module_t *, asn1p_expr_t *);
+static int rust_check_ber_cer_choice_name(asn1p_module_t *, asn1p_expr_t *, asn1p_expr_t *);
 static int rust_check_sequence_tree(asn1p_module_t *, asn1p_expr_t *,
                                    asn1p_expr_t **, size_t, size_t *, size_t *);
 static int rust_check_module_nested_names(asn1p_module_t *);
@@ -211,6 +219,12 @@ static int rust_write_set_ber_cer(FILE *, const char *, asn1p_expr_t *, uint64_t
 static int rust_write_set_ber_cer_decode_method(FILE *, asn1p_expr_t *, int);
 static int rust_write_set_ber_cer_decode_helper(FILE *, const char *, asn1p_expr_t *);
 static int rust_write_set(FILE *, const char *, asn1p_expr_t *, uint64_t);
+static int rust_write_ber_cer_choice(FILE *, const char *, asn1p_expr_t *, uint64_t);
+static int rust_write_choice_value_conversions(FILE *, asn1p_expr_t *);
+static int rust_write_choice_descriptors(FILE *, asn1p_expr_t *);
+static int rust_write_choice_to_runtime(FILE *, asn1p_expr_t *);
+static int rust_write_choice_from_runtime(FILE *, asn1p_expr_t *);
+static int rust_write_choice_absent_arm(FILE *, const asn1p_expr_t *const [3]);
 static int rust_write_sequence_ber_cer_encode_field(FILE *, const char *, asn1p_expr_t *);
 static int rust_write_sequence_ber_cer_decode_field(FILE *, const char *, asn1p_expr_t *, int);
 static int rust_write_sequence_ber_cer_decode_method(FILE *, asn1p_expr_t *, int);
@@ -1117,7 +1131,9 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
     if(expr->expr_type == ASN_CONSTR_SET)
         return rust_check_set_ber_cer(module, expr, codecs);
     if(expr->expr_type == ASN_CONSTR_CHOICE)
-        return rust_check_cbor_choice(module, expr, codecs);
+        return codecs == RUST_CODEC_CBOR
+            ? rust_check_cbor_choice(module, expr, codecs)
+            : rust_check_ber_cer_choice(module, expr, codecs);
     if(expr->expr_type == ASN_BASIC_ENUMERATED)
         return rust_check_enumerated(module, expr, codecs);
     if(expr->lhs_params || expr->ioc_table || expr->members.tq_head) {
@@ -2130,6 +2146,219 @@ rust_check_cbor_choice(asn1p_module_t *module, asn1p_expr_t *expr,
         rust_diagnostic(module, expr, "CBOR CHOICE needs at least one alternative");
         return -1;
     }
+    return 0;
+}
+
+/*
+ * Purpose: validate a direct primitive CHOICE for BER/CER generation.
+ * Source: approved untagged X.690 CHOICE subset and fixed parser tree.
+ * Version/date: 2026-11-01. Inputs: module supplies diagnostics; expr owns
+ * alternatives; codecs is the selected mask. Returns zero or -1. Errors:
+ * unsupported tags, members, bounds, codecs, or Rust-name collisions reject.
+ * Responsible party: asn1c maintainers. History: initial BER/CER CHOICE slice.
+ * Example: BOOLEAN, NULL, and bounded INTEGER alternatives pass this gate.
+ */
+static int
+rust_check_ber_cer_choice(asn1p_module_t *module, asn1p_expr_t *expr,
+                          uint64_t codecs) {
+    const char *unsupported =
+        "CHOICE requires direct untagged BOOLEAN, NULL, or bounded INTEGER alternatives";
+    asn1p_expr_t *item;
+    size_t count = 0;
+    unsigned tags_seen = 0;
+
+    if(rust_check_ber_cer_choice_codecs(module, expr, codecs)
+       || rust_check_ber_cer_choice_root(module, expr)) return -1;
+    TQ_FOR(item, &expr->members, next) {
+        unsigned tag_bit;
+        if(++count > 3) {
+            rust_diagnostic(module, item, unsupported);
+            return -1;
+        }
+        if(rust_check_ber_cer_choice_member(module, item, &tag_bit)
+           || rust_check_ber_cer_choice_name(module, expr, item)) return -1;
+        if(tags_seen & tag_bit) {
+            rust_diagnostic(module, item, "CHOICE alternatives have duplicate intrinsic tags");
+            return -1;
+        }
+        tags_seen |= tag_bit;
+    }
+    if(!count) {
+        rust_diagnostic(module, expr, "CHOICE requires at least one primitive alternative");
+        return -1;
+    }
+    return 0;
+}
+
+/*
+ * Purpose: reject unsupported codec masks for direct primitive CHOICE.
+ * Source: approved BER/CER-only CHOICE design. Version/date: 2026-11-01.
+ * Inputs: module/expr identify the root; codecs is the selected mask.
+ * Returns zero for a nonempty BER/CER subset, otherwise -1 with a diagnostic.
+ * Errors: UPER, CBOR, and other mixed masks are rejected before publication.
+ * Responsible party: asn1c maintainers. History: direct CHOICE gate.
+ * Example: BER plus CER passes; BER plus UPER is rejected.
+ */
+static int
+rust_check_ber_cer_choice_codecs(asn1p_module_t *module, asn1p_expr_t *expr,
+                                 uint64_t codecs) {
+    const uint64_t ber_cer = RUST_CODEC_BER | RUST_CODEC_CER;
+    if(codecs && !(codecs & ~ber_cer)) return 0;
+    rust_diagnostic(module, expr, "CHOICE requires BER/CER-only codec selection");
+    return -1;
+}
+
+/*
+ * Purpose: validate a direct untagged nonextensible CHOICE root.
+ * Source: fixed parser tree for the approved primitive CHOICE gate.
+ * Version/date: 2026-11-01. Inputs: module and expr identify the assignment.
+ * Returns zero for a flat root, otherwise -1 with a source diagnostic.
+ * Errors: tagged, constrained, parameterized, or marked roots are rejected.
+ * Responsible party: asn1c maintainers. History: direct CHOICE gate.
+ * Example: an untagged CHOICE with three primitive members passes.
+ */
+static int
+rust_check_ber_cer_choice_root(asn1p_module_t *module, asn1p_expr_t *expr) {
+    if(expr->constraints || expr->combined_constraints || expr->reference
+       || expr->lhs_params || expr->rhs_pspecs || expr->ioc_table
+       || expr->with_syntax || expr->marker.flags != EM_NOMARK
+       || expr->marker.default_value || expr->unique
+       || expr->tag.tag_class != TC_NOCLASS || expr->tag.tag_mode != TM_DEFAULT) {
+        rust_diagnostic(module, expr,
+                        "CHOICE requires an untagged direct root with no constraints");
+        return -1;
+    }
+    return 0;
+}
+
+/*
+ * Purpose: validate one direct BOOLEAN, NULL, or bounded INTEGER alternative.
+ * Source: approved intrinsic-tag CHOICE contract and integer range helpers.
+ * Version/date: 2026-11-01. Inputs: module/item identify the arm; tag_bit receives
+ * its intrinsic-tag marker. Returns zero or -1 with a located diagnostic.
+ * Errors: tags, references, defaults, extensions, and unsupported leaves reject.
+ * Responsible party: asn1c maintainers. History: direct CHOICE gate.
+ * Example: INTEGER (-2..5) receives the universal INTEGER marker.
+ */
+static int
+rust_check_ber_cer_choice_member(asn1p_module_t *module, asn1p_expr_t *item,
+                                 unsigned *tag_bit) {
+    if(!tag_bit || rust_check_ber_cer_choice_member_shape(module, item)) return -1;
+    return rust_check_ber_cer_choice_member_kind(module, item, tag_bit);
+}
+
+/*
+ * Purpose: validate non-type structure for one direct CHOICE alternative.
+ * Source: fixed parser tree and approved CHOICE exclusion list.
+ * Version/date: 2026-11-01. Inputs: module/item identify the alternative.
+ * Returns zero for an untagged required leaf or -1 with a located diagnostic.
+ * Errors: references, tags, marker/default state, nested members, or malformed
+ * member shapes reject. Responsible party: asn1c maintainers. History: CHOICE.
+ * Example: an ordinary BOOLEAN arm passes; OPTIONAL arms are rejected.
+ */
+static int
+rust_check_ber_cer_choice_member_shape(asn1p_module_t *module, asn1p_expr_t *item) {
+    if(!rust_sequence_member_shape_valid(item) || item->reference
+       || item->marker.flags != EM_NOMARK || item->marker.default_value
+       || item->tag.tag_class != TC_NOCLASS || item->tag.tag_mode != TM_DEFAULT
+       || item->with_syntax || item->unique || item->members.tq_head) {
+        rust_diagnostic(module, item,
+                        "CHOICE alternatives must be direct untagged primitive values");
+        return -1;
+    }
+    return 0;
+}
+
+/*
+ * Purpose: map one valid CHOICE leaf kind to its unique intrinsic tag marker.
+ * Source: approved primitive CHOICE type set. Version/date: 2026-11-01.
+ * Inputs: module/item identify the leaf; tag_bit receives its tag marker.
+ * Returns zero or -1 with a source diagnostic. Errors: unsupported kinds and
+ * constrained BOOLEAN/NULL leaves reject. Responsible party: asn1c maintainers.
+ * History: initial direct CHOICE gate. Example: NULL maps to marker bit two.
+ */
+static int
+rust_check_ber_cer_choice_member_kind(asn1p_module_t *module, asn1p_expr_t *item,
+                                      unsigned *tag_bit) {
+    switch(item->expr_type) {
+    case ASN_BASIC_BOOLEAN:
+        if(item->constraints || item->combined_constraints) {
+            rust_diagnostic(module, item, "CHOICE BOOLEAN cannot have constraints");
+            return -1;
+        }
+        *tag_bit = 1u;
+        return 0;
+    case ASN_BASIC_NULL:
+        if(item->constraints || item->combined_constraints) {
+            rust_diagnostic(module, item, "CHOICE NULL cannot have constraints");
+            return -1;
+        }
+        *tag_bit = 2u;
+        return 0;
+    case ASN_BASIC_INTEGER:
+        if(rust_check_ber_cer_choice_integer(module, item)) return -1;
+        *tag_bit = 4u;
+        return 0;
+    default:
+        rust_diagnostic(module, item,
+                        "CHOICE supports only BOOLEAN, NULL, and bounded INTEGER");
+        return -1;
+    }
+}
+
+/*
+ * Purpose: require a finite nonextensible i64 range on a CHOICE INTEGER arm.
+ * Source: existing finite-integer constraint checker. Version/date: 2026-11-01.
+ * Inputs: module/item identify the source arm. Returns zero or -1 with a
+ * diagnostic. Errors: missing, union, extension, or out-of-range bounds reject.
+ * Responsible party: asn1c maintainers. History: direct CHOICE gate.
+ * Example: INTEGER (-2..5) passes; unconstrained INTEGER is rejected.
+ */
+static int
+rust_check_ber_cer_choice_integer(asn1p_module_t *module, asn1p_expr_t *item) {
+    int64_t lower, upper;
+    if(item->combined_constraints
+       && rust_constraint_supported(item->combined_constraints, 0)
+       && !rust_integer_bounds(item, &lower, &upper)) return 0;
+    rust_diagnostic(module, item,
+                    "CHOICE INTEGER needs one finite nonextensible i64 range");
+    return -1;
+}
+
+/*
+ * Purpose: reject alternative names that collide after Rust variant conversion.
+ * Source: generated Rust enum name sanitizer. Version/date: 2026-11-01.
+ * Inputs: module supplies diagnostics; expr owns arms; item is the current arm.
+ * Returns zero for a unique name or -1 after a source-located diagnostic.
+ * Errors: invalid identifiers, allocation failures, and sanitized collisions reject.
+ * Responsible party: asn1c maintainers. History: direct CHOICE gate.
+ * Example: `a-2` and `a2` cannot both map to one enum variant.
+ */
+static int
+rust_check_ber_cer_choice_name(asn1p_module_t *module, asn1p_expr_t *expr,
+                               asn1p_expr_t *item) {
+    asn1p_expr_t *prior;
+    char *name;
+    if(!rust_enum_name_safe(item->Identifier) || !(name = rust_enum_variant(item->Identifier))) {
+        rust_diagnostic(module, item, "CHOICE alternative name cannot form a Rust variant");
+        return -1;
+    }
+    TQ_FOR(prior, &expr->members, next) {
+        char *previous;
+        int collision;
+        if(prior == item) break;
+        previous = rust_enum_variant(prior->Identifier);
+        collision = !previous || !strcmp(name, previous)
+            || !strcmp(item->Identifier, prior->Identifier);
+        free(previous);
+        if(collision) {
+            free(name);
+            rust_diagnostic(module, item,
+                            "CHOICE alternative names collide after Rust sanitization");
+            return -1;
+        }
+    }
+    free(name);
     return 0;
 }
 
@@ -3838,7 +4067,9 @@ rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
     } else if(expr->expr_type == ASN_CONSTR_SEQUENCE) {
         ret = rust_write_all_sequences(stream, name, expr, 1, codecs);
     } else if(expr->expr_type == ASN_CONSTR_CHOICE) {
-        ret = rust_write_cbor_choice(stream, name, expr);
+        ret = codecs == RUST_CODEC_CBOR
+            ? rust_write_cbor_choice(stream, name, expr)
+            : rust_write_ber_cer_choice(stream, name, expr, codecs);
     } else if(expr->expr_type == ASN_TYPE_ANY) {
         ret = rust_write_any(stream, name, codecs);
     } else if(expr->expr_type == ASN_BASIC_BOOLEAN) {
@@ -5854,6 +6085,285 @@ rust_write_cbor_choice(FILE *stream, const char *name, asn1p_expr_t *expr) {
         "            value, consumed_bits: decoded.consumed_bits,\n"
         "            consumed_bytes: decoded.consumed_bytes,\n"
         "        })\n    }\n}\n\n", stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Purpose: emit owned enum conversions to the runtime's selected-value enum.
+ * Source: approved direct BER/CER primitive CHOICE representation.
+ * Version/date: 2026-11-01. Inputs: stream receives Rust; expr owns validated
+ * alternatives. Returns zero or -1. Errors: output errors fail generation.
+ * Responsible party: asn1c maintainers. History: initial BER/CER CHOICE slice.
+ * Example: Choice::Flag(true) maps to ChoiceValue::Boolean(true).
+ */
+static int
+rust_write_choice_value_conversions(FILE *stream, asn1p_expr_t *expr) {
+    if(rust_write_choice_descriptors(stream, expr)
+       || rust_write_choice_to_runtime(stream, expr)
+       || rust_write_choice_from_runtime(stream, expr)) return -1;
+    return 0;
+}
+
+/*
+ * Purpose: emit the allocation-free array of runtime tag and bound descriptors.
+ * Source: approved runtime ChoiceAlternative API. Version/date: 2026-11-01.
+ * Inputs: stream receives Rust source; expr owns validated alternatives.
+ * Returns zero or -1. Errors: bound formatting and output failures abort emission.
+ * Responsible party: asn1c maintainers. History: direct CHOICE generator.
+ * Example: bounded INTEGER (-2..5) emits a BoundedInteger descriptor.
+ */
+static int
+rust_write_choice_descriptors(FILE *stream, asn1p_expr_t *expr) {
+    asn1p_expr_t *item;
+    size_t count = 0;
+    TQ_FOR(item, &expr->members, next) count++;
+    if(rust_write_method_doc(stream, "Build the runtime descriptors for this CHOICE.",
+        "No inputs; descriptors preserve ASN.1 alternative order.",
+        "Returns intrinsic tag kinds and integer bounds.",
+        "No runtime error is possible for this validated fixed schema.",
+        "`let alternatives = Self::choice_alternatives();")) return -1;
+    if(fprintf(stream,
+        "    const fn choice_alternatives() -> [::asn1c_runtime::ChoiceAlternative; %zu] {\n"
+        "        [\n", count) < 0) return -1;
+    TQ_FOR(item, &expr->members, next) {
+        if(item->expr_type == ASN_BASIC_BOOLEAN) {
+            if(fputs("            ::asn1c_runtime::ChoiceAlternative::Boolean,\n", stream) == EOF)
+                return -1;
+        } else if(item->expr_type == ASN_BASIC_NULL) {
+            if(fputs("            ::asn1c_runtime::ChoiceAlternative::Null,\n", stream) == EOF)
+                return -1;
+        } else {
+            char lower[64], upper[64];
+            int64_t lo, hi;
+            if(rust_integer_bounds(item, &lo, &hi)
+               || rust_format_bound(lower, sizeof(lower), lo)
+               || rust_format_bound(upper, sizeof(upper), hi)) return -1;
+            if(fprintf(stream,
+                "            ::asn1c_runtime::ChoiceAlternative::BoundedInteger { "
+                "lower: %s, upper: %s },\n", lower, upper) < 0) return -1;
+        }
+    }
+    return fputs("        ]\n    }\n\n", stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Purpose: emit conversion from each generated arm to the runtime value enum.
+ * Source: approved runtime ChoiceValue API. Version/date: 2026-11-01.
+ * Inputs: stream receives Rust source; expr owns validated alternatives.
+ * Returns zero or -1. Errors: variant allocation or output failures abort.
+ * Responsible party: asn1c maintainers. History: direct CHOICE generator.
+ * Example: Self::Flag(value) maps to ChoiceValue::Boolean(*value).
+ */
+static int
+rust_write_choice_to_runtime(FILE *stream, asn1p_expr_t *expr) {
+    asn1p_expr_t *item;
+    if(rust_write_method_doc(stream, "Convert the selected arm to its runtime value.",
+        "`self` identifies the selected enum alternative.",
+        "Returns the corresponding runtime scalar value.",
+        "No runtime error is possible for a generated enum value.",
+        "`let selected = self.runtime_value();")) return -1;
+    if(fputs(
+        "    const fn runtime_value(self) -> ::asn1c_runtime::ChoiceValue {\n"
+        "        match self {\n", stream) == EOF) return -1;
+    TQ_FOR(item, &expr->members, next) {
+        char *variant = rust_enum_variant(item->Identifier);
+        int ret = !variant ? -1 : item->expr_type == ASN_BASIC_NULL
+            ? fprintf(stream,
+                "            Self::%s => ::asn1c_runtime::ChoiceValue::Null,\n", variant)
+            : fprintf(stream,
+                "            Self::%s(value) => ::asn1c_runtime::ChoiceValue::%s(value),\n",
+                variant, item->expr_type == ASN_BASIC_BOOLEAN ? "Boolean" : "Integer");
+        free(variant);
+        if(ret < 0) return -1;
+    }
+    return fputs("        }\n    }\n\n", stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Purpose: emit conversion from runtime scalar values to generated enum arms.
+ * Source: approved runtime ChoiceValue API. Version/date: 2026-11-01.
+ * Inputs: stream receives Rust source; expr owns validated alternatives.
+ * Returns zero or -1. Errors: output failures abort emission; absent arms map to
+ * InvalidEncoding. Responsible party: asn1c maintainers. History: direct CHOICE.
+ * Example: ChoiceValue::Null maps to Self::Empty when that arm exists.
+ */
+static int
+rust_write_choice_from_runtime(FILE *stream, asn1p_expr_t *expr) {
+    asn1p_expr_t *item;
+    const asn1p_expr_t *boolean_item = NULL, *null_item = NULL, *integer_item = NULL;
+    const asn1p_expr_t *items[3];
+    size_t selected_count;
+    size_t index;
+    TQ_FOR(item, &expr->members, next) {
+        if(item->expr_type == ASN_BASIC_BOOLEAN) boolean_item = item;
+        else if(item->expr_type == ASN_BASIC_NULL) null_item = item;
+        else integer_item = item;
+    }
+    items[0] = boolean_item;
+    items[1] = null_item;
+    items[2] = integer_item;
+    selected_count = (boolean_item != NULL) + (null_item != NULL) + (integer_item != NULL);
+    if(rust_write_method_doc(stream, "Convert a runtime scalar to the generated enum.",
+        "`value` is the decoded selected primitive.",
+        "Returns the matching enum alternative.",
+        "Returns an error if the runtime selected a tag absent from this schema.",
+        "`let choice = Self::from_runtime_value(decoded.value);")) return -1;
+    if(selected_count == 3) {
+        if(fputs(
+            "    const fn from_runtime_value(value: ::asn1c_runtime::ChoiceValue) -> Self {\n"
+            "        match value {\n", stream) == EOF) return -1;
+    } else if(fputs(
+        "    const fn from_runtime_value(value: ::asn1c_runtime::ChoiceValue) ->\n"
+        "        ::core::result::Result<Self, ::asn1c_runtime::Error> {\n"
+        "        match value {\n", stream) == EOF) return -1;
+    for(index = 0; index < 3; index++) {
+        static const char *const pattern[3] = {
+            "Boolean(value)", "Null", "Integer(value)"
+        };
+        const asn1p_expr_t *selected = items[index];
+        if(selected) {
+            char *variant = rust_enum_variant(selected->Identifier);
+            int ret = !variant ? -1 : index == 1
+                ? fprintf(stream,
+                    selected_count == 3
+                    ? "            ::asn1c_runtime::ChoiceValue::%s => Self::%s,\n"
+                    : "            ::asn1c_runtime::ChoiceValue::%s => Ok(Self::%s),\n",
+                    pattern[index], variant)
+                : fprintf(stream, selected_count == 3
+                    ? "            ::asn1c_runtime::ChoiceValue::%s => Self::%s(value),\n"
+                    : "            ::asn1c_runtime::ChoiceValue::%s => Ok(Self::%s(value)),\n",
+                    pattern[index], variant);
+            free(variant);
+            if(ret < 0) return -1;
+        }
+    }
+    if(rust_write_choice_absent_arm(stream, items)) return -1;
+    return fputs("        }\n    }\n\n", stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Purpose: emit one merged error arm for runtime alternatives absent from schema.
+ * Source: runtime ChoiceValue enum and validated intrinsic CHOICE tags.
+ * Version/date: 2026-11-01. Inputs: stream receives Rust; items map each tag to
+ * the source alternative or NULL. Returns zero or -1. Errors: output failures.
+ * Responsible party: asn1c maintainers. History: direct CHOICE emitter.
+ * Example: absent NULL and INTEGER variants form one or-pattern error arm.
+ */
+static int
+rust_write_choice_absent_arm(FILE *stream, const asn1p_expr_t *const items[3]) {
+    static const char *const patterns[3] = {"Boolean(_)", "Null", "Integer(_)"};
+    size_t index, missing = 0, emitted = 0;
+    for(index = 0; index < 3; index++) missing += items[index] == NULL;
+    if(!missing) return 0;
+    if(fputs("            ::asn1c_runtime::ChoiceValue::", stream) == EOF) return -1;
+    for(index = 0; index < 3; index++) {
+        if(items[index]) continue;
+        if(emitted && fputs(" | ::asn1c_runtime::ChoiceValue::", stream) == EOF) return -1;
+        if(fputs(patterns[index], stream) == EOF) return -1;
+        emitted++;
+    }
+    return fputs(
+        " => Err(::asn1c_runtime::Error::InvalidEncoding { "
+        "reason: \"runtime selected an absent CHOICE tag\" }),\n", stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Purpose: emit a typed untagged primitive CHOICE with BER/DER/CER methods.
+ * Source: approved direct X.690 primitive CHOICE gate and runtime API.
+ * Version/date: 2026-11-01. Inputs: stream receives Rust; name is the type;
+ * expr owns validated alternatives; codecs selects emitted methods.
+ * Returns zero or -1. Errors: allocation or output failures abort generation.
+ * Responsible party: asn1c maintainers. History: initial BER/CER CHOICE slice.
+ * Example: `Value::Count(3)` encodes as its INTEGER TLV with no outer wrapper.
+ */
+static int
+rust_write_ber_cer_choice(FILE *stream, const char *name, asn1p_expr_t *expr,
+                          uint64_t codecs) {
+    asn1p_expr_t *item;
+    size_t alternative_count = 0;
+    int full_choice;
+    TQ_FOR(item, &expr->members, next) alternative_count++;
+    full_choice = alternative_count == 3;
+    if(fprintf(stream,
+        "/// Selected primitive alternative of an untagged ASN.1 CHOICE.\n"
+        "#[derive(Clone, Copy, Debug, Eq, PartialEq)]\n"
+        "pub enum %s {\n", name) < 0) return -1;
+    TQ_FOR(item, &expr->members, next) {
+        char *variant = rust_enum_variant(item->Identifier);
+        const char *type = item->expr_type == ASN_BASIC_BOOLEAN ? "bool"
+                           : item->expr_type == ASN_BASIC_INTEGER ? "i64" : NULL;
+        int ret = !variant ? -1 : type
+            ? fprintf(stream,
+                "    /// Selected ASN.1 %s alternative.\n    %s(%s),\n",
+                item->Identifier, variant, type)
+            : fprintf(stream,
+                "    /// Selected ASN.1 %s alternative.\n    %s,\n",
+                item->Identifier, variant);
+        free(variant);
+        if(ret < 0) return -1;
+    }
+    if(fprintf(stream, "}\n\nimpl %s {\n", name) < 0
+       || rust_write_choice_value_conversions(stream, expr)) return -1;
+    if(codecs & RUST_CODEC_BER) {
+        if(rust_write_method_doc(stream, "Encode the selected alternative using DER.",
+            "`self` selects the primitive; `limits` bounds the operation.",
+            "Returns exactly the selected primitive TLV.",
+            "Returns an error for invalid bounds or exhausted resources.",
+        "`let encoded = value.encode_der(&Default::default())?;")) return -1;
+        if(fputs(
+            "    pub fn encode_der(&self, limits: &::asn1c_runtime::Limits) ->\n"
+            "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+            "        let alternatives = Self::choice_alternatives();\n"
+            "        ::asn1c_runtime::encode_choice_der(\n"
+            "            &alternatives, (*self).runtime_value(), limits)\n"
+            "    }\n\n", stream) == EOF
+           || rust_write_method_doc(stream, "Decode one BER CHOICE prefix.",
+            "`input` is a complete or suffixed TLV; `limits` bounds the operation.",
+            "Returns the selected enum value and exact prefix consumption.",
+            "Returns an error for malformed, unknown, out-of-range, or over-limit input.",
+            "`let decoded = Value::decode_ber(input, &Default::default())?;")) return -1;
+        if(fprintf(stream,
+            "    pub fn decode_ber(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+            "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+            "        let alternatives = Self::choice_alternatives();\n"
+            "        let decoded = ::asn1c_runtime::decode_choice_ber(input, &alternatives, limits)?;\n"
+            "        Ok(::asn1c_runtime::Decoded {\n"
+            "            value: Self::from_runtime_value(decoded.value)%s,\n",
+            full_choice ? "" : "?") < 0 || fputs(
+            "            consumed_bits: decoded.consumed_bits,\n"
+            "            consumed_bytes: decoded.consumed_bytes,\n"
+            "        })\n    }\n\n", stream) == EOF) return -1;
+    }
+    if(codecs & RUST_CODEC_CER) {
+        if(rust_write_method_doc(stream, "Encode the selected alternative using CER.",
+            "`self` selects the primitive; `limits` bounds the operation.",
+            "Returns exactly the selected canonical primitive TLV.",
+            "Returns an error for invalid bounds or exhausted resources.",
+            "`let encoded = value.encode_cer(&Default::default())?;")) return -1;
+        if(fputs(
+            "    pub fn encode_cer(&self, limits: &::asn1c_runtime::Limits) ->\n"
+            "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+            "        let alternatives = Self::choice_alternatives();\n"
+            "        ::asn1c_runtime::encode_choice_cer(\n"
+            "            &alternatives, (*self).runtime_value(), limits)\n"
+            "    }\n\n", stream) == EOF
+           || rust_write_method_doc(stream, "Decode and strictly validate one CER CHOICE prefix.",
+            "`input` is a complete or suffixed TLV; `limits` bounds all work.",
+            "Returns the selected enum value and exact prefix consumption.",
+            "Returns an error for malformed, noncanonical, out-of-range, or over-limit input.",
+            "`let decoded = Value::decode_cer(input, &Default::default())?;")) return -1;
+        if(fprintf(stream,
+            "    pub fn decode_cer(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+            "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+            "        let alternatives = Self::choice_alternatives();\n"
+            "        let decoded = ::asn1c_runtime::decode_choice_cer(input, &alternatives, limits)?;\n"
+            "        Ok(::asn1c_runtime::Decoded {\n"
+            "            value: Self::from_runtime_value(decoded.value)%s,\n",
+            full_choice ? "" : "?") < 0 || fputs(
+            "            consumed_bits: decoded.consumed_bits,\n"
+            "            consumed_bytes: decoded.consumed_bytes,\n"
+            "        })\n    }\n\n", stream) == EOF) return -1;
+    }
+    return fputs("}\n\n", stream) == EOF ? -1 : 0;
 }
 
 /*

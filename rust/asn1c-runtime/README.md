@@ -239,6 +239,19 @@ later constraint check. The runtime caps collections at 1,000,000 elements and
 accounts decoded vectors, radix buffers, and output against a fixed 128 MiB
 aggregate scratch ceiling without adding fields to `Limits`.
 
+`ChoiceAlternative` and `ChoiceValue` describe a direct untagged CHOICE with
+one through three uniquely tagged BOOLEAN, NULL, and/or bounded `i64` INTEGER
+arms. `encode_choice_der` and `encode_choice_cer` emit only the selected
+primitive TLV; `decode_choice_ber` and strict `decode_choice_cer` dispatch by
+its universal tag and report exact prefix consumption. BER accepts C-compatible
+high-tag and long-length aliases, empty or multi-octet BOOLEAN contents, and
+redundant INTEGER sign octets. NULL still requires empty primitive content.
+Strict CER re-encodes and compares the consumed prefix with one cumulative
+work budget. The descriptor slice and selected arm are checked before parsing
+or allocation. Bounded INTEGER values are range-checked during Rust BER decode,
+which may occur earlier than C's later constraint check. Tagging, extensions,
+and constructed CHOICE alternatives are outside this direct gate.
+
 `RecordContext`, `SequenceReader`, `SequenceWriter`, `SetReader`, and `SetWriter`
 compose flat SEQUENCE and SET values with direct BOOLEAN, NULL,
 ENUMERATED, bounded INTEGER, and bounded BIT/OCTET STRING fields under one

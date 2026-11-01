@@ -1,0 +1,3 @@
+ChoiceBooleanOnly DEFINITIONS ::= BEGIN
+Value ::= CHOICE { flag BOOLEAN }
+END
