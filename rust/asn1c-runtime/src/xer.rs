@@ -49,7 +49,10 @@ impl XerWriter {
     /// History: initial implementation. Example: `XerWriter::new(limits)`.
     #[must_use]
     pub const fn new(limits: &Limits) -> Self {
-        Self { bytes: Vec::new(), limits: *limits }
+        Self {
+            bytes: Vec::new(),
+            limits: *limits,
+        }
     }
 
     /// Append `text` with checked allocation and output/work limits.
@@ -59,12 +62,21 @@ impl XerWriter {
     /// Source: new Rust XER slice, 2026-10-31, asn1c maintainers.
     /// History: initial implementation. Example: `writer.append("<x>")?`.
     pub fn append(&mut self, text: &str) -> Result<(), Error> {
-        let length = self.bytes.len().checked_add(text.len()).ok_or(Error::SizeOverflow)?;
+        let length = self
+            .bytes
+            .len()
+            .checked_add(text.len())
+            .ok_or(Error::SizeOverflow)?;
         enforce_limit(Resource::OutputBytes, length, self.limits.max_output_bytes)?;
-        check_work_limit(length.checked_mul(8).ok_or(Error::SizeOverflow)?, &self.limits)?;
-        self.bytes.try_reserve(text.len()).map_err(|_| Error::AllocationFailed {
-            requested_bytes: length,
-        })?;
+        check_work_limit(
+            length.checked_mul(8).ok_or(Error::SizeOverflow)?,
+            &self.limits,
+        )?;
+        self.bytes
+            .try_reserve(text.len())
+            .map_err(|_| Error::AllocationFailed {
+                requested_bytes: length,
+            })?;
         self.bytes.extend_from_slice(text.as_bytes());
         Ok(())
     }
@@ -87,9 +99,16 @@ impl XerWriter {
     /// History: initial implementation. Example: `writer.integer(1, 0, 5)?`.
     pub fn integer(&mut self, value: i64, lower: i64, upper: i64) -> Result<(), Error> {
         if value < lower || value > upper {
-            return Err(Error::ValueOutOfRange { value, lower, upper });
+            return Err(Error::ValueOutOfRange {
+                value,
+                lower,
+                upper,
+            });
         }
-        let mut text = DecimalBuffer { bytes: [0; 64], used: 0 };
+        let mut text = DecimalBuffer {
+            bytes: [0; 64],
+            used: 0,
+        };
         write!(&mut text, "{value}").map_err(|_| Error::SizeOverflow)?;
         self.append(text.text()?)
     }
@@ -102,21 +121,27 @@ impl XerWriter {
     /// History: fixed decimal formatting for the narrow default slice.
     /// Example: `writer.real(0.5)?`.
     pub fn real(&mut self, value: f64) -> Result<(), Error> {
-        if !value.is_finite() || value.abs() > 1_000_000.0
-            || (value != 0.0 && value.abs() < 1e-15)
+        if !value.is_finite() || value.abs() > 1_000_000.0 || (value != 0.0 && value.abs() < 1e-15)
         {
-            return Err(Error::InvalidEncoding { reason: "REAL outside XER slice" });
+            return Err(Error::InvalidEncoding {
+                reason: "REAL outside XER slice",
+            });
         }
         if value == 0.0 {
             return self.append(if value.is_sign_negative() { "-0" } else { "0" });
         }
         // C basic XER prints 15 fractional digits and retains at least one.
-        let mut text = DecimalBuffer { bytes: [0; 64], used: 0 };
+        let mut text = DecimalBuffer {
+            bytes: [0; 64],
+            used: 0,
+        };
         write!(&mut text, "{value:.15}").map_err(|_| Error::SizeOverflow)?;
         let trimmed = text.text()?.trim_end_matches('0');
         // Reject decimal rounding that would change the represented REAL.
         if trimmed.parse::<f64>().ok() != Some(value) {
-            return Err(Error::InvalidEncoding { reason: "REAL loses precision in XER slice" });
+            return Err(Error::InvalidEncoding {
+                reason: "REAL loses precision in XER slice",
+            });
         }
         if trimmed.ends_with('.') {
             self.append(trimmed)?;
@@ -141,11 +166,17 @@ impl XerWriter {
                 b'\r' => self.append("&#xD;")?,
                 0x09 | 0x0a | 0x20..=0x7f => {
                     let one = [byte];
-                    self.append(std::str::from_utf8(&one).map_err(|_| Error::InvalidEncoding {
-                        reason: "invalid IA5 character",
+                    self.append(std::str::from_utf8(&one).map_err(|_| {
+                        Error::InvalidEncoding {
+                            reason: "invalid IA5 character",
+                        }
                     })?)?;
                 }
-                _ => return Err(Error::InvalidEncoding { reason: "invalid IA5 XML character" }),
+                _ => {
+                    return Err(Error::InvalidEncoding {
+                        reason: "invalid IA5 XML character",
+                    })
+                }
             }
         }
         Ok(())
@@ -163,5 +194,7 @@ impl XerWriter {
     /// Source: new Rust XER slice, 2026-10-31, asn1c maintainers.
     /// History: initial implementation. Example: `writer.finish()`.
     #[must_use]
-    pub fn finish(self) -> Vec<u8> { self.bytes }
+    pub fn finish(self) -> Vec<u8> {
+        self.bytes
+    }
 }
