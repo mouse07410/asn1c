@@ -1,0 +1,43 @@
+BoolXer DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+Flags ::= SEQUENCE {
+    first BOOLEAN,
+    second BOOLEAN,
+    third BOOLEAN,
+    fourth BOOLEAN,
+    maybe BOOLEAN DEFAULT TRUE,
+    real REAL DEFAULT 0.5
+}
+OptionFlags ::= SEQUENCE {
+    first BOOLEAN,
+    second BOOLEAN,
+    third BOOLEAN,
+    fourth BOOLEAN,
+    extra0 BOOLEAN OPTIONAL,
+    extra1 BOOLEAN OPTIONAL,
+    extra2 BOOLEAN OPTIONAL,
+    extra3 BOOLEAN OPTIONAL,
+    extra4 BOOLEAN OPTIONAL,
+    extra5 BOOLEAN OPTIONAL,
+    extra6 BOOLEAN OPTIONAL,
+    extra7 BOOLEAN OPTIONAL,
+    extra8 BOOLEAN OPTIONAL
+}
+MixedFlags ::= SEQUENCE {
+    first BOOLEAN,
+    second BOOLEAN,
+    third BOOLEAN,
+    fourth BOOLEAN,
+    text0 IA5String OPTIONAL,
+    text1 IA5String OPTIONAL,
+    text2 IA5String OPTIONAL,
+    text3 IA5String OPTIONAL,
+    text4 IA5String OPTIONAL,
+    text5 IA5String OPTIONAL,
+    text6 IA5String OPTIONAL,
+    text7 IA5String OPTIONAL,
+    text8 IA5String OPTIONAL,
+    text9 IA5String OPTIONAL,
+    text10 IA5String OPTIONAL,
+    text11 IA5String OPTIONAL
+}
+END

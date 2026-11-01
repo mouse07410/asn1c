@@ -194,6 +194,22 @@ control characters and their XER control elements are unsupported. Carriage
 returns use XML character references to survive line-ending normalization.
 Output and work limits apply to the complete XML value.
 
+Records with more than three scalar BOOLEAN fields store those values in a
+private byte array. Required and DEFAULT BOOLEANs count toward this threshold;
+OPTIONAL fields remain public `Option<bool>`. Every BOOLEAN field has a
+`get_<field>()` and `set_<field>(value)` method, including smaller records whose
+public fields and struct-literal API are preserved. Names use the normalized
+field identifier; ASN.1 `type` becomes `get_asn1_type()`.
+
+Packed records use `Type::new([boolean_values], (other_fields, ...))`. Both
+groups follow declaration order; an empty second group is `()`, and a singleton
+is `(value,)`. Wide OPTIONAL tuples use a transparent private type alias;
+callers pass the same ordinary tuple. Construction moves owned fields without cloning or allocation;
+codecs validate their constraints. Unused bits are private and stay zero.
+XER's separate representation retains `Option<bool>` for DEFAULTs and packs
+only required BOOLEANs. Packing preserves wire order, OPTIONAL/DEFAULT
+semantics, and shared resource budgets. No Clippy lint is disabled.
+
 BOOLEAN and INTEGER wrappers expose constructors, value getters, and the
 methods selected during generation. UPER methods encode and prefix-decode the
 supported primitives. CER adds `encode_cer` and strict `decode_cer` methods for
@@ -210,8 +226,8 @@ native `long` and may have a narrower range on 32-bit targets.
 INTEGER construction checks the
 declared range. Codecs return typed errors for malformed values, invalid
 constraints, exceeded limits, or allocation failure.
-Generated SEQUENCE structs expose required and DEFAULT fields directly and
-represent OPTIONAL fields as `Option<T>`. Inline nonextensible ENUMERATED
+Generated SEQUENCE structs expose nonpacked required and DEFAULT fields directly
+and represent OPTIONAL fields as `Option<T>`. Inline nonextensible ENUMERATED
 fields use their declared numeric values and encode declaration-order PER
 ranks; unknown values and spare ranks are rejected. Inline nested SEQUENCE fields use
 deterministic public Rust record types. Nested record types and aggregate field

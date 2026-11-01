@@ -1,0 +1,8 @@
+BoolDefaultsOnly DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+Flags ::= SEQUENCE {
+    first BOOLEAN DEFAULT TRUE,
+    second BOOLEAN,
+    third BOOLEAN DEFAULT FALSE,
+    fourth BOOLEAN
+}
+END

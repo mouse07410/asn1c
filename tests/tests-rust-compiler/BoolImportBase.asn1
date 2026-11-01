@@ -1,0 +1,9 @@
+BoolImportBase DEFINITIONS ::= BEGIN
+EXPORTS RemoteLeaf;
+RemoteLeaf ::= SET {
+    first [0] IMPLICIT BOOLEAN,
+    second [1] IMPLICIT BOOLEAN,
+    third [2] EXPLICIT BOOLEAN,
+    fourth [3] IMPLICIT BOOLEAN
+}
+END

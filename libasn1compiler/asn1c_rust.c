@@ -32,6 +32,9 @@
 #define RUST_IDENTIFIER_LIMIT 80
 #define RUST_MANIFEST_LIMIT (1024 * 1024)
 #define RUST_MANIFEST_ENTRY_LIMIT 4096
+/* A reserved numeric field avoids collisions with schema type-name suffixes. */
+#define RUST_BOOLEAN_STORAGE_FIELD "__0"
+
 #define RUST_SEQUENCE_FIELD_LIMIT 64
 #define RUST_SEQUENCE_DEPTH_LIMIT 16
 #define RUST_SEQUENCE_NODE_LIMIT 64
@@ -344,9 +347,11 @@ static int rust_write_choice_to_runtime(FILE *, asn1p_expr_t *);
 static int rust_write_choice_from_runtime(FILE *, asn1p_expr_t *);
 static int rust_write_choice_absent_arm(FILE *, const asn1p_expr_t *const [3]);
 static int rust_write_sequence_ber_cer_encode_field(FILE *, const char *, asn1p_expr_t *);
-static int rust_write_sequence_ber_cer_decode_field(FILE *, const char *, asn1p_expr_t *, int);
+static int rust_write_sequence_ber_cer_decode_field(FILE *, const char *,
+                                                     asn1p_expr_t *, int, int,
+                                                     size_t);
 static int rust_write_sequence_ber_cer_choice_field(FILE *, const char *, asn1p_expr_t *,
-                                                    int);
+                                                     int, int, size_t);
 static int rust_write_inline_choice_tag_condition(FILE *, asn1p_expr_t *, int);
 static int rust_write_sequence_ber_cer_decode_method(FILE *, const char *, asn1p_expr_t *, int);
 static int rust_write_sequence_ber_cer_decode_fields(FILE *, const char *,
@@ -370,8 +375,45 @@ static int rust_write_sequence_cbor_decode_field(FILE *, asn1p_expr_t *);
 static int rust_write_cbor_choice(FILE *, const char *, asn1p_expr_t *);
 static int rust_write_cbor_choice_encode_arm(FILE *, asn1p_expr_t *);
 static int rust_write_cbor_choice_decode_arm(FILE *, asn1p_expr_t *);
-static int rust_write_sequence_field(FILE *, const char *, asn1p_expr_t *);
+static int rust_write_sequence_field(FILE *, const char *, asn1p_expr_t *,
+                                    asn1p_expr_t *);
+static int rust_record_boolean_packable(const asn1p_expr_t *, int);
+static size_t rust_record_packed_boolean_count(const asn1p_expr_t *, int);
+static int rust_record_all_packed_boolean_fields(const asn1p_expr_t *, int);
+static int rust_record_all_boolean_fields(const asn1p_expr_t *);
+static int rust_boolean_kind_code(asn1p_expr_t *, unsigned *);
+static int rust_boolean_tuple_alias_needed(const asn1p_expr_t *, int, size_t *);
+static int rust_write_boolean_tuple_alias(FILE *, const char *,
+                                          const asn1p_expr_t *, int);
+static int rust_write_sequence_uper_nonpacked_helper(FILE *, asn1p_expr_t *,
+                                                     size_t, size_t);
+static int rust_write_sequence_boolean_kinds(FILE *, asn1p_expr_t *);
+static int rust_write_sequence_boolean_values(FILE *, asn1p_expr_t *);
+static int rust_write_sequence_uper_boolean_methods(FILE *, asn1p_expr_t *, size_t);
+static int rust_write_sequence_uper_boolean_encoder(FILE *, asn1p_expr_t *, size_t);
+static int rust_write_sequence_uper_boolean_decode_values(FILE *, size_t);
+static int rust_write_sequence_uper_boolean_constructor(FILE *, asn1p_expr_t *);
+static int rust_write_sequence_uper_boolean_packed_values(FILE *, asn1p_expr_t *,
+                                                         size_t);
+static int rust_write_sequence_uper_boolean_optional_values(FILE *,
+                                                            asn1p_expr_t *);
+static int rust_write_sequence_uper_boolean_decoder(FILE *, asn1p_expr_t *, size_t);
+static int rust_record_packed_boolean_index(const asn1p_expr_t *,
+                                           const asn1p_expr_t *, int, size_t *);
+static char *rust_boolean_accessor_name(const char *, const char *);
+static int rust_write_boolean_storage(FILE *, const asn1p_expr_t *, int);
+static int rust_write_boolean_accessors(FILE *, const asn1p_expr_t *, int);
+static int rust_write_boolean_constructor(FILE *, const char *,
+                                         const asn1p_expr_t *, int);
+static int rust_write_record_local_decode(FILE *, const char *, asn1p_expr_t *,
+                                          size_t *, size_t);
+static int rust_write_record_from_locals(FILE *, asn1p_expr_t *, int, size_t);
+static int rust_write_record_from_slots(FILE *, const char *, asn1p_expr_t *,
+                                        size_t);
+static int rust_write_sequence_decode_method(FILE *, const char *,
+                                             asn1p_expr_t *, size_t);
 static int rust_write_sequence_encode_field(FILE *, asn1p_expr_t *);
+static int rust_write_sequence_encode_boolean(FILE *, const char *);
 static int rust_write_sequence_encode_string_field(FILE *, asn1p_expr_t *,
                                                    const char *);
 static int rust_write_sequence_encode_default(FILE *, asn1p_expr_t *, const char *);
@@ -2670,6 +2712,116 @@ unsupported:
 }
 
 /*
+ * Emit one BOOLEAN XER field through its uniform accessor.
+ * Inputs: stream receives Rust; member supplies the validated field metadata.
+ * Returns zero or -1. Errors: invalid DEFAULT values and writes fail generation.
+ * Source: XER record field encoder. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: packed BOOLEAN support.
+ * Example: a required bit reads through `get_flag()`.
+ */
+static int
+rust_write_xer_boolean_field(FILE *stream, asn1p_expr_t *member) {
+    char *field = rust_identifier(member->Identifier, 1);
+    char *getter = field ? rust_boolean_accessor_name(field, "get_") : NULL;
+    char literal[64];
+    int optional = member->marker.flags == EM_OPTIONAL;
+    int ret = -1;
+    if(!getter) goto cleanup;
+    if(member->marker.flags == EM_DEFAULT
+       && rust_sequence_default_literal(member, literal, sizeof(literal))) goto cleanup;
+    if(member->marker.flags == EM_OPTIONAL)
+        ret = fprintf(stream,
+            "        if let Some(value) =\n            self.%s()\n        {\n", getter);
+    else if(member->marker.flags == EM_DEFAULT)
+        ret = fprintf(stream,
+            "        let value = self\n            .%s()\n"
+            "            .unwrap_or(%s);\n", getter, literal);
+    else
+        ret = fprintf(stream, "        let value = self.%s();\n", getter);
+    if(ret < 0) goto cleanup;
+    ret = fprintf(stream, "        writer.append(\"\\n    <%s>\")?;\n", member->Identifier);
+    if(ret < 0 || fputs("        writer.boolean(value)?;\n", stream) == EOF) goto cleanup;
+    ret = fprintf(stream, "        writer.append(\"</%s>\")?;\n", member->Identifier);
+    if(ret < 0) goto cleanup;
+    if(optional && fputs("        }\n", stream) == EOF) goto cleanup;
+    ret = 0;
+cleanup:
+    free(field);
+    free(getter);
+    return ret < 0 ? -1 : 0;
+}
+
+/*
+ * Emit a non-BOOLEAN XER field's local value and presence guard.
+ * Inputs: stream receives Rust; member and name identify the validated field.
+ * Returns zero or -1. Errors: unsupported defaults, names, and writes fail.
+ * Source: XER field representation. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: scalar field decomposition.
+ * Example: OPTIONAL values bind only when their Option contains a value.
+ */
+static int
+rust_write_xer_field_value(FILE *stream, asn1p_expr_t *member, const char *name) {
+    char line[256];
+    char literal[64];
+    int written;
+    int string = member->expr_type == ASN_STRING_IA5String;
+    if(member->marker.flags == EM_OPTIONAL) {
+        written = snprintf(line, sizeof(line), "        if let Some(value) = self.%s%s {",
+                           name, string ? ".as_deref()" : "");
+        if(written < 0 || (size_t)written >= sizeof(line)) return -1;
+        if((size_t)written <= 120)
+            return fprintf(stream, "%s\n", line) < 0 ? -1 : 0;
+        return fprintf(stream, "        if let Some(value) =\n            self.%s%s\n        {\n",
+                       name, string ? ".as_deref()" : "") < 0 ? -1 : 0;
+    }
+    if(member->marker.flags == EM_DEFAULT) {
+        if(member->expr_type == ASN_BASIC_REAL) strcpy(literal, "0.5_f64");
+        else if(rust_sequence_default_literal(member, literal, sizeof(literal))) return -1;
+        written = snprintf(line, sizeof(line),
+                           "        let value = self.%s.unwrap_or(%s);", name, literal);
+        if(written < 0 || (size_t)written >= sizeof(line)) return -1;
+        if((size_t)written <= 120)
+            return fprintf(stream, "%s\n", line) < 0 ? -1 : 0;
+        return fprintf(stream, "        let value = self\n            .%s\n"
+                       "            .unwrap_or(%s);\n", name, literal) < 0 ? -1 : 0;
+    }
+    return fprintf(stream, "        let value = %sself.%s;\n",
+                   string ? "&" : "", name) < 0 ? -1 : 0;
+}
+
+/*
+ * Emit the XER element content for one validated non-BOOLEAN field.
+ * Inputs: stream receives Rust; member supplies its type and ASN.1 element name.
+ * Returns zero or -1. Errors: INTEGER bounds and output failures abort emission.
+ * Source: XER primitive writer. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: scalar field decomposition.
+ * Example: an INTEGER uses its validated lower and upper bounds.
+ */
+static int
+rust_write_xer_field_payload(FILE *stream, asn1p_expr_t *member) {
+    if(fprintf(stream, "        writer.append(\"\n    <%s>\")?;\n",
+               member->Identifier) < 0) return -1;
+    if(member->expr_type == ASN_BASIC_INTEGER) {
+        int64_t lower, upper;
+        char low[64], high[64];
+        if(rust_integer_bounds(member, &lower, &upper)
+           || rust_format_bound(low, sizeof(low), lower)
+           || rust_format_bound(high, sizeof(high), upper)) return -1;
+        if(fprintf(stream, "        writer.integer(value, %s, %s)?;\n", low, high) < 0)
+            return -1;
+    } else if(member->expr_type == ASN_BASIC_REAL) {
+        if(fputs("        writer.real(value)?;\n", stream) == EOF) return -1;
+    } else if(fputs("        writer.ia5(value)?;\n", stream) == EOF) {
+        return -1;
+    }
+    if(fprintf(stream, "        writer.append(\"</%s>\")?;\n",
+               member->Identifier) < 0) return -1;
+    if(member->marker.flags == EM_OPTIONAL
+       && fputs("        }\n", stream) == EOF) return -1;
+    return 0;
+}
+
+/*
  * Purpose: emit one checked field and its basic XER element.
  * Inputs: stream receives generated Rust; member describes a validated field.
  * Returns zero or -1 on output failure; no exceptions. Source: new Rust XER
@@ -2679,37 +2831,130 @@ unsupported:
 static int
 rust_write_xer_field(FILE *stream, asn1p_expr_t *member) {
     char *name = rust_identifier(member->Identifier, 1);
-    char literal[64];
-    int ret = 0;
-    int optional = member->marker.flags == EM_OPTIONAL;
+    int ret;
     if(!name) return -1;
-    if(optional) {
-        ret = fprintf(stream, "        if let Some(value) = self.%s%s {\n", name,
-                      member->expr_type == ASN_STRING_IA5String ? ".as_deref()" : "");
-    } else if(member->marker.flags == EM_DEFAULT) {
-        if(member->expr_type == ASN_BASIC_REAL) strcpy(literal, "0.5_f64");
-        else if(rust_sequence_default_literal(member, literal, sizeof(literal))) ret = -1;
-        if(ret >= 0) ret = fprintf(stream, "        let value = self.%s.unwrap_or(%s);\n", name, literal);
-    } else {
-        ret = fprintf(stream, "        let value = %sself.%s;\n",
-                      member->expr_type == ASN_STRING_IA5String ? "&" : "", name);
+    if(member->expr_type == ASN_BASIC_BOOLEAN) {
+        free(name);
+        return rust_write_xer_boolean_field(stream, member);
     }
-    if(ret >= 0) ret = fprintf(stream, "        writer.append(\"\\n    <%s>\")?;\n", member->Identifier);
-    if(ret >= 0 && member->expr_type == ASN_BASIC_BOOLEAN)
-        ret = fputs("        writer.boolean(value)?;\n", stream);
-    else if(ret >= 0 && member->expr_type == ASN_BASIC_INTEGER) {
-        int64_t lower, upper;
-        char low[64], high[64];
-        if(rust_integer_bounds(member, &lower, &upper) || rust_format_bound(low, sizeof(low), lower)
-           || rust_format_bound(high, sizeof(high), upper)) ret = -1;
-        else ret = fprintf(stream, "        writer.integer(value, %s, %s)?;\n", low, high);
-    } else if(ret >= 0 && member->expr_type == ASN_BASIC_REAL)
-        ret = fputs("        writer.real(value)?;\n", stream);
-    else if(ret >= 0) ret = fputs("        writer.ia5(value)?;\n", stream);
-    if(ret >= 0) ret = fprintf(stream, "        writer.append(\"</%s>\")?;\n", member->Identifier);
-    if(ret >= 0 && optional) ret = fputs("        }\n", stream);
+    ret = rust_write_xer_field_value(stream, member, name);
     free(name);
-    return ret < 0 ? -1 : 0;
+    if(ret || rust_write_xer_field_payload(stream, member)) return -1;
+    return 0;
+}
+
+/*
+ * Detect whether a flat XER record contains REAL storage.
+ * Inputs: expr owns the validated record. Returns one when REAL is present.
+ * Errors: none. Source: Rust XER derives. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: packed BOOLEAN layout.
+ * Example: a record with one REAL DEFAULT needs PartialEq without Eq.
+ */
+static int
+rust_xer_record_has_real(const asn1p_expr_t *expr) {
+    asn1p_expr_t *member;
+    TQ_FOR(member, &expr->members, next) {
+        if(member->expr_type == ASN_BASIC_REAL) return 1;
+    }
+    return 0;
+}
+
+/*
+ * Emit public and private XER struct fields, skipping fields in bit storage.
+ * Inputs: stream receives Rust; expr owns the validated fields.
+ * Returns zero or -1. Errors: invalid names and output failures abort emission.
+ * Source: flat XER representation. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: private bool bitset support.
+ * Example: a packed BOOLEAN uses the private byte field instead of a bool field.
+ */
+static int
+rust_write_xer_record_fields(FILE *stream, const asn1p_expr_t *expr) {
+    asn1p_expr_t *member;
+    TQ_FOR(member, &expr->members, next) {
+        char *field = rust_identifier(member->Identifier, 1);
+        const char *type = member->expr_type == ASN_BASIC_BOOLEAN ? "bool"
+                         : member->expr_type == ASN_BASIC_INTEGER ? "i64"
+                         : member->expr_type == ASN_BASIC_REAL ? "f64"
+                         : "::std::string::String";
+        int present = member->marker.flags != EM_NOMARK;
+        size_t packed_index;
+        int packed = rust_record_packed_boolean_index(expr, member, 1,
+                                                       &packed_index);
+        int ret;
+        if(packed < 0) {
+            free(field);
+            return -1;
+        }
+        if(packed) {
+            free(field);
+            continue;
+        }
+        ret = field ? fprintf(stream,
+            "    /// ASN.1 field state variable.\n    pub %s: %s%s%s,\n",
+            field, present ? "Option<" : "", type, present ? ">" : "") : -1;
+        free(field);
+        if(ret < 0) return -1;
+    }
+    return 0;
+}
+
+/*
+ * Emit XER members in the canonical order required for this flat record.
+ * Inputs: stream receives Rust; expr owns validated fields.
+ * Returns zero or -1. Errors: field encoding and output failures propagate.
+ * Source: Rust XER encoder order. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: record emitter extraction.
+ * Example: SET fields follow ascending universal tag order.
+ */
+static int
+rust_write_xer_record_encode_fields(FILE *stream, asn1p_expr_t *expr) {
+    asn1p_expr_t *member;
+    if(expr->expr_type == ASN_CONSTR_SET && !expr->auto_tags_OK) {
+        static const asn1p_expr_type_e order[] = {
+            ASN_BASIC_BOOLEAN, ASN_BASIC_INTEGER, ASN_BASIC_REAL,
+            ASN_STRING_IA5String
+        };
+        size_t index;
+        for(index = 0; index < sizeof(order) / sizeof(order[0]); index++) {
+            TQ_FOR(member, &expr->members, next) {
+                if(member->expr_type == order[index]
+                   && rust_write_xer_field(stream, member)) return -1;
+            }
+        }
+    } else {
+        TQ_FOR(member, &expr->members, next) {
+            if(rust_write_xer_field(stream, member)) return -1;
+        }
+    }
+    return 0;
+}
+
+/*
+ * Emit one flat XER encoder method and its canonical record fields.
+ * Inputs: stream receives Rust; expr owns validated record fields.
+ * Returns zero or -1. Errors: method-doc, field, and output failures propagate.
+ * Source: basic XER mapping. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: extracted record body.
+ * Example: `encode_xer` emits one XML root and its selected fields.
+ */
+static int
+rust_write_xer_record_encoder(FILE *stream, asn1p_expr_t *expr) {
+    if(rust_write_method_doc(stream, "Encode this flat record as basic XER.",
+        "`self` supplies fields; `limits` bounds output and work.",
+        "Returns the complete XML bytes.",
+        "Returns an error for invalid fields or exhausted resources.",
+        "`let xml = value.encode_xer(&Default::default())?;")) return -1;
+    if(fprintf(stream,
+        "    pub fn encode_xer(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::std::vec::Vec<u8>, ::asn1c_runtime::Error> {\n"
+        "        let mut writer = ::asn1c_runtime::xer::XerWriter::new(limits);\n"
+        "        writer.append(\"<%s>\")?;\n", expr->Identifier) < 0) return -1;
+    if(rust_write_xer_record_encode_fields(stream, expr)) return -1;
+    return fprintf(stream,
+        "        if writer.has_content_after(%zu) { writer.append(\"\n\")?; }\n"
+        "        writer.append(\"</%s>\n\")?;\n"
+        "        Ok(writer.finish())\n    }\n}\n\n",
+        strlen(expr->Identifier) + 2, expr->Identifier) < 0 ? -1 : 0;
 }
 
 /*
@@ -2721,53 +2966,21 @@ rust_write_xer_field(FILE *stream, asn1p_expr_t *member) {
  */
 static int
 rust_write_xer_record(FILE *stream, const char *name, asn1p_expr_t *expr) {
-    asn1p_expr_t *member;
-    int has_real = 0;
-    TQ_FOR(member, &expr->members, next) {
-        if(member->expr_type == ASN_BASIC_REAL) has_real = 1;
-    }
-    if(fprintf(stream, "/// Flat ASN.1 XER record.\n#[derive(Clone, Debug, %sPartialEq)]\n"
-               "pub struct %s {\n", has_real ? "" : "Eq, ", name) < 0) return -1;
-    TQ_FOR(member, &expr->members, next) {
-        char *field = rust_identifier(member->Identifier, 1);
-        const char *type = member->expr_type == ASN_BASIC_BOOLEAN ? "bool"
-                         : member->expr_type == ASN_BASIC_INTEGER ? "i64"
-                         : member->expr_type == ASN_BASIC_REAL ? "f64" : "::std::string::String";
-        int present = member->marker.flags != EM_NOMARK;
-        int ret = field ? fprintf(stream, "    /// ASN.1 field state variable.\n    pub %s: %s%s%s,\n",
-                                  field, present ? "Option<" : "", type, present ? ">" : "") : -1;
-        free(field);
-        if(ret < 0) return -1;
-    }
+    size_t packed_count = rust_record_packed_boolean_count(expr, 1);
+    const char *eq = rust_xer_record_has_real(expr) ? "" : "Eq, ";
+    if(packed_count > 3
+       && rust_write_boolean_tuple_alias(stream, name, expr, 1)) return -1;
+    if(fprintf(stream,
+        "/// Flat ASN.1 XER record.\n#[derive(Clone, Debug, %sPartialEq)]\n"
+        "pub struct %s {\n", eq, name) < 0) return -1;
+    if(rust_write_xer_record_fields(stream, expr)) return -1;
+    if(packed_count > 3 && rust_write_boolean_storage(stream, expr, 1)) return -1;
     if(fprintf(stream, "}\n\nimpl %s {\n", name) < 0) return -1;
-    if(rust_write_method_doc(stream, "Encode this flat record as basic XER.",
-        "`self` supplies fields; `limits` bounds output and work.", "Returns the complete XML bytes.",
-        "Returns an error for invalid fields or exhausted resources.",
-        "`let xml = value.encode_xer(&Default::default())?;")) return -1;
-    if(fprintf(stream, "    pub fn encode_xer(&self, limits: &::asn1c_runtime::Limits) ->\n"
-        "        ::core::result::Result<::std::vec::Vec<u8>, ::asn1c_runtime::Error> {\n"
-        "        let mut writer = ::asn1c_runtime::xer::XerWriter::new(limits);\n"
-        "        writer.append(\"<%s>\")?;\n", expr->Identifier) < 0) return -1;
-    if(expr->expr_type == ASN_CONSTR_SET && !expr->auto_tags_OK) {
-        static const asn1p_expr_type_e order[] = {
-            ASN_BASIC_BOOLEAN, ASN_BASIC_INTEGER, ASN_BASIC_REAL, ASN_STRING_IA5String
-        };
-        size_t i;
-        /* SET follows the C encoder's ascending universal tag order. */
-        for(i = 0; i < sizeof(order) / sizeof(order[0]); i++) {
-            TQ_FOR(member, &expr->members, next) {
-                if(member->expr_type == order[i] && rust_write_xer_field(stream, member)) return -1;
-            }
-        }
-    } else {
-        TQ_FOR(member, &expr->members, next) {
-            if(rust_write_xer_field(stream, member)) return -1;
-        }
-    }
-    return fprintf(stream, "        if writer.has_content_after(%zu) { writer.append(\"\\n\")?; }\n"
-                   "        writer.append(\"</%s>\\n\")?;\n"
-                   "        Ok(writer.finish())\n    }\n}\n\n", strlen(expr->Identifier) + 2,
-                   expr->Identifier) < 0 ? -1 : 0;
+    if(packed_count > 3
+       && rust_write_boolean_constructor(stream, name, expr, 1)) return -1;
+    if(rust_write_boolean_accessors(stream, expr, 1)) return -1;
+    if(rust_write_xer_record_encoder(stream, expr)) return -1;
+    return 0;
 }
 
 /*
@@ -6604,35 +6817,437 @@ rust_write_inline_enum(FILE *stream, const char *name, asn1p_expr_t *expr,
 }
 
 /*
- * Emit one documented SEQUENCE struct with private shared-cursor helpers.
- * Parameters: stream receives Rust; name is its generated type name; expr owns
- * validated fields. Returns zero or -1. Original source: Rust UPER backend.
- * Version/date: 0.4.0, 2026-10-30. Responsible party: asn1c maintainers.
- * History: nested-record helpers share one cursor. Example: emit Packet.
+ * Emit a bounded schema-order UPER loop for records made only of packed booleans.
+ * Inputs: stream receives Rust; count is the validated packed field count.
+ * Returns zero or -1. Errors: output failure aborts generation.
+ * Source: X.691 BOOLEAN field order. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: compact wide-record decode.
+ * Example: each array slot receives exactly one `read_boolean()` result.
  */
 static int
-rust_write_sequence(FILE *stream, const char *name, asn1p_expr_t *expr,
-                    int top_level, uint64_t codecs) {
+rust_write_sequence_decode_packed_booleans(FILE *stream, size_t count) {
+    return fprintf(stream,
+        "        // Decoded BOOLEAN state variable preserves schema order.\n"
+        "        let mut __asn1c_packed_values = [false; %zu];\n"
+        "        for value in &mut __asn1c_packed_values {\n"
+        "            *value = reader.read_boolean()?;\n"
+        "        }\n"
+        "        let value = Self::new(__asn1c_packed_values, ());\n", count) < 0
+        ? -1 : 0;
+}
+
+/*
+ * Emit one shared-cursor UPER field decoder and construct its result.
+ * Inputs: stream receives Rust; name/expr identify the record; packed_count is
+ * its scalar BOOLEAN count. Returns zero or -1. Errors: malformed bounds/writes.
+ * Source: X.691 record decoding. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: ordered packed record locals.
+ * Example: decode each schema field before calling the packed constructor.
+ */
+static int
+rust_write_sequence_decode_method(FILE *stream, const char *name,
+                                  asn1p_expr_t *expr, size_t packed_count) {
     asn1p_expr_t *member;
-    int has_members = expr->members.tq_head != 0;
+    size_t field_index = 0;
+    if(rust_write_method_doc(stream,
+        "Read this record's presence map and payload from the shared UPER cursor.",
+        "`reader` belongs to the complete top-level value.",
+        "Returns a record with validated required, OPTIONAL, and DEFAULT fields.",
+        "Returns a cursor error for truncation, malformed values, or exhausted resources.",
+        "`let value = Self::decode_uper_fields(reader)?;")) return -1;
+    if(fputs("    fn decode_uper_fields(reader: &mut ::asn1c_runtime::UperReader) ->\n"
+             "        ::core::result::Result<Self, ::asn1c_runtime::Error> {\n",
+             stream) == EOF) return -1;
+    if(rust_write_sequence_decode_presence(stream, expr)) return -1;
+    if(packed_count > 3 && rust_record_all_packed_boolean_fields(expr, 0)) {
+        if(rust_write_sequence_decode_packed_booleans(stream, packed_count)) return -1;
+    } else if(packed_count > 3) {
+        size_t presence_index = 0;
+        TQ_FOR(member, &expr->members, next) {
+            if(rust_write_record_local_decode(stream, name, member,
+                    &presence_index, field_index++)) return -1;
+        }
+        if(rust_write_record_from_locals(stream, expr, 0, packed_count)) return -1;
+    } else {
+        if(fputs("        let value = Self {\n", stream) == EOF) return -1;
+        {
+            size_t presence_index = 0;
+            TQ_FOR(member, &expr->members, next) {
+                if(rust_write_sequence_decode_field(stream, name, member,
+                                                    &presence_index)) return -1;
+            }
+        }
+        if(fputs("        };\n", stream) == EOF) return -1;
+    }
+    return fputs("        Ok(value)\n    }\n\n", stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Emit the SEQUENCE struct, its boolean storage, and its public field API.
+ * Inputs: stream/name/expr identify Rust output and the fixed record; count is
+ * its packable BOOLEAN count. Returns zero or -1. Errors: naming/output failure.
+ * Source: fixed SEQUENCE representation. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: bitset construction support.
+ * Example: emit the declaration and its packed-value constructor.
+ */
+static int
+rust_write_sequence_definition(FILE *stream, const char *name,
+                               asn1p_expr_t *expr, size_t packed_count) {
+    asn1p_expr_t *member;
     const char *derive = rust_ber_cer_has_variable_content_member(expr)
                        ? "Debug, Eq, PartialEq" : "Clone, Debug, Eq, PartialEq";
+    if(packed_count > 3
+       && rust_write_boolean_tuple_alias(stream, name, expr, 0)) return -1;
     if(fprintf(stream,
         "/// ASN.1 SEQUENCE record with direct inline fields.\n"
-        "#[derive(%s)]\n"
-        "pub struct %s {\n", derive, name) < 0) return -1;
+        "#[derive(%s)]\npub struct %s {\n", derive, name) < 0) return -1;
     TQ_FOR(member, &expr->members, next) {
-        if(rust_write_sequence_field(stream, name, member)) return -1;
+        if(rust_write_sequence_field(stream, name, expr, member)) return -1;
     }
+    if(packed_count > 3 && rust_write_boolean_storage(stream, expr, 0)) return -1;
     if(fprintf(stream, "}\n\nimpl %s {\n", name) < 0) return -1;
-    if(codecs & RUST_CODEC_UPER) {
-    if(has_members) {
+    if(packed_count > 3
+       && rust_write_boolean_constructor(stream, name, expr, 0)) return -1;
+    return rust_write_boolean_accessors(stream, expr, 0);
+}
+
+/*
+ * Emit the encoded-schema BOOLEAN presence and payload loops.
+ * Inputs: stream receives methods; count is the direct member count.
+ * Returns zero or -1. Errors: documentation and output failures abort emission.
+ * Source: X.691 presence-before-payload ordering. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: DEFAULT-safe wide UPER.
+ * Example: one kind table drives both passes over the same Option<bool> array.
+ */
+static int
+rust_write_sequence_uper_boolean_encoder(FILE *stream, asn1p_expr_t *expr,
+                                          size_t count) {
     if(rust_write_method_doc(stream,
-            "Write this record's presence map and payload into the shared UPER cursor.",
-            "`self` supplies this record; `writer` belongs to the complete value.",
-            "Returns `Ok(())` after appending this record's fields.",
-            "Returns a cursor error for invalid fields or exhausted resources.",
-            "`self.encode_uper_fields(writer)?;")) return -1;
+        "Write this record's BOOLEAN presence map and payload to one cursor.",
+        "`self` supplies fields; `writer` is the enclosing value cursor.",
+        "Returns `Ok(())` after encoding all BOOLEAN components.",
+        "Returns a cursor error for exhausted work or output limits.",
+        "`self.encode_uper_fields(writer)?;")) return -1;
+    if(fprintf(stream,
+        "    fn encode_uper_fields(&self, writer: &mut ::asn1c_runtime::UperWriter) ->\n"
+        "        ::core::result::Result<(), ::asn1c_runtime::Error> {\n") < 0
+       || rust_write_sequence_boolean_values(stream, expr)) return -1;
+    if(fputs(
+        "        Self::__asn1c_write_boolean_presence(writer, __asn1c_boolean_values)?;\n"
+        "        Self::__asn1c_write_boolean_payload(writer, __asn1c_boolean_values)?;\n"
+        "        Ok(())\n"
+        "    }\n\n", stream) == EOF) return -1;
+    if(rust_write_method_doc(stream,
+        "Write all OPTIONAL and DEFAULT BOOLEAN presence bits.",
+        "`writer` is shared; `values` is a fixed schema-order array of at most 64 bytes.",
+        "Returns `Ok(())` after the complete presence map.",
+        "Returns a shared-cursor resource error.",
+        "`Self::__asn1c_write_boolean_presence(writer, values)?;")) return -1;
+    if(fprintf(stream,
+        "    fn __asn1c_write_boolean_presence(\n"
+        "        writer: &mut ::asn1c_runtime::UperWriter,\n"
+        "        values: [Option<bool>; %zu],\n"
+        "    ) -> ::core::result::Result<(), ::asn1c_runtime::Error> {\n"
+        "        // Paired iteration is a state variable for schema-order presence.\n"
+        "        for (__asn1c_kind, __asn1c_value) in\n"
+        "            Self::__ASN1C_BOOLEAN_KINDS.iter().zip(values.iter())\n"
+        "        {\n"
+        "            match *__asn1c_kind {\n"
+        "                1 => writer.write_boolean(__asn1c_value.is_some())?,\n"
+        "                2 => writer.write_boolean(*__asn1c_value != Some(false))?,\n"
+        "                3 => writer.write_boolean(*__asn1c_value != Some(true))?,\n"
+        "                _ => {}\n"
+        "            }\n"
+        "        }\n"
+        "        Ok(())\n"
+        "    }\n\n", count) < 0) return -1;
+    if(rust_write_method_doc(stream,
+        "Write required and present BOOLEAN payload values.",
+        "`writer` is shared; `values` is a fixed schema-order array of at most 64 bytes.",
+        "Returns `Ok(())` after all present payload components.",
+        "Returns a shared-cursor resource error.",
+        "`Self::__asn1c_write_boolean_payload(writer, values)?;")) return -1;
+    if(fprintf(stream,
+        "    fn __asn1c_write_boolean_payload(\n"
+        "        writer: &mut ::asn1c_runtime::UperWriter,\n"
+        "        values: [Option<bool>; %zu],\n"
+        "    ) -> ::core::result::Result<(), ::asn1c_runtime::Error> {\n"
+        "        // Paired iteration is a state variable for schema-order payload.\n"
+        "        for (__asn1c_kind, __asn1c_value) in\n"
+        "            Self::__ASN1C_BOOLEAN_KINDS.iter().zip(values.iter())\n"
+        "        {\n"
+        "            match *__asn1c_kind {\n"
+        "                0 => writer.write_boolean((*__asn1c_value).unwrap_or(false))?,\n"
+        "                1 => if let Some(value) = *__asn1c_value {\n"
+        "                    writer.write_boolean(value)?;\n"
+        "                },\n"
+        "                2 if *__asn1c_value != Some(false) =>\n"
+        "                    writer.write_boolean((*__asn1c_value).unwrap_or(false))?,\n"
+        "                3 if *__asn1c_value != Some(true) =>\n"
+        "                    writer.write_boolean((*__asn1c_value).unwrap_or(true))?,\n"
+        "                _ => {}\n"
+        "            }\n"
+        "        }\n"
+        "        Ok(())\n"
+        "    }\n\n", count) < 0) return -1;
+    return 0;
+}
+
+/*
+ * Emit the presence-aware decoder loops for an all-BOOLEAN record.
+ * Inputs: stream receives Rust; count bounds the fixed schema-order arrays.
+ * Returns zero or -1. Errors: output failures abort generation.
+ * Source: X.691 presence and payload ordering. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: compact DEFAULT-safe decode.
+ * Example: an absent DEFAULT TRUE slot is restored without a payload read.
+ */
+static int
+rust_write_sequence_uper_boolean_decode_values(FILE *stream, size_t count) {
+    return fprintf(stream,
+        "        // Presence entries are a state variable in schema order.\n"
+        "        let mut __asn1c_boolean_present = [true; %zu];\n"
+        "        for (__asn1c_kind, __asn1c_present) in\n"
+        "            Self::__ASN1C_BOOLEAN_KINDS.iter().zip(\n"
+        "                __asn1c_boolean_present.iter_mut())\n"
+        "        {\n"
+        "            if *__asn1c_kind != 0 {\n"
+        "                *__asn1c_present = reader.read_boolean()?;\n"
+        "            }\n"
+        "        }\n"
+        "        // Decoded BOOLEAN values are a state variable in schema order.\n"
+        "        let mut __asn1c_boolean_values = [false; %zu];\n"
+        "        for ((__asn1c_kind, __asn1c_present), __asn1c_value) in\n"
+        "            Self::__ASN1C_BOOLEAN_KINDS.iter()\n"
+        "                .zip(__asn1c_boolean_present.iter())\n"
+        "                .zip(__asn1c_boolean_values.iter_mut())\n"
+        "        {\n"
+        "            match *__asn1c_kind {\n"
+        "                0 => *__asn1c_value = reader.read_boolean()?,\n"
+        "                1..=3 if *__asn1c_present => {\n"
+        "                    *__asn1c_value = reader.read_boolean()?;\n"
+        "                }\n"
+        "                3 => *__asn1c_value = true,\n"
+        "                _ => {}\n"
+        "            }\n"
+        "        }\n", count, count) < 0 ? -1 : 0;
+}
+
+/*
+ * Emit packed constructor values in bit-storage order.
+ * Inputs: stream receives a Rust array; expr owns the schema; packed_count is
+ * the validated storage count. Returns zero or -1. Errors: invalid indexes or
+ * output failures abort generation. Source: schema-order fixed tree.
+ * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
+ * History: compact DEFAULT-aware UPER decode. Example: skip OPTIONAL slots.
+ */
+static int
+rust_write_sequence_uper_boolean_packed_values(FILE *stream, asn1p_expr_t *expr,
+                                               size_t packed_count) {
+    asn1p_expr_t *member;
+    size_t field_index = 0; /* state variable: maps each member to decoded slots. */
+    size_t packed_index;
+    TQ_FOR(member, &expr->members, next) {
+        int packed = rust_record_packed_boolean_index(expr, member, 0,
+                                                       &packed_index);
+        if(packed < 0) return -1;
+        if(packed) {
+            if(packed_index % 2 == 0 && fputs("            ", stream) == EOF) return -1;
+            if(fprintf(stream, "__asn1c_boolean_values[%zu],", field_index) < 0)
+                return -1;
+            if(packed_index % 2 == 1 || packed_index + 1 == packed_count) {
+                if(fputc('\n', stream) == EOF) return -1;
+            } else if(fputc(' ', stream) == EOF) return -1;
+        }
+        field_index++;
+    }
+    return 0;
+}
+
+/*
+ * Emit OPTIONAL values in schema order for an inline constructor tuple.
+ * Inputs: stream receives Rust; expr owns the validated BOOLEAN record.
+ * Returns zero or -1. Errors: invalid indexes or output failures abort.
+ * Source: X.691 decoded presence and payload arrays. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: compact wide decode.
+ * Example: absent OPTIONAL values become `None` through `then_some`.
+ */
+static int
+rust_write_sequence_uper_boolean_optional_values(FILE *stream,
+                                                 asn1p_expr_t *expr) {
+    asn1p_expr_t *member;
+    size_t field_index = 0; /* state variable: maps decoded slots to fields. */
+    TQ_FOR(member, &expr->members, next) {
+        size_t packed_index;
+        int packed = rust_record_packed_boolean_index(expr, member, 0,
+                                                       &packed_index);
+        if(packed < 0) return -1;
+        if(!packed && fprintf(stream,
+            "            __asn1c_boolean_present[%zu].then_some(\n"
+            "                __asn1c_boolean_values[%zu]),\n", field_index,
+            field_index) < 0) return -1;
+        field_index++;
+    }
+    return 0;
+}
+
+/*
+ * Emit constructor arrays from compact values and schema presence slots.
+ * Inputs: stream receives Rust; expr owns validated fields.
+ * Returns zero or -1. Errors: invalid markers and output failures abort.
+ * Source: X.691 schema-order decoding. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: mixed marker construction.
+ * Example: OPTIONAL values use `then_some`; packed values use array order.
+ */
+static int
+rust_write_sequence_uper_boolean_constructor(FILE *stream, asn1p_expr_t *expr) {
+    size_t packed_count = rust_record_packed_boolean_count(expr, 0);
+    size_t nonpacked_count;
+    int tuple_alias = rust_boolean_tuple_alias_needed(expr, 0, &nonpacked_count);
+    if(tuple_alias < 0 || fputs("        let value = Self::new([\n", stream) == EOF)
+        return -1;
+    if(rust_write_sequence_uper_boolean_packed_values(stream, expr, packed_count))
+        return -1;
+    if(tuple_alias) {
+        return fprintf(stream,
+            "        ], Self::__asn1c_nonpacked_fields(\n"
+            "            &__asn1c_boolean_present,\n"
+            "            &__asn1c_boolean_values,\n"
+            "        ));\n") < 0 ? -1 : 0;
+    }
+    if(fputs("        ], (\n", stream) == EOF
+       || rust_write_sequence_uper_boolean_optional_values(stream, expr)) return -1;
+    return fputs("        ));\n", stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Emit a short tuple materializer for records with many OPTIONAL BOOLEANs.
+ * Inputs: stream receives Rust; expr owns fields; count bounds arrays and
+ * nonpacked_count sizes the returned tuple. Returns zero or -1. Errors: invalid
+ * indexes, missing alias identity, or writes fail. Source: schema field order.
+ * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
+ * History: keep wide decoder bodies below Clippy's line limit.
+ * Example: present[2].then_some(values[2]) supplies the third OPTIONAL field.
+ */
+static int
+rust_write_sequence_uper_nonpacked_helper(FILE *stream, asn1p_expr_t *expr,
+                                          size_t count, size_t nonpacked_count) {
+    asn1p_expr_t *member;
+    size_t field_index = 0; /* state variable: maps decoded slots to schema fields. */
+    size_t emitted = 0; /* state variable: counts tuple values emitted. */
+    if(nonpacked_count <= 8) return 0;
+    if(expr->_type_unique_index <= 0 || rust_write_method_doc(stream,
+        "Build the nonpacked OPTIONAL BOOLEAN tuple from decoded schema slots.",
+        "`present` and `values` are fixed schema-order decode arrays.",
+        "Returns the transparent constructor tuple in declaration order.",
+        "This helper cannot fail after validated metadata is emitted.",
+        "`Self::__asn1c_nonpacked_fields(&present, &values)")) return -1;
+    if(fprintf(stream,
+        "    fn __asn1c_nonpacked_fields(\n"
+        "        present: &[bool; %zu],\n"
+        "        values: &[bool; %zu],\n"
+        "    ) -> __asn1c_fields_%d::Values {\n"
+        "        (\n", count, count, expr->_type_unique_index) < 0) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        size_t packed_index;
+        int packed = rust_record_packed_boolean_index(expr, member, 0,
+                                                       &packed_index);
+        if(packed < 0) return -1;
+        if(!packed && fprintf(stream,
+            "            present[%zu].then_some(values[%zu]),\n",
+            field_index, field_index) < 0) return -1;
+        if(!packed) emitted++;
+        field_index++;
+    }
+    if(emitted != nonpacked_count
+       || fputs("        )\n    }\n\n", stream) == EOF) return -1;
+    return 0;
+}
+
+/*
+ * Emit compact shared-cursor UPER decode for one all-BOOLEAN record.
+ * Inputs: stream receives Rust; expr owns fields; packed_count is validated.
+ * Returns zero or -1. Errors: method docs and output failures abort emission.
+ * Source: X.691 component semantics. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: wide DEFAULT-safe decode.
+ * Example: all presence bits precede payload values on the parent cursor.
+ */
+static int
+rust_write_sequence_uper_boolean_decoder(FILE *stream, asn1p_expr_t *expr,
+                                         size_t packed_count) {
+    size_t count = 0; /* state variable: bounds generated fixed-size arrays. */
+    asn1p_expr_t *member;
+    if(packed_count <= 3
+       || rust_record_packed_boolean_count(expr, 0) != packed_count) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        if(count >= RUST_SEQUENCE_FIELD_LIMIT) return -1;
+        count++;
+    }
+    size_t nonpacked_count;
+    if(rust_boolean_tuple_alias_needed(expr, 0, &nonpacked_count) < 0
+       || rust_write_sequence_uper_nonpacked_helper(stream, expr, count,
+                                                     nonpacked_count)) return -1;
+    if(rust_write_method_doc(stream,
+        "Read the BOOLEAN presence map and payload from one shared cursor.",
+        "`reader` belongs to the enclosing value and carries its resource budget.",
+        "Returns the record with required, OPTIONAL, and DEFAULT fields.",
+        "Returns a cursor error for truncation or exhausted resources.",
+        "`let value = Self::decode_uper_fields(reader)?;")) return -1;
+    if(fputs(
+        "    fn decode_uper_fields(reader: &mut ::asn1c_runtime::UperReader) ->\n"
+        "        ::core::result::Result<Self, ::asn1c_runtime::Error> {\n", stream) == EOF)
+        return -1;
+    if(rust_write_sequence_uper_boolean_decode_values(stream, count)
+       || rust_write_sequence_uper_boolean_constructor(stream, expr)
+       || fputs("        Ok(value)\n    }\n\n", stream) == EOF) return -1;
+    return 0;
+}
+
+/*
+ * Emit the metadata and compact cursor methods for a packed BOOLEAN record.
+ * Inputs: stream receives Rust; expr owns fields; packed_count is validated.
+ * Returns zero or -1. Errors: invalid metadata and output failures abort.
+ * Source: shared UPER record cursor. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: OPTIONAL/DEFAULT bitsets.
+ * Example: loops preserve presence-before-payload order with one budget.
+ */
+static int
+rust_write_sequence_uper_boolean_methods(FILE *stream, asn1p_expr_t *expr,
+                                         size_t packed_count) {
+    size_t count = 0; /* state variable: sizes the fixed kind-code array. */
+    asn1p_expr_t *member;
+    if(packed_count <= 3 || !rust_record_all_boolean_fields(expr)) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        if(count >= RUST_SEQUENCE_FIELD_LIMIT) return -1;
+        count++;
+    }
+    if(rust_write_sequence_boolean_kinds(stream, expr)
+       || rust_write_sequence_uper_boolean_encoder(stream, expr, count)
+       || rust_write_sequence_uper_boolean_decoder(stream, expr, packed_count))
+        return -1;
+    return 0;
+}
+
+/*
+ * Emit private shared-cursor UPER methods for one nonempty SEQUENCE.
+ * Inputs: stream receives Rust; name/expr identify its type and fields.
+ * Returns zero or -1. Errors: method docs, field writers, and output can fail.
+ * Source: X.691 record field context. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: order-preserving bitset decode.
+ * Example: encode and decode nested fields on the parent's cursor.
+ */
+static int
+rust_write_sequence_uper_fields(FILE *stream, const char *name,
+                                asn1p_expr_t *expr, size_t packed_count) {
+    asn1p_expr_t *member;
+    (void)name;
+    if(packed_count > 3 && rust_record_all_boolean_fields(expr))
+        return rust_write_sequence_uper_boolean_methods(stream, expr, packed_count);
+    if(rust_write_method_doc(stream,
+        "Write this record's presence map and payload into the shared UPER cursor.",
+        "`self` supplies this record; `writer` belongs to the complete value.",
+        "Returns `Ok(())` after appending this record's fields.",
+        "Returns a cursor error for invalid fields or exhausted resources.",
+        "`self.encode_uper_fields(writer)?;")) return -1;
     if(fputs("    fn encode_uper_fields(&self, writer: &mut ::asn1c_runtime::UperWriter) ->\n"
              "        ::core::result::Result<(), ::asn1c_runtime::Error> {\n",
              stream) == EOF) return -1;
@@ -6643,39 +7258,25 @@ rust_write_sequence(FILE *stream, const char *name, asn1p_expr_t *expr,
         if(rust_write_sequence_encode_field(stream, member)) return -1;
     }
     if(fputs("        Ok(())\n    }\n\n", stream) == EOF) return -1;
+    return rust_write_sequence_decode_method(stream, name, expr, packed_count);
+}
+
+/*
+ * Emit the public whole-value UPER encoder and decoder for a SEQUENCE.
+ * Inputs: stream receives Rust; has_members selects shared helper calls.
+ * Returns zero or -1. Errors: documentation and output failures abort emission.
+ * Source: X.691 whole-value cursor. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: split public record methods.
+ * Example: emit `Type::decode_uper(input, limits)` for a top-level record.
+ */
+static int
+rust_write_sequence_uper_public(FILE *stream, int has_members) {
     if(rust_write_method_doc(stream,
-            "Read this record's presence map and payload from the shared UPER cursor.",
-            "`reader` belongs to the complete top-level value.",
-            "Returns a record with validated required, OPTIONAL, and DEFAULT fields.",
-            "Returns a cursor error for truncation, malformed values, or exhausted resources.",
-            "`let value = Self::decode_uper_fields(reader)?;")) return -1;
-    if(fputs("    fn decode_uper_fields(reader: &mut ::asn1c_runtime::UperReader) ->\n"
-             "        ::core::result::Result<Self, ::asn1c_runtime::Error> {\n",
-             stream) == EOF) return -1;
-    if(rust_write_sequence_decode_presence(stream, expr)) return -1;
-    if(fputs("        let value = Self {\n", stream) == EOF) return -1;
-    {
-        size_t presence_index = 0;
-        TQ_FOR(member, &expr->members, next) {
-            if(rust_write_sequence_decode_field(stream, name, member,
-                                                &presence_index)) return -1;
-        }
-    }
-    if(fputs("        };\n        Ok(value)\n    }\n\n", stream) == EOF)
-        return -1;
-    }
-    if(!top_level) {
-        if((codecs & (RUST_CODEC_BER | RUST_CODEC_CER))
-           && rust_write_sequence_ber_cer(stream, name, expr, 0, codecs)) return -1;
-        if(fputs("}\n\n", stream) == EOF) return -1;
-        return 0;
-    }
-    if(rust_write_method_doc(stream,
-            "Encode the complete SEQUENCE with one shared UPER budget.",
-            "`self` supplies the record; `limits` bounds the whole operation.",
-            "Returns packed bytes and meaningful bit length.",
-            "Returns an error for invalid fields or exhausted resources.",
-            "`let encoded = value.encode_uper(&Default::default())?;")) return -1;
+        "Encode the complete SEQUENCE with one shared UPER budget.",
+        "`self` supplies the record; `limits` bounds the whole operation.",
+        "Returns packed bytes and meaningful bit length.",
+        "Returns an error for invalid fields or exhausted resources.",
+        "`let encoded = value.encode_uper(&Default::default())?;")) return -1;
     if(fprintf(stream,
         "    pub fn encode_uper(&self, limits: &::asn1c_runtime::Limits) ->\n"
         "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
@@ -6687,11 +7288,11 @@ rust_write_sequence(FILE *stream, const char *name, asn1p_expr_t *expr,
     } else if(fputs("        let _ = self;\n", stream) == EOF) return -1;
     if(fputs("        writer.finish()\n    }\n\n", stream) == EOF) return -1;
     if(rust_write_method_doc(stream,
-            "Decode one complete SEQUENCE prefix with a shared UPER budget.",
-            "`input` is the encoded prefix; `limits` bounds the whole operation.",
-            "Returns validated fields and bit/byte prefix consumption.",
-            "Returns an error for truncation, malformed fields, or exhausted resources.",
-            "`let decoded = Type::decode_uper(input, &Default::default())?;")) return -1;
+        "Decode one complete SEQUENCE prefix with a shared UPER budget.",
+        "`input` is the encoded prefix; `limits` bounds the whole operation.",
+        "Returns validated fields and bit/byte prefix consumption.",
+        "Returns an error for truncation, malformed fields, or exhausted resources.",
+        "`let decoded = Type::decode_uper(input, &Default::default())?;")) return -1;
     if(fprintf(stream,
         "    pub fn decode_uper(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
         "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
@@ -6701,44 +7302,59 @@ rust_write_sequence(FILE *stream, const char *name, asn1p_expr_t *expr,
         if(fputs("        let value = Self::decode_uper_fields(&mut reader)?;\n", stream) == EOF)
             return -1;
     } else if(fputs("        let value = Self {};\n", stream) == EOF) return -1;
-    if(fputs("        let consumed = reader.finish()?;\n"
-             "        Ok(::asn1c_runtime::Decoded {\n"
-             "            value,\n"
-             "            consumed_bits: consumed.consumed_bits,\n"
-             "            consumed_bytes: consumed.consumed_bytes,\n"
-             "        })\n"
-             "    }\n", stream) == EOF) return -1;
+    return fputs("        let consumed = reader.finish()?;\n"
+                 "        Ok(::asn1c_runtime::Decoded {\n"
+                 "            value,\n"
+                 "            consumed_bits: consumed.consumed_bits,\n"
+                 "            consumed_bytes: consumed.consumed_bytes,\n"
+                 "        })\n"
+                 "    }\n", stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Emit one documented SEQUENCE struct with private shared-cursor helpers.
+ * Parameters: stream receives Rust; name is its generated type name; expr owns
+ * validated fields. Returns zero or -1. Errors: generated output writes fail.
+ * Original source: Rust UPER backend. Version/date: 0.4.0, 2026-10-30.
+ * Responsible party: asn1c maintainers. History: nested-record helpers share
+ * one cursor. Example: emit Packet.
+ */
+static int
+rust_write_sequence(FILE *stream, const char *name, asn1p_expr_t *expr,
+                    int top_level, uint64_t codecs) {
+    size_t packed_count = rust_record_packed_boolean_count(expr, 0);
+    int has_members = expr->members.tq_head != 0;
+    if(rust_write_sequence_definition(stream, name, expr, packed_count)) return -1;
+    if(codecs & RUST_CODEC_UPER) {
+        if(has_members
+           && rust_write_sequence_uper_fields(stream, name, expr, packed_count)) return -1;
+        if(top_level && rust_write_sequence_uper_public(stream, has_members)) return -1;
+    }
+    if(!top_level) {
+        if((codecs & (RUST_CODEC_BER | RUST_CODEC_CER))
+           && rust_write_sequence_ber_cer(stream, name, expr, 0, codecs)) return -1;
+        return fputs("}\n\n", stream) == EOF ? -1 : 0;
     }
     if((codecs & RUST_CODEC_CBOR) && rust_write_sequence_cbor(stream, expr)) return -1;
     if((codecs & (RUST_CODEC_BER | RUST_CODEC_CER))
        && rust_write_sequence_ber_cer(stream, name, expr, 1, codecs)) return -1;
-    if(fputs("}\n\n", stream) == EOF) return -1;
-    return 0;
+    return fputs("}\n\n", stream) == EOF ? -1 : 0;
 }
 
 /*
- * Emit DER/BER and CER methods for one validated direct-field SEQUENCE.
- * Parameters: stream receives Rust; parent names the generated type; expr owns
- * validated fields; top_level selects public codecs and crate-visible callbacks;
- * codecs selects BER/DER and/or CER methods. Returns zero or -1. Errors: an
- * output failure is reported; generated methods return runtime errors.
- * Source: X.690 SEQUENCE framing and the shared-budget runtime API.
- * Version/date: 2026-10-31. Author: asn1c maintainers. History: second-wave
- * constructed codecs; 2026-11-01 documents the internal callback interface.
- * Example: rust_write_sequence_ber_cer(out, name, expr, 1, codecs).
+ * Emit the shared DER/CER record-rule encoder for a top-level SEQUENCE.
+ * Inputs: stream receives Rust; expr supplies validated fields and root tagging.
+ * Returns zero or -1. Errors: output failures abort generation; generated
+ * codecs return typed validation and resource errors under the parent context.
+ * Source: existing SEQUENCE record-rule emitter. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: isolate framing complexity.
+ * Example: emit encode_record_with_rule for a naturally or implicitly tagged root.
  */
 static int
-rust_write_sequence_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr,
-                            int top_level, uint64_t codecs) {
+rust_write_sequence_ber_cer_rule(FILE *stream, const asn1p_expr_t *expr) {
     const char *writer_mut = expr->members.tq_head ? "mut " : "";
-    int tagged_root = top_level && expr->tag.tag_class == TC_CONTEXT_SPECIFIC
+    int tagged_root = expr->tag.tag_class == TC_CONTEXT_SPECIFIC
                    && expr->tag.tag_mode == TM_IMPLICIT;
-    /* Standalone SEQUENCE codecs already use these callbacks. Keep top-level
-     * callbacks crate-visible for composition without a reachability scan. */
-    if(rust_write_nested_ber_cer_fields(stream, expr, parent, 0, top_level)
-       || rust_write_sequence_ber_cer_decode_fields(stream, parent, expr,
-                                                     top_level)) return -1;
-    if(!top_level) return 0;
     if(rust_write_method_doc(stream, "Encode this SEQUENCE using the selected record rule.",
         "`self` supplies fields; `limits` bounds the complete operation.",
         "Returns one complete SEQUENCE TLV.",
@@ -6765,6 +7381,30 @@ rust_write_sequence_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr
     } else if(fputs("        writer.finish()\n    }\n\n", stream) == EOF) {
         return -1;
     }
+    return 0;
+}
+
+/*
+ * Emit DER/BER and CER methods for one validated direct-field SEQUENCE.
+ * Parameters: stream receives Rust; parent names the generated type; expr owns
+ * validated fields; top_level selects public codecs and crate-visible callbacks;
+ * codecs selects BER/DER and/or CER methods. Returns zero or -1. Errors: an
+ * output failure is reported; generated methods return runtime errors.
+ * Source: X.690 SEQUENCE framing and the shared-budget runtime API.
+ * Version/date: 2026-10-31. Author: asn1c maintainers. History: second-wave
+ * constructed codecs; 2026-11-01 isolates shared framing and documents callbacks.
+ * Example: rust_write_sequence_ber_cer(out, name, expr, 1, codecs).
+ */
+static int
+rust_write_sequence_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr,
+                            int top_level, uint64_t codecs) {
+    /* Standalone SEQUENCE codecs already use these callbacks. Keep top-level
+     * callbacks crate-visible for composition without a reachability scan. */
+    if(rust_write_nested_ber_cer_fields(stream, expr, parent, 0, top_level)
+       || rust_write_sequence_ber_cer_decode_fields(stream, parent, expr,
+                                                     top_level)) return -1;
+    if(!top_level) return 0;
+    if(rust_write_sequence_ber_cer_rule(stream, expr)) return -1;
     if(codecs & RUST_CODEC_BER) {
         if(rust_write_method_doc(stream, "Encode this SEQUENCE using DER.",
             "`self` supplies fields; `limits` bounds the complete operation.",
@@ -7320,14 +7960,6 @@ rust_write_set_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr,
 }
 
 /*
- * Emit a small typed SET-field decoder so record dispatch stays concise.
- * Parameters: stream receives Rust; parent names inline enums; member is a
- * validated direct field. Returns zero or -1. Errors: source write failure.
- * Source: X.690 primitive field readers. Version/date: 2026-10-31.
- * Author: asn1c maintainers. History: fourth-wave SET generation.
- * Example: decode one BOOLEAN child after SetReader selects tag 1.
- */
-/*
  * Purpose: select the runtime storage type for a supported primitive field.
  * Inputs: member is validated fixed-tree field metadata. Returns a static name.
  * Errors: this selector has no failure path; unsupported shapes use byte storage.
@@ -7447,12 +8079,600 @@ rust_ber_cer_record_field_type(const char *parent, asn1p_expr_t *member,
 }
 
 /*
+ * Identify BOOLEAN fields stored as scalar values in one record layout.
+ * Inputs: member is a direct field; xer selects the XER storage convention.
+ * Returns one for a required or core DEFAULT BOOLEAN, otherwise zero.
+ * Errors: none. Source: generated Rust field layout. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: excessive-bool bit storage.
+ * Example: required XER BOOLEAN is packable; XER DEFAULT BOOLEAN is not.
+ */
+static int
+rust_record_boolean_packable(const asn1p_expr_t *member, int xer) {
+    return member && member->expr_type == ASN_BASIC_BOOLEAN
+        && member->marker.flags != EM_OPTIONAL
+        && (!xer || member->marker.flags != EM_DEFAULT);
+}
+
+/*
+ * Count raw BOOLEAN members that can use private packed storage.
+ * Inputs: expr owns fields; xer selects whether DEFAULT uses Option<bool>.
+ * Returns the count. Errors: invalid input returns zero.
+ * Source: fixed record members. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: record bool lint support.
+ * Example: four required BOOLEAN fields returns four.
+ */
+static size_t
+rust_record_packed_boolean_count(const asn1p_expr_t *expr, int xer) {
+    asn1p_expr_t *member;
+    size_t count = 0;
+    if(!expr) return 0;
+    TQ_FOR(member, &expr->members, next) {
+        if(rust_record_boolean_packable(member, xer)) count++;
+    }
+    return count;
+}
+
+/*
+ * Check whether every record member is a required packed direct BOOLEAN.
+ * Inputs: expr owns the record fields; xer selects the layout convention.
+ * Returns one for an all-packed record, zero otherwise. Errors: none.
+ * Source: generated record storage. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: compact wide UPER decode.
+ * Example: a 64-field required BOOLEAN record returns one.
+ */
+static int
+rust_record_all_packed_boolean_fields(const asn1p_expr_t *expr, int xer) {
+    asn1p_expr_t *member;
+    size_t index;
+    if(!expr || rust_record_packed_boolean_count(expr, xer) <= 3) return 0;
+    TQ_FOR(member, &expr->members, next) {
+        /* DEFAULT payloads depend on presence bits and use ordered field decoding. */
+        if(member->marker.flags != EM_NOMARK
+           || rust_record_packed_boolean_index(expr, member, xer, &index) != 1)
+            return 0;
+    }
+    return 1;
+}
+
+/*
+ * Find one field's packed BOOLEAN index when the record exceeds the lint limit.
+ * Inputs: expr/member identify the record and field; xer selects field semantics;
+ * index receives the packed position. Returns one if packed, zero if not, -1.
+ * Errors: null arguments return -1. Source: schema-order field layout.
+ * Version/date: 2026-11-01. Responsible: asn1c maintainers. History: bit index.
+ * Example: the fourth packable field maps to index three.
+ */
+static int
+rust_record_packed_boolean_index(const asn1p_expr_t *expr,
+                                 const asn1p_expr_t *member, int xer,
+                                 size_t *index) {
+    asn1p_expr_t *current;
+    size_t packed = 0;
+    if(!expr || !member || !index) return -1;
+    *index = SIZE_MAX;
+    if(rust_record_packed_boolean_count(expr, xer) <= 3) return 0;
+    TQ_FOR(current, &expr->members, next) {
+        if(!rust_record_boolean_packable(current, xer)) continue;
+        if(current == member) {
+            *index = packed;
+            return 1;
+        }
+        packed++;
+    }
+    return 0;
+}
+
+/*
+ * Map one direct BOOLEAN field to its UPER presence and payload kind.
+ * Inputs: member is a validated BOOLEAN field; kind receives the code.
+ * Returns zero or -1. Errors: unsupported markers or DEFAULTs fail closed.
+ * Source: X.691 field rules. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: compact boolean cursors.
+ * Example: required, optional, DEFAULT FALSE, TRUE map to 0, 1, 2, and 3.
+ */
+static int
+rust_boolean_kind_code(asn1p_expr_t *member, unsigned *kind) {
+    char literal[64];
+    if(!member || !kind || member->expr_type != ASN_BASIC_BOOLEAN) return -1;
+    switch(member->marker.flags) {
+    case EM_NOMARK:
+        *kind = 0;
+        return 0;
+    case EM_OPTIONAL:
+        *kind = 1;
+        return 0;
+    case EM_DEFAULT:
+        if(rust_sequence_default_literal(member, literal, sizeof(literal))) return -1;
+        if(!strcmp(literal, "false")) *kind = 2;
+        else if(!strcmp(literal, "true")) *kind = 3;
+        else return -1;
+        return 0;
+    default:
+        return -1;
+    }
+}
+
+/*
+ * Check whether a nonempty record consists only of direct BOOLEAN fields.
+ * Inputs: expr owns the fixed-tree record. Returns one for valid BOOLEAN markers.
+ * Errors: null, empty, or unsupported records return zero. Source: fixed tree.
+ * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
+ * History: compact UPER field loops. Example: four mixed markers pass.
+ */
+static int
+rust_record_all_boolean_fields(const asn1p_expr_t *expr) {
+    asn1p_expr_t *member;
+    size_t count = 0; /* state variable: ensures that the record is nonempty. */
+    unsigned kind;
+    if(!expr || !expr->members.tq_head) return 0;
+    TQ_FOR(member, &expr->members, next) {
+        if(rust_boolean_kind_code(member, &kind)) return 0;
+        count++;
+    }
+    return count != 0;
+}
+
+/*
+ * Emit bounded kind codes for the schema-order BOOLEAN cursor loops.
+ * Inputs: stream receives Rust; expr owns the validated record.
+ * Returns zero or -1. Errors: field-count, marker, or write failures abort.
+ * Source: generated fixed-tree metadata. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: wide DEFAULT-safe UPER.
+ * Example: alternating required and DEFAULT fields produce compact code rows.
+ */
+static int
+rust_write_sequence_boolean_kinds(FILE *stream, asn1p_expr_t *expr) {
+    asn1p_expr_t *member;
+    size_t count = 0; /* state variable: counts checked direct components. */
+    size_t index = 0; /* state variable: tracks the emitted metadata position. */
+    unsigned kind;
+    TQ_FOR(member, &expr->members, next) {
+        if(count >= RUST_SEQUENCE_FIELD_LIMIT) return -1;
+        count++;
+    }
+    if(!count || fprintf(stream,
+        "    /// Private schema-order BOOLEAN kind metadata.\n"
+        "    const __ASN1C_BOOLEAN_KINDS: [u8; %zu] = [\n", count) < 0)
+        return -1;
+    TQ_FOR(member, &expr->members, next) {
+        if(rust_boolean_kind_code(member, &kind)) return -1;
+        if(index % 8 == 0 && fputs("        ", stream) == EOF) return -1;
+        if(fprintf(stream, "%u,", kind) < 0) return -1;
+        index++;
+        if(fputc(index % 8 == 0 || index == count ? '\n' : ' ', stream) == EOF)
+            return -1;
+    }
+    return fputs("    ];\n\n", stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Select a documented tuple alias when many nonpacked fields make signatures
+ * unreadable to strict Clippy. Inputs: expr owns fields; xer selects storage;
+ * count receives nonpacked members. Returns one when more than eight require
+ * aliasing, zero otherwise, or -1 for invalid fields. Source: record layout.
+ * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
+ * History: wide OPTIONAL and mixed XER constructors. Example: sixty Options use alias.
+ */
+static int
+rust_boolean_tuple_alias_needed(const asn1p_expr_t *expr, int xer,
+                                size_t *nonpacked_count) {
+    asn1p_expr_t *member;
+    if(!expr || !nonpacked_count) return -1;
+    *nonpacked_count = 0;
+    if(!xer && !rust_record_all_boolean_fields(expr)) return 0;
+    TQ_FOR(member, &expr->members, next) {
+        size_t packed_index;
+        int packed = rust_record_packed_boolean_index(expr, member, xer,
+                                                       &packed_index);
+        if(packed < 0) return -1;
+        if(!packed) (*nonpacked_count)++;
+    }
+    return *nonpacked_count > 8;
+}
+
+/*
+ * Emit the encoder's Option<bool> values in schema order.
+ * Inputs: stream receives Rust; expr owns validated fields and identifiers.
+ * Returns zero or -1. Errors: accessor allocation and output failures abort.
+ * Source: generated public record API. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: bounded encoder methods.
+ * Example: required fields use Some(getter()) and optional fields use getter().
+ */
+static int
+rust_write_sequence_boolean_values(FILE *stream, asn1p_expr_t *expr) {
+    asn1p_expr_t *member;
+    size_t count = 0; /* state variable: counts fields for the fixed array. */
+    TQ_FOR(member, &expr->members, next) {
+        if(count >= RUST_SEQUENCE_FIELD_LIMIT) return -1;
+        count++;
+    }
+    if(fprintf(stream, "        let __asn1c_boolean_values: [Option<bool>; %zu] = [\n",
+               count) < 0) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        char *field = rust_identifier(member->Identifier, 1);
+        char *getter = field ? rust_boolean_accessor_name(field, "get_") : NULL;
+        unsigned kind;
+        int written;
+        if(!getter || rust_boolean_kind_code(member, &kind)) {
+            free(field);
+            free(getter);
+            return -1;
+        }
+        written = fprintf(stream,
+            kind == 1 ? "            self.%s(),\n" : "            Some(self.%s()),\n",
+            getter);
+        free(field);
+        free(getter);
+        if(written < 0) return -1;
+    }
+    return fputs("        ];\n", stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Build a getter or setter method name from a sanitized field identifier.
+ * Inputs: field is rust_identifier output; prefix is `get_` or `set_`.
+ * Returns allocated name or NULL. Errors: invalid or oversized names fail.
+ * Source: Rust identifier normalization. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: boolean accessors.
+ * Example: `r#type` with `get_` becomes `get_type`.
+ */
+static char *
+rust_boolean_accessor_name(const char *field, const char *prefix) {
+    const char *base;
+    size_t prefix_length;
+    size_t base_length;
+    char *name;
+    if(!field || !prefix) return NULL;
+    base = !strncmp(field, "r#", 2) ? field + 2 : field;
+    prefix_length = strlen(prefix);
+    base_length = strlen(base);
+    if(base_length > SIZE_MAX - prefix_length - 1) return NULL;
+    name = malloc(prefix_length + base_length + 1);
+    if(!name) return NULL;
+    memcpy(name, prefix, prefix_length);
+    memcpy(name + prefix_length, base, base_length + 1);
+    return name;
+}
+
+/*
+ * Emit the private byte flags field for a packed record.
+ * Inputs: stream receives Rust; expr owns fields; xer selects the layout.
+ * Returns zero when no flags are needed or after emission, otherwise -1.
+ * Errors: byte-count overflow and output errors fail generation.
+ * Source: private Rust record representation. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: excessive-bool bit storage.
+ * Example: five packed fields use `[u8; 1]`.
+ */
+static int
+rust_write_boolean_storage(FILE *stream, const asn1p_expr_t *expr, int xer) {
+    size_t count = rust_record_packed_boolean_count(expr, xer);
+    if(count <= 3) return 0;
+    if(count > SIZE_MAX - 7) return -1;
+    return fprintf(stream,
+        "    /// Private packed BOOLEAN state variable; unused bits stay zero.\n"
+        "    %s: [u8; %zu],\n", RUST_BOOLEAN_STORAGE_FIELD, (count + 7) / 8) < 0 ? -1 : 0;
+}
+
+/*
+ * Emit one BOOLEAN getter with source-level API documentation.
+ * Inputs: stream/field/getter identify the output and method; packed/index locate
+ * its bit; optional selects Option<bool>. Returns zero or -1.
+ * Errors: documentation or output failures abort generation. Source: record API.
+ * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
+ * History: uniform access for packed and scalar storage.
+ * Example: `get_enabled()` returns the field's BOOLEAN value.
+ */
+static int
+rust_write_boolean_getter(FILE *stream, const char *field, const char *getter,
+                          int packed, size_t index, int optional) {
+    unsigned mask = 1U << (index % 8);
+    if(rust_write_method_doc(stream, "Read this ASN.1 BOOLEAN field.",
+        "`self` supplies the record.", "Returns the current BOOLEAN value.",
+        "This accessor cannot fail.", "`record.get_<field>()")) return -1;
+    if(fputs("    #[must_use]\n", stream) == EOF) return -1;
+    if(fprintf(stream, "    pub const fn %s(\n        &self,\n    ) -> %s {\n",
+               getter, optional ? "Option<bool>" : "bool") < 0) return -1;
+    if(packed) {
+        if(fprintf(stream,
+            "        self.%s[%zu] & 0x%02x_u8 != 0\n",
+            RUST_BOOLEAN_STORAGE_FIELD, index / 8, mask) < 0) return -1;
+    } else if(fprintf(stream, "        self.%s\n", field) < 0) {
+        return -1;
+    }
+    return fputs("    }\n\n", stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Emit one BOOLEAN setter with source-level API documentation.
+ * Inputs: stream/field/setter identify the output and method; packed/index locate
+ * its bit; optional selects Option<bool>. Returns zero or -1.
+ * Errors: documentation or output failures abort generation. Source: record API.
+ * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
+ * History: uniform access for packed and scalar storage.
+ * Example: `value.set_enabled(true);`.
+ */
+static int
+rust_write_boolean_setter(FILE *stream, const char *field, const char *setter,
+                          int packed, size_t index, int optional) {
+    unsigned mask = 1U << (index % 8);
+    if(rust_write_method_doc(stream, "Update this ASN.1 BOOLEAN field.",
+        "`self` is the record to update; `value` is the new field value.",
+        "Returns after storing the value.", "This setter cannot fail.",
+        "`record.set_<field>(new_value)")) return -1;
+    if(fprintf(stream, "    pub const fn %s(\n        &mut self,\n        value: %s,\n"
+                       "    ) {\n", setter,
+               optional ? "Option<bool>" : "bool") < 0) return -1;
+    if(packed) {
+        if(fprintf(stream,
+            "        if value { self.%s[%zu] |= 0x%02x_u8; }\n"
+            "        else { self.%s[%zu] &= !0x%02x_u8; }\n",
+            RUST_BOOLEAN_STORAGE_FIELD, index / 8, mask,
+            RUST_BOOLEAN_STORAGE_FIELD, index / 8, mask) < 0) return -1;
+    } else if(fprintf(stream, "        self.%s = value;\n", field) < 0) {
+        return -1;
+    }
+    return fputs("    }\n\n", stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Emit uniform public BOOLEAN accessors for packed and scalar layouts.
+ * Inputs: stream receives methods; expr owns fields; xer selects field semantics.
+ * Returns zero or -1. Errors: invalid identifiers, indexes, or writes fail.
+ * Source: public Rust record API. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: all codecs use getters.
+ * Example: optional BOOLEAN accessors preserve `Option<bool>`.
+ */
+static int
+rust_write_boolean_accessors(FILE *stream, const asn1p_expr_t *expr, int xer) {
+    asn1p_expr_t *member;
+    TQ_FOR(member, &expr->members, next) {
+        char *field, *getter, *setter;
+        size_t index = 0;
+        int packed;
+        int optional;
+        int result;
+        if(member->expr_type != ASN_BASIC_BOOLEAN) continue;
+        field = rust_identifier(member->Identifier, 1);
+        getter = field ? rust_boolean_accessor_name(field, "get_") : NULL;
+        setter = field ? rust_boolean_accessor_name(field, "set_") : NULL;
+        packed = rust_record_packed_boolean_index(expr, member, xer, &index);
+        optional = member->marker.flags == EM_OPTIONAL
+                || (xer && member->marker.flags == EM_DEFAULT);
+        if(!field || !getter || !setter || packed < 0) result = -1;
+        else result = rust_write_boolean_getter(stream, field, getter, packed, index, optional)
+                   || rust_write_boolean_setter(stream, field, setter, packed, index, optional) ? -1 : 0;
+        free(field);
+        free(getter);
+        free(setter);
+        if(result) return -1;
+    }
+    return 0;
+}
+
+/*
+ * Emit the nonpacked tuple types in constructor schema order.
+ * Inputs: stream/parent/expr identify the type; xer selects XER field types;
+ * count receives nonpacked fields. Returns zero or -1. Errors: invalid paths.
+ * Source: generated record fields. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: packed BOOLEAN API.
+ * Example: optional BOOLEAN remains `Option<bool>` in the tuple.
+ */
+static int
+rust_write_boolean_constructor_types(FILE *stream, const char *parent,
+                                     const asn1p_expr_t *expr, int xer,
+                                     size_t *count) {
+    asn1p_expr_t *member;
+    *count = 0;
+    TQ_FOR(member, &expr->members, next) {
+        char *owned = NULL;
+        const char *type;
+        size_t packed_index;
+        int packed = rust_record_packed_boolean_index(expr, member, xer,
+                                                       &packed_index);
+        if(packed < 0) return -1;
+        if(packed) continue;
+        if(xer) {
+            type = member->expr_type == ASN_BASIC_BOOLEAN ? "bool"
+                 : member->expr_type == ASN_BASIC_INTEGER ? "i64"
+                 : member->expr_type == ASN_BASIC_REAL ? "f64" : "::std::string::String";
+            if(member->marker.flags != EM_NOMARK) {
+                if(fprintf(stream, "            Option<%s>,\n", type) < 0) return -1;
+            } else if(fprintf(stream, "            %s,\n", type) < 0) {
+                return -1;
+            }
+        } else {
+            type = rust_ber_cer_record_field_type(parent, member, &owned);
+            if(!type) return -1;
+            if(member->marker.flags == EM_OPTIONAL) {
+                if(fprintf(stream, "            Option<%s>,\n", type) < 0) {
+                    free(owned);
+                    return -1;
+                }
+            } else if(fprintf(stream, "            %s,\n", type) < 0) {
+                free(owned);
+                return -1;
+            }
+            free(owned);
+        }
+        (*count)++;
+    }
+    return 0;
+}
+
+/*
+ * Emit a transparent public tuple alias inside a private generated module.
+ * Inputs: stream/parent/expr identify the output; xer selects the field layout.
+ * Returns zero or -1. Errors: invalid indexes, types, or writes fail generation.
+ * Source: constructor tuple API. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: very wide OPTIONAL fields.
+ * Example: callers still pass `(None, None)` to the aliased tuple parameter.
+ */
+static int
+rust_write_boolean_tuple_alias(FILE *stream, const char *parent,
+                               const asn1p_expr_t *expr, int xer) {
+    size_t nonpacked_count;
+    size_t written_count;
+    int needed = rust_boolean_tuple_alias_needed(expr, xer, &nonpacked_count);
+    if(needed < 0) return -1;
+    if(!needed) return 0;
+    if(expr->_type_unique_index <= 0 || fprintf(stream,
+        "/// Constructor tuple for many nonpacked fields.\n"
+        "///\n"
+        "/// Values follow ASN.1 declaration order; callers may pass the\n"
+        "/// original tuple directly to `new`. This alias keeps the public\n"
+        "/// constructor signature lint-clean without changing tuple semantics.\n"
+        "/// Source: fixed-tree record fields. Version/date: 2026-11-01.\n"
+        "/// Responsible party: asn1c maintainers. History: wide bitset fields.\n"
+        "/// Example: `Flags::new(packed, (None, None))`.\n"
+        "mod __asn1c_fields_%d {\n"
+        "    /// Optional fields in schema order for the parent constructor.\n"
+        "    pub type Values = (\n", expr->_type_unique_index) < 0) return -1;
+    if(rust_write_boolean_constructor_types(stream, parent, expr, xer,
+                                            &written_count)
+       || written_count != nonpacked_count
+       || fputs("    );\n}\n\n", stream) == EOF) return -1;
+    return 0;
+}
+
+/*
+ * Emit constructor tuple destructuring with collision-free local indexes.
+ * Inputs: stream receives Rust; expr owns fields; xer selects packed mapping.
+ * Returns zero or -1. Errors: invalid packed indexes and writes.
+ * Source: constructor tuple fields. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: preserve nonpacked fields.
+ * Example: two tuple items bind to `__asn1c_field_0` and `_1`.
+ */
+static int
+rust_write_boolean_constructor_unpack(FILE *stream, const asn1p_expr_t *expr,
+                                      int xer, size_t count) {
+    asn1p_expr_t *member;
+    size_t index = 0;
+    if(!count) return fputs("        let () = nonpacked_fields;\n", stream) == EOF ? -1 : 0;
+    if(fputs("        let (\n", stream) == EOF) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        size_t packed_index;
+        int packed = rust_record_packed_boolean_index(expr, member, xer,
+                                                       &packed_index);
+        if(packed < 0) return -1;
+        if(packed) continue;
+        /* Four short indexed locals per line keep wide constructors lint-clean. */
+        if(fprintf(stream, "%s__asn1c_field_%zu,%s", index % 4 ? " " : "            ",
+                   index, index % 4 == 3 ? "\n" : "") < 0) return -1;
+        index++;
+    }
+    if(index % 4 && fputs("\n", stream) == EOF) return -1;
+    return fputs("        ) = nonpacked_fields;\n", stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Emit the bounded loop that packs constructor BOOLEAN values into bytes.
+ * Inputs: stream receives Rust; bytes is the private flag-array length.
+ * Returns zero or -1. Errors: output failure.
+ * Source: private Rust flag layout. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: spare flag bits remain zero.
+ * Example: five values fill one byte while its upper three bits stay clear.
+ */
+static int
+rust_write_boolean_constructor_flags(FILE *stream, size_t bytes) {
+    return fprintf(stream,
+        "        // Packed BOOLEAN state variable; zero initialization clears spare bits.\n"
+        "        let mut __asn1c_private_bits = [0_u8; %zu];\n"
+        "        // The iterator index is a state variable for declaration-order packing.\n"
+        "        for (__asn1c_bit_index, __asn1c_bit_value) in packed_values.into_iter().enumerate() {\n"
+        "            if __asn1c_bit_value {\n"
+        "                __asn1c_private_bits[__asn1c_bit_index / 8] |= "
+        "0x01_u8 << (__asn1c_bit_index %% 8);\n"
+        "            }\n"
+        "        }\n", bytes) < 0 ? -1 : 0;
+}
+
+/*
+ * Emit nonpacked constructor fields and attach the private flags array.
+ * Inputs: stream receives Rust; expr owns fields; xer selects field mapping.
+ * Returns zero or -1. Errors: invalid identifiers and write failures.
+ * Source: generated record struct. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: preserve public nonbool fields.
+ * Example: decoded tuple fields are moved into `Self`.
+ */
+static int
+rust_write_boolean_constructor_fields(FILE *stream, const asn1p_expr_t *expr,
+                                      int xer) {
+    asn1p_expr_t *member;
+    size_t index = 0;
+    TQ_FOR(member, &expr->members, next) {
+        char *field;
+        size_t packed_index;
+        int packed = rust_record_packed_boolean_index(expr, member, xer,
+                                                       &packed_index);
+        if(packed < 0) return -1;
+        if(packed) continue;
+        field = rust_identifier(member->Identifier, 1);
+        if(!field || fprintf(stream, "            %s: __asn1c_field_%zu,\n",
+                             field, index++) < 0) {
+            free(field);
+            return -1;
+        }
+        free(field);
+    }
+    return fprintf(stream, "            %s: __asn1c_private_bits,\n"
+                   "        }\n    }\n\n",
+                   RUST_BOOLEAN_STORAGE_FIELD) < 0 ? -1 : 0;
+}
+
+/*
+ * Emit the public constructor for a record with packed BOOLEAN state.
+ * Inputs: stream receives Rust; parent/expr identify type and fields; xer selects
+ * XER's Option<bool> DEFAULT representation. Returns zero or -1.
+ * Errors: invalid type paths, size overflow, and writes fail generation.
+ * Source: schema-order record constructor. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: private bitset construction.
+ * Example: `Type::new([true, false, true, false], (count, maybe))`.
+ */
+static int
+rust_write_boolean_constructor(FILE *stream, const char *parent,
+                                const asn1p_expr_t *expr, int xer) {
+    size_t count = rust_record_packed_boolean_count(expr, xer);
+    size_t nonpacked;
+    size_t bytes;
+    int tuple_alias;
+    if(count <= 3) return 0;
+    if(count > SIZE_MAX - 7) return -1;
+    tuple_alias = rust_boolean_tuple_alias_needed(expr, xer, &nonpacked);
+    if(tuple_alias < 0) return -1;
+    bytes = (count + 7) / 8;
+    if(rust_write_method_doc(stream,
+        "Construct this record from nonpacked fields and packed BOOLEAN values.",
+        "`packed_values` is in BOOLEAN order; the tuple is in field order.",
+        "Returns the complete record with unused flag bits set to zero.",
+        "This constructor does not allocate or fail.",
+        "`Self::new(packed_values, nonpacked_fields)")) return -1;
+    if(fprintf(stream, "    #[must_use]\n    pub fn new(\n"
+        "        packed_values: [bool; %zu],\n", count) < 0) return -1;
+    if(tuple_alias) {
+        if(expr->_type_unique_index <= 0 || fprintf(stream,
+            "        nonpacked_fields: __asn1c_fields_%d::Values,\n"
+            "    ) -> Self {\n", expr->_type_unique_index) < 0) return -1;
+    } else {
+        if(fputs("        nonpacked_fields: (\n", stream) == EOF
+           || rust_write_boolean_constructor_types(stream, parent, expr, xer,
+                                                    &nonpacked)
+           || fputs("        ),\n    ) -> Self {\n", stream) == EOF) return -1;
+    }
+    if(rust_write_boolean_constructor_unpack(stream, expr, xer, nonpacked)
+       || rust_write_boolean_constructor_flags(stream, bytes)
+       || fputs("        Self {\n", stream) == EOF
+       || rust_write_boolean_constructor_fields(stream, expr, xer)) return -1;
+    return 0;
+}
+
+/*
  * Purpose: map a SET field to its return type and emit its shared-reader helper.
  * Inputs: stream receives code; parent names inline types; member is validated.
  * Returns zero on success or -1 for name/type/output failures.
  * Errors: runtime reads return their typed Error; no generated context is reset.
  * Source: BER/CER SetReader API. Version/date: 2026-11-01.
- * Responsible party: asn1c maintainers. History: tagged and named SET fields.
+ * Responsible party: asn1c maintainers. History: tagged and named SET fields;
+ * numeric helper suffixes bound source width.
  * Example: decode a referenced `Small` through bounded `read_integer`.
  */
 static int
@@ -7462,16 +8682,16 @@ rust_write_set_ber_cer_decode_helper(FILE *stream, const char *parent,
     char *owned_type = NULL;
     const char *type = rust_ber_cer_record_field_type(parent, member, &owned_type);
     int ret;
-    if(!name || !type) {
+    if(!name || !type || member->_type_unique_index <= 0) {
         free(name);
         free(owned_type);
         return -1;
     }
     ret = fprintf(stream,
-        "    fn __asn1c_decode_set_field_%s(\n"
+        "    fn __asn1c_decode_set_field_%d(\n"
         "        reader: &mut ::asn1c_runtime::ber::SetReader<'_, '_, '_>) ->\n"
         "        ::core::result::Result<%s, ::asn1c_runtime::Error> {\n",
-        name, type);
+        member->_type_unique_index, type);
     if(ret >= 0 && member->expr_type == ASN_BASIC_NULL) {
         ret = fputs("        reader.read_null()?;\n        Ok(())\n", stream) == EOF ? -1 : 0;
     } else if(ret >= 0) {
@@ -7570,7 +8790,8 @@ rust_write_set_ber_cer_dispatch_arm(FILE *stream, asn1p_expr_t *member, int tagg
     char formatted_number[16];
     const char *class_name;
     int result;
-    if(!name || rust_ber_cer_member_tag(member, &tag_class, &tag_number)
+    if(!name || member->_type_unique_index <= 0
+       || rust_ber_cer_member_tag(member, &tag_class, &tag_number)
        || rust_format_tag_number(formatted_number, sizeof(formatted_number), tag_number)) {
         free(name);
         return -1;
@@ -7584,19 +8805,19 @@ rust_write_set_ber_cer_dispatch_arm(FILE *stream, asn1p_expr_t *member, int tagg
         result = fprintf(stream,
             "                    (::asn1c_runtime::ber::TagClass::%s, %s) => {\n"
             "                        __asn1c_%s = Some(\n"
-            "                            Self::__asn1c_decode_set_field_%s(\n"
+            "                            Self::__asn1c_decode_set_field_%d(\n"
             "                                %s)?,\n"
             "                        );\n"
-            "                    }\n", class_name, formatted_number, name, name,
-            reader_arg);
+            "                    }\n", class_name, formatted_number, name,
+            member->_type_unique_index, reader_arg);
     else
         result = fprintf(stream,
             "                    %s => {\n"
             "                        __asn1c_%s = Some(\n"
-            "                            Self::__asn1c_decode_set_field_%s(\n"
+            "                            Self::__asn1c_decode_set_field_%d(\n"
             "                                %s)?,\n"
             "                        );\n"
-            "                    }\n", formatted_number, name, name, reader_arg);
+            "                    }\n", formatted_number, name, member->_type_unique_index, reader_arg);
     free(name);
     return result < 0 ? -1 : 0;
 }
@@ -7615,7 +8836,10 @@ rust_write_set_ber_cer_dispatch_choice(FILE *stream, asn1p_expr_t *choice,
     asn1p_expr_t *alternative;
     char *name = rust_identifier(choice->Identifier, 1);
     int first = 1;
-    if(!name) return -1;
+    if(!name || choice->_type_unique_index <= 0) {
+        free(name);
+        return -1;
+    }
     if(fputs(
         "                    (\n"
         "                        ::asn1c_runtime::ber::TagClass::Universal,\n"
@@ -7635,9 +8859,9 @@ rust_write_set_ber_cer_dispatch_choice(FILE *stream, asn1p_expr_t *choice,
         ",\n"
         "                    ) => {\n"
         "                        __asn1c_%s = Some(\n"
-        "                            Self::__asn1c_decode_set_field_%s(\n"
+        "                            Self::__asn1c_decode_set_field_%d(\n"
         "                                %s)?);\n"
-        "                    }\n", name, name, reader_arg) < 0) {
+        "                    }\n", name, choice->_type_unique_index, reader_arg) < 0) {
         free(name);
         return -1;
     }
@@ -7691,13 +8915,18 @@ rust_write_set_ber_cer_dispatch(FILE *stream, asn1p_expr_t *expr, int tagged,
 /*
  * Emit the final SET struct and required-field checks from collected slots.
  * Parameters: stream receives Rust; expr owns validated field metadata.
- * Returns zero or -1. Source: ASN.1 required/OPTIONAL/DEFAULT semantics.
- * Version/date: 2026-11-01. Author: asn1c maintainers. History: SET support.
+ * Returns zero or -1. Errors: output writes fail.
+ * Source: ASN.1 required/OPTIONAL/DEFAULT semantics. Version/date: 2026-11-01.
+ * Author: asn1c maintainers. History: SET support.
  * Example: convert a missing DEFAULT field into its literal value.
  */
 static int
 rust_write_set_ber_cer_construct_value(FILE *stream, asn1p_expr_t *expr) {
     asn1p_expr_t *member;
+    size_t packed_count = rust_record_packed_boolean_count(expr, 0);
+    if(packed_count > 3)
+        return rust_write_record_from_slots(stream, "missing required SET field",
+                                           expr, packed_count);
     if(fputs("            let value = Self {\n", stream) == EOF) return -1;
     TQ_FOR(member, &expr->members, next) {
         char *name = rust_identifier(member->Identifier, 1);
@@ -7818,20 +9047,17 @@ rust_write_set_ber_cer_decode_method(FILE *stream, const char *parent,
 }
 
 /*
- * Emit the Rust data type and selected BER/CER methods for a flat SET.
- * Parameters: stream receives Rust; name is validated CamelCase; expr owns fields;
- * codecs selects already-validated BER/CER methods. Returns zero or -1.
- * Errors: output failure; no runtime errors are thrown during generation.
- * Source: Rust record generator. Version/date: 2026-10-31.
- * Author: asn1c maintainers. History: fourth wave; 2026-11-01 removes obsolete
- * naming lint allowances after shared type normalization. Example: emit a six-tag SET.
+ * Emit inline ASN.1 types owned by one SET field list.
+ * Inputs: stream/name/expr identify generated types; codecs selects codec helpers.
+ * Returns zero or -1. Errors: invalid nested names or child writers fail.
+ * Source: fixed SET members. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: extracted SET recursion.
+ * Example: define an inline SEQUENCE before the containing SET.
  */
 static int
-rust_write_set(FILE *stream, const char *name, asn1p_expr_t *expr,
-               int top_level, uint64_t codecs) {
+rust_write_set_nested_types(FILE *stream, const char *name,
+                            asn1p_expr_t *expr, uint64_t codecs) {
     asn1p_expr_t *member;
-    const char *derive = rust_ber_cer_has_variable_content_member(expr)
-                       ? "Debug, Eq, PartialEq" : "Clone, Debug, Eq, PartialEq";
     TQ_FOR(member, &expr->members, next) {
         if(member->expr_type == ASN_CONSTR_SEQUENCE || member->expr_type == ASN_CONSTR_SET) {
             char *nested_name = rust_nested_type_name(name, member);
@@ -7854,16 +9080,51 @@ rust_write_set(FILE *stream, const char *name, asn1p_expr_t *expr,
             if(ret) return -1;
         }
     }
-    if(fprintf(stream,
-        "/// ASN.1 SET record with direct inline fields.\n") < 0) return -1;
-    if(fprintf(stream,
-        "#[derive(%s)]\n"
-        "pub struct %s {\n", derive, name) < 0) return -1;
+    return 0;
+}
+
+/*
+ * Emit a SET struct, private bit storage, and its accessor/constructor API.
+ * Inputs: stream/name/expr identify the output; packed_count is raw bool count.
+ * Returns zero or -1. Errors: field validation and output failures propagate.
+ * Source: fixed ASN.1 SET members. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: compact BOOLEAN fields.
+ * Example: SET declaration emits fields in source order for its public API.
+ */
+static int
+rust_write_set_definition(FILE *stream, const char *name, asn1p_expr_t *expr,
+                          size_t packed_count) {
+    asn1p_expr_t *member;
+    const char *derive = rust_ber_cer_has_variable_content_member(expr)
+                       ? "Debug, Eq, PartialEq" : "Clone, Debug, Eq, PartialEq";
+    if(fprintf(stream, "/// ASN.1 SET record with direct inline fields.\n"
+        "#[derive(%s)]\npub struct %s {\n", derive, name) < 0) return -1;
     TQ_FOR(member, &expr->members, next) {
-        if(rust_write_sequence_field(stream, name, member)) return -1;
+        if(rust_write_sequence_field(stream, name, expr, member)) return -1;
     }
+    if(packed_count > 3 && rust_write_boolean_storage(stream, expr, 0)) return -1;
     if(fprintf(stream, "}\n\nimpl %s {\n", name) < 0) return -1;
-    if(rust_write_set_ber_cer(stream, name, expr, top_level, codecs)) return -1;
+    if(packed_count > 3
+       && rust_write_boolean_constructor(stream, name, expr, 0)) return -1;
+    return rust_write_boolean_accessors(stream, expr, 0);
+}
+
+/*
+ * Emit the Rust data type and selected BER/CER methods for a flat SET.
+ * Parameters: stream receives Rust; name is validated CamelCase; expr owns fields;
+ * codecs selects already-validated BER/CER methods. Returns zero or -1.
+ * Errors: output failure; no runtime errors are thrown during generation.
+ * Source: Rust record generator. Version/date: 2026-10-31.
+ * Author: asn1c maintainers. History: fourth wave; 2026-11-01 removes obsolete
+ * naming lint allowances after shared type normalization. Example: emit a six-tag SET.
+ */
+static int
+rust_write_set(FILE *stream, const char *name, asn1p_expr_t *expr,
+               int top_level, uint64_t codecs) {
+    if(rust_write_set_nested_types(stream, name, expr, codecs)
+       || rust_write_set_definition(stream, name, expr,
+                                    rust_record_packed_boolean_count(expr, 0))
+       || rust_write_set_ber_cer(stream, name, expr, top_level, codecs)) return -1;
     return fputs("}\n\n", stream) == EOF ? -1 : 0;
 }
 
@@ -7961,20 +9222,24 @@ rust_write_sequence_ber_cer_enum_decode(FILE *stream, const char *parent,
 /*
  * Emit a BOOLEAN record-writer call for one effective tag.
  * Parameters: stream/value/tag describe generated Rust; flags select API.
- * Returns zero or -1. Source: X.690 BOOLEAN. Version/date: 2026-11-01.
- * Author: asn1c maintainers. History: implicit and explicit record fields.
+ * Returns zero or -1. Errors: source writes fail.
+ * Source: X.690 BOOLEAN. Version/date: 2026-11-01. Author: asn1c maintainers.
+ * History: implicit and explicit record fields.
  * Example: emit a context-specific BOOLEAN writer call.
  */
 static int
 rust_write_ber_cer_boolean(FILE *stream, const char *value,
                            const char *tag, int tagged, int explicit_tag) {
     if(explicit_tag)
-        return fprintf(stream, "writer.write_boolean_explicit(%s, %s)?;\n",
-                       tag, value) < 0 ? -1 : 0;
+        return fprintf(stream,
+            "writer.write_boolean_explicit(\n    %s,\n    %s,\n)?;\n",
+            tag, value) < 0 ? -1 : 0;
     if(tagged)
-        return fprintf(stream, "writer.write_boolean_tagged(%s, %s)?;\n",
-                       tag, value) < 0 ? -1 : 0;
-    return fprintf(stream, "writer.write_boolean(%s)?;\n", value) < 0 ? -1 : 0;
+        return fprintf(stream,
+            "writer.write_boolean_tagged(\n    %s,\n    %s,\n)?;\n",
+            tag, value) < 0 ? -1 : 0;
+    return fprintf(stream, "writer.write_boolean(\n    %s,\n)?;\n", value) < 0
+        ? -1 : 0;
 }
 
 /*
@@ -8266,16 +9531,10 @@ rust_write_sequence_ber_cer_encode_value(FILE *stream, const char *parent,
 }
 
 /*
- * Emit one field's presence handling and primitive record encoding.
- * Parameters: stream receives Rust; parent/member identify the field; name is
- * sanitized. Returns zero or -1. Original source: X.690 SEQUENCE order.
- * Version/date: 2026-10-31. Responsible: asn1c maintainers. History: direct
- * and optional records. Example: omit an absent optional field.
- */
-/*
  * Emit OPTIONAL presence handling for one record field.
  * Parameters: stream/parent/member/name identify the generated field.
- * Returns zero or -1. Source: ASN.1 OPTIONAL. Version/date: 2026-11-01.
+ * Returns zero or -1. Errors: unsupported paths or writes fail.
+ * Source: ASN.1 OPTIONAL. Version/date: 2026-11-01.
  * Author: asn1c maintainers. History: direct, implicit, and explicit fields.
  * Example: an absent optional OCTET STRING emits no child.
  */
@@ -8290,6 +9549,17 @@ rust_write_sequence_ber_cer_encode_optional(FILE *stream, const char *parent,
         if(ret < 0) return -1;
         return fputs("        }\n", stream) == EOF ? -1 : 0;
     }
+    if(member->expr_type == ASN_BASIC_BOOLEAN) {
+        char *getter = rust_boolean_accessor_name(name, "get_");
+        if(!getter) return -1;
+        ret = fprintf(stream,
+            "        if let Some(value) =\n            self.%s()\n        {\n            ", getter);
+        free(getter);
+        if(ret < 0) return -1;
+        ret = rust_write_sequence_ber_cer_encode_value(stream, parent, member, "value");
+        if(ret < 0) return -1;
+        return fputs("        }\n", stream) == EOF ? -1 : 0;
+    }
     if(fprintf(stream, "        if let Some(value) = self.%s.as_ref() {\n            ", name) < 0)
         return -1;
     ret = rust_write_sequence_ber_cer_encode_value(
@@ -8301,7 +9571,8 @@ rust_write_sequence_ber_cer_encode_optional(FILE *stream, const char *parent,
 /*
  * Emit default omission and encoding for one record field.
  * Parameters: stream/parent/member/name identify the generated field.
- * Returns zero or -1. Source: ASN.1 DEFAULT. Version/date: 2026-11-01.
+ * Returns zero or -1. Errors: invalid defaults or writes fail.
+ * Source: ASN.1 DEFAULT. Version/date: 2026-11-01.
  * Author: asn1c maintainers. History: BOOLEAN/INTEGER record defaults.
  * Example: emit a default FALSE BOOLEAN only when its value is true.
  */
@@ -8313,11 +9584,21 @@ rust_write_sequence_ber_cer_encode_default(FILE *stream, const char *parent,
     int written;
     int ret;
     if(rust_sequence_default_literal(member, literal, sizeof(literal))) return -1;
-    written = snprintf(value, sizeof(value), "self.%s", name);
+    if(member->expr_type == ASN_BASIC_BOOLEAN) {
+        char *getter = rust_boolean_accessor_name(name, "get_");
+        if(!getter) return -1;
+        written = snprintf(value, sizeof(value), "self.%s()", getter);
+        free(getter);
+    } else {
+        written = snprintf(value, sizeof(value), "self.%s", name);
+    }
     if(written < 0 || (size_t)written >= sizeof(value)) return -1;
     if(member->expr_type == ASN_BASIC_BOOLEAN) {
         const char *condition = !strcmp(literal, "true") ? "!" : "";
-        ret = fprintf(stream, "        if %sself.%s {\n            ", condition, name);
+        char *getter = rust_boolean_accessor_name(name, "get_");
+        ret = getter ? fprintf(stream, "        if %sself.%s() {\n            ",
+                               condition, getter) : -1;
+        free(getter);
     } else {
         ret = fprintf(stream, "        if self.%s != %s {\n            ", name, literal);
     }
@@ -8338,6 +9619,7 @@ rust_write_sequence_ber_cer_encode_default(FILE *stream, const char *parent,
  */
 static const char *
 rust_ber_cer_optional_value_expression(asn1p_expr_t *member) {
+    if(member->expr_type == ASN_BASIC_BOOLEAN) return "value";
     if(member->expr_type == ASN_BASIC_OCTET_STRING) return "value.as_slice()";
     if(rust_ber_cer_named_integer_target(member)) return "value.value()";
     if(member->expr_type == ASN_STRING_IA5String
@@ -8357,7 +9639,8 @@ rust_ber_cer_optional_value_expression(asn1p_expr_t *member) {
 /*
  * Emit one required record field without presence handling.
  * Parameters: stream/parent/member/name identify the generated field.
- * Returns zero or -1. Source: ASN.1 required components. Version/date: 2026-11-01.
+ * Returns zero or -1. Errors: unsupported types or writes fail.
+ * Source: ASN.1 required components. Version/date: 2026-11-01.
  * Author: asn1c maintainers. History: direct, implicit, and explicit fields.
  * Example: borrow an OCTET STRING field for the writer.
  */
@@ -8366,7 +9649,12 @@ rust_write_sequence_ber_cer_encode_required(FILE *stream, const char *parent,
                                             asn1p_expr_t *member, const char *name) {
     char value[192];
     int written;
-    if(member->expr_type == ASN_BASIC_OCTET_STRING
+    if(member->expr_type == ASN_BASIC_BOOLEAN) {
+        char *getter = rust_boolean_accessor_name(name, "get_");
+        if(!getter) return -1;
+        written = snprintf(value, sizeof(value), "self.%s()", getter);
+        free(getter);
+    } else if(member->expr_type == ASN_BASIC_OCTET_STRING
        || (member->expr_type == ASN_BASIC_BIT_STRING
            && rust_fixed_size(member, &(size_t){0}) == 0))
         written = snprintf(value, sizeof(value), "&self.%s", name);
@@ -8504,6 +9792,8 @@ static int
 rust_write_sequence_ber_cer_decode_fields(FILE *stream, const char *parent,
                                           asn1p_expr_t *expr, int referenced) {
     asn1p_expr_t *member;
+    size_t packed_count = rust_record_packed_boolean_count(expr, 0);
+    size_t field_index = 0;
     if(rust_write_method_doc(stream,
         "Decode fields from a reader bounded by the parent record.",
         "`reader` shares the parent's input boundary and operation context.",
@@ -8517,17 +9807,24 @@ rust_write_sequence_ber_cer_decode_fields(FILE *stream, const char *parent,
         referenced ? "pub(crate) " : "") < 0) return -1;
     if(expr->members.tq_head
        && rust_write_ber_cer_reader_tag_locals(stream, expr)) return -1;
-    if(fprintf(stream, "        let %s__asn1c_next_tag = reader.next_tagged_field()?;\n"
-                "        let value = Self {\n",
+    if(fprintf(stream, "        let %s__asn1c_next_tag = reader.next_tagged_field()?;\n",
                expr->members.tq_head ? "mut " : "") < 0) return -1;
+    if(packed_count <= 3 && fputs("        let value = Self {\n", stream) == EOF) return -1;
     TQ_FOR(member, &expr->members, next) {
         int ret = member->expr_type == ASN_CONSTR_CHOICE
-            ? rust_write_sequence_ber_cer_choice_field(stream, parent, member, 1)
-            : rust_write_sequence_ber_cer_decode_field(stream, parent, member, 1);
+            ? rust_write_sequence_ber_cer_choice_field(stream, parent, member, 1,
+                  packed_count > 3, field_index)
+            : rust_write_sequence_ber_cer_decode_field(stream, parent, member, 1,
+                  packed_count > 3, field_index);
         if(ret) return -1;
+        field_index++;
+    }
+    if(packed_count > 3) {
+        if(rust_write_record_from_locals(stream, expr, 0, packed_count)) return -1;
+    } else if(fputs("        };\n", stream) == EOF) {
+        return -1;
     }
     if(fputs(
-        "        };\n"
         "        if __asn1c_next_tag.is_some() {\n"
         "            return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
         "                reason: \"unexpected trailing SEQUENCE field\",\n"
@@ -8538,14 +9835,6 @@ rust_write_sequence_ber_cer_decode_fields(FILE *stream, const char *parent,
     return 0;
 }
 
-/*
- * Emit a type-specific decode expression for a direct SEQUENCE field.
- * Parameters: stream receives Rust; parent identifies inline enums; member is
- * the field; indent is the generated line prefix. Returns zero or -1.
- * Errors: output failure; runtime validates malformed wire data. Source: X.690.
- * Version/date: 2026-10-31. Author: asn1c maintainers. History: third wave.
- * Example: decode bounded OCTET STRING into its value field.
- */
 /*
  * Emit the bounded INTEGER read expression for a record field.
  * Parameters: stream/member/indent identify generated output and schema.
@@ -8799,6 +10088,74 @@ rust_write_nested_ber_cer_decode_value(FILE *stream, const char *parent,
 }
 
 /*
+ * Emit OPTIONAL or DEFAULT handling inside a SEQUENCE tag match.
+ * Inputs: stream/parent/member identify the field; tag names its effective tag;
+ * tagged/local select reader and local initializer forms. Returns zero or -1.
+ * Errors: default metadata, nested decoding, or output failures abort emission.
+ * Source: X.690 SEQUENCE component decoding. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: extracted tag dispatch.
+ * Example: an absent OPTIONAL field becomes None without consuming a tag.
+ */
+static int
+rust_write_sequence_ber_cer_decode_present(FILE *stream, const char *parent,
+                                           asn1p_expr_t *member,
+                                           const char *tag_value, int tagged,
+                                           int local, int optional) {
+    int ret;
+    if(fprintf(stream, "if __asn1c_next_tag == %s {\n", tag_value) < 0) return -1;
+    if(rust_write_sequence_ber_cer_decode_value(stream, parent, member,
+                                                "                    ")) return -1;
+    if(fprintf(stream, "                    __asn1c_next_tag = reader.%s()?;\n",
+               tagged ? "next_tagged_field" : "next_field") < 0) return -1;
+    if(optional) {
+        if(member->expr_type == ASN_BASIC_NULL)
+            ret = fputs(local ? "                    Some(())\n                } else { None };\n"
+                              : "                    Some(())\n                } else { None },\n", stream);
+        else
+            ret = fputs(local ? "                    Some(value)\n                } else { None };\n"
+                              : "                    Some(value)\n                } else { None },\n", stream);
+    } else {
+        char literal[64];
+        if(rust_sequence_default_literal(member, literal, sizeof(literal))) return -1;
+        ret = fprintf(stream, local
+            ? "                    value\n                } else { %s };\n"
+            : "                    value\n                } else { %s },\n", literal);
+    }
+    return ret < 0 ? -1 : 0;
+}
+
+/*
+ * Emit the required-field tag check and decoded value for one SEQUENCE member.
+ * Inputs: stream/parent/member identify the field; tag names its effective tag;
+ * tagged/local select reader and local initializer forms. Returns zero or -1.
+ * Errors: nested decoding and output failures abort generation.
+ * Source: X.690 required component decoding. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: extracted required branch.
+ * Example: a missing required tag returns InvalidEncoding.
+ */
+static int
+rust_write_sequence_ber_cer_decode_required(FILE *stream, const char *parent,
+                                            asn1p_expr_t *member,
+                                            const char *tag_value, int tagged,
+                                            int local) {
+    int ret;
+    if(fprintf(stream,
+        "{\n                    if __asn1c_next_tag != %s {\n"
+        "                        return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+        "                            reason: \"missing required SEQUENCE field\",\n"
+        "                        });\n                    }\n", tag_value) < 0) return -1;
+    if(rust_write_sequence_ber_cer_decode_value(stream, parent, member,
+                                                "                    ")) return -1;
+    if(fprintf(stream, "                    __asn1c_next_tag = reader.%s()?;\n",
+               tagged ? "next_tagged_field" : "next_field") < 0) return -1;
+    ret = member->expr_type == ASN_BASIC_NULL
+        ? fputs(local ? "                };\n" : "                },\n", stream)
+        : fputs(local ? "                    value\n                };\n"
+                      : "                    value\n                },\n", stream);
+    return ret < 0 ? -1 : 0;
+}
+
+/*
  * Emit one field's tag dispatch, decoded value, and presence behavior.
  * Parameters: stream receives Rust; parent/member identify the field.
  * Returns zero or -1. Errors: output failure; runtime validates malformed
@@ -8808,15 +10165,16 @@ rust_write_nested_ber_cer_decode_value(FILE *stream, const char *parent,
  */
 static int
 rust_write_sequence_ber_cer_decode_field(FILE *stream, const char *parent,
-                                         asn1p_expr_t *member, int tagged) {
+                                         asn1p_expr_t *member, int tagged,
+                                         int local, size_t field_index) {
     char *name = rust_identifier(member->Identifier, 1);
     char tag_local[48];
     char tag_value[64];
     int tag_class;
     uint32_t tag_number;
-    const int optional = member->marker.flags == EM_OPTIONAL;
-    const int is_default = member->marker.flags == EM_DEFAULT;
     int ret;
+    int optional = member->marker.flags == EM_OPTIONAL;
+    int is_default = member->marker.flags == EM_DEFAULT;
     if(!name) return -1;
     if(rust_ber_cer_member_tag(member, &tag_class, &tag_number)) {
         free(name);
@@ -8831,41 +10189,16 @@ rust_write_sequence_ber_cer_decode_field(FILE *stream, const char *parent,
     } else {
         snprintf(tag_value, sizeof(tag_value), "Some(%u)", tag_number);
     }
-    ret = fprintf(stream, "                %s: ", name);
+    ret = local
+        ? fprintf(stream, "        let __asn1c_field_%zu = ", field_index)
+        : fprintf(stream, "                %s: ", name);
     free(name);
     if(ret < 0) return -1;
-    if(optional || is_default) {
-        if(fprintf(stream, "if __asn1c_next_tag == %s {\n", tag_value) < 0) return -1;
-        if(rust_write_sequence_ber_cer_decode_value(stream, parent, member,
-                                                    "                    ")) return -1;
-        if(fprintf(stream, "                    __asn1c_next_tag = reader.%s()?;\n",
-                   tagged ? "next_tagged_field" : "next_field") < 0)
-            return -1;
-        if(optional) {
-            ret = member->expr_type == ASN_BASIC_NULL
-                ? fputs("                    Some(())\n                } else { None },\n", stream)
-                : fputs("                    Some(value)\n                } else { None },\n", stream);
-        } else {
-            char literal[64];
-            if(rust_sequence_default_literal(member, literal, sizeof(literal))) return -1;
-            ret = fprintf(stream, "                    value\n                } else { %s },\n", literal);
-        }
-    } else {
-        if(fprintf(stream,
-            "{\n                    if __asn1c_next_tag != %s {\n"
-            "                        return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
-            "                            reason: \"missing required SEQUENCE field\",\n"
-            "                        });\n                    }\n", tag_value) < 0) return -1;
-        if(rust_write_sequence_ber_cer_decode_value(stream, parent, member,
-                                                    "                    ")) return -1;
-        if(fprintf(stream, "                    __asn1c_next_tag = reader.%s()?;\n",
-                   tagged ? "next_tagged_field" : "next_field") < 0)
-            return -1;
-        ret = member->expr_type == ASN_BASIC_NULL
-            ? fputs("                },\n", stream)
-            : fputs("                    value\n                },\n", stream);
-    }
-    return ret < 0 ? -1 : 0;
+    if(optional || is_default)
+        return rust_write_sequence_ber_cer_decode_present(stream, parent, member,
+            tag_value, tagged, local, optional);
+    return rust_write_sequence_ber_cer_decode_required(stream, parent, member,
+                                                        tag_value, tagged, local);
 }
 
 /*
@@ -8901,6 +10234,59 @@ rust_write_inline_choice_tag_condition(FILE *stream, asn1p_expr_t *member, int m
 }
 
 /*
+ * Emit the required or OPTIONAL tag guard for one CHOICE field.
+ * Inputs: stream receives Rust; member supplies its resolved alternatives;
+ * optional selects None handling. Returns zero or -1. Errors: tag output fails.
+ * Source: X.690 CHOICE component dispatch. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: choice-field decomposition.
+ * Example: absent OPTIONAL CHOICE yields None without reading payload.
+ */
+static int
+rust_write_sequence_ber_cer_choice_guard(FILE *stream, asn1p_expr_t *member,
+                                         int optional) {
+    if(optional) {
+        if(fputs("if ", stream) == EOF
+           || rust_write_inline_choice_tag_condition(stream, member, 0)
+           || fputs(" {\n", stream) == EOF) return -1;
+        return 0;
+    }
+    if(fputs("{\n                    if ", stream) == EOF
+       || rust_write_inline_choice_tag_condition(stream, member, 1)
+       || fputs(" {\n                        return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+                "                            reason: \"missing required SEQUENCE CHOICE\",\n"
+                "                        });\n                    }\n", stream) == EOF)
+        return -1;
+    return 0;
+}
+
+/*
+ * Emit one CHOICE runtime read and its OPTIONAL/required initializer ending.
+ * Inputs: stream receives Rust; nested_type and count describe the arm enum;
+ * optional/local select initializer form. Returns zero or -1.
+ * Errors: output failures abort generation; runtime errors propagate in Rust.
+ * Source: X.690 CHOICE dispatch. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: choice-field decomposition.
+ * Example: decode one selected arm after matching its effective tag.
+ */
+static int
+rust_write_sequence_ber_cer_choice_value(FILE *stream, const char *nested_type,
+                                         size_t count, int optional, int local) {
+    int ret = fprintf(stream,
+        "                    let value = %s::from_runtime_value(\n"
+        "                        reader.read_choice()?)%s;\n"
+        "                    __asn1c_next_tag = reader.next_tagged_field()?;\n",
+        nested_type, count == 3 ? "" : "?");
+    if(ret < 0) return -1;
+    if(optional)
+        ret = fputs(local ? "                    Some(value)\n                } else { None };\n"
+                           : "                    Some(value)\n                } else { None },\n", stream);
+    else
+        ret = fputs(local ? "                    value\n                };\n"
+                           : "                    value\n                },\n", stream);
+    return ret < 0 ? -1 : 0;
+}
+
+/*
  * Purpose: emit one required or OPTIONAL CHOICE field in a SEQUENCE decoder.
  * Inputs: stream/parent/member identify output and the validated field.
  * Returns zero or -1. Errors: allocation and output failures abort generation.
@@ -8910,7 +10296,8 @@ rust_write_inline_choice_tag_condition(FILE *stream, asn1p_expr_t *member, int m
  */
 static int
 rust_write_sequence_ber_cer_choice_field(FILE *stream, const char *parent,
-                                         asn1p_expr_t *member, int tagged) {
+                                         asn1p_expr_t *member, int tagged,
+                                         int local, size_t field_index) {
     char *name = rust_identifier(member->Identifier, 1);
     char *nested_type = rust_nested_type_name(parent, member);
     asn1p_expr_t *alternative;
@@ -8924,29 +10311,14 @@ rust_write_sequence_ber_cer_choice_field(FILE *stream, const char *parent,
         free(nested_type);
         return -1;
     }
-    ret = fprintf(stream, "                %s: ", name);
-    if(ret >= 0 && optional) {
-        ret = fputs("if ", stream) == EOF ? -1 : 0;
-        if(ret >= 0) ret = rust_write_inline_choice_tag_condition(stream, member, 0);
-        if(ret >= 0) ret = fputs(" {\n", stream) == EOF ? -1 : 0;
-    }
-    if(ret >= 0 && !optional) ret = fputs(" {\n"
-        "                    if ", stream) == EOF ? -1 : 0;
-    if(ret >= 0 && !optional)
-        ret = rust_write_inline_choice_tag_condition(stream, member, 1);
-    if(ret >= 0 && !optional) ret = fputs(" {\n"
-        "                        return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
-        "                            reason: \"missing required SEQUENCE CHOICE\",\n"
-        "                        });\n                    }\n", stream) == EOF ? -1 : 0;
-    if(ret >= 0) ret = fprintf(stream,
-        "                    let value = %s::from_runtime_value(\n"
-        "                        reader.read_choice()?)%s;\n"
-        "                    __asn1c_next_tag = reader.next_tagged_field()?;\n",
-        nested_type, count == 3 ? "" : "?");
-    if(ret >= 0) ret = optional
-        ? fputs("                    Some(value)\n                } else { None },\n", stream)
-        : fputs("                    value\n                },\n", stream);
+    ret = local
+        ? fprintf(stream, "        let __asn1c_field_%zu = ", field_index)
+        : fprintf(stream, "                %s: ", name);
     free(name);
+    if(ret >= 0) ret = rust_write_sequence_ber_cer_choice_guard(stream,
+                                                                 member, optional);
+    if(ret >= 0) ret = rust_write_sequence_ber_cer_choice_value(stream,
+        nested_type, count, optional, local);
     free(nested_type);
     return ret < 0 ? -1 : 0;
 }
@@ -8960,18 +10332,150 @@ rust_write_sequence_ber_cer_choice_field(FILE *stream, const char *parent,
  * Example: an absent OPTIONAL BOOLEAN emits no map pair.
  */
 static int
+rust_write_sequence_cbor_boolean_field(FILE *stream, asn1p_expr_t *member) {
+    char *field = rust_identifier(member->Identifier, 1);
+    char *getter = field ? rust_boolean_accessor_name(field, "get_") : NULL;
+    int optional = member->marker.flags == EM_OPTIONAL;
+    int ret = -1;
+    if(!getter) goto cleanup;
+    if(optional) {
+        ret = fprintf(stream, "        if let Some(value) =\n            self.%s()\n        {\n", getter);
+        if(ret < 0) goto cleanup;
+        ret = fprintf(stream,
+            "            entries.push((\"%s\", "
+            "::asn1c_runtime::encode_boolean_cbor(value, limits)?));\n"
+            "        }\n", member->Identifier);
+    } else {
+        ret = fprintf(stream,
+            "        entries.push((\n            \"%s\",\n"
+            "            ::asn1c_runtime::encode_boolean_cbor(\n"
+            "                self.%s(),\n                limits,\n            )?,\n"
+            "        ));\n", member->Identifier, getter);
+    }
+cleanup:
+    free(field);
+    free(getter);
+    return ret < 0 ? -1 : 0;
+}
+
+/*
+ * Emit one bounded integer CBOR field value.
+ * Inputs: stream receives Rust; member supplies checked range; value is its Rust expression.
+ * Returns zero or -1. Errors: invalid ranges and output failures abort generation.
+ * Source: CBOR integer field mapping. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: extracted field dispatch.
+ * Example: encode a bounded INTEGER with its declared lower and upper limits.
+ */
+static int
+rust_write_sequence_cbor_encode_integer(FILE *stream, asn1p_expr_t *member,
+                                        const char *value) {
+    int64_t lower, upper;
+    char low[64], high[64];
+    if(rust_integer_bounds(member, &lower, &upper)
+       || rust_format_bound(low, sizeof(low), lower)
+       || rust_format_bound(high, sizeof(high), upper)) return -1;
+    return fprintf(stream,
+        "            entries.push((\"%s\", "
+        "::asn1c_runtime::encode_integer_cbor(%s%s, %s, %s, limits)?));\n",
+        member->Identifier, member->marker.flags == EM_OPTIONAL ? "*" : "",
+        value, low, high) < 0 ? -1 : 0;
+}
+
+/*
+ * Emit one fixed or bounded OCTET/BIT STRING CBOR field value.
+ * Inputs: stream receives Rust; member supplies validated SIZE; value is a field.
+ * Returns zero or -1. Errors: unsupported SIZE and output failures abort.
+ * Source: CBOR string mapping. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: extracted field dispatch.
+ * Example: a fixed BIT STRING preserves its meaningful bit length.
+ */
+static int
+rust_write_sequence_cbor_encode_string(FILE *stream, asn1p_expr_t *member,
+                                       const char *value) {
+    size_t lower, upper;
+    int fixed = !rust_fixed_size(member, &lower);
+    if(fixed) upper = lower;
+    else if(rust_bounded_size(member, &lower, &upper)) return -1;
+    if(member->expr_type == ASN_BASIC_OCTET_STRING)
+        return fprintf(stream,
+            "            entries.push((\"%s\", ::asn1c_runtime::cbor::"
+            "encode_octet_string_cbor(%s.as_slice(), %zu, %zu, limits)?));\n",
+            member->Identifier, value, lower, upper) < 0 ? -1 : 0;
+    if(fixed)
+        return fprintf(stream,
+            "            entries.push((\"%s\", ::asn1c_runtime::cbor::"
+            "encode_bit_string_cbor(%s.as_slice(), %zu, %zu, %zu, limits)?));\n",
+            member->Identifier, value, lower, lower, upper) < 0 ? -1 : 0;
+    return fprintf(stream,
+        "            entries.push((\"%s\", ::asn1c_runtime::cbor::"
+        "encode_bit_string_cbor(%s.as_bytes(), %s.bit_len(), %zu, %zu, limits)?));\n",
+        member->Identifier, value, value, lower, upper) < 0 ? -1 : 0;
+}
+
+/*
+ * Dispatch a non-BOOLEAN CBOR field to its validated scalar/string writer.
+ * Inputs: stream receives Rust; member supplies shape; value is a Rust expression.
+ * Returns zero or -1. Errors: unsupported fields and output failures abort.
+ * Source: direct SEQUENCE CBOR fields. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: bounded emitter decomposition.
+ * Example: encode NULL, INTEGER, ANY, OCTET STRING, or BIT STRING.
+ */
+static int
+rust_write_sequence_cbor_encode_value(FILE *stream, asn1p_expr_t *member,
+                                      const char *value) {
+    if(member->expr_type == ASN_BASIC_NULL)
+        return fprintf(stream, "            entries.push((\"%s\", "
+            "::asn1c_runtime::encode_null_cbor(limits)?));\n",
+            member->Identifier) < 0 ? -1 : 0;
+    if(member->expr_type == ASN_BASIC_INTEGER)
+        return rust_write_sequence_cbor_encode_integer(stream, member, value);
+    if(member->expr_type == ASN_TYPE_ANY)
+        return fprintf(stream, "            entries.push((\"%s\", "
+            "::asn1c_runtime::cbor::encode_any_cbor(%s.as_slice(), limits)?));\n",
+            member->Identifier, value) < 0 ? -1 : 0;
+    if(member->expr_type == ASN_BASIC_OCTET_STRING
+       || member->expr_type == ASN_BASIC_BIT_STRING)
+        return rust_write_sequence_cbor_encode_string(stream, member, value);
+    return -1;
+}
+
+/*
+ * Emit one flat SEQUENCE CBOR field and its optional guard.
+ * Inputs: stream receives Rust; member is a preflight-validated field.
+ * Returns zero or -1. Errors: unsupported types and output failures abort.
+ * Source: CBOR text-key map mapping. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: BOOLEAN accessor support.
+ * Example: absent OPTIONAL fields produce no map pair.
+ */
+static int
 rust_write_sequence_cbor_encode_field(FILE *stream, asn1p_expr_t *member) {
     char *name = rust_identifier(member->Identifier, 1);
-    const char *value = member->marker.flags == EM_OPTIONAL ? "value" : NULL;
     char expression[256];
+    const char *value;
     int ret;
     if(!name) return -1;
-    if(member->marker.flags == EM_OPTIONAL
-       && fprintf(stream, "        if let Some(value) = &self.%s {\n", name) < 0) {
+    if(member->expr_type == ASN_BASIC_BOOLEAN) {
         free(name);
-        return -1;
+        return rust_write_sequence_cbor_boolean_field(stream, member);
     }
-    if(!value) {
+    if(member->marker.flags == EM_OPTIONAL) {
+        char guard[256];
+        int written = snprintf(guard, sizeof(guard),
+                               "        if let Some(value) = &self.%s {", name);
+        if(written < 0 || (size_t)written >= sizeof(guard)) {
+            free(name);
+            return -1;
+        }
+        if((size_t)written <= 120) ret = fprintf(stream, "%s\n", guard);
+        else ret = fprintf(stream, "        if let Some(value) =\n"
+                           "            &self.%s\n        {\n", name);
+        if(ret < 0) {
+            free(name);
+            return -1;
+        }
+    }
+    if(member->marker.flags == EM_OPTIONAL) value = "value";
+    else {
         int written = snprintf(expression, sizeof(expression), "self.%s", name);
         if(written < 0 || (size_t)written >= sizeof(expression)) {
             free(name);
@@ -8979,52 +10483,7 @@ rust_write_sequence_cbor_encode_field(FILE *stream, asn1p_expr_t *member) {
         }
         value = expression;
     }
-    if(member->expr_type == ASN_BASIC_BOOLEAN)
-        ret = fprintf(stream, "            entries.push((\"%s\", ::asn1c_runtime::encode_boolean_cbor("
-                      "%s%s, limits)?));\n", member->Identifier,
-                      member->marker.flags == EM_OPTIONAL ? "*" : "", value);
-    else if(member->expr_type == ASN_BASIC_NULL)
-        ret = fprintf(stream, "            entries.push((\"%s\", "
-                      "::asn1c_runtime::encode_null_cbor(limits)?));\n", member->Identifier);
-    else if(member->expr_type == ASN_BASIC_INTEGER) {
-        int64_t lower, upper;
-        char low[64], high[64];
-        if(rust_integer_bounds(member, &lower, &upper)
-           || rust_format_bound(low, sizeof(low), lower)
-           || rust_format_bound(high, sizeof(high), upper)) ret = -1;
-        else ret = fprintf(stream, "            entries.push((\"%s\", "
-                           "::asn1c_runtime::encode_integer_cbor(%s%s, %s, %s, limits)?));\n",
-                           member->Identifier, member->marker.flags == EM_OPTIONAL ? "*" : "",
-                           value, low, high);
-    } else if(member->expr_type == ASN_TYPE_ANY)
-        ret = fprintf(stream, "            entries.push((\"%s\", "
-                      "::asn1c_runtime::cbor::encode_any_cbor(%s.as_slice(), limits)?));\n",
-                      member->Identifier, value);
-    else if(member->expr_type == ASN_BASIC_OCTET_STRING
-            || member->expr_type == ASN_BASIC_BIT_STRING) {
-        size_t lower, upper;
-        int fixed = !rust_fixed_size(member, &lower);
-        if(fixed) upper = lower;
-        else if(rust_bounded_size(member, &lower, &upper)) {
-            free(name);
-            return -1;
-        }
-        if(member->expr_type == ASN_BASIC_OCTET_STRING)
-            ret = fprintf(stream,
-                "            entries.push((\"%s\", ::asn1c_runtime::cbor::"
-                "encode_octet_string_cbor(%s.as_slice(), %zu, %zu, limits)?));\n",
-                member->Identifier, value, lower, upper);
-        else if(fixed)
-            ret = fprintf(stream,
-                "            entries.push((\"%s\", ::asn1c_runtime::cbor::"
-                "encode_bit_string_cbor(%s.as_slice(), %zu, %zu, %zu, limits)?));\n",
-                member->Identifier, value, lower, lower, upper);
-        else ret = fprintf(stream,
-                "            entries.push((\"%s\", ::asn1c_runtime::cbor::"
-                "encode_bit_string_cbor(%s.as_bytes(), %s.bit_len(), %zu, %zu, limits)?));\n",
-                member->Identifier, value, value, lower, upper);
-    }
-    else ret = -1;
+    ret = rust_write_sequence_cbor_encode_value(stream, member, value);
     if(ret >= 0 && member->marker.flags == EM_OPTIONAL)
         ret = fputs("        }\n", stream) == EOF ? -1 : 0;
     free(name);
@@ -9089,15 +10548,15 @@ rust_write_sequence_cbor_decode_field(FILE *stream, asn1p_expr_t *member) {
 }
 
 /*
- * Purpose: emit CBOR map encoder and decoder methods for one flat SEQUENCE.
- * Source: repository C CBOR SEQUENCE mapping. Version/date: 2026-10-30.
- * Inputs: stream receives Rust; expr owns checked members. Returns zero or -1.
- * Errors: output failure or invalid default literal. Author: maintainers.
- * History: added direct primitive, OPTIONAL and ANY CBOR record support.
- * Example: encode a record as a definite map with declaration-order keys.
+ * Emit the public SEQUENCE CBOR map encoder.
+ * Inputs: stream receives Rust; expr owns the checked direct fields.
+ * Returns zero or -1. Errors: documentation, allocation code, and writes fail.
+ * Source: C SEQUENCE CBOR mapping. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: extracted map encoder.
+ * Example: encode fields in declaration order as text-key pairs.
  */
 static int
-rust_write_sequence_cbor(FILE *stream, asn1p_expr_t *expr) {
+rust_write_sequence_cbor_encode_method(FILE *stream, asn1p_expr_t *expr) {
     asn1p_expr_t *member;
     size_t count = 0;
     TQ_FOR(member, &expr->members, next) count++;
@@ -9116,39 +10575,74 @@ rust_write_sequence_cbor(FILE *stream, asn1p_expr_t *expr) {
     TQ_FOR(member, &expr->members, next) {
         if(rust_write_sequence_cbor_encode_field(stream, member)) return -1;
     }
-    if(fputs("        ::asn1c_runtime::cbor::encode_map(&entries, limits)\n    }\n", stream) == EOF)
-        return -1;
-    if(rust_write_method_doc(stream, "Decode one CBOR SEQUENCE map prefix.",
-        "`input` supplies encoded bytes; `limits` bounds the complete map.",
-        "Returns validated fields and prefix consumption.",
-        "Returns an error for malformed, duplicate, or missing fields and resource exhaustion.",
-        "`let value = Type::decode_cbor(input, &Default::default())?;")) return -1;
-    if(fputs(
-        "    pub fn decode_cbor(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
-        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
-        "        let decoded = ::asn1c_runtime::cbor::decode_map(input, limits)?;\n"
-        "        let consumed_bits = decoded.consumed_bits;\n"
-        "        let consumed_bytes = decoded.consumed_bytes;\n", stream) == EOF) return -1;
+    return fputs("        ::asn1c_runtime::cbor::encode_map(&entries, limits)\n"
+                 "    }\n\n", stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Emit Option-typed CBOR decode slots for each schema field.
+ * Inputs: stream receives Rust; expr owns the preflight-validated members.
+ * Returns zero or -1. Errors: invalid names and output failures abort emission.
+ * Source: CBOR map decoder slots. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: packed BOOLEAN construction.
+ * Example: a BOOLEAN field gets an `Option<bool>` slot.
+ */
+static int
+rust_write_sequence_cbor_decode_slots(FILE *stream, asn1p_expr_t *expr) {
+    asn1p_expr_t *member;
     TQ_FOR(member, &expr->members, next) {
         char *name = rust_identifier(member->Identifier, 1);
         const char *type = member->expr_type == ASN_BASIC_BOOLEAN ? "bool"
-                           : member->expr_type == ASN_BASIC_NULL ? "()"
-                           : member->expr_type == ASN_BASIC_INTEGER ? "i64"
-                           : member->expr_type == ASN_BASIC_BIT_STRING
-                             && rust_fixed_size(member, &(size_t){0})
-                             ? "::asn1c_runtime::BitStringValue"
-                           : "::std::vec::Vec<u8>";
-        int ret = name ? fprintf(stream, "        let mut __asn1c_%s: Option<%s> = None;\n", name, type) : -1;
+                         : member->expr_type == ASN_BASIC_NULL ? "()"
+                         : member->expr_type == ASN_BASIC_INTEGER ? "i64"
+                         : member->expr_type == ASN_BASIC_BIT_STRING
+                           && rust_fixed_size(member, &(size_t){0})
+                           ? "::asn1c_runtime::BitStringValue"
+                         : "::std::vec::Vec<u8>";
+        int ret = name ? fprintf(stream,
+            "        let mut __asn1c_%s: Option<%s> = None;\n", name, type) : -1;
         free(name);
         if(ret < 0) return -1;
     }
-    if(count) {
-        if(fputs("        for entry in decoded.value {\n            match entry.key {\n", stream) == EOF) return -1;
-        TQ_FOR(member, &expr->members, next) {
-            if(rust_write_sequence_cbor_decode_field(stream, member)) return -1;
-        }
-        if(fputs("                _ => {}\n            }\n        }\n", stream) == EOF) return -1;
-    } else if(fputs("        let _ = decoded.value;\n", stream) == EOF) return -1;
+    return 0;
+}
+
+/*
+ * Emit the CBOR text-key dispatch loop or discard an empty map value.
+ * Inputs: stream receives Rust; expr owns members; count selects empty handling.
+ * Returns zero or -1. Errors: child-arm or output failures abort.
+ * Source: CBOR SEQUENCE key dispatch. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: extracted map dispatch.
+ * Example: each recognized text key fills exactly one field slot.
+ */
+static int
+rust_write_sequence_cbor_decode_map(FILE *stream, asn1p_expr_t *expr,
+                                    size_t count) {
+    asn1p_expr_t *member;
+    if(!count) return fputs("        let _ = decoded.value;\n", stream) == EOF ? -1 : 0;
+    if(fputs("        for entry in decoded.value {\n            match entry.key {\n", stream) == EOF)
+        return -1;
+    TQ_FOR(member, &expr->members, next) {
+        if(rust_write_sequence_cbor_decode_field(stream, member)) return -1;
+    }
+    return fputs("                _ => {}\n            }\n        }\n", stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Construct a CBOR-decoded SEQUENCE from required, OPTIONAL, and DEFAULT slots.
+ * Inputs: stream receives Rust; expr owns members; packed_count selects bitset API.
+ * Returns zero or -1. Errors: malformed defaults, names, and output failures.
+ * Source: decoded CBOR map slots. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: packed field construction.
+ * Example: the packed constructor receives BOOLEAN values in declaration order.
+ */
+static int
+rust_write_sequence_cbor_construct(FILE *stream, asn1p_expr_t *expr,
+                                   size_t packed_count) {
+    asn1p_expr_t *member;
+    if(packed_count > 3)
+        return rust_write_record_from_slots(stream,
+            "missing required CBOR SEQUENCE field", expr, packed_count);
     if(fputs("        let value = Self {\n", stream) == EOF) return -1;
     TQ_FOR(member, &expr->members, next) {
         char *name = rust_identifier(member->Identifier, 1);
@@ -9168,9 +10662,56 @@ rust_write_sequence_cbor(FILE *stream, asn1p_expr_t *expr) {
         free(name);
         if(ret < 0) return -1;
     }
-    return fputs("        };\n        Ok(::asn1c_runtime::Decoded {\n"
+    return fputs("        };\n", stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Emit the complete public CBOR map decoder method.
+ * Inputs: stream receives Rust; expr owns the validated direct fields.
+ * Returns zero or -1. Errors: documentation, slot, and output failures abort.
+ * Source: CBOR prefix decoder. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: extracted map decoder.
+ * Example: decode a map prefix and preserve consumed lengths.
+ */
+static int
+rust_write_sequence_cbor_decode_method(FILE *stream, asn1p_expr_t *expr,
+                                       size_t count, size_t packed_count) {
+    if(rust_write_method_doc(stream, "Decode one CBOR SEQUENCE map prefix.",
+        "`input` supplies encoded bytes; `limits` bounds the complete map.",
+        "Returns validated fields and prefix consumption.",
+        "Returns an error for malformed, duplicate, or missing fields and resource exhaustion.",
+        "`let value = Type::decode_cbor(input, &Default::default())?;")) return -1;
+    if(fputs("    pub fn decode_cbor(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+        "        let decoded = ::asn1c_runtime::cbor::decode_map(input, limits)?;\n"
+        "        let consumed_bits = decoded.consumed_bits;\n"
+        "        let consumed_bytes = decoded.consumed_bytes;\n", stream) == EOF) return -1;
+    if(rust_write_sequence_cbor_decode_slots(stream, expr)
+       || rust_write_sequence_cbor_decode_map(stream, expr, count)
+       || rust_write_sequence_cbor_construct(stream, expr, packed_count)) return -1;
+    return fputs("        Ok(::asn1c_runtime::Decoded {\n"
                  "            value, consumed_bits, consumed_bytes,\n"
                  "        })\n    }\n", stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Purpose: emit CBOR map encoder and decoder methods for one flat SEQUENCE.
+ * Source: repository C CBOR SEQUENCE mapping. Version/date: 2026-10-30.
+ * Inputs: stream receives Rust; expr owns checked members. Returns zero or -1.
+ * Errors: output failure or invalid default literal. Author: maintainers.
+ * History: added direct primitive, OPTIONAL and ANY CBOR record support.
+ * Example: encode a record as a definite map with declaration-order keys.
+ */
+static int
+rust_write_sequence_cbor(FILE *stream, asn1p_expr_t *expr) {
+    asn1p_expr_t *member;
+    size_t count = 0;
+    size_t packed_count = rust_record_packed_boolean_count(expr, 0);
+    TQ_FOR(member, &expr->members, next) count++;
+    if(rust_write_sequence_cbor_encode_method(stream, expr)
+       || rust_write_sequence_cbor_decode_method(stream, expr, count,
+                                                 packed_count)) return -1;
+    return 0;
 }
 
 /*
@@ -9677,18 +11218,32 @@ rust_write_all_sequences(FILE *stream, const char *name, asn1p_expr_t *expr,
 
 /*
  * Emit one documented public Rust SEQUENCE field.
- * Parameters: stream receives Rust; member is a validated direct primitive.
+ * Parameters: stream receives Rust; parent names inline types; record owns the
+ * field layout; member is a validated direct field.
  * Returns zero or -1 on output failure. Original source: Rust backend.
  * Version/date: 0.2.0, 2026-10-30. Responsible party: asn1c maintainers.
  * History: flat UPER SEQUENCE generation. Example: emit a BOOLEAN field.
  */
 static int
 rust_write_sequence_field(FILE *stream, const char *parent,
-                         asn1p_expr_t *member) {
+                          asn1p_expr_t *record, asn1p_expr_t *member) {
     char *name = rust_identifier(member->Identifier, 1);
     char *owned_type = NULL;
     const char *type = rust_ber_cer_record_field_type(parent, member, &owned_type);
+    size_t packed_index;
+    int packed = rust_record_packed_boolean_index(record, member, 0,
+                                                   &packed_index);
     int ret = -1;
+    if(packed < 0) {
+        free(name);
+        free(owned_type);
+        return -1;
+    }
+    if(packed) {
+        free(name);
+        free(owned_type);
+        return 0;
+    }
     if(name && type) {
         ret = member->marker.flags == EM_OPTIONAL
             ? fprintf(stream,
@@ -9705,6 +11260,130 @@ rust_write_sequence_field(FILE *stream, const char *parent,
 }
 
 /*
+ * Emit one required BOOLEAN UPER write, wrapping long generated accessor names.
+ * Inputs: stream receives Rust; getter is the validated method identifier.
+ * Returns zero or -1. Errors: malformed names or output failures.
+ * Source: X.691 BOOLEAN field encoding. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: packed field API access.
+ * Example: emit a compact call or wrap an 80-character accessor.
+ */
+static int
+rust_write_sequence_encode_boolean(FILE *stream, const char *getter) {
+    char line[256];
+    int written = snprintf(line, sizeof(line),
+                           "        writer.write_boolean(self.%s())?;", getter);
+    if(written < 0 || (size_t)written >= sizeof(line)) return -1;
+    if((size_t)written <= 120) return fprintf(stream, "%s\n", line) < 0 ? -1 : 0;
+    return fprintf(stream,
+        "        writer.write_boolean(\n            self.%s(),\n        )?;\n", getter) < 0
+        ? -1 : 0;
+}
+
+/*
+ * Emit a nested SEQUENCE or inline ENUMERATED shared-cursor write.
+ * Inputs: stream receives Rust; member/name identify the validated field.
+ * Returns zero or -1. Errors: output failures abort generation.
+ * Source: nested X.691 record fields. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: UPER field dispatch split.
+ * Example: OPTIONAL children encode only when their slot is present.
+ */
+static int
+rust_write_sequence_encode_composite(FILE *stream, asn1p_expr_t *member,
+                                     const char *name) {
+    if(member->marker.flags == EM_OPTIONAL)
+        return fprintf(stream,
+            "        if let Some(value) = self.%s.as_ref() {\n"
+            "            value.encode_uper_fields(writer)?;\n"
+            "        }\n", name) < 0 ? -1 : 0;
+    return fprintf(stream, "        self.%s.encode_uper_fields(writer)?;\n", name) < 0
+        ? -1 : 0;
+}
+
+/*
+ * Emit a containing-type UPER write through the validated inner primitive.
+ * Inputs: stream receives Rust; member/name identify the fixed field.
+ * Returns zero or -1. Errors: missing inner bounds and output failures abort.
+ * Source: X.691 contained-type encoding. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: UPER field dispatch split.
+ * Example: a contained BOOLEAN is converted to its bounded integer form.
+ */
+static int
+rust_write_sequence_encode_containing(FILE *stream, asn1p_expr_t *member,
+                                      const char *name) {
+    asn1p_expr_t *inner = rust_contained_primitive(member->module, member);
+    int64_t lower = 0, upper = 1;
+    char low[64], high[64];
+    int is_boolean = inner && inner->expr_type == ASN_BASIC_BOOLEAN;
+    if(!inner || (!is_boolean && rust_integer_bounds(inner, &lower, &upper))
+       || rust_format_bound(low, sizeof(low), lower)
+       || rust_format_bound(high, sizeof(high), upper)) return -1;
+    if(member->marker.flags == EM_OPTIONAL)
+        return fprintf(stream,
+            "        if let Some(value) = self.%s.as_ref() {\n"
+            "            ::asn1c_runtime::uper_cursor::write_containing_uper(\n"
+            "                writer, %s*value%s, %s, %s, %s)?;\n"
+            "        }\n", name, is_boolean ? "i64::from(" : "",
+            is_boolean ? ")" : "", low, high,
+            member->expr_type == ASN_BASIC_OCTET_STRING ? "true" : "false") < 0
+            ? -1 : 0;
+    return fprintf(stream,
+        "        ::asn1c_runtime::uper_cursor::write_containing_uper(\n"
+        "            writer, %sself.%s%s, %s, %s, %s)?;\n",
+        is_boolean ? "i64::from(" : "", name, is_boolean ? ")" : "",
+        low, high, member->expr_type == ASN_BASIC_OCTET_STRING ? "true" : "false") < 0
+        ? -1 : 0;
+}
+
+/*
+ * Emit an uncontained direct primitive UPER field write.
+ * Inputs: stream receives Rust; member/name identify the validated field.
+ * Returns zero or -1. Errors: bounds, names, and output failures abort emission.
+ * Source: X.691 primitive record fields. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: UPER field dispatch split.
+ * Example: BOOLEAN fields read through their generated accessor.
+ */
+static int
+rust_write_sequence_encode_direct(FILE *stream, asn1p_expr_t *member,
+                                  const char *name) {
+    /* ANY owns opaque bytes and must keep its framing before scalar dispatch. */
+    if(member->expr_type == ASN_TYPE_ANY) {
+        int written = member->marker.flags == EM_OPTIONAL
+            ? fprintf(stream,
+                "        if let Some(value) = self.%s.as_ref() {\n"
+                "            ::asn1c_runtime::uper_cursor::write_any_uper(writer, value)?;\n"
+                "        }\n", name)
+            : fprintf(stream,
+                "        ::asn1c_runtime::uper_cursor::write_any_uper(writer, &self.%s)?;\n", name);
+        return written < 0 ? -1 : 0;
+    }
+    if(member->marker.flags == EM_OPTIONAL)
+        return rust_write_sequence_encode_optional(stream, member, name);
+    if(member->marker.flags == EM_DEFAULT)
+        return rust_write_sequence_encode_default(stream, member, name);
+    if(member->expr_type == ASN_BASIC_BOOLEAN) {
+        char *getter = rust_boolean_accessor_name(name, "get_");
+        int ret = getter ? rust_write_sequence_encode_boolean(stream, getter) : -1;
+        free(getter);
+        return ret;
+    }
+    if(member->expr_type == ASN_BASIC_NULL)
+        return fputs("        writer.write_null()?;\n", stream) == EOF ? -1 : 0;
+    if(member->expr_type == ASN_BASIC_OCTET_STRING
+       || member->expr_type == ASN_BASIC_BIT_STRING)
+        return rust_write_sequence_encode_string_field(stream, member, name);
+    {
+        int64_t lower, upper;
+        char low[64], high[64];
+        if(rust_integer_bounds(member, &lower, &upper)
+           || rust_format_bound(low, sizeof(low), lower)
+           || rust_format_bound(high, sizeof(high), upper)) return -1;
+        return fprintf(stream,
+            "        writer.write_integer(self.%s, %s, %s)?;\n",
+            name, low, high) < 0 ? -1 : 0;
+    }
+}
+
+/*
  * Emit one cursor write call for a validated SEQUENCE field.
  * Parameters: stream receives Rust; member supplies type and field name.
  * Returns zero or -1 on output failure. Original source: Rust backend.
@@ -9714,67 +11393,17 @@ rust_write_sequence_field(FILE *stream, const char *parent,
 static int
 rust_write_sequence_encode_field(FILE *stream, asn1p_expr_t *member) {
     char *name = rust_identifier(member->Identifier, 1);
-    int ret = -1;
+    int ret;
     if(!name) return -1;
-    if(member->expr_type == ASN_CONSTR_SEQUENCE && !member->members.tq_head) {
+    if(member->expr_type == ASN_CONSTR_SEQUENCE && !member->members.tq_head)
         ret = 0;
-    } else if(member->expr_type == ASN_CONSTR_SEQUENCE
-              || member->expr_type == ASN_BASIC_ENUMERATED) {
-        if(member->marker.flags == EM_OPTIONAL) {
-            ret = fprintf(stream,
-                "        if let Some(value) = self.%s.as_ref() {\n"
-                "            value.encode_uper_fields(writer)?;\n"
-                "        }\n", name);
-        } else {
-            ret = fprintf(stream,
-                "        self.%s.encode_uper_fields(writer)?;\n", name);
-        }
-    } else if(rust_containing_node(member->combined_constraints, 0)) {
-        asn1p_expr_t *inner = rust_contained_primitive(member->module, member);
-        int64_t lower = 0, upper = 1;
-        char low[64], high[64];
-        int is_boolean = inner && inner->expr_type == ASN_BASIC_BOOLEAN;
-        if(inner && (is_boolean || !rust_integer_bounds(inner, &lower, &upper))
-           && !rust_format_bound(low, sizeof(low), lower) && !rust_format_bound(high, sizeof(high), upper)) {
-            const char *octets = member->expr_type == ASN_BASIC_OCTET_STRING ? "true" : "false";
-            const char *cast = is_boolean ? "i64::from(" : "";
-            const char *close = is_boolean ? ")" : "";
-            if(member->marker.flags == EM_OPTIONAL)
-                ret = fprintf(stream, "        if let Some(value) = self.%s.as_ref() {\n"
-                    "            ::asn1c_runtime::uper_cursor::write_containing_uper(\n"
-                    "                writer, %s*value%s, %s, %s, %s)?;\n"
-                    "        }\n", name, cast, close, low, high, octets);
-            else ret = fprintf(stream,
-                "        ::asn1c_runtime::uper_cursor::write_containing_uper(writer, %sself.%s%s, %s, %s, %s)?;\n",
-                cast, name, close, low, high, octets);
-        }
-    } else if(member->expr_type == ASN_TYPE_ANY) {
-        ret = member->marker.flags == EM_OPTIONAL
-            ? fprintf(stream, "        if let Some(value) = self.%s.as_ref() {\n"
-                "            ::asn1c_runtime::uper_cursor::write_any_uper(writer, value)?;\n"
-                "        }\n", name)
-            : fprintf(stream, "        ::asn1c_runtime::uper_cursor::write_any_uper(writer, &self.%s)?;\n", name);
-    } else if(member->marker.flags == EM_OPTIONAL) {
-        ret = rust_write_sequence_encode_optional(stream, member, name);
-    } else if(member->marker.flags == EM_DEFAULT) {
-        ret = rust_write_sequence_encode_default(stream, member, name);
-    } else if(member->expr_type == ASN_BASIC_BOOLEAN)
-        ret = fprintf(stream, "        writer.write_boolean(self.%s)?;\n", name);
-    else if(member->expr_type == ASN_BASIC_NULL)
-        ret = fputs("        writer.write_null()?;\n", stream);
-    else if(member->expr_type == ASN_BASIC_OCTET_STRING
-            || member->expr_type == ASN_BASIC_BIT_STRING)
-        ret = rust_write_sequence_encode_string_field(stream, member, name);
-    else {
-        int64_t lower, upper;
-        char low[64], high[64];
-        if(!rust_integer_bounds(member, &lower, &upper)
-           && !rust_format_bound(low, sizeof(low), lower)
-           && !rust_format_bound(high, sizeof(high), upper))
-            ret = fprintf(stream,
-                "        writer.write_integer(self.%s, %s, %s)?;\n",
-                name, low, high);
-    }
+    else if(member->expr_type == ASN_CONSTR_SEQUENCE
+            || member->expr_type == ASN_BASIC_ENUMERATED)
+        ret = rust_write_sequence_encode_composite(stream, member, name);
+    else if(rust_containing_node(member->combined_constraints, 0))
+        ret = rust_write_sequence_encode_containing(stream, member, name);
+    else
+        ret = rust_write_sequence_encode_direct(stream, member, name);
     free(name);
     return ret < 0 ? -1 : 0;
 }
@@ -9816,10 +11445,14 @@ rust_write_sequence_encode_default(FILE *stream, asn1p_expr_t *member,
     char literal[64];
     if(rust_sequence_default_literal(member, literal, sizeof(literal))) return -1;
     if(member->expr_type == ASN_BASIC_BOOLEAN) {
+        char *getter = rust_boolean_accessor_name(name, "get_");
         const char *negate = !strcmp(literal, "true") ? "!" : "";
-        return fprintf(stream,
-            "        if %sself.%s { writer.write_boolean(self.%s)?; }\n",
-            negate, name, name) < 0 ? -1 : 0;
+        int written = getter ? fprintf(stream,
+            "        let value = self.%s();\n"
+            "        if %svalue {\n            writer.write_boolean(value)?;\n        }\n",
+            getter, negate) : -1;
+        free(getter);
+        return written < 0 ? -1 : 0;
     }
     {
         int64_t lower, upper;
@@ -9851,10 +11484,15 @@ rust_write_sequence_encode_optional(FILE *stream, asn1p_expr_t *member,
             "        if self.%s.is_some() { writer.write_null()?; }\n", name) < 0 ? -1 : 0;
     }
     if(member->expr_type == ASN_BASIC_BOOLEAN) {
-        return fprintf(stream,
-            "        if let Some(value) = self.%s.as_ref() {\n"
-            "            writer.write_boolean(*value)?;\n"
-            "        }\n", name) < 0 ? -1 : 0;
+        char *getter = rust_boolean_accessor_name(name, "get_");
+        int written;
+        if(!getter) return -1;
+        written = fprintf(stream,
+            "        if let Some(value) =\n            self.%s()\n        {\n"
+            "            writer.write_boolean(value)?;\n"
+            "        }\n", getter);
+        free(getter);
+        return written < 0 ? -1 : 0;
     }
     if(member->expr_type == ASN_BASIC_INTEGER) {
         int64_t lower, upper;
@@ -9911,8 +11549,15 @@ rust_write_sequence_encode_presence(FILE *stream, asn1p_expr_t *member) {
     name = rust_identifier(member->Identifier, 1);
     if(!name) return -1;
     if(member->marker.flags == EM_OPTIONAL) {
-        ret = fprintf(stream,
-            "        writer.write_boolean(self.%s.is_some())?;\n", name);
+        if(member->expr_type == ASN_BASIC_BOOLEAN) {
+            char *getter = rust_boolean_accessor_name(name, "get_");
+            ret = getter ? fprintf(stream,
+                "        writer.write_boolean(self.%s().is_some())?;\n", getter) : -1;
+            free(getter);
+        } else {
+            ret = fprintf(stream,
+                "        writer.write_boolean(self.%s.is_some())?;\n", name);
+        }
     } else {
         char literal[64];
         const char *negate;
@@ -9922,8 +11567,12 @@ rust_write_sequence_encode_presence(FILE *stream, asn1p_expr_t *member) {
         }
         if(member->expr_type == ASN_BASIC_BOOLEAN) {
             negate = !strcmp(literal, "true") ? "!" : "";
-            ret = fprintf(stream,
-                "        writer.write_boolean(%sself.%s)?;\n", negate, name);
+            {
+                char *getter = rust_boolean_accessor_name(name, "get_");
+                ret = getter ? fprintf(stream,
+                    "        writer.write_boolean(%sself.%s())?;\n", negate, getter) : -1;
+                free(getter);
+            }
             free(name);
             return ret < 0 ? -1 : 0;
         }
@@ -9960,119 +11609,334 @@ rust_write_sequence_decode_presence(FILE *stream, asn1p_expr_t *expr) {
 }
 
 /*
- * Emit a decoded field initializer and its presence bitmap condition.
- * Parameters: stream receives Rust; member supplies the field; presence_index
- * tracks OPTIONAL and DEFAULT positions. Returns zero or -1; no exception.
- * Original source: Rust backend. Version/date: 0.3.0, 2026-10-30. Responsible
- * party: asn1c maintainers. History: flat UPER field decoding. Example:
- * rust_write_sequence_decode_field(stream, member, &index).
+ * Emit a nested, ENUMERATED, or NULL UPER field expression.
+ * Inputs: stream receives Rust; parent/member identify the nested field;
+ * presence_index tracks the schema bitmap. Returns 1 handled, 0 otherwise,
+ * or -1 on failure. Source: Rust UPER field decoder. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: split for bounded complexity.
+ * Example: decode an OPTIONAL inline SEQUENCE from its shared reader.
+ */
+static int
+rust_write_sequence_decode_composite(FILE *stream, const char *parent,
+                                     asn1p_expr_t *member, size_t *presence_index) {
+    char *nested_type = NULL;
+    int empty_sequence = member->expr_type == ASN_CONSTR_SEQUENCE
+                      && !member->members.tq_head;
+    int nested = member->expr_type == ASN_CONSTR_SEQUENCE
+              || member->expr_type == ASN_BASIC_ENUMERATED;
+    int result;
+    if(!empty_sequence && !nested && member->expr_type != ASN_BASIC_NULL) return 0;
+    if(nested) {
+        nested_type = rust_nested_type_name(parent, member);
+        if(!nested_type) return -1;
+    }
+    if(empty_sequence) {
+        if(member->marker.flags == EM_OPTIONAL) {
+            result = fprintf(stream,
+                "if __asn1c_presence[%zu] { Some(%s {}) } else { None }",
+                *presence_index, nested_type);
+            (*presence_index)++;
+        } else result = fprintf(stream, "%s {}", nested_type);
+    } else if(nested) {
+        if(member->marker.flags == EM_OPTIONAL) {
+            result = fprintf(stream,
+                "if __asn1c_presence[%zu] { Some(%s::decode_uper_fields(reader)?) } "
+                "else { None }", *presence_index, nested_type);
+            (*presence_index)++;
+        } else result = fprintf(stream, "%s::decode_uper_fields(reader)?", nested_type);
+    } else if(member->marker.flags == EM_OPTIONAL) {
+        result = fprintf(stream,
+            "if __asn1c_presence[%zu] { reader.read_null()?; Some(()) } else { None }",
+            *presence_index);
+        (*presence_index)++;
+    } else {
+        result = fputs("{ reader.read_null()?; }", stream);
+    }
+    free(nested_type);
+    return result < 0 ? -1 : 1;
+}
+
+/*
+ * Emit one containing-type primitive UPER decode expression.
+ * Inputs: stream receives Rust; member supplies validated inner type and size.
+ * Returns zero or -1. Errors: missing inner bounds and output failures abort.
+ * Source: X.691 contained primitive decoding. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: primitive decoder split.
+ * Example: decode a contained BOOLEAN as a bounded value and convert it.
+ */
+static int
+rust_write_sequence_decode_containing(FILE *stream, asn1p_expr_t *member) {
+    asn1p_expr_t *inner = rust_contained_primitive(member->module, member);
+    int64_t lower = 0, upper = 1;
+    char low[64], high[64];
+    int is_boolean = inner && inner->expr_type == ASN_BASIC_BOOLEAN;
+    if(!inner || (!is_boolean && rust_integer_bounds(inner, &lower, &upper))
+       || rust_format_bound(low, sizeof(low), lower)
+       || rust_format_bound(high, sizeof(high), upper)) return -1;
+    return fprintf(stream,
+        "::asn1c_runtime::uper_cursor::read_containing_uper(reader, %s, %s, %s)?%s",
+        low, high, member->expr_type == ASN_BASIC_OCTET_STRING ? "true" : "false",
+        is_boolean ? " != 0" : "") < 0 ? -1 : 0;
+}
+
+/*
+ * Emit one uncontained direct primitive UPER decode expression.
+ * Inputs: stream receives Rust; member supplies validated type and bounds.
+ * Returns zero or -1. Errors: invalid ranges and output failures abort emission.
+ * Source: X.691 direct primitives. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: primitive decoder split.
+ * Example: a BOOLEAN reads one bit; INTEGER uses its constrained range.
+ */
+static int
+rust_write_sequence_decode_scalar(FILE *stream, asn1p_expr_t *member) {
+    if(member->expr_type == ASN_TYPE_ANY)
+        return fputs("::asn1c_runtime::uper_cursor::read_any_uper(reader)?", stream)
+            == EOF ? -1 : 0;
+    if(member->expr_type == ASN_BASIC_BOOLEAN)
+        return fputs("reader.read_boolean()?", stream) == EOF ? -1 : 0;
+    if(member->expr_type == ASN_BASIC_OCTET_STRING
+       || member->expr_type == ASN_BASIC_BIT_STRING)
+        return rust_write_sequence_decode_string_field(stream, member);
+    {
+        int64_t lower, upper;
+        char low[64], high[64];
+        if(rust_integer_bounds(member, &lower, &upper)
+           || rust_format_bound(low, sizeof(low), lower)
+           || rust_format_bound(high, sizeof(high), upper)) return -1;
+        return fprintf(stream, "reader.read_integer(%s, %s)?", low, high) < 0
+            ? -1 : 0;
+    }
+}
+
+/*
+ * Emit one primitive UPER field expression, including presence and DEFAULT.
+ * Inputs: stream receives Rust; member supplies type/constraints; index tracks
+ * presence bits. Returns zero or -1. Errors: invalid bounds or writes fail.
+ * Source: X.691 direct field decoder. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: packed decode locals.
+ * Example: read a BOOLEAN without changing schema order.
+ */
+static int
+rust_write_sequence_decode_primitive(FILE *stream, asn1p_expr_t *member,
+                                     size_t *presence_index) {
+    int ret;
+    if(member->marker.flags == EM_DEFAULT) {
+        ret = rust_write_sequence_decode_default(stream, member, *presence_index);
+        (*presence_index)++;
+        return ret;
+    }
+    if(member->marker.flags == EM_OPTIONAL) {
+        ret = fprintf(stream, "if __asn1c_presence[%zu] { Some(", *presence_index);
+        (*presence_index)++;
+        if(ret < 0) return -1;
+    }
+    if(rust_containing_node(member->combined_constraints, 0))
+        ret = rust_write_sequence_decode_containing(stream, member);
+    else
+        ret = rust_write_sequence_decode_scalar(stream, member);
+    if(ret < 0) return -1;
+    if(member->marker.flags == EM_OPTIONAL)
+        return fputs(") } else { None }", stream) == EOF ? -1 : 0;
+    return 0;
+}
+
+/*
+ * Dispatch one field's UPER expression to its composite or primitive emitter.
+ * Inputs: stream receives Rust; parent/member identify the field; index tracks
+ * presence bits. Returns zero or -1. Errors: output writes fail.
+ * Source: UPER record decode. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: ordered locals.
+ * Example: both direct-field and packed-field decoders share this expression.
+ */
+static int
+rust_write_sequence_decode_expression(FILE *stream, const char *parent,
+                                      asn1p_expr_t *member,
+                                      size_t *presence_index) {
+    int composite = rust_write_sequence_decode_composite(stream, parent, member,
+                                                          presence_index);
+    if(composite < 0) return -1;
+    if(composite) return 0;
+    return rust_write_sequence_decode_primitive(stream, member, presence_index);
+}
+
+/*
+ * Emit one field inside the ordinary UPER SEQUENCE struct initializer.
+ * Inputs: stream receives Rust; parent/member identify the generated field;
+ * presence_index tracks OPTIONAL/DEFAULT bits. Returns zero or -1.
+ * Errors: output writes fail. Source: original Rust UPER record decoder.
+ * Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: shared decode expression.
+ * Example: `flag: reader.read_boolean()?`.
  */
 static int
 rust_write_sequence_decode_field(FILE *stream, const char *parent,
                                  asn1p_expr_t *member, size_t *presence_index) {
     char *name = rust_identifier(member->Identifier, 1);
-    char *nested_type = (member->expr_type == ASN_CONSTR_SEQUENCE
-                         || member->expr_type == ASN_BASIC_ENUMERATED)
-        ? rust_nested_type_name(parent, member) : NULL;
-    int ret = -1;
-    if(!name || ((member->expr_type == ASN_CONSTR_SEQUENCE
-                  || member->expr_type == ASN_BASIC_ENUMERATED) && !nested_type)) {
-        free(name);
-        free(nested_type);
-        return -1;
-    }
+    int ret;
+    if(!name) return -1;
     ret = fprintf(stream, "                %s: ", name);
-    if(ret < 0) {
-        free(name);
-        free(nested_type);
-        return -1;
+    free(name);
+    if(ret < 0 || rust_write_sequence_decode_expression(stream, parent, member,
+                                                         presence_index)) return -1;
+    return fputs(",\n", stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Decode one field into a local while preserving SEQUENCE wire order.
+ * Inputs: stream/parent/member identify output and schema; index names the
+ * generated local; presence_index tracks bitmap positions. Returns zero/-1.
+ * Errors: output writes fail. Source: schema-order UPER payload.
+ * Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: packed record construction.
+ * Example: field index two emits `let __asn1c_field_2 = reader...;`.
+ */
+static int
+rust_write_record_local_decode(FILE *stream, const char *parent,
+                               asn1p_expr_t *member, size_t *presence_index,
+                               size_t field_index) {
+    if(fprintf(stream, "        let __asn1c_field_%zu = ", field_index) < 0
+       || rust_write_sequence_decode_expression(stream, parent, member,
+                                                presence_index)
+       || fputs(";\n", stream) == EOF) return -1;
+    return 0;
+}
+
+/*
+ * Build a packed record from locals decoded in declaration order.
+ * Inputs: stream receives Rust; expr owns fields; packed_count is its raw bool
+ * count. Returns zero or -1. Errors: indexing and output failures abort.
+ * Source: record constructor API. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: ordered packed decoding.
+ * Example: calls `Self::new([decoded flags], (decoded other fields))`.
+ */
+static int
+rust_write_record_from_locals(FILE *stream, asn1p_expr_t *expr,
+                              int xer, size_t packed_count) {
+    asn1p_expr_t *member;
+    size_t field_index = 0;
+    if(packed_count <= 3
+       || rust_record_packed_boolean_count(expr, xer) != packed_count) return -1;
+    if(fprintf(stream, "        let value = Self::new([\n") < 0) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        size_t packed_index;
+        int packed = rust_record_packed_boolean_index(expr, member, xer,
+                                                       &packed_index);
+        if(packed < 0) return -1;
+        if(packed && fprintf(stream, "            __asn1c_field_%zu,\n", field_index) < 0)
+            return -1;
+        field_index++;
     }
-    if(member->expr_type == ASN_CONSTR_SEQUENCE && !member->members.tq_head) {
-        if(member->marker.flags == EM_OPTIONAL) {
-            ret = fprintf(stream,
-                "if __asn1c_presence[%zu] { Some(%s {}) } else { None },\n",
-                *presence_index, nested_type);
-            (*presence_index)++;
-        } else ret = fprintf(stream, "%s {},\n", nested_type);
-        free(name);
-        free(nested_type);
-        return ret < 0 ? -1 : 0;
-    }
-    if(member->expr_type == ASN_CONSTR_SEQUENCE || member->expr_type == ASN_BASIC_ENUMERATED) {
-        if(member->marker.flags == EM_OPTIONAL) {
-            ret = fprintf(stream,
-                "if __asn1c_presence[%zu] { Some(%s::decode_uper_fields(reader)?) } "
-                "else { None },\n", *presence_index, nested_type);
-            (*presence_index)++;
-        } else {
-            ret = fprintf(stream, "%s::decode_uper_fields(reader)?,\n", nested_type);
+    if(fputs("        ], (\n", stream) == EOF) return -1;
+    field_index = 0;
+    TQ_FOR(member, &expr->members, next) {
+        size_t packed_index;
+        int packed = rust_record_packed_boolean_index(expr, member, xer,
+                                                       &packed_index);
+        if(packed < 0) return -1;
+        if(!packed) {
+            if(fprintf(stream, "            __asn1c_field_%zu,\n", field_index) < 0)
+                return -1;
         }
-        free(name);
-        free(nested_type);
-        return ret < 0 ? -1 : 0;
+        field_index++;
     }
-    if(member->expr_type == ASN_BASIC_NULL) {
-        if(member->marker.flags == EM_OPTIONAL) {
-            ret = fprintf(stream,
-                "if __asn1c_presence[%zu] { reader.read_null()?; Some(()) } "
-                "else { None },\n", *presence_index);
-            (*presence_index)++;
-        } else {
-            ret = fputs("{ reader.read_null()?; },\n", stream);
-        }
-        free(name);
-        free(nested_type);
-        return ret < 0 ? -1 : 0;
-    }
-    if(member->marker.flags == EM_DEFAULT) {
-        ret = rust_write_sequence_decode_default(stream, member, *presence_index);
-        (*presence_index)++;
-        free(name);
-        free(nested_type);
-        return ret < 0 ? -1 : 0;
-    }
+    if(fprintf(stream, "        ));\n") < 0) return -1;
+    return 0;
+}
+
+/*
+ * Emit one collected slot expression with required-field validation.
+ * Inputs: stream receives Rust; member is a field; reason describes omission.
+ * Returns zero or -1. Errors: invalid DEFAULT literals and writes fail.
+ * Source: SET/CBOR decoder slot representation. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: packed slot construction.
+ * Example: required BOOLEAN slot becomes `__asn1c_flag.ok_or(...)?`.
+ */
+static int
+rust_write_record_slot_value(FILE *stream, asn1p_expr_t *member,
+                             const char *reason) {
+    char *name = rust_identifier(member->Identifier, 1);
+    char expression[256];
+    int written;
+    if(!name) return -1;
     if(member->marker.flags == EM_OPTIONAL) {
-        ret = fprintf(stream,
-            "if __asn1c_presence[%zu] { Some(", *presence_index);
-        (*presence_index)++;
-        if(ret < 0) {
+        written = snprintf(expression, sizeof(expression), "__asn1c_%s", name);
+    } else if(member->marker.flags == EM_DEFAULT) {
+        char literal[64];
+        if(rust_sequence_default_literal(member, literal, sizeof(literal))) {
             free(name);
-            free(nested_type);
             return -1;
         }
+        written = snprintf(expression, sizeof(expression),
+                           "__asn1c_%s.unwrap_or(%s)", name, literal);
+    } else {
+        written = snprintf(expression, sizeof(expression),
+            "__asn1c_%s.ok_or(::asn1c_runtime::Error::InvalidEncoding { "
+            "reason: \"%s\" })?", name, reason);
     }
-    if(rust_containing_node(member->combined_constraints, 0)) {
-        asn1p_expr_t *inner = rust_contained_primitive(member->module, member);
-        int64_t lower = 0, upper = 1;
-        char low[64], high[64];
-        int is_boolean = inner && inner->expr_type == ASN_BASIC_BOOLEAN;
-        if(inner && (is_boolean || !rust_integer_bounds(inner, &lower, &upper))
-           && !rust_format_bound(low, sizeof(low), lower) && !rust_format_bound(high, sizeof(high), upper))
-            ret = fprintf(stream, "::asn1c_runtime::uper_cursor::read_containing_uper(reader, %s, %s, %s)?%s",
-                low, high, member->expr_type == ASN_BASIC_OCTET_STRING ? "true" : "false",
-                is_boolean ? " != 0" : "");
-    } else if(member->expr_type == ASN_TYPE_ANY)
-        ret = fputs("::asn1c_runtime::uper_cursor::read_any_uper(reader)?", stream);
-    else if(member->expr_type == ASN_BASIC_BOOLEAN)
-        ret = fputs("reader.read_boolean()?", stream);
-    else if(member->expr_type == ASN_BASIC_OCTET_STRING
-            || member->expr_type == ASN_BASIC_BIT_STRING)
-        ret = rust_write_sequence_decode_string_field(stream, member);
-    else {
-        int64_t lower, upper;
-        char low[64], high[64];
-        if(!rust_integer_bounds(member, &lower, &upper)
-           && !rust_format_bound(low, sizeof(low), lower)
-           && !rust_format_bound(high, sizeof(high), upper))
-            ret = fprintf(stream, "reader.read_integer(%s, %s)?", low, high);
+    if(written < 0 || (size_t)written >= sizeof(expression)) {
+        free(name);
+        return -1;
     }
-    if(ret >= 0 && member->marker.flags == EM_OPTIONAL)
-        ret = fputs(") } else { None },\n", stream);
-    else if(ret >= 0)
-        ret = fputs(",\n", stream);
+    if((size_t)written + 16 <= 120) {
+        free(name);
+        return fputs(expression, stream) == EOF ? -1 : 0;
+    }
+    if(member->marker.flags != EM_NOMARK) {
+        /* Wrap long DEFAULT expressions without rejecting a valid identifier. */
+        const char *method = strchr(expression, '.');
+        written = method ? fprintf(stream, "__asn1c_%s\n                    %s",
+                                   name, method) : -1;
+        free(name);
+        return written < 0 ? -1 : 0;
+    }
+    written = fprintf(stream,
+        "__asn1c_%s\n"
+        "                    .ok_or(::asn1c_runtime::Error::InvalidEncoding {\n"
+        "                        reason: \"%s\",\n"
+        "                    })?", name, reason);
     free(name);
-    free(nested_type);
-    return ret < 0 ? -1 : 0;
+    return written < 0 ? -1 : 0;
+}
+
+/*
+ * Construct a packed record from unordered decoder slots.
+ * Inputs: stream receives Rust; expr owns members; reason labels missing fields.
+ * Returns zero or -1. Errors: malformed defaults, names, and output failures.
+ * Source: SET/CBOR slot decoder. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: packed record construction.
+ * Example: assemble SET fields after tag dispatch completes.
+ */
+static int
+rust_write_record_from_slots(FILE *stream, const char *reason,
+                             asn1p_expr_t *expr, size_t packed_count) {
+    asn1p_expr_t *member;
+    if(packed_count <= 3
+       || rust_record_packed_boolean_count(expr, 0) != packed_count
+       || fputs("            let value = Self::new([\n", stream) == EOF) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        size_t packed_index;
+        int packed = rust_record_packed_boolean_index(expr, member, 0,
+                                                       &packed_index);
+        if(packed < 0) return -1;
+        if(packed) {
+            if(fputs("                ", stream) == EOF
+               || rust_write_record_slot_value(stream, member, reason)
+               || fputs(",\n", stream) == EOF) return -1;
+        }
+    }
+    if(fputs("            ], (\n", stream) == EOF) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        size_t packed_index;
+        int packed = rust_record_packed_boolean_index(expr, member, 0,
+                                                       &packed_index);
+        if(packed < 0) return -1;
+        if(!packed) {
+            if(fputs("                ", stream) == EOF
+               || rust_write_record_slot_value(stream, member, reason)
+               || fputs(",\n", stream) == EOF) return -1;
+        }
+    }
+    return fputs("            ));\n", stream) == EOF ? -1 : 0;
 }
 
 /*
@@ -10111,7 +11975,7 @@ rust_write_sequence_decode_default(FILE *stream, asn1p_expr_t *member,
     if(rust_sequence_default_literal(member, literal, sizeof(literal))) return -1;
     if(member->expr_type == ASN_BASIC_BOOLEAN) {
         return fprintf(stream,
-            "if __asn1c_presence[%zu] { reader.read_boolean()? } else { %s },\n",
+            "if __asn1c_presence[%zu] { reader.read_boolean()? } else { %s }",
             presence_index, literal) < 0 ? -1 : 0;
     }
     {
@@ -10122,7 +11986,7 @@ rust_write_sequence_decode_default(FILE *stream, asn1p_expr_t *member,
            || rust_format_bound(high, sizeof(high), upper)) return -1;
         return fprintf(stream,
             "if __asn1c_presence[%zu] { reader.read_integer(%s, %s)? } "
-            "else { %s },\n", presence_index, low, high, literal) < 0 ? -1 : 0;
+            "else { %s }", presence_index, low, high, literal) < 0 ? -1 : 0;
     }
 }
 

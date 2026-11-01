@@ -1,0 +1,8 @@
+BoolLongName81 DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+Flags ::= SEQUENCE {
+    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa BOOLEAN,
+    second BOOLEAN,
+    third BOOLEAN,
+    fourth BOOLEAN
+}
+END

@@ -42,6 +42,11 @@ support matrix in [implementation.md](implementation.md) and the detailed
 - C BOOLEAN DEFAULT comparison now uses truth values. TRUE represented by
   `0xff` or `7` omits canonically, and strict CER rejects an explicit default.
   Numeric storage selection and non-BOOLEAN DEFAULT output remain unchanged.
+- Private bitsets for more than three scalar BOOLEAN fields, typed two-argument
+  constructors, and BOOLEAN getters/setters without lint exceptions. Small-record
+  public fields, OPTIONAL/DEFAULT values, wire order, and shared limits remain.
+  Presence-aware UPER loops cover all 64 fields and sixty OPTIONAL fields;
+  transparent tuple aliases retain external constructor calls, including XER.
 - Exact twelve-field imported/local aggregate acceptance and the first
   excessive thirteen-field rejection, with both modules supplied. Generated
   C and Rust share fixed DER/CER vectors, prefix checks, and work boundaries.
@@ -56,8 +61,8 @@ Rust test functions, exact strict Clippy for both source orders and codec
 selections, 28 canonical C vectors in each direction, 20 syntax-valid negative
 schemas, and C differential checks under ASan/UBSan. Local/imported resource
 controls verify identical exact work budgets. The full compiler harness passes
-(`make -C tests/tests-rust-compiler -j2 check`, both backend and alias drivers,
-two suites, zero failures). A separately checked negative schema rejects mixed
+(`make -C tests/tests-rust-compiler -j3 check`, backend, alias, and BOOLEAN
+bitset drivers, three suites, zero failures). A separately checked negative schema rejects mixed
 named scalar/record references without publishing output. `make dist` passes
 and includes the checkpoint note, two-child and imported INTEGER/record fixtures,
 type-name regression fixtures, transparent aliases, and exact imported-field boundaries.
@@ -81,18 +86,49 @@ rejection; the corrected compiler passes. Non-BOOLEAN DEFAULT source output
 is identical after excluding output-directory strings. Existing C compiler
 regressions C148/C609 and all INTEGER storage regressions pass, including
 issue #591 DEFAULT callbacks in all five storage modes. The coverage inventory
-now counts all 277 standalone Rust test functions referenced by the drivers;
+now counts all 299 standalone Rust test functions referenced by the drivers;
 repeated codec/source-order runs and reused alias tests do not inflate that count.
+
+BOOLEAN storage adds 22 standalone Rust test functions. The final expanded
+bitset driver qualifies all four mixed binary codecs, separate XER encoding,
+64 required and mixed-marker UPER fields, sixty OPTIONAL fields, owned buffers,
+maximum identifiers, private storage, and prepublication bounds. Every generated
+crate passes the exact all-target/all-feature pedantic and nursery Clippy command
+with warnings denied. Five C DER/CER value pairs and explicit DEFAULT FALSE
+rejection pass normally and under ASan/UBSan. The full three-driver run precedes
+the final compact UPER extension; the expanded bitset driver tests that extension
+and XER tuple aliases against the final compiler. A seven-configuration output
+comparison confirms the SEQUENCE framing cleanup preserves all 114 generated
+files, including empty, named, and tagged roots. The source audit checks all 95
+changed C functions: maximum body length 71 lines and maximum estimated McCabe
+complexity 20. Changed and new source lines fit 120 expanded columns.
+
+## Security review of BOOLEAN storage
+
+The reviewed bit-index arithmetic is bounded by validated schema field counts;
+constructors clear spare bits, setters preserve them, and external field access
+fails. Hostile wire mutations, truncations, exact resource limits, owned sibling
+validation, and no-publication schema bounds remain part of qualification.
+The UPER review found that an unconditional all-BOOLEAN decoder could consume
+padding as an omitted DEFAULT value. This affects decoded value integrity and
+prefix consumption. Presence-aware field handling and fixed-vector regression
+coverage address that risk. The fixed-size schema arrays bound every loop and
+index, including sparse OPTIONAL tuple materialization. Private numeric helper
+identities prevent ASN.1 identifier collisions; no user input can select an
+out-of-range bit or modify spare bits. No unsafe Rust or unchecked raw-bit API was added.
+The C and Rust strict CER checks both reject an explicitly encoded DEFAULT FALSE.
+Review also restored the qualified UPER ANY branch during emitter decomposition
+and wrapped long DEFAULT slot expressions. These generation failures affected
+availability and failed before publication; no malformed output was accepted.
+Numeric private SET-helper suffixes keep maximum field names within the source
+width limit without changing the public field API. Mixed XER records with many
+optional strings exposed a generated constructor tuple that failed strict
+Clippy. Its transparent alias preserves owned values and ordinary tuple calls;
+invalid string controls and exact output boundaries remain checked.
 
 ## Resume from here
 
-1. Implement the user's approved BOOLEAN representation decision (2026-11-01):
-   use a bitset with getters/setters for records that exceed Clippy's BOOLEAN
-   field limit, and keep every lint enabled. The decision is settled; the
-   representation implementation follows this checkpoint. Preserve OPTIONAL
-   and DEFAULT semantics, public construction, naming safety, shared limits,
-   and all currently qualified parent/child and codec combinations.
-2. Extend the reference/type graph beyond the qualified one-hop local INTEGER
+1. Extend the reference/type graph beyond the qualified one-hop local INTEGER
    alias and direct imported INTEGER/record slices. Sol reviews the next graph
    boundary before implementation; keep exact ownership, declared constraints,
    cycle detection, unused declarations, wire identity, and shared limits checked.

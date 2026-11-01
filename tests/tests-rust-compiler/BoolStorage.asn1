@@ -1,0 +1,46 @@
+BoolStorage DEFINITIONS ::= BEGIN
+Bool4 ::= SEQUENCE {
+    first BOOLEAN,
+    count INTEGER (0..5) DEFAULT 2,
+    type [0] IMPLICIT BOOLEAN,
+    maybe [1] IMPLICIT BOOLEAN OPTIONAL,
+    third [2] EXPLICIT BOOLEAN DEFAULT FALSE,
+    fourth [3] IMPLICIT BOOLEAN DEFAULT TRUE
+}
+SixRequiredSet ::= SET {
+    first BOOLEAN,
+    second [0] IMPLICIT BOOLEAN,
+    third [1] IMPLICIT BOOLEAN,
+    fourth [2] IMPLICIT BOOLEAN,
+    fifth [3] IMPLICIT BOOLEAN,
+    sixth [4] IMPLICIT BOOLEAN
+}
+LocalLeaf ::= SEQUENCE {
+    first BOOLEAN,
+    second [0] IMPLICIT BOOLEAN,
+    third [1] EXPLICIT BOOLEAN,
+    fourth [2] IMPLICIT BOOLEAN
+}
+NamedParent ::= SEQUENCE {
+    child [3] EXPLICIT LocalLeaf OPTIONAL,
+    enabled BOOLEAN DEFAULT FALSE,
+    count INTEGER (0..5) DEFAULT 2
+}
+InlineParent ::= SEQUENCE {
+    child SEQUENCE {
+        first BOOLEAN,
+        second [0] IMPLICIT BOOLEAN,
+        third [1] EXPLICIT BOOLEAN,
+        fourth [2] IMPLICIT BOOLEAN
+    },
+    enabled BOOLEAN DEFAULT FALSE,
+    count INTEGER (0..5) DEFAULT 2
+}
+OwnedFour ::= SEQUENCE {
+    first BOOLEAN,
+    second [0] IMPLICIT BOOLEAN,
+    third [1] EXPLICIT BOOLEAN,
+    fourth [2] IMPLICIT BOOLEAN,
+    payload OCTET STRING (SIZE(2))
+}
+END

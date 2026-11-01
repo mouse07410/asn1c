@@ -1,4 +1,11 @@
 Changes since v1.5.3:
+	* Pack generated Rust records with more than three scalar BOOLEAN fields
+	  into private byte arrays, with typed two-argument constructors and BOOLEAN
+	  getters/setters. Preserve OPTIONAL and DEFAULT semantics, small-record
+	  public fields, wire order, shared limits, and all strict Clippy lints.
+	  Qualify BER/DER/CER children and SETs, mixed UPER/CBOR records, XER
+	  defaults, 64-field mixed-marker UPER boundaries, sixty-OPTIONAL tuple
+	  construction, owned buffers, and malformed inputs.
 	* Support transparent same-module bounded INTEGER aliases in Rust
 	  BER/DER/CER, including forward declarations and named record fields.
 	  Preserve base type identity, checked constructors, wire bounds, and the

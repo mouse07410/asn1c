@@ -1,0 +1,10 @@
+BoolOwned DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+Packet ::= SEQUENCE {
+    first BOOLEAN,
+    second BOOLEAN,
+    third BOOLEAN,
+    fourth BOOLEAN,
+    payload OCTET STRING (SIZE(1..10)),
+    bits BIT STRING (SIZE(3))
+}
+END

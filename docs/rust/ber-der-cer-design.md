@@ -1301,11 +1301,11 @@ representations `1`, `0xff`, and `7` in SEQUENCE and SET, omitted/default FALSE
 siblings, and rejection of an explicit default by strict CER. C remains a
 comparison implementation; independent canonical vectors determine acceptance.
 
-### BOOLEAN record storage (approved next implementation)
+### BOOLEAN record storage (implemented 2026-11-01)
 
 The user selected bitsets with getters/setters on 2026-11-01 and explicitly
 required every lint to remain enabled. Records with more than three actual
-scalar BOOLEAN storage fields will pack those values into a private byte
+scalar BOOLEAN storage fields pack those values into a private byte
 array. Required and DEFAULT BOOLEANs count for the shared record layout;
 OPTIONAL `Option<bool>` fields retain their public representation. XER's
 separate layout stores DEFAULT fields as `Option`, so only its required
@@ -1324,17 +1324,28 @@ other members. The private flags expose no unchecked raw-bit interface, and
 unused bits remain zero through construction, cloning, and mutation.
 
 Encoder field helpers use the uniform accessors. Packed SEQUENCE decoders
-must decode locals in schema order before constructing their flags, preserving
+decode locals in schema order before constructing their flags, preserving
 interleaved non-BOOLEAN fields and OPTIONAL/DEFAULT handling. SET and CBOR
 decoders already collect slots before construction. Named, imported, and inline
 children continue using their own methods under the parent's shared context;
 packing starts no new operation budget and changes no wire encoding.
 
-Qualification must cover threshold and multi-byte boundaries, setters in both
+All-direct-BOOLEAN UPER SEQUENCE records use a fixed schema-kind array and
+separate bounded presence/payload loops. Required, OPTIONAL, DEFAULT FALSE,
+and DEFAULT TRUE retain their declared order, and an absent DEFAULT consumes
+no payload bit. Fixed array lengths are part of the private helper signatures;
+small encoder arrays are passed by value, bounded by the 64-field schema cap.
+More than eight nonpacked BOOLEANs use a transparent private tuple alias and a
+short decoded-tuple materializer. The public constructor accepts the ordinary
+tuple, including from external crates. XER emits the alias for its separate
+layout as well, including heterogeneous primitive/String tuples. These helpers keep generated functions within the complexity,
+length, and strict lint limits without a lint allowance.
+
+Qualification covers threshold and multi-byte boundaries, setters in both
 directions, keyword field names, interleaved members, required/OPTIONAL/DEFAULT
 values, inline/named/imported children, individual and combined codec selections,
 and exact strict Clippy. Existing public-field fixtures remain regression tests.
-Constructor loops must stay bounded and avoid one emitted branch per schema
+Constructor loops stay bounded and avoid one emitted branch per schema
 BOOLEAN, since the larger UPER record limit would otherwise exceed the required
 complexity cap. No lint exception or blanket allowance is permitted.
 

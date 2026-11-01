@@ -1,0 +1,10 @@
+BoolAuto DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+Flags ::= SEQUENCE {
+    first BOOLEAN,
+    count INTEGER (0..5) DEFAULT 2,
+    type BOOLEAN,
+    maybe BOOLEAN OPTIONAL,
+    third BOOLEAN DEFAULT FALSE,
+    fourth BOOLEAN DEFAULT TRUE
+}
+END

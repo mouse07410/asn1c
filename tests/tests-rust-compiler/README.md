@@ -800,3 +800,28 @@ also verifies eight encodings of noncanonical C TRUE representations (`0xff`
 and `7`) with DEFAULT TRUE siblings. This caught the C DEFAULT comparison bug:
 BOOLEAN must compare truth values rather than its stored integer to `1`.
 Canonical omission and explicit DEFAULT rejection now agree with fixed vectors.
+
+`check-rust-bitsets.sh` qualifies the approved private BOOLEAN representation
+with every strict Clippy lint enabled. `BoolStorage` and its import modules
+cover four/six scalar BOOLEANs, keyword accessors, REQUIRED/OPTIONAL/DEFAULT,
+inline/named/imported children, owned OCTET siblings, exact limits, truncations,
+and deterministic malformed mutations. The independent C harness compares
+DER/CER bytes, decoded values, prefixes, and strict canonicality, normally and
+under ASan/UBSan when the toolchain supports them. The five value pairs cover
+ten canonical encodings in each direction and explicit DEFAULT FALSE rejection.
+
+`BoolAuto` exhausts all 16 packed values with three OPTIONAL states and two
+interleaved INTEGER states across UPER, CBOR, BER, and CER. `BoolXer` retains
+DEFAULT `Option<bool>` semantics, OPTIONAL tuple transparency, heterogeneous
+owned String tuples, invalid controls, and exact output limits. `Bool64` checks every
+UPER bit position, all-zero/all-one values, setter byte boundaries, truncation,
+and exact input/output/work limits. `BoolDefaultsOnly` checks sixteen independent
+presence/payload vectors. `WideMixed` compares 64 required/default/optional
+BOOLEAN fields with an independent UPER oracle. `WideOptional` checks a
+four-required/sixty-OPTIONAL constructor from outside the generated module,
+including presence/setters at both ends of its tuple. `BoolAny` checks packed BOOLEAN neighbors
+with absent, empty, and nonempty opaque ANY values. `BoolOwned` checks moved
+OCTET/BIT buffers and invalid sibling validation; `BoolLongName` checks maximum field-name output
+width and strict lint. Individual BER/CER selections, reverse import order, and
+external rejection of private-byte access are also checked. Existing smaller
+record struct literals remain in the full backend regression driver.

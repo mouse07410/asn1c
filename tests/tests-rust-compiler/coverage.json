@@ -1018,6 +1018,30 @@
       ],
       "status": "tested",
       "evidence": "enum_jer_conformance.rs; asn1c-runtime/src/jer.rs tests; EnumSlice.asn1"
+    },
+    {
+      "asn1_type": "SEQUENCE/SET BOOLEAN fields",
+      "feature": "Private bitset above three scalar BOOLEANs; typed construction and accessors",
+      "codec": "BER/DER/CER, UPER, CBOR, XER encoder",
+      "variants": [
+        "required/optional/default",
+        "six-field SET",
+        "inline/local/imported child",
+        "64-field UPER",
+        "owned buffers",
+        "maximum field identifier",
+        "all sixteen DEFAULT presence/payload vectors",
+        "64-field mixed required/OPTIONAL/DEFAULT UPER oracle",
+        "60 OPTIONAL fields with external transparent constructor tuple",
+        "XER transparent constructor tuple and OPTIONAL presence",
+        "XER mixed twelve-OPTIONAL String constructor, owned moves and invalid controls"
+      ],
+      "directions": [
+        "encode",
+        "decode where supported"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "check-rust-bitsets.sh; bool_*_conformance.rs; c_boolean_storage.c"
     }
   ],
   "not_yet_implemented_by_this_Rust_slice": [
@@ -1106,7 +1130,7 @@
     ]
   },
   "observed_counts": {
-    "generated_rust_test_functions": 277,
+    "generated_rust_test_functions": 299,
     "generated_choice_test_functions": 4,
     "live_C_choice_canonical_vectors_each_direction": 5,
     "live_C_choice_BER_alias_vectors": 9,
@@ -1228,6 +1252,14 @@
     "live_C_integer_alias_canonical_encodings_each_direction": 48,
     "live_C_integer_alias_noncanonical_TRUE_encode_checks": 8,
     "imported_record_exact_schema_field_limit": 12,
-    "imported_record_first_rejected_schema_field_count": 13
+    "imported_record_first_rejected_schema_field_count": 13,
+    "generated_boolean_bitset_test_functions": 22,
+    "boolean_bitset_maximum_UPER_fields": 64,
+    "boolean_bitset_mixed_codec_value_combinations": 96,
+    "live_C_boolean_bitset_DER_CER_value_pairs": 5,
+    "live_C_boolean_bitset_canonical_encodings_each_direction": 10,
+    "live_C_boolean_bitset_explicit_DEFAULT_CER_rejections": 1,
+    "boolean_bitset_no_publication_boundary_cases": 2,
+    "boolean_bitset_maximum_optional_UPER_fields": 60
   }
 }

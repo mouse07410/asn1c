@@ -696,3 +696,10 @@ disabled-build cases in
 [x690]: https://www.itu.int/rec/dologin_pub.asp?id=T-REC-X.690-201508-S%21%21PDF-E&lang=e&type=items
 [x691]: https://www.itu.int/rec/dologin_pub.asp?id=T-REC-X.691-202102-I%21%21PDF-E&lang=e&type=items
 [x696]: https://www.itu.int/rec/dologin_pub.asp?id=T-REC-X.696-202102-I%21%21PDF-E&lang=e&type=items
+
+Generated Rust records with more than three scalar BOOLEAN fields use private
+byte storage, a typed constructor, and BOOLEAN getters/setters. This qualifies
+four- and six-BOOLEAN BER/DER/CER records without relaxing strict Clippy;
+OPTIONAL/DEFAULT behavior, child callbacks, canonical bytes, and operation
+limits remain the same. See the [Rust implementation](rust/implementation.md)
+for construction syntax and the remaining type/graph limits.

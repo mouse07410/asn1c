@@ -1,0 +1,8 @@
+BoolImportClient DEFINITIONS ::= BEGIN
+IMPORTS RemoteLeaf FROM BoolImportBase;
+ImportedParent ::= SET {
+    child [4] EXPLICIT RemoteLeaf,
+    enabled BOOLEAN DEFAULT FALSE,
+    count INTEGER (0..5) DEFAULT 2
+}
+END

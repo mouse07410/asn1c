@@ -484,3 +484,9 @@ SEQUENCE records. The generator currently accepts BOOLEAN, bounded INTEGER,
 unconstrained IA5String fields, and REAL DEFAULT 0.5 with finite limited values only. XER decoding is not implemented.
 IA5 C0 controls other than tab, line feed, and carriage return are rejected;
 REAL values must survive a round trip through the emitted decimal text.
+
+Generated records pack more than three scalar BOOLEAN fields into a private
+byte array and expose typed constructors plus BOOLEAN getters/setters. The
+runtime wire APIs and resource limits are unchanged. Smaller records keep
+public BOOLEAN fields; OPTIONAL remains `Option<bool>`, and XER DEFAULT remains
+`Option<bool>`. See [the generated API](../../docs/rust/implementation.md).

@@ -1,0 +1,9 @@
+BoolAny DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE {
+    first BOOLEAN,
+    second BOOLEAN,
+    third BOOLEAN,
+    fourth BOOLEAN,
+    payload ANY OPTIONAL
+}
+END

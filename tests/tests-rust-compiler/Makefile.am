@@ -1,4 +1,4 @@
-dist_check_SCRIPTS = check-rust-backend.sh check-rust-aliases.sh
+dist_check_SCRIPTS = check-rust-backend.sh check-rust-aliases.sh check-rust-bitsets.sh
 TESTS = $(dist_check_SCRIPTS)
 TESTS_ENVIRONMENT = top_srcdir=$(top_srcdir) top_builddir=$(top_builddir)
 
@@ -11,7 +11,32 @@ $(ASN1C):
 # here would override Automake's generated driver recipes for these tests.
 $(TEST_LOGS): $(ASN1C)
 
-EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
+EXTRA_DIST = $(srcdir)/WideMixed.asn1 \
+    $(srcdir)/WideOptional.asn1 \
+    $(srcdir)/BoolDefaultsOnly.asn1 \
+    $(srcdir)/bool_defaults_conformance.rs \
+    $(srcdir)/bool_wide_mixed_conformance.rs \
+    $(srcdir)/bool_wide_optional_conformance.rs \
+    $(srcdir)/BoolAny.asn1 \
+    $(srcdir)/bool_any_conformance.rs \
+    $(srcdir)/bool_long_conformance.rs \
+    $(srcdir)/Bool65.asn1 \
+    $(srcdir)/BoolLongName81.asn1 \
+    $(srcdir)/BoolStorage.asn1 \
+    $(srcdir)/BoolImportBase.asn1 \
+    $(srcdir)/BoolImportClient.asn1 \
+    $(srcdir)/BoolAuto.asn1 \
+    $(srcdir)/BoolXer.asn1 \
+    $(srcdir)/Bool64.asn1 \
+    $(srcdir)/BoolLongName.asn1 \
+    $(srcdir)/BoolOwned.asn1 \
+    $(srcdir)/bool_bitset_conformance.rs \
+    $(srcdir)/bool_auto_conformance.rs \
+    $(srcdir)/bool_xer_conformance.rs \
+    $(srcdir)/bool_wide_conformance.rs \
+    $(srcdir)/bool_owned_conformance.rs \
+    $(srcdir)/c_boolean_storage.c \
+    $(srcdir)/CborSlice.asn1 \
     $(srcdir)/CborSequence.asn1 \
     $(srcdir)/CborStrings.asn1 \
     $(srcdir)/CborSequenceStrings.asn1 \
