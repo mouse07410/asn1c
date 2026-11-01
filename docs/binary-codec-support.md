@@ -141,16 +141,21 @@ OCTET STRING values with finite `SIZE` constraints. The string path includes
 the 1000-content-octet CER fragmentation rule; strict decoding re-encodes and
 compares the consumed prefix. With `-gen-BER`, these direct types also receive
 BER prefix decoding and DER encoding. BER accepts constructed BIT/OCTET STRING
-forms within bounded nesting. Flat untagged SEQUENCE records also support
+forms within bounded nesting. Flat SEQUENCE records with an untagged outer type also support
 required, OPTIONAL, and literal BOOLEAN/INTEGER DEFAULT fields when every
 field is a direct BOOLEAN, NULL, finite bounded INTEGER, nonextensible
-ENUMERATED, or finite bounded BIT/OCTET STRING with a distinct universal tag;
+ENUMERATED, or finite bounded BIT/OCTET STRING with a distinct effective tag;
 empty records are supported. Other constructed records remain
 outside the Rust BER/DER/CER slice.
-Flat untagged SET records with the same six distinct direct field kinds are
+Flat SET records with an untagged outer type and the same six direct field kinds are
 available when only BER and/or CER are selected. BER accepts members in any
-order; DER/CER emits them by ascending universal tag, and strict CER rejects
+order; DER/CER emits them by ascending effective tag class and number, and strict CER rejects
 a reordered input. The SET path uses the same bounded record context.
+Resolved context-specific IMPLICIT and AUTOMATIC member tags are supported
+through the C tag-number limit; high-tag BER aliases are accepted, while
+strict CER requires the shortest identifier. Tagged constructed strings use
+universal identifiers for their fragments. Root tags, EXPLICIT stacks,
+aliases, nested records, and broader C forms remain outside this slice.
 Rust codec defaults include UPER and CER; `-no-gen-UPER` selects CER-only
 generation. See [the Rust implementation matrix](rust/implementation.md#implemented-boundary)
 and [parity design](rust/ber-der-cer-design.md) for the remaining C-supported

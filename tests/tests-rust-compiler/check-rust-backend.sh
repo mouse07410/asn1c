@@ -1746,15 +1746,141 @@ if ! cc $set_ber_cer_cflags -I"$set_ber_cer_c_out" \
 fi
 "$test_tmp/c-set-ber-cer"
 
+# Resolved IMPLICIT member tags share the mixed SEQUENCE and BER/CER SET paths.
+tagged_sequence_out="$test_tmp/tagged-sequence-rust"
+"$asn1c_bin" --rust -gen-BER -S "$skeletons" -D "$tagged_sequence_out" \
+    "$test_srcdir/TaggedSequence.asn1"
+mkdir "$tagged_sequence_out/tests"
+cp "$test_srcdir/tagged_sequence_conformance.rs" "$tagged_sequence_out/tests/"
+if ! (cd "$tagged_sequence_out" && cargo test --offline --manifest-path Cargo.toml && \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/tagged-sequence-check.log" 2>&1; then
+    cat "$test_tmp/tagged-sequence-check.log"
+    echo "FAIL: tagged mixed-codec SEQUENCE tests or strict Clippy"
+    exit 1
+fi
+
+for method in encode_der decode_ber encode_cer decode_cer encode_uper decode_uper; do
+    grep -F "pub fn $method" "$tagged_sequence_out/src/tagged_sequence.rs" >/dev/null
+done
+
+# Selector-only builds exercise tagged code under each conditional codec branch.
+tagged_sequence_ber="$test_tmp/tagged-sequence-ber-only"
+"$asn1c_bin" --rust -gen-BER -no-gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$tagged_sequence_ber" "$test_srcdir/TaggedSequence.asn1"
+if ! (cargo check --offline --manifest-path "$tagged_sequence_ber/Cargo.toml" && \
+    cargo clippy --offline --manifest-path "$tagged_sequence_ber/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/tagged-sequence-ber-only.log" 2>&1; then
+    cat "$test_tmp/tagged-sequence-ber-only.log"
+    echo "FAIL: tagged BER-only SEQUENCE strict Clippy"
+    exit 1
+fi
+tagged_sequence_cer="$test_tmp/tagged-sequence-cer-only"
+"$asn1c_bin" --rust -gen-CER -no-gen-UPER -no-gen-BER -S "$skeletons" \
+    -D "$tagged_sequence_cer" "$test_srcdir/TaggedSequence.asn1"
+if ! (cargo check --offline --manifest-path "$tagged_sequence_cer/Cargo.toml" && \
+    cargo clippy --offline --manifest-path "$tagged_sequence_cer/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/tagged-sequence-cer-only.log" 2>&1; then
+    cat "$test_tmp/tagged-sequence-cer-only.log"
+    echo "FAIL: tagged CER-only SEQUENCE strict Clippy"
+    exit 1
+fi
+
+tagged_set_out="$test_tmp/tagged-set-rust"
+"$asn1c_bin" --rust -gen-BER -no-gen-UPER -S "$skeletons" -D "$tagged_set_out" \
+    "$test_srcdir/TaggedSet.asn1"
+mkdir "$tagged_set_out/tests"
+cp "$test_srcdir/tagged_set_conformance.rs" "$tagged_set_out/tests/"
+if ! (cd "$tagged_set_out" && cargo test --offline --manifest-path Cargo.toml && \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/tagged-set-check.log" 2>&1; then
+    cat "$test_tmp/tagged-set-check.log"
+    echo "FAIL: tagged BER/CER SET tests or strict Clippy"
+    exit 1
+fi
+
+tagged_set_ber="$test_tmp/tagged-set-ber-only"
+"$asn1c_bin" --rust -gen-BER -no-gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$tagged_set_ber" "$test_srcdir/TaggedSet.asn1"
+if ! (cargo check --offline --manifest-path "$tagged_set_ber/Cargo.toml" && \
+    cargo clippy --offline --manifest-path "$tagged_set_ber/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/tagged-set-ber-only.log" 2>&1; then
+    cat "$test_tmp/tagged-set-ber-only.log"
+    echo "FAIL: tagged BER-only SET strict Clippy"
+    exit 1
+fi
+tagged_set_cer="$test_tmp/tagged-set-cer-only"
+"$asn1c_bin" --rust -gen-CER -no-gen-UPER -no-gen-BER -S "$skeletons" \
+    -D "$tagged_set_cer" "$test_srcdir/TaggedSet.asn1"
+if ! (cargo check --offline --manifest-path "$tagged_set_cer/Cargo.toml" && \
+    cargo clippy --offline --manifest-path "$tagged_set_cer/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/tagged-set-cer-only.log" 2>&1; then
+    cat "$test_tmp/tagged-set-cer-only.log"
+    echo "FAIL: tagged CER-only SET strict Clippy"
+    exit 1
+fi
+
+# C provides independent DER/CER vectors and exercises alias/string behavior.
+tagged_c_out="$test_tmp/tagged-records-c"
+mkdir "$tagged_c_out"
+"$asn1c_bin" -S "$skeletons" -D "$tagged_c_out" \
+    "$test_srcdir/TaggedSequence.asn1" "$test_srcdir/TaggedSetC.asn1" \
+    >"$test_tmp/tagged-records-c-generate.log" 2>&1
+rm -f "$tagged_c_out/converter-example.c" "$tagged_c_out/pdu_collection.c"
+if ! cc -I"$tagged_c_out" "$tagged_c_out"/*.c "$test_srcdir/c_tagged_sequence.c" \
+    -lm -o "$test_tmp/c-tagged-sequence" \
+    >"$test_tmp/tagged-records-c-compile.log" 2>&1; then
+    cat "$test_tmp/tagged-records-c-compile.log"
+    echo "FAIL: generated C tagged BER/CER reference did not compile"
+    exit 1
+fi
+"$test_tmp/c-tagged-sequence"
+
 # Fail closed on SET shapes and codec combinations outside the current slice.
 cat >"$test_tmp/SetTagged.asn1" <<'EOF'
 SetTagged DEFINITIONS ::= BEGIN
 Packet ::= SET { flag [0] BOOLEAN }
 END
 EOF
-cat >"$test_tmp/SetAutomatic.asn1" <<'EOF'
-SetAutomatic DEFINITIONS AUTOMATIC TAGS ::= BEGIN
-Packet ::= SET { flag BOOLEAN }
+cat >"$test_tmp/SetExplicit.asn1" <<'EOF'
+SetExplicit DEFINITIONS ::= BEGIN
+Packet ::= SET { flag [0] EXPLICIT BOOLEAN }
+END
+EOF
+cat >"$test_tmp/SetApplication.asn1" <<'EOF'
+SetApplication DEFINITIONS ::= BEGIN
+Packet ::= SET { flag [APPLICATION 2] IMPLICIT BOOLEAN }
+END
+EOF
+cat >"$test_tmp/SetPrivate.asn1" <<'EOF'
+SetPrivate DEFINITIONS ::= BEGIN
+Packet ::= SET { flag [PRIVATE 2] IMPLICIT BOOLEAN }
+END
+EOF
+cat >"$test_tmp/SetUniversal.asn1" <<'EOF'
+SetUniversal DEFINITIONS ::= BEGIN
+Packet ::= SET { flag [UNIVERSAL 1] IMPLICIT BOOLEAN }
+END
+EOF
+cat >"$test_tmp/SetRepeatedContextTag.asn1" <<'EOF'
+SetRepeatedContextTag DEFINITIONS ::= BEGIN
+Packet ::= SET { first [2] IMPLICIT BOOLEAN, second [2] IMPLICIT BOOLEAN }
+END
+EOF
+cat >"$test_tmp/SetTooHighTag.asn1" <<'EOF'
+SetTooHighTag DEFINITIONS ::= BEGIN
+Packet ::= SET { flag [1073741824] IMPLICIT BOOLEAN }
+END
+EOF
+cat >"$test_tmp/SetTaggedAny.asn1" <<'EOF'
+SetTaggedAny DEFINITIONS ::= BEGIN
+Packet ::= SET { value [5] IMPLICIT ANY }
 END
 EOF
 cat >"$test_tmp/SetAlias.asn1" <<'EOF'
@@ -1823,7 +1949,8 @@ SetExtension DEFINITIONS ::= BEGIN
 Packet ::= SET { flag BOOLEAN, ..., empty NULL }
 END
 EOF
-for fixture in SetTagged SetAutomatic SetAlias SetNested SetRepeatedTag \
+for fixture in SetTagged SetExplicit SetApplication SetPrivate SetUniversal \
+    SetRepeatedContextTag SetTooHighTag SetTaggedAny SetAlias SetNested SetRepeatedTag \
     SetNullDefault SetEnumDefault SetStringDefault SetUnbounded SetDisjointSize \
     SetExtensibleSize SetContaining SetNamedBits SetExtensibleEnum SetExtension; do
     if "$asn1c_bin" --rust -gen-BER -no-gen-UPER -no-gen-CER \
@@ -1850,15 +1977,40 @@ if "$asn1c_bin" --rust -gen-BER -gen-XER -no-gen-UPER -no-gen-CER \
 fi
 test ! -e "$test_tmp/rejected-set-xer-mix"
 
-# Reject field aliases, tags, repeated universal tags, and unsupported shapes.
+# Reject unsupported tag classes/modes, collisions, aliases, and shapes.
 cat >"$test_tmp/SequenceBerCerTagged.asn1" <<'EOF'
 SequenceBerCerTagged DEFINITIONS ::= BEGIN
 Packet ::= SEQUENCE { flag [0] BOOLEAN }
 END
 EOF
-cat >"$test_tmp/SequenceBerCerAutomatic.asn1" <<'EOF'
-SequenceBerCerAutomatic DEFINITIONS AUTOMATIC TAGS ::= BEGIN
-Packet ::= SEQUENCE { flag BOOLEAN }
+cat >"$test_tmp/SequenceBerCerExplicit.asn1" <<'EOF'
+SequenceBerCerExplicit DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { flag [0] EXPLICIT BOOLEAN }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerApplication.asn1" <<'EOF'
+SequenceBerCerApplication DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { flag [APPLICATION 2] IMPLICIT BOOLEAN }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerPrivate.asn1" <<'EOF'
+SequenceBerCerPrivate DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { flag [PRIVATE 2] IMPLICIT BOOLEAN }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerRepeatedContext.asn1" <<'EOF'
+SequenceBerCerRepeatedContext DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { first [2] IMPLICIT BOOLEAN, second [2] IMPLICIT BOOLEAN }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerTooHighTag.asn1" <<'EOF'
+SequenceBerCerTooHighTag DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { flag [1073741824] IMPLICIT BOOLEAN }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerTaggedAny.asn1" <<'EOF'
+SequenceBerCerTaggedAny DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { value [5] IMPLICIT ANY }
 END
 EOF
 cat >"$test_tmp/SequenceBerCerDuplicate.asn1" <<'EOF'
@@ -1940,7 +2092,9 @@ SequenceBerCerExtensibleEnum DEFINITIONS ::= BEGIN
 Packet ::= SEQUENCE { state ENUMERATED { idle(0), ..., busy(1) } }
 END
 EOF
-for fixture in SequenceBerCerTagged SequenceBerCerAutomatic \
+for fixture in SequenceBerCerTagged SequenceBerCerExplicit SequenceBerCerApplication \
+    SequenceBerCerPrivate SequenceBerCerRepeatedContext SequenceBerCerTooHighTag \
+    SequenceBerCerTaggedAny \
     SequenceBerCerDuplicate SequenceBerCerNested \
     SequenceBerCerUnbounded SequenceBerCerNullDefault \
     SequenceBerCerEnumDefault SequenceBerCerOctetDefault \

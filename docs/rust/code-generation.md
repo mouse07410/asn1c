@@ -76,10 +76,12 @@ NULL, finite nonextensible INTEGER ranges fitting `i64`, direct nonextensible
 ENUMERATED roots fitting `i64`, and direct fixed or bounded BIT/OCTET STRING
 values with supported finite `SIZE` constraints. `-gen-BER` adds `decode_ber`
 and `encode_der` for those types. Its `--rust` defaults to UPER and CER.
-Empty or flat untagged SEQUENCE records with distinct direct BOOLEAN, NULL,
-bounded INTEGER, nonextensible ENUMERATED, and finite bounded BIT/OCTET STRING
-fields also have BER/DER/CER methods. Flat untagged SET records with the same
-distinct direct tags are available under a BER/CER-only selection. Other constructed
+Empty or flat SEQUENCE records with an untagged outer type and distinct
+effective direct-field tags for BOOLEAN, NULL, bounded INTEGER,
+nonextensible ENUMERATED, and finite bounded BIT/OCTET STRING fields also have
+BER/DER/CER methods. Resolved context-specific IMPLICIT and AUTOMATIC member
+tags are supported. Flat SET records with the same untagged outer type and
+distinct effective direct tags are available under a BER/CER-only selection. Other constructed
 records and many C-supported BER-family forms remain outside the implemented
 slice; see [the implementation matrix](implementation.md).
 
@@ -160,7 +162,8 @@ control only in Rust codecs that implement its behavior.
    nonextensible INTEGER whose complete range fits `i64`, plus SEQUENCE with
    required and OPTIONAL direct or inline nested fields and literal BOOLEAN or
    bounded INTEGER DEFAULT fields under UPER selection. A stricter flat,
-   unique-tag direct-field gate enables BER/DER/CER SEQUENCE methods.
+   unique-effective-tag direct-field gate enables BER/DER/CER SEQUENCE methods,
+   including resolved context-specific IMPLICIT and AUTOMATIC member tags.
 6. Runtime sources now live under `rust/asn1c-runtime/` and are included in
    Automake distribution and package-data installation. The CLI resolves the
    runtime separately from `-S`, which still selects C skeletons and standard
@@ -242,7 +245,7 @@ integer-width heuristics.
 | OBJECT IDENTIFIER | runtime `ObjectIdentifier` | Use checked arcs; do not assume every arc fits a machine integer. |
 | RELATIVE-OID | runtime `RelativeOid` | Same checked-arithmetic requirement as OID arcs. |
 | UTCTime, GeneralizedTime | runtime time wrapper or validated text newtype | Canonical rules need explicit APIs. |
-| SEQUENCE, SET | generated `struct` | UPER SEQUENCE fields use values and `Option<T>`; inline nested records share a cursor and put their presence bitmap before each record payload. The BER/DER/CER slice handles flat untagged records with distinct direct BOOLEAN, NULL, bounded INTEGER, ENUMERATED, and BIT/OCTET STRING fields, including supported BOOLEAN/INTEGER defaults. SET needs a BER/CER-only mask and emits members by ascending tag. |
+| SEQUENCE, SET | generated `struct` | UPER SEQUENCE fields use values and `Option<T>`; inline nested records share a cursor and put their presence bitmap before each record payload. The BER/DER/CER slice handles flat records with an untagged outer type and up to six distinct effective direct-field tags for BOOLEAN, NULL, bounded INTEGER, ENUMERATED, and BIT/OCTET STRING fields, including supported BOOLEAN/INTEGER defaults. Resolved IMPLICIT/AUTOMATIC context-specific member tags are accepted; SET needs a BER/CER-only mask and emits members by effective class/number order. |
 | CHOICE | generated `enum` | Include an unknown extension variant when the type is extensible. |
 | SEQUENCE OF, SET OF | `Vec<T>` newtype | Retain SET OF ordering rules in codec logic. |
 | Type reference | module-qualified reference | Use public newtypes for aliases that add constraints or API identity. |

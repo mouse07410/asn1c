@@ -71,13 +71,15 @@ order; DER omits default literals, BER decoding substitutes omitted defaults,
 and CER decoding verifies the complete canonical record against the same
 operation budget. Tests include fixed C encoder parity vectors, empty CER
 framing, unknown/duplicate/reordered fields, truncation, range violations, and
-resource ceilings. Tagged, automatic-tagged, nested, duplicate-tag, unbounded,
-and unsupported DEFAULT shapes fail before crate publication. The fixture also
-builds all three codec families together with UPER and runs strict Clippy.
+resource ceilings. The initial untagged slice rejected tagged, automatic-tagged,
+nested, duplicate-tag, unbounded, and unsupported DEFAULT shapes before crate
+publication. The fixture also builds all three codec families together with
+UPER and runs strict Clippy.
 The third BER/CER SEQUENCE slice adds direct inline ENUMERATED and finite fixed
 or bounded OCTET STRING and BIT STRING fields. New members may be required or
 OPTIONAL; enum wire values use their declared ASN.1 numbers. Records remain flat,
-untagged, nonextensible, and limited to six unique universal tags. New kinds do
+nonextensible, and limited to six unique effective tags. At this stage members
+use universal tags. New kinds do
 not accept DEFAULT, named bits, CONTAINING, aliases, or unsupported size ranges.
 Mixed UPER/BER/CER tests and BER-only/CER-only builds check selector-sensitive
 emitters. C comparisons cover DER length edges at 125/126 and 127/128 OCTET
@@ -85,7 +87,7 @@ bytes, CER OCTET thresholds at 1000/1001, and CER BIT content thresholds at
 999/1000 payload octets. BER constructed OCTET/BIT fields, strict CER rejection
 of noncanonical fragments, unknown enum values, and cumulative record budgets
 are also covered.
-The fourth BER/CER slice adds flat untagged SET records with unique direct
+The fourth BER/CER slice adds flat SET records with unique direct
 BOOLEAN, bounded INTEGER, fixed or bounded BIT/OCTET STRING, NULL, and inline
 nonextensible ENUMERATED members. SET members remain in declaration order in
 the Rust struct; DER and CER encode them in ascending universal-tag order. BER
@@ -97,6 +99,22 @@ negative shape gates. The generated C parity schema exercises nonempty SET
 cases. It excludes the Rust empty SET fixture because the current C generator
 emits an empty C enum for that type, which strict C compilation rejects; empty
 SET vectors are tested with the generated Rust wrapper and runtime.
+
+The fifth BER/CER slice supports fixed resolved context-specific IMPLICIT tags
+on the same flat SEQUENCE and SET fields. The generator reads the tags from the
+fixed AST, including AUTOMATIC TAGS, and validates tag class, mode, range, and
+uniqueness before publishing output. The C-compatible maximum is
+`0x3fffffff`. SEQUENCE retains declaration order and can still combine UPER
+with BER/CER; SET remains BER/CER-only and sorts by effective class and number.
+Required, OPTIONAL, and supported BOOLEAN/INTEGER DEFAULT behavior is preserved.
+Tests cover tags 30, 31, 127, 128, and the maximum; malformed/nonminimal high
+tags; BER prefix consumption and arbitrary SET ordering; strict CER canonical
+re-encoding; tagged constructed strings; resource limits; and selector-only
+strict Clippy. C parity checks DER/CER encoding and decoding for tags 31/128,
+AUTOMATIC TAGS, mixed universal/context SET order, BER redundant-tag aliases,
+and CER-fragmented tagged OCTET/BIT STRING values. The C parity schema omits the
+empty SET because current C code generation produces an empty enum that fails
+strict C compilation; the empty SET case is checked through the Rust wrapper.
 The fixed-size string fixture covers standalone OCTET STRING and BIT STRING,
 zero-sized values, bit packing inside a mixed SEQUENCE, malformed lengths and
 pad bits, truncation, and whole-operation budgets. It also checks that the
@@ -163,7 +181,8 @@ codecs and selector-driven ANY remain unsupported.
 
 Unconstrained BIT STRING and OCTET STRING with CONTAINING support UPER
 at top level or as required/OPTIONAL SEQUENCE fields when the contained type
-is a same-module direct BOOLEAN or a bounded, non-singleton INTEGER. Inline forms are promoted to local type assignments.
+is a same-module direct BOOLEAN or a bounded, non-singleton INTEGER. Inline
+forms are promoted to local type assignments.
 Generated wrappers hold the typed inner value. Decoding validates the outer
 length, inner range and OCTET STRING padding with a single operation budget.
 SIZE combinations, singleton integers, constructed contents, and other

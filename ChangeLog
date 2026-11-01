@@ -1,4 +1,8 @@
 Changes since v1.5.3:
+	* Add resolved context-specific IMPLICIT member tags to the bounded Rust
+	  BER/DER/CER flat SEQUENCE and SET slices, including automatic and high tag
+	  numbers. Keep field kinds separate from effective identifiers, preserve
+	  C-compatible BER aliases, and compare strict CER against canonical output.
 	* Add a bounded Rust BER/DER/CER flat SET slice with unordered BER field
 	  decoding, canonical tag-ordered DER/CER output, strict CER comparison,
 	  OPTIONAL/default handling, and shared record resource accounting.

@@ -1,27 +1,29 @@
 # Rust BER, DER, and CER parity design
 
-Status: approved architecture and staged plan; this document does not claim
-that the stages have been implemented. The compatibility target is the C
-backend in this repository, qualified by the decisions below. The Rust
+Status: approved architecture and staged plan with qualified slices already
+implemented. Full C parity has not been reached. The compatibility target is
+the C backend in this repository, qualified by the decisions below. The Rust
 runtime currently supplies BER prefix decoding and DER and CER encoding, plus
 strict CER prefix decoding, for BOOLEAN, NULL, finite bounded `i64` INTEGER,
 direct finite ENUMERATED, and fixed or bounded BIT/OCTET STRING values. See
 `rust/asn1c-runtime/README.md` and
 `libasn1compiler/asn1c_rust.c`. The generator rejects many schemas supported by
-C, including imports, references, and tags. These rejections must remain
-until the corresponding generated representation and codecs are implemented.
+C, including imports, references, root tags, and EXPLICIT tag stacks. These
+rejections remain until the corresponding generated representation and codecs
+are implemented.
 
-The implemented SEQUENCE slice handles empty or flat untagged records
-with distinct direct BOOLEAN, NULL, bounded INTEGER, ENUMERATED, and finite
-bounded BIT/OCTET STRING fields. Required and OPTIONAL members and literal
-BOOLEAN/INTEGER DEFAULT members share one operation budget. Nested records,
-tagging, and broader primitive members remain in the staged parity matrix
-below.
+The implemented SEQUENCE slice handles empty or flat records with an untagged
+outer type and up to six distinct effective direct-field tags for BOOLEAN,
+NULL, bounded INTEGER, ENUMERATED, and finite bounded BIT/OCTET STRING fields.
+Required and OPTIONAL members and literal BOOLEAN/INTEGER DEFAULT members
+share one operation budget. Resolved context-specific IMPLICIT and AUTOMATIC
+member tags are supported. Nested records and broader primitive members
+remain in the staged parity matrix below.
 
-The following flat SET slice uses the same six direct universal field kinds
-under BER/CER-only selection. Its BER reader accepts arbitrary member order;
-the DER/CER writer emits ascending tags. Broader SET shapes, collections,
-nested records, and tagging remain future stages.
+The flat SET slice uses the same six direct field kinds under BER/CER-only
+selection. Its BER reader accepts arbitrary member order;
+the DER/CER writer emits ascending effective tags. Broader SET shapes,
+collections, nested records, and tag stacks remain future stages.
 
 ## Architecture and interfaces
 
@@ -51,6 +53,48 @@ values. Preserve the existing primitive API and its limits semantics unless a
 separately reviewed compatibility change is required. A streaming interface
 is a separate unresolved decision, below. Type-specific handling must not
 silently reinterpret a malformed or unsupported value as another type.
+
+### Resolved field tags
+
+The implemented tagged-field stage uses the fixed AST's resolved tag for each direct field.
+An untagged field keeps its universal identifier. A context-specific IMPLICIT
+tag replaces only the outer field identifier; the primitive content rules and
+the universal identifiers of constructed BIT/OCTET STRING fragments remain
+unchanged. Automatic tags are read from the fixed member metadata instead of
+being recomputed from declaration position. References and EXPLICIT wrappers
+remain gated until the generator can represent and validate the full chain.
+
+The runtime keeps field kind separate from effective identifier class and
+number. Readers match the full class/number pair, then validate the field's
+primitive or constructed form against its declared kind. SEQUENCE preserves
+declaration order, while SET canonical output sorts effective tags by class
+and number. Tagged identifiers use checked high-tag parsing and minimal
+encoding; BER may accept nonminimal identifiers that the C decoder accepts,
+and strict CER rejects them by re-encoding. The tagged-field generator
+gate limits tag numbers to the C target's representable range and rejects
+duplicate effective tags before publishing output. The existing untagged
+record API remains source compatible.
+
+### EXPLICIT field wrappers (planned)
+
+The next tag stage should accept one resolved context-specific EXPLICIT tag
+on each supported flat direct field. The effective outer tag determines
+record dispatch and SET order; an intrinsic universal child retains the
+declared field kind. DER wraps one complete child TLV in a constructed,
+definite-length outer TLV. CER uses a constructed, indefinite-length outer
+TLV and a matching EOC, with the child encoded under CER rules. Both layers
+must charge the same record context, including child storage, wrapper bytes,
+work, and depth.
+
+BER decoding must accept a definite or indefinite EXPLICIT wrapper only when
+it contains exactly one complete child of the expected intrinsic type. It
+must reject missing or extra children, cross-boundary lengths, a primitive
+outer identifier, and unmatched EOCs. Constructed BIT/OCTET STRING children
+may have their own nested EOCs; wrapper traversal must match each level.
+Strict CER comparison rejects a definite wrapper or noncanonical child. The
+first gate should continue rejecting references, multi-tag chains, other
+classes, nested records, and unsupported codec combinations until their
+representation and tests are complete.
 
 Strict CER decoding uses BER decoding followed by canonical CER encoding and
 comparison with exactly the consumed prefix. This matches the architecture of

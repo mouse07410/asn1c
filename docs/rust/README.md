@@ -36,14 +36,16 @@ JER is also available for those assignments when selected explicitly.
 Direct nonextensible ENUMERATED values and fixed or bounded OCTET STRING and
 BIT STRING assignments also support BER prefix decoding, DER encoding, and
 CER encoding and strict decoding. This is a limited direct-type slice;
-empty or flat untagged SEQUENCE records with distinct direct BOOLEAN, NULL,
-bounded INTEGER, ENUMERATED, and bounded BIT/OCTET STRING fields also support
-BER/DER/CER. Tags, aliases, open types,
+empty or flat SEQUENCE records with an untagged outer type and distinct
+effective direct-field tags for BOOLEAN, NULL, bounded INTEGER, ENUMERATED,
+and bounded BIT/OCTET STRING also support BER/DER/CER. Resolved
+context-specific IMPLICIT and AUTOMATIC member tags are supported within the
+C tag-number range. Root tags, EXPLICIT tag stacks, aliases, open types,
 and broader constructed records do not yet have BER/DER/CER parity. See the
 [parity design](ber-der-cer-design.md).
-The same direct-field subset supports flat untagged SET under a BER/CER-only
+The same direct-field subset supports flat SET with an untagged outer type under a BER/CER-only
 codec selection (`-no-gen-UPER`); BER decoding accepts any member order while
-DER and CER encoding use ascending universal tags.
+DER and CER encoding sort by effective tag class and number.
 
 Start with the [architecture decision](architecture.md) and
 [implementation plan](stage-one-plan.md). Supporting designs describe the

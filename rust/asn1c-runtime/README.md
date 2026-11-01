@@ -143,7 +143,22 @@ record API accepts at most six uniquely tagged fields, matching the supported
 universal tags. During decode, `max_output_bytes` also caps aggregate retained
 BIT/OCTET STRING payload bytes across fields. DER string fields are primitive;
 CER uses 1000-content-octet fragments, counting the BIT STRING unused-count
-octet. Tagged records, extensions, and nested records remain outside this slice.
+octet. Tagged outer containers, extensions, and nested records remain outside
+this slice.
+
+The record API also supports fixed effective tags with a separate `FieldKind`
+through `RecordField`, `Tag`, and `TagClass`. `SequenceReader::new_tagged` and
+`SetReader::new_tagged` borrow up to six checked descriptors; their typed
+`read_*` methods validate the descriptor kind, and `next_tagged_field` returns
+class and number without conflating tags. Writers provide corresponding
+`write_*_tagged` methods while preserving the universal-only methods. Tags may
+use Universal, Application, ContextSpecific, or Private classes and numbers up
+to `0x3fff_ffff`, matching the C runtime's packed tag range. BER accepts
+nonminimal high-tag identifier aliases, including redundant leading zero
+groups, within input and work limits; DER/CER writers emit minimal high-tag
+identifiers. SET writer order compares class then number. For IMPLICIT
+BIT/OCTET STRING, the effective tag replaces only the outer tag; CER and BER
+constructed string fragments retain universal component tags 3 and 4.
 
 Run the crate checks from the repository root:
 

@@ -130,15 +130,21 @@ nonextensible ENUMERATED values fitting signed 64-bit integers, and direct
 fixed or bounded BIT STRING and OCTET STRING values with supported finite
 `SIZE` constraints. Long strings use CER fragmentation; `decode_cer()`
 re-encodes and compares the consumed prefix to reject noncanonical forms.
-Flat untagged SEQUENCE records with distinct direct BOOLEAN, NULL, bounded
-INTEGER, ENUMERATED, and finite bounded BIT/OCTET STRING fields also support
+Flat SEQUENCE records with an untagged outer type and distinct effective tags
+for direct BOOLEAN, NULL, bounded INTEGER, ENUMERATED, and finite bounded
+BIT/OCTET STRING fields also support
 required and OPTIONAL members, literal BOOLEAN/INTEGER DEFAULT members, and
 an empty record. Their BER/DER/CER operations share one record-wide resource
 budget.
-Flat untagged SET records support the same six distinct direct field kinds
+Flat SET records with an untagged outer type support the same six direct field kinds
 under BER/DER/CER-only selection (`-no-gen-UPER`), with unordered BER field
 decoding and canonical tag-ordered DER/CER output. The current XER-only SET
 slice remains a separate codec selection.
+The same flat BER/DER/CER records accept resolved context-specific IMPLICIT
+member tags, including automatic and high tag numbers within the C runtime's
+range. Repeated primitive kinds are supported when effective tags are unique;
+SET output sorts by effective class and tag number. Root tags, EXPLICIT tag
+stacks, aliases, and nested records remain outside this slice.
 Rust CER output is selected by default with UPER; `-no-gen-UPER` selects
 CER-only output. `-gen-BER` adds BER prefix decoding and DER encoding for
 these direct types. See [Rust output usage and limits](docs/rust/implementation.md)

@@ -40,7 +40,8 @@ pub use ber::{
     decode_bit_string_ber, decode_bit_string_cer, decode_enumerated_ber, decode_enumerated_cer,
     decode_octet_string_ber, decode_octet_string_cer, encode_bit_string_cer, encode_bit_string_der,
     encode_enumerated_cer, encode_enumerated_der, encode_octet_string_cer, encode_octet_string_der,
-    RecordContext, RecordEncoding, SequenceReader, SequenceWriter, SetReader, SetWriter,
+    FieldKind, RecordContext, RecordEncoding, RecordField, SequenceReader, SequenceWriter,
+    SetReader, SetWriter, Tag, TagClass, MAX_TAG_NUMBER,
 };
 pub use cbor::{
     decode_boolean_cbor, decode_integer_cbor, decode_null_cbor, encode_boolean_cbor,

@@ -1,0 +1,20 @@
+TaggedSet DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+TaggedSetRecord ::= SET {
+    largest [1073741823] IMPLICIT BOOLEAN OPTIONAL,
+    high [128] IMPLICIT BOOLEAN OPTIONAL,
+    marker [31] IMPLICIT NULL,
+    count [2] IMPLICIT INTEGER (-3..3) DEFAULT 1,
+    flag BOOLEAN DEFAULT TRUE,
+    second [127] IMPLICIT BOOLEAN OPTIONAL
+}
+
+AutomaticSet ::= SET {
+    flag BOOLEAN,
+    count INTEGER (-2..2),
+    empty NULL OPTIONAL
+}
+
+EmptyTaggedSet ::= SET { }
+
+END

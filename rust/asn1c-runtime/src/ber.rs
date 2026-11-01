@@ -20,6 +20,328 @@ const TAG_INTEGER: u64 = 2;
 const TAG_NULL: u64 = 5;
 const TAG_SET: u64 = 17;
 const MAX_SEQUENCE_FIELDS: usize = 6;
+/// Largest BER tag number representable by the C runtime's packed tag value.
+pub const MAX_TAG_NUMBER: u32 = 0x3fff_ffff;
+
+/// BER identifier class, ordered by its two wire bits.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[repr(u8)]
+pub enum TagClass {
+    /// Universal ASN.1 type tag.
+    Universal = 0,
+    /// Application-wide tag class.
+    Application = 1,
+    /// Context-specific tag class.
+    ContextSpecific = 2,
+    /// Private tag class.
+    Private = 3,
+}
+
+impl TagClass {
+    /// Decode the two class bits from a BER identifier.
+    ///
+    /// # Parameters and returns
+    /// `bits` is the two-bit class value. Returns the matching class.
+    ///
+    /// # Errors
+    /// This total helper cannot fail because its input is masked to two bits.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 identifier class bits. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged record support.
+    /// Example: `TagClass::from_bits(2) == TagClass::ContextSpecific`.
+    const fn from_bits(bits: u8) -> Self {
+        match bits {
+            0 => Self::Universal,
+            1 => Self::Application,
+            2 => Self::ContextSpecific,
+            _ => Self::Private,
+        }
+    }
+}
+
+/// Identifier class and numeric tag, without the constructed bit.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Tag {
+    /// The BER identifier class.
+    class: TagClass,
+    /// Numeric tag number, bounded to the C runtime's representable range.
+    number: u32,
+}
+
+impl Tag {
+    /// Construct a checked identifier class and number pair.
+    ///
+    /// # Parameters and returns
+    /// `class` selects class bits; `number` is the numeric tag. Returns the
+    /// tag when it fits the C runtime's packed representation.
+    ///
+    /// # Errors
+    /// Returns `InvalidEncoding` when `number` exceeds `MAX_TAG_NUMBER`.
+    ///
+    /// # Source, version, history, example
+    /// Source: C `ber_tlv_tag_t` range. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged record support.
+    /// Example: `Tag::new(TagClass::ContextSpecific, 31)?`.
+    pub fn new(class: TagClass, number: u32) -> Result<Self, Error> {
+        let tag = Self { class, number };
+        tag.validate()?;
+        Ok(tag)
+    }
+
+    /// Construct a universal tag for a static descriptor.
+    ///
+    /// Runtime record operations revalidate this value.
+    ///
+    /// # Parameters and returns
+    /// `number` is the universal tag number. Returns its descriptor.
+    ///
+    /// # Errors
+    /// This const helper cannot fail; runtime APIs reject out-of-range values.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 universal tags. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged descriptors.
+    /// Example: `Tag::universal(4)`.
+    #[must_use]
+    pub const fn universal(number: u32) -> Self {
+        Self {
+            class: TagClass::Universal,
+            number,
+        }
+    }
+
+    /// Construct a context-specific tag for a static descriptor.
+    ///
+    /// Runtime record operations revalidate this value.
+    ///
+    /// # Parameters and returns
+    /// `number` is the context-specific tag number. Returns its descriptor.
+    ///
+    /// # Errors
+    /// This const helper cannot fail; runtime APIs reject out-of-range values.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 context-specific tags. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged descriptors.
+    /// Example: `Tag::context_specific(31)`.
+    #[must_use]
+    pub const fn context_specific(number: u32) -> Self {
+        Self {
+            class: TagClass::ContextSpecific,
+            number,
+        }
+    }
+
+    /// Return this tag's identifier class.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns its class.
+    ///
+    /// # Errors
+    /// This total accessor cannot fail.
+    ///
+    /// # Source, version, history, example
+    /// Source: BER tag descriptor API. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged record support.
+    /// Example: `tag.class() == TagClass::Universal`.
+    #[must_use]
+    pub const fn class(self) -> TagClass {
+        self.class
+    }
+
+    /// Return this tag's numeric identifier number.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns the numeric tag number.
+    ///
+    /// # Errors
+    /// This total accessor cannot fail.
+    ///
+    /// # Source, version, history, example
+    /// Source: BER tag descriptor API. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged record support.
+    /// Example: `tag.number() == 31`.
+    #[must_use]
+    pub const fn number(self) -> u32 {
+        self.number
+    }
+
+    /// Check this descriptor against the C runtime's packed tag range.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns success if the tag number fits.
+    ///
+    /// # Errors
+    /// Returns `InvalidEncoding` when the tag number exceeds the cap.
+    ///
+    /// # Source, version, history, example
+    /// Source: C `ber_tlv_tag_t` range. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: checked tag descriptors.
+    /// Example: called by constructors and every tagged operation.
+    const fn validate(self) -> Result<(), Error> {
+        if self.number > MAX_TAG_NUMBER {
+            return Err(Error::InvalidEncoding {
+                reason: "BER tag number exceeds the C runtime limit",
+            });
+        }
+        Ok(())
+    }
+}
+
+/// Semantic ASN.1 primitive kind carried separately from an effective tag.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FieldKind {
+    /// BOOLEAN field content.
+    Boolean,
+    /// Signed bounded INTEGER field content.
+    Integer,
+    /// Packed BIT STRING field content.
+    BitString,
+    /// OCTET STRING field content.
+    OctetString,
+    /// Empty NULL field content.
+    Null,
+    /// Signed numeric ENUMERATED field content.
+    Enumerated,
+}
+
+impl FieldKind {
+    /// Return the intrinsic universal tag number for this primitive kind.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns its universal tag number.
+    ///
+    /// # Errors
+    /// This total helper cannot fail.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 universal primitive tags. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged record support.
+    /// Example: `FieldKind::Boolean.universal_tag() == 1`.
+    const fn universal_tag(self) -> u64 {
+        match self {
+            Self::Boolean => TAG_BOOLEAN,
+            Self::Integer => TAG_INTEGER,
+            Self::BitString => TAG_BIT_STRING,
+            Self::OctetString => TAG_OCTET_STRING,
+            Self::Null => TAG_NULL,
+            Self::Enumerated => TAG_ENUMERATED,
+        }
+    }
+}
+
+/// Effective identifier and semantic type for one direct record member.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RecordField {
+    /// Effective BER identifier, including an IMPLICIT replacement tag.
+    tag: Tag,
+    /// ASN.1 primitive kind whose content rules remain in effect.
+    kind: FieldKind,
+}
+
+impl RecordField {
+    /// Construct a checked record field descriptor.
+    ///
+    /// # Parameters and returns
+    /// `tag` is the effective identifier; `kind` selects the underlying ASN.1
+    /// primitive semantics. Returns a validated descriptor.
+    ///
+    /// # Errors
+    /// Returns `InvalidEncoding` for an out-of-range tag or a mismatched
+    /// intrinsic universal tag.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 IMPLICIT tagging. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged record support.
+    /// Example: `RecordField::new(Tag::context_specific(3), FieldKind::Boolean)?`.
+    pub fn new(tag: Tag, kind: FieldKind) -> Result<Self, Error> {
+        validate_field_descriptor(tag, kind)?;
+        Ok(Self { tag, kind })
+    }
+
+    /// Return this member's effective BER identifier.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns the stored tag.
+    ///
+    /// # Errors
+    /// This total accessor cannot fail.
+    ///
+    /// # Source, version, history, example
+    /// Source: BER record descriptor API. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged record support.
+    /// Example: `field.tag().class()`.
+    #[must_use]
+    pub const fn tag(self) -> Tag {
+        self.tag
+    }
+
+    /// Return this member's ASN.1 primitive kind.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns the stored field kind.
+    ///
+    /// # Errors
+    /// This total accessor cannot fail.
+    ///
+    /// # Source, version, history, example
+    /// Source: BER record descriptor API. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged record support.
+    /// Example: `field.kind() == FieldKind::Boolean`.
+    #[must_use]
+    pub const fn kind(self) -> FieldKind {
+        self.kind
+    }
+}
+
+/// Validate the effective tag against its ASN.1 primitive kind.
+///
+/// # Parameters and returns
+/// `tag` is the encoded identifier and `kind` supplies its content semantics.
+/// Returns success for bounded tags and matching universal identifiers.
+///
+/// # Errors
+/// Returns `InvalidEncoding` when a tag exceeds the C limit or a universal tag
+/// does not identify the supplied primitive kind.
+///
+/// # Source, version, history, example
+/// Source: X.690 IMPLICIT tag replacement. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: tagged record support.
+/// Example: called by `RecordField::new` and all tagged writers.
+fn validate_field_descriptor(tag: Tag, kind: FieldKind) -> Result<(), Error> {
+    tag.validate()?;
+    if tag.class == TagClass::Universal && u64::from(tag.number) != kind.universal_tag() {
+        return Err(invalid(
+            "universal field tag does not match its primitive kind",
+        ));
+    }
+    Ok(())
+}
+
+/// Map one supported universal tag to its semantic primitive kind.
+///
+/// # Parameters and returns
+/// `tag` is a numeric universal tag. Returns its field kind when supported.
+///
+/// # Errors
+/// This lookup cannot fail; unsupported tags return `None`.
+///
+/// # Source, version, history, example
+/// Source: runtime's flat primitive field set. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: tagged reader compatibility.
+/// Example: `field_kind_for_universal(1) == Some(FieldKind::Boolean)`.
+const fn field_kind_for_universal(tag: u64) -> Option<FieldKind> {
+    match tag {
+        TAG_BOOLEAN => Some(FieldKind::Boolean),
+        TAG_INTEGER => Some(FieldKind::Integer),
+        TAG_BIT_STRING => Some(FieldKind::BitString),
+        TAG_OCTET_STRING => Some(FieldKind::OctetString),
+        TAG_NULL => Some(FieldKind::Null),
+        TAG_ENUMERATED => Some(FieldKind::Enumerated),
+        _ => None,
+    }
+}
 
 /// Canonical encoding rule used for one generated record.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -35,7 +357,7 @@ pub enum RecordEncoding {
 enum RecordKind {
     /// Preserve schema declaration order for SEQUENCE components.
     Sequence,
-    /// Accept arbitrary decode order and emit SET components by tag number.
+    /// Accept arbitrary decode order and emit SET components by class/number.
     Set,
 }
 
@@ -96,8 +418,10 @@ pub struct RecordContext {
 /// One field header and content span in a flat SEQUENCE.
 #[derive(Clone, Copy)]
 struct FieldSpan {
-    /// Universal tag number of the current field.
-    tag: u64,
+    /// Effective identifier of the current field.
+    tag: Tag,
+    /// Primitive semantics taken from its descriptor.
+    kind: FieldKind,
     /// First identifier byte in caller input.
     tlv_start: usize,
     /// Exclusive encoded field end in caller input.
@@ -120,10 +444,12 @@ pub struct SequenceWriter<'context> {
     context: &'context mut RecordContext,
     /// Complete output buffer with outer header placeholder; state variable.
     bytes: Vec<u8>,
-    /// Bit mask of emitted universal tags; state variable.
-    seen_mask: u8,
-    /// Last emitted universal tag for canonical SET component order; state variable.
-    last_tag: Option<u64>,
+    /// Tags already emitted; this is a state variable.
+    seen_tags: [Option<Tag>; MAX_SEQUENCE_FIELDS],
+    /// Number of used slots in `seen_tags`; this is a state variable.
+    field_count: usize,
+    /// Last tag for canonical SET component order; state variable.
+    last_tag: Option<Tag>,
 }
 
 /// Encode flat SET fields under one bounded BER/DER/CER record context.
@@ -138,6 +464,8 @@ pub struct SequenceReader<'input, 'tags, 'context> {
     input: &'input [u8],
     /// Schema field tags in declaration order.
     expected_tags: &'tags [u64],
+    /// Optional effective tags and semantic kinds for tagged schemas.
+    tagged_fields: Option<&'tags [RecordField]>,
     /// Container tag and BER component ordering rule.
     kind: RecordKind,
     /// Shared operation limits and work budget.
@@ -363,7 +691,8 @@ impl SequenceWriter<'_> {
             kind,
             context,
             bytes,
-            seen_mask: 0,
+            seen_tags: [None; MAX_SEQUENCE_FIELDS],
+            field_count: 0,
             last_tag: None,
         })
     }
@@ -381,8 +710,26 @@ impl SequenceWriter<'_> {
     /// Responsible: asn1c maintainers. History: flat record runtime API.
     /// Example: `writer.write_boolean(true)?`.
     pub fn write_boolean(&mut self, value: bool) -> Result<(), Error> {
+        self.write_boolean_tagged(Tag::universal(1), value)
+    }
+
+    /// Append BOOLEAN content under a checked effective tag.
+    ///
+    /// # Parameters and returns
+    /// `tag` is the effective identifier; `value` is the ASN.1 BOOLEAN.
+    /// Returns success after the complete TLV is appended.
+    ///
+    /// # Errors
+    /// Returns invalid universal tag/kind, duplicate/order, resource, size,
+    /// or allocation errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 BOOLEAN and IMPLICIT tagging. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged record support.
+    /// Example: `writer.write_boolean_tagged(Tag::context_specific(2), true)?`.
+    pub fn write_boolean_tagged(&mut self, tag: Tag, value: bool) -> Result<(), Error> {
         let content = [if value { 0xff } else { 0 }];
-        self.write_field(TAG_BOOLEAN, &content, 0x01)
+        self.write_field(tag, FieldKind::Boolean, &content)
     }
 
     /// Append one empty NULL field with its universal tag.
@@ -398,7 +745,24 @@ impl SequenceWriter<'_> {
     /// Responsible: asn1c maintainers. History: flat record runtime API.
     /// Example: `writer.write_null()?`.
     pub fn write_null(&mut self) -> Result<(), Error> {
-        self.write_field(TAG_NULL, &[], 0x10)
+        self.write_null_tagged(Tag::universal(5))
+    }
+
+    /// Append empty NULL content under a checked effective tag.
+    ///
+    /// # Parameters and returns
+    /// `tag` is the effective identifier. Returns success after an empty TLV.
+    ///
+    /// # Errors
+    /// Returns invalid universal tag/kind, duplicate/order, resource, size,
+    /// or allocation errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 NULL and IMPLICIT tagging. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged record support.
+    /// Example: `writer.write_null_tagged(Tag::context_specific(5))?`.
+    pub fn write_null_tagged(&mut self, tag: Tag) -> Result<(), Error> {
+        self.write_field(tag, FieldKind::Null, &[])
     }
 
     /// Append one minimally encoded bounded signed INTEGER field.
@@ -419,10 +783,37 @@ impl SequenceWriter<'_> {
     /// Responsible: asn1c maintainers. History: flat record runtime API.
     /// Example: `writer.write_integer(-2, -4, 4)?`.
     pub fn write_integer(&mut self, value: i64, lower: i64, upper: i64) -> Result<(), Error> {
+        self.write_integer_tagged(Tag::universal(2), value, lower, upper)
+    }
+
+    /// Append bounded INTEGER content under a checked effective tag.
+    ///
+    /// # Parameters
+    /// `tag` is the effective identifier; `value` is signed; `lower` and
+    /// `upper` are inclusive schema bounds.
+    ///
+    /// # Returns
+    /// `Ok(())` after appending shortest two's-complement content.
+    ///
+    /// # Errors
+    /// Returns invalid bounds/value, tag/kind mismatch, resource, or allocation
+    /// errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 INTEGER and IMPLICIT tagging. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged record support.
+    /// Example: `writer.write_integer_tagged(Tag::context_specific(7), 3, 0, 8)?`.
+    pub fn write_integer_tagged(
+        &mut self,
+        tag: Tag,
+        value: i64,
+        lower: i64,
+        upper: i64,
+    ) -> Result<(), Error> {
         crate::validate_integer(value, lower, upper)?;
         let full = value.to_be_bytes();
         let first = minimal_signed_start(full);
-        self.write_field(TAG_INTEGER, &full[first..], 0x02)
+        self.write_field(tag, FieldKind::Integer, &full[first..])
     }
 
     /// Append one minimally encoded numeric ENUMERATED field.
@@ -439,9 +830,27 @@ impl SequenceWriter<'_> {
     /// Responsible: asn1c maintainers. History: direct record fields.
     /// Example: `writer.write_enumerated(-1)?`.
     pub fn write_enumerated(&mut self, value: i64) -> Result<(), Error> {
+        self.write_enumerated_tagged(Tag::universal(10), value)
+    }
+
+    /// Append numeric ENUMERATED content under a checked effective tag.
+    ///
+    /// # Parameters and returns
+    /// `tag` is the effective identifier; `value` is the generated variant's
+    /// signed numeric representation. Returns success after the TLV is written.
+    ///
+    /// # Errors
+    /// Returns tag/kind mismatch, duplicate/order, work/output, size, or
+    /// allocation errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 ENUMERATED and IMPLICIT tagging. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged record support.
+    /// Example: `writer.write_enumerated_tagged(Tag::context_specific(10), 1)?`.
+    pub fn write_enumerated_tagged(&mut self, tag: Tag, value: i64) -> Result<(), Error> {
         let full = value.to_be_bytes();
         let first = minimal_signed_start(full);
-        self.write_field(TAG_ENUMERATED, &full[first..], 0x20)
+        self.write_field(tag, FieldKind::Enumerated, &full[first..])
     }
 
     /// Append one bounded OCTET STRING using the selected record rule.
@@ -467,12 +876,41 @@ impl SequenceWriter<'_> {
         lower: usize,
         upper: usize,
     ) -> Result<(), Error> {
+        self.write_octet_string_tagged(Tag::universal(4), value, lower, upper)
+    }
+
+    /// Append a bounded OCTET STRING under a checked effective tag.
+    ///
+    /// # Parameters
+    /// `tag` is the effective identifier; `value` is payload; `lower` and
+    /// `upper` are inclusive SIZE bounds. CER fragments above 1000 content
+    /// octets; fragment tags remain universal OCTET STRING.
+    ///
+    /// # Returns
+    /// `Ok(())` after the canonical child TLV is appended.
+    ///
+    /// # Errors
+    /// Returns invalid SIZE/tag, duplicate/order, resource, size, or allocation
+    /// errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 OCTET STRING and IMPLICIT tagging. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged record support.
+    /// Example: `writer.write_octet_string_tagged(tag, b"abc", 1, 8)?`.
+    pub fn write_octet_string_tagged(
+        &mut self,
+        tag: Tag,
+        value: &[u8],
+        lower: usize,
+        upper: usize,
+    ) -> Result<(), Error> {
         validate_size(value.len(), lower, upper)?;
-        let field_size = octet_field_size(value.len(), self.rule)?;
-        self.prepare_field(TAG_OCTET_STRING, field_size, 0x08)?;
+        validate_field_descriptor(tag, FieldKind::OctetString)?;
+        let field_size = octet_field_size(value.len(), self.rule, tag)?;
+        self.prepare_field(tag, field_size)?;
         match (self.rule, value.len() > CER_FRAGMENT_MAX) {
             (RecordEncoding::Cer, true) => {
-                push(&mut self.bytes, &[0x24, 0x80], &self.context.limits)?;
+                push_indefinite_header(&mut self.bytes, tag, &self.context.limits)?;
                 for fragment in value.chunks(CER_FRAGMENT_MAX) {
                     push_primitive(
                         &mut self.bytes,
@@ -483,15 +921,10 @@ impl SequenceWriter<'_> {
                 }
                 push(&mut self.bytes, &[0, 0], &self.context.limits)?;
             }
-            _ => push_primitive(
-                &mut self.bytes,
-                TAG_OCTET_STRING,
-                value,
-                &self.context.limits,
-            )?,
+            _ => push_primitive_tagged(&mut self.bytes, tag, value, &self.context.limits)?,
         }
-        self.seen_mask |= 0x08;
-        self.last_tag = Some(TAG_OCTET_STRING);
+        self.remember_tag(tag)?;
+        self.last_tag = Some(tag);
         Ok(())
     }
 
@@ -520,14 +953,44 @@ impl SequenceWriter<'_> {
         lower_bits: usize,
         upper_bits: usize,
     ) -> Result<(), Error> {
+        self.write_bit_string_tagged(Tag::universal(3), bytes, bit_len, lower_bits, upper_bits)
+    }
+
+    /// Append a bounded BIT STRING under a checked effective tag.
+    ///
+    /// # Parameters
+    /// `tag` is the effective identifier; `bytes` are packed bits; `bit_len` is
+    /// exact width; `lower_bits` and `upper_bits` are inclusive SIZE bounds.
+    /// CER fragments retain universal BIT STRING tags.
+    ///
+    /// # Returns
+    /// `Ok(())` after the canonical child TLV is appended.
+    ///
+    /// # Errors
+    /// Returns malformed bits, invalid SIZE/tag, duplicate/order, resource, or
+    /// allocation errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 BIT STRING and IMPLICIT tagging. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged record support.
+    /// Example: `writer.write_bit_string_tagged(tag, &[0x80], 1, 1, 8)?`.
+    pub fn write_bit_string_tagged(
+        &mut self,
+        tag: Tag,
+        bytes: &[u8],
+        bit_len: usize,
+        lower_bits: usize,
+        upper_bits: usize,
+    ) -> Result<(), Error> {
         validate_packed_bits(bytes, bit_len)?;
         validate_size(bit_len, lower_bits, upper_bits)?;
+        validate_field_descriptor(tag, FieldKind::BitString)?;
         let unused = unused_bits(bit_len);
-        let field_size = bit_field_size(bytes.len(), self.rule)?;
-        self.prepare_field(TAG_BIT_STRING, field_size, 0x04)?;
+        let field_size = bit_field_size(bytes.len(), self.rule, tag)?;
+        self.prepare_field(tag, field_size)?;
         let content_len = bytes.len().checked_add(1).ok_or(Error::SizeOverflow)?;
         if self.rule == RecordEncoding::Cer && content_len > CER_FRAGMENT_MAX {
-            push(&mut self.bytes, &[0x23, 0x80], &self.context.limits)?;
+            push_indefinite_header(&mut self.bytes, tag, &self.context.limits)?;
             let fragment_count = bytes.len().div_ceil(CER_FRAGMENT_MAX - 1);
             for (index, fragment) in bytes.chunks(CER_FRAGMENT_MAX - 1).enumerate() {
                 let fragment_unused = if index + 1 == fragment_count {
@@ -544,10 +1007,10 @@ impl SequenceWriter<'_> {
             }
             push(&mut self.bytes, &[0, 0], &self.context.limits)?;
         } else {
-            push_bit_fragment(&mut self.bytes, bytes, unused, &self.context.limits)?;
+            push_bit_fragment_tagged(&mut self.bytes, tag, bytes, unused, &self.context.limits)?;
         }
-        self.seen_mask |= 0x04;
-        self.last_tag = Some(TAG_BIT_STRING);
+        self.remember_tag(tag)?;
+        self.last_tag = Some(tag);
         Ok(())
     }
 
@@ -590,39 +1053,58 @@ impl SequenceWriter<'_> {
         finish(self.bytes, &self.context.limits)
     }
 
-    /// Append a typed field after checking uniqueness and cumulative budgets.
+    /// Append typed content after checking its effective tag and budgets.
     ///
-    /// # Parameters
-    /// `tag` is one supported universal field tag; `content` is its payload;
-    /// `mask` identifies it in the duplicate-detection state.
-    ///
-    /// # Returns
-    /// `Ok(())` after writing identifier, shortest length, and content.
+    /// # Parameters and returns
+    /// `tag` is the effective class/number; `kind` describes content semantics;
+    /// `content` is the already encoded primitive payload. Returns success after
+    /// identifier, shortest length, and content are appended.
     ///
     /// # Errors
-    /// Returns duplicate-tag, output/work-limit, size, or allocation errors.
+    /// Returns tag/kind mismatch, duplicate/order, resource, size, or allocation
+    /// errors. No panic.
     ///
     /// # Source, version, history, example
-    /// Source: shared bounded TLV writer. Version: 2026-10-31.
-    /// Responsible: asn1c maintainers. History: flat record runtime API.
+    /// Source: shared bounded TLV writer. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged record runtime API.
     /// Example: used by the public typed field methods.
-    fn write_field(&mut self, tag: u64, content: &[u8], mask: u8) -> Result<(), Error> {
-        let field_size = 1_usize
-            .checked_add(length_size(content.len()))
-            .and_then(|n| n.checked_add(content.len()))
-            .ok_or(Error::SizeOverflow)?;
-        self.prepare_field(tag, field_size, mask)?;
-        push_primitive(&mut self.bytes, tag, content, &self.context.limits)?;
-        self.seen_mask |= mask;
+    fn write_field(&mut self, tag: Tag, kind: FieldKind, content: &[u8]) -> Result<(), Error> {
+        validate_field_descriptor(tag, kind)?;
+        let field_size = tagged_primitive_field_size(tag, content.len())?;
+        self.prepare_field(tag, field_size)?;
+        push_primitive_tagged(&mut self.bytes, tag, content, &self.context.limits)?;
+        self.remember_tag(tag)?;
         self.last_tag = Some(tag);
+        Ok(())
+    }
+
+    /// Remember one successfully emitted field identifier.
+    ///
+    /// # Parameters and returns
+    /// `tag` is the identifier just appended. Returns success after recording it.
+    ///
+    /// # Errors
+    /// Returns `InvalidEncoding` if the record field cap is already reached.
+    ///
+    /// # Source, version, history, example
+    /// Source: flat record supported-field cap. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged record support.
+    /// Example: called after every successful field append.
+    fn remember_tag(&mut self, tag: Tag) -> Result<(), Error> {
+        let slot = self
+            .seen_tags
+            .get_mut(self.field_count)
+            .ok_or_else(|| invalid("record writer supports at most six fields"))?;
+        *slot = Some(tag);
+        self.field_count += 1;
         Ok(())
     }
 
     /// Check uniqueness, complete output, and work before a field is appended.
     ///
     /// # Parameters and returns
-    /// `tag` identifies the field; `field_size` is its complete child TLV size;
-    /// `mask` is its unique-tag bit. SET writers also check increasing tag order.
+    /// `tag` identifies the field; `field_size` is its complete child TLV size.
+    /// SET writers also check increasing class/number order.
     /// Returns success after validation and budget charging.
     ///
     /// # Errors
@@ -632,14 +1114,18 @@ impl SequenceWriter<'_> {
     /// Source: shared bounded TLV writer. Version: 2026-10-31.
     /// Responsible: asn1c maintainers. History: direct string support.
     /// Example: called by each typed `write_*` method.
-    fn prepare_field(&mut self, tag: u64, field_size: usize, mask: u8) -> Result<(), Error> {
-        if self.seen_mask & mask != 0 {
-            return Err(invalid(
-                "flat SEQUENCE writer received a duplicate universal tag",
-            ));
+    fn prepare_field(&mut self, tag: Tag, field_size: usize) -> Result<(), Error> {
+        tag.validate()?;
+        if self.field_count >= MAX_SEQUENCE_FIELDS {
+            return Err(invalid("record writer supports at most six fields"));
+        }
+        if self.seen_tags[..self.field_count].contains(&Some(tag)) {
+            return Err(invalid("record writer received a duplicate effective tag"));
         }
         if self.kind == RecordKind::Set && self.last_tag.is_some_and(|last| tag <= last) {
-            return Err(invalid("SET writer fields must use increasing tag order"));
+            return Err(invalid(
+                "SET writer fields must use increasing class and tag order",
+            ));
         }
         let content_size = self.bytes.len().checked_sub(2).ok_or(Error::SizeOverflow)?;
         let next_content = content_size
@@ -793,6 +1279,134 @@ impl<'context> SetWriter<'context> {
             .write_bit_string(bytes, bit_len, lower_bits, upper_bits)
     }
 
+    /// Append BOOLEAN content under an effective SET tag.
+    ///
+    /// # Parameters and returns
+    /// `tag` is the identifier; `value` is the ASN.1 BOOLEAN. Returns success.
+    ///
+    /// # Errors
+    /// Returns invalid tag, duplicate/order, resource, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET and BOOLEAN rules. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged SET fields.
+    /// Example: `writer.write_boolean_tagged(tag, true)?`.
+    pub fn write_boolean_tagged(&mut self, tag: Tag, value: bool) -> Result<(), Error> {
+        self.inner.write_boolean_tagged(tag, value)
+    }
+
+    /// Append empty NULL content under an effective SET tag.
+    ///
+    /// # Parameters and returns
+    /// `tag` is the identifier. Returns success after writing its empty TLV.
+    ///
+    /// # Errors
+    /// Returns invalid tag, duplicate/order, resource, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET and NULL rules. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged SET fields.
+    /// Example: `writer.write_null_tagged(tag)?`.
+    pub fn write_null_tagged(&mut self, tag: Tag) -> Result<(), Error> {
+        self.inner.write_null_tagged(tag)
+    }
+
+    /// Append bounded INTEGER content under an effective SET tag.
+    ///
+    /// # Parameters
+    /// `tag` is the identifier; `value` is signed; `lower` and `upper` are bounds.
+    ///
+    /// # Returns
+    /// Success after writing the minimal signed representation.
+    ///
+    /// # Errors
+    /// Returns invalid bounds/tag/value, duplicate/order, resource, or allocation.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET and INTEGER rules. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged SET fields.
+    /// Example: `writer.write_integer_tagged(tag, 3, 0, 8)?`.
+    pub fn write_integer_tagged(
+        &mut self,
+        tag: Tag,
+        value: i64,
+        lower: i64,
+        upper: i64,
+    ) -> Result<(), Error> {
+        self.inner.write_integer_tagged(tag, value, lower, upper)
+    }
+
+    /// Append numeric ENUMERATED content under an effective SET tag.
+    ///
+    /// # Parameters and returns
+    /// `tag` is the identifier; `value` is the signed variant number.
+    /// Returns success after writing the minimal representation.
+    ///
+    /// # Errors
+    /// Returns invalid tag, duplicate/order, resource, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET and ENUMERATED rules. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged SET fields.
+    /// Example: `writer.write_enumerated_tagged(tag, 1)?`.
+    pub fn write_enumerated_tagged(&mut self, tag: Tag, value: i64) -> Result<(), Error> {
+        self.inner.write_enumerated_tagged(tag, value)
+    }
+
+    /// Append bounded OCTET STRING content under an effective SET tag.
+    ///
+    /// # Parameters
+    /// `tag` is the identifier; `value` is payload and `lower`/`upper` are SIZE.
+    ///
+    /// # Returns
+    /// Success after DER/CER child encoding.
+    ///
+    /// # Errors
+    /// Returns invalid size/tag, duplicate/order, resource, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET and OCTET STRING rules. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged SET fields.
+    /// Example: `writer.write_octet_string_tagged(tag, b"x", 1, 4)?`.
+    pub fn write_octet_string_tagged(
+        &mut self,
+        tag: Tag,
+        value: &[u8],
+        lower: usize,
+        upper: usize,
+    ) -> Result<(), Error> {
+        self.inner
+            .write_octet_string_tagged(tag, value, lower, upper)
+    }
+
+    /// Append bounded BIT STRING content under an effective SET tag.
+    ///
+    /// # Parameters
+    /// `tag` is the identifier; `bytes` are packed bits and `bit_len` is width;
+    /// `lower_bits` and `upper_bits` are SIZE bounds.
+    ///
+    /// # Returns
+    /// Success after DER/CER child encoding.
+    ///
+    /// # Errors
+    /// Returns invalid bits/size/tag, duplicate/order, resource, or allocation.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET and BIT STRING rules. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged SET fields.
+    /// Example: `writer.write_bit_string_tagged(tag, &[0x80], 1, 1, 8)?`.
+    pub fn write_bit_string_tagged(
+        &mut self,
+        tag: Tag,
+        bytes: &[u8],
+        bit_len: usize,
+        lower_bits: usize,
+        upper_bits: usize,
+    ) -> Result<(), Error> {
+        self.inner
+            .write_bit_string_tagged(tag, bytes, bit_len, lower_bits, upper_bits)
+    }
+
     /// Finalize the SET and release its shared context borrow.
     ///
     /// # Parameters and returns
@@ -834,7 +1448,32 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
         expected_tags: &'tags [u64],
         context: &'context mut RecordContext,
     ) -> Result<Self, Error> {
-        Self::new_with_kind(input, expected_tags, context, RecordKind::Sequence)
+        Self::new_with_kind(input, expected_tags, None, context, RecordKind::Sequence)
+    }
+
+    /// Start decoding a BER SEQUENCE with effective tags and separate kinds.
+    ///
+    /// # Parameters
+    /// `input` is the available prefix; `fields` lists up to six unique
+    /// effective tag/kind descriptors in declaration order; `context` supplies
+    /// the shared resource budgets.
+    ///
+    /// # Returns
+    /// A cursor accepting definite or indefinite BER framing.
+    ///
+    /// # Errors
+    /// Returns malformed descriptors, framing, tag, work, input, or size errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 BER and IMPLICIT tags. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged record support.
+    /// Example: `SequenceReader::new_tagged(input, &fields, &mut context)?`.
+    pub fn new_tagged(
+        input: &'input [u8],
+        fields: &'tags [RecordField],
+        context: &'context mut RecordContext,
+    ) -> Result<Self, Error> {
+        Self::new_with_kind(input, &[], Some(fields), context, RecordKind::Sequence)
     }
 
     /// Construct a record reader for SEQUENCE or SET framing.
@@ -855,6 +1494,7 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
     fn new_with_kind(
         input: &'input [u8],
         expected_tags: &'tags [u64],
+        tagged_fields: Option<&'tags [RecordField]>,
         context: &'context mut RecordContext,
         kind: RecordKind,
     ) -> Result<Self, Error> {
@@ -863,28 +1503,34 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
             input.len(),
             context.limits.max_input_bytes,
         )?;
-        if expected_tags.len() > MAX_SEQUENCE_FIELDS {
+        let field_len = tagged_fields.map_or(expected_tags.len(), <[RecordField]>::len);
+        if field_len > MAX_SEQUENCE_FIELDS {
             return Err(invalid("record reader supports at most six direct fields"));
         }
-        for (index, tag) in expected_tags.iter().enumerate() {
-            context.charge(1)?;
-            if !matches!(
-                *tag,
-                TAG_BOOLEAN
-                    | TAG_INTEGER
-                    | TAG_BIT_STRING
-                    | TAG_OCTET_STRING
-                    | TAG_NULL
-                    | TAG_ENUMERATED
-            ) {
-                return Err(invalid(
-                    "SEQUENCE descriptor contains an unsupported field tag",
-                ));
-            }
-            for previous in &expected_tags[..index] {
+        if let Some(fields) = tagged_fields {
+            for (index, field) in fields.iter().enumerate() {
                 context.charge(1)?;
-                if previous == tag {
-                    return Err(invalid("SEQUENCE descriptor tags must be unique"));
+                validate_field_descriptor(field.tag, field.kind)?;
+                for previous in &fields[..index] {
+                    context.charge(1)?;
+                    if previous.tag == field.tag {
+                        return Err(invalid("record descriptor tags must be unique"));
+                    }
+                }
+            }
+        } else {
+            for (index, tag) in expected_tags.iter().enumerate() {
+                context.charge(1)?;
+                if field_kind_for_universal(*tag).is_none() {
+                    return Err(invalid(
+                        "record descriptor has an unsupported universal tag",
+                    ));
+                }
+                for previous in &expected_tags[..index] {
+                    context.charge(1)?;
+                    if previous == tag {
+                        return Err(invalid("record descriptor tags must be unique"));
+                    }
                 }
             }
         }
@@ -910,6 +1556,7 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
         Ok(Self {
             input,
             expected_tags,
+            tagged_fields,
             kind,
             context,
             content_bound,
@@ -922,11 +1569,11 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
         })
     }
 
-    /// Advance to the next field, returning its universal tag number.
+    /// Advance to the next field and return its numeric tag number.
     ///
     /// # Parameters and returns
-    /// No parameters. Returns `Some(tag)` for a field or `None` after the
-    /// definite body or matching outer EOC has been consumed.
+    /// No parameters. Returns the effective tag number or `None` at the body
+    /// boundary. Use `next_tagged_field` when the class is also required.
     ///
     /// # Errors
     /// Returns malformed child framing, unknown/duplicate/out-of-order tags,
@@ -937,6 +1584,29 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
     /// Responsible: asn1c maintainers. History: flat record runtime API.
     /// Example: `while let Some(tag) = reader.next_field()? { ... }`.
     pub fn next_field(&mut self) -> Result<Option<u64>, Error> {
+        if self.tagged_fields.is_some() {
+            return Err(invalid(
+                "tagged record traversal requires next_tagged_field",
+            ));
+        }
+        Ok(self.next_tagged_field()?.map(|tag| u64::from(tag.number)))
+    }
+
+    /// Advance to the next field and return its effective class and number.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns a tag for one member or `None` after the definite
+    /// boundary or matching EOC is consumed.
+    ///
+    /// # Errors
+    /// Returns malformed child framing, unknown/duplicate/out-of-order tags,
+    /// truncation, size, depth, or work errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: BER SEQUENCE field traversal. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged record support.
+    /// Example: `while let Some(tag) = reader.next_tagged_field()? { ... }`.
+    pub fn next_tagged_field(&mut self) -> Result<Option<Tag>, Error> {
         if self.current.is_some() {
             return Err(invalid("record field must be decoded before advancing"));
         }
@@ -961,17 +1631,35 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
             true,
             &self.context.limits,
         )?;
-        if header.class != 0 || header.tag == 0 {
-            return Err(invalid(
-                "record child tag is not a supported universal field",
-            ));
+        if header.class == 0 && header.tag == 0 {
+            return Err(invalid("BER EOC is not a record field"));
         }
+        let effective_tag = Tag {
+            class: TagClass::from_bits(header.class),
+            number: u32::try_from(header.tag).map_err(|_| Error::SizeOverflow)?,
+        };
         let mut matching_index = None;
-        for (index, tag) in self.expected_tags.iter().enumerate() {
-            self.context.charge(1)?;
-            if *tag == header.tag {
-                matching_index = Some(index);
-                break;
+        let mut field_kind = None;
+        if let Some(fields) = self.tagged_fields {
+            for (index, field) in fields.iter().enumerate() {
+                self.context.charge(1)?;
+                if field.tag == effective_tag {
+                    matching_index = Some(index);
+                    field_kind = Some(field.kind);
+                    break;
+                }
+            }
+        } else {
+            if effective_tag.class != TagClass::Universal {
+                return Err(invalid("record contains an unknown effective tag"));
+            }
+            for (index, tag) in self.expected_tags.iter().enumerate() {
+                self.context.charge(1)?;
+                if *tag == u64::from(effective_tag.number) {
+                    matching_index = Some(index);
+                    field_kind = field_kind_for_universal(*tag);
+                    break;
+                }
             }
         }
         let Some(index) = matching_index else {
@@ -1004,7 +1692,8 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
             .and_then(|length| header.content.checked_add(length))
             .unwrap_or_else(|| end.saturating_sub(2));
         self.current = Some(FieldSpan {
-            tag: header.tag,
+            tag: effective_tag,
+            kind: field_kind.ok_or_else(|| invalid("record descriptor has no field kind"))?,
             tlv_start: start,
             tlv_end: end,
             constructed: header.constructed,
@@ -1014,7 +1703,7 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
         self.last_tag_index = Some(index);
         self.seen_mask |= field_mask;
         self.cursor = end;
-        Ok(Some(header.tag))
+        Ok(Some(effective_tag))
     }
 
     /// Decode the current primitive BOOLEAN field and consume it.
@@ -1031,7 +1720,7 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
     /// Responsible: asn1c maintainers. History: flat record runtime API.
     /// Example: `let enabled = reader.read_boolean()?;`.
     pub fn read_boolean(&mut self) -> Result<bool, Error> {
-        let field = self.current_field(TAG_BOOLEAN)?;
+        let field = self.current_field(FieldKind::Boolean)?;
         if field.constructed || field.content_end - field.content_start != 1 {
             return Err(invalid("BER BOOLEAN field must contain exactly one octet"));
         }
@@ -1055,7 +1744,7 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
     /// Responsible: asn1c maintainers. History: flat record runtime API.
     /// Example: `reader.read_null()?;`.
     pub fn read_null(&mut self) -> Result<(), Error> {
-        let field = self.current_field(TAG_NULL)?;
+        let field = self.current_field(FieldKind::Null)?;
         if field.constructed || field.content_start != field.content_end {
             return Err(invalid("BER NULL field content must be empty"));
         }
@@ -1082,7 +1771,7 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
     /// Example: `reader.read_integer(0, 255)?`.
     pub fn read_integer(&mut self, lower: i64, upper: i64) -> Result<i64, Error> {
         crate::validate_integer(lower, lower, upper)?;
-        let field = self.current_field(TAG_INTEGER)?;
+        let field = self.current_field(FieldKind::Integer)?;
         if field.constructed {
             return Err(invalid("BER INTEGER field must use primitive form"));
         }
@@ -1109,7 +1798,7 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
     /// Responsible: asn1c maintainers. History: direct record fields.
     /// Example: `let variant_number = reader.read_enumerated()?`.
     pub fn read_enumerated(&mut self) -> Result<i64, Error> {
-        let field = self.current_field(TAG_ENUMERATED)?;
+        let field = self.current_field(FieldKind::Enumerated)?;
         if field.constructed {
             return Err(invalid("BER ENUMERATED field must use primitive form"));
         }
@@ -1139,11 +1828,16 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
     /// Example: `let bytes = reader.read_octet_string(1, 32)?`.
     pub fn read_octet_string(&mut self, lower: usize, upper: usize) -> Result<Vec<u8>, Error> {
         validate_size_bounds(lower, upper)?;
-        let field = self.current_field(TAG_OCTET_STRING)?;
+        let field = self.current_field(FieldKind::OctetString)?;
         let encoded = &self.input[field.tlv_start..field.tlv_end];
         let limits = self.context.remaining_decode_limits()?;
-        let decoded =
-            decode_octet_ber_with_work(encoded, &limits, &mut self.context.work_used, Some(upper))?;
+        let decoded = decode_octet_ber_with_tag_work(
+            encoded,
+            field.tag,
+            &limits,
+            &mut self.context.work_used,
+            Some(upper),
+        )?;
         if decoded.consumed_bytes != encoded.len() {
             return Err(invalid("OCTET STRING field has trailing encoded data"));
         }
@@ -1176,12 +1870,13 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
         upper_bits: usize,
     ) -> Result<BitStringValue, Error> {
         validate_size_bounds(lower_bits, upper_bits)?;
-        let field = self.current_field(TAG_BIT_STRING)?;
+        let field = self.current_field(FieldKind::BitString)?;
         let encoded = &self.input[field.tlv_start..field.tlv_end];
         let limits = self.context.remaining_decode_limits()?;
         let payload_cap = packed_storage_len(upper_bits);
-        let decoded = decode_bit_ber_with_work(
+        let decoded = decode_bit_ber_with_tag_work(
             encoded,
+            field.tag,
             &limits,
             &mut self.context.work_used,
             Some(payload_cap),
@@ -1227,7 +1922,7 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
     /// Return the current field only when it has the requested primitive tag.
     ///
     /// # Parameters and returns
-    /// `tag` is the expected universal number. Returns the current field span.
+    /// `kind` is the expected primitive semantics. Returns the current span.
     ///
     /// # Errors
     /// Returns `InvalidEncoding` when no field is pending or the tag differs.
@@ -1236,10 +1931,10 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
     /// Source: typed BER field dispatch. Version: 2026-10-31.
     /// Responsible: asn1c maintainers. History: flat record runtime API.
     /// Example: called by each typed `read_*` method.
-    const fn current_field(&self, tag: u64) -> Result<FieldSpan, Error> {
+    fn current_field(&self, kind: FieldKind) -> Result<FieldSpan, Error> {
         match &self.current {
-            Some(field) if field.tag == tag => Ok(*field),
-            Some(_) => Err(invalid("SEQUENCE field reader does not match current tag")),
+            Some(field) if field.kind == kind => Ok(*field),
+            Some(_) => Err(invalid("record field reader does not match current kind")),
             None => Err(invalid("SEQUENCE has no current field")),
         }
     }
@@ -1271,7 +1966,45 @@ impl<'input, 'tags, 'context> SetReader<'input, 'tags, 'context> {
         context: &'context mut RecordContext,
     ) -> Result<Self, Error> {
         Ok(Self {
-            inner: SequenceReader::new_with_kind(input, expected_tags, context, RecordKind::Set)?,
+            inner: SequenceReader::new_with_kind(
+                input,
+                expected_tags,
+                None,
+                context,
+                RecordKind::Set,
+            )?,
+        })
+    }
+
+    /// Start decoding a BER SET with effective tags and separate field kinds.
+    ///
+    /// # Parameters
+    /// `input` is the available prefix; `fields` lists up to six unique tag/kind
+    /// descriptors; `context` supplies shared limits.
+    ///
+    /// # Returns
+    /// A cursor accepting arbitrary BER member order.
+    ///
+    /// # Errors
+    /// Returns malformed descriptors, framing, tag, work, input, or size errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 BER SET and IMPLICIT tagging. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged record support.
+    /// Example: `SetReader::new_tagged(input, &fields, &mut context)?`.
+    pub fn new_tagged(
+        input: &'input [u8],
+        fields: &'tags [RecordField],
+        context: &'context mut RecordContext,
+    ) -> Result<Self, Error> {
+        Ok(Self {
+            inner: SequenceReader::new_with_kind(
+                input,
+                &[],
+                Some(fields),
+                context,
+                RecordKind::Set,
+            )?,
         })
     }
 
@@ -1291,6 +2024,23 @@ impl<'input, 'tags, 'context> SetReader<'input, 'tags, 'context> {
     /// Example: `while let Some(tag) = reader.next_field()? { ... }`.
     pub fn next_field(&mut self) -> Result<Option<u64>, Error> {
         self.inner.next_field()
+    }
+
+    /// Advance to the next SET member and return its class and number.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns the effective tag or `None` at the outer boundary.
+    ///
+    /// # Errors
+    /// Returns malformed framing, unknown/duplicate tags, truncation, size,
+    /// depth, or work errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: BER SET traversal. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged record support.
+    /// Example: `while let Some(tag) = reader.next_tagged_field()? { ... }`.
+    pub fn next_tagged_field(&mut self) -> Result<Option<Tag>, Error> {
+        self.inner.next_tagged_field()
     }
 
     /// Decode the current BOOLEAN SET member and consume it.
@@ -1695,7 +2445,31 @@ fn decode_octet_ber_with_work(
     work: &mut usize,
     max_payload: Option<usize>,
 ) -> Result<Decoded<Vec<u8>>, Error> {
-    let (header, end, bits) = parse_root_with_work(input, TAG_OCTET_STRING, true, limits, work)?;
+    decode_octet_ber_with_tag_work(input, Tag::universal(4), limits, work, max_payload)
+}
+
+/// Decode and flatten OCTET STRING under a caller-selected effective tag.
+///
+/// # Parameters and returns
+/// `input` is one TLV; `tag` is its effective root identifier; `limits` and
+/// `work` share operation ceilings; `max_payload` bounds flattened storage.
+/// Returns decoded bytes and exact prefix consumption.
+///
+/// # Errors
+/// Returns malformed root/fragments, tag, storage/work, allocation, or size errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 BER strings with IMPLICIT tags. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: tagged record string readers.
+/// Example: called with `FieldSpan::tag` by `read_octet_string`.
+fn decode_octet_ber_with_tag_work(
+    input: &[u8],
+    tag: Tag,
+    limits: &Limits,
+    work: &mut usize,
+    max_payload: Option<usize>,
+) -> Result<Decoded<Vec<u8>>, Error> {
+    let (header, end, bits) = parse_root_tag_with_work(input, tag, true, limits, work)?;
     let mut value = Vec::new();
     {
         let mut budget = FlattenBudget {
@@ -1885,7 +2659,31 @@ fn decode_bit_ber_with_work(
     work: &mut usize,
     max_payload: Option<usize>,
 ) -> Result<Decoded<BitStringValue>, Error> {
-    let (header, end, bits) = parse_root_with_work(input, TAG_BIT_STRING, true, limits, work)?;
+    decode_bit_ber_with_tag_work(input, Tag::universal(3), limits, work, max_payload)
+}
+
+/// Decode and flatten BIT STRING under a caller-selected effective tag.
+///
+/// # Parameters and returns
+/// `input` is one TLV; `tag` is its effective root identifier; `limits` and
+/// `work` share operation ceilings; `max_payload` bounds flattened storage.
+/// Returns packed bits and exact prefix consumption.
+///
+/// # Errors
+/// Returns malformed root/fragments, tag, padding, storage/work, or size errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 BER strings with IMPLICIT tags. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: tagged record string readers.
+/// Example: called with `FieldSpan::tag` by `read_bit_string`.
+fn decode_bit_ber_with_tag_work(
+    input: &[u8],
+    tag: Tag,
+    limits: &Limits,
+    work: &mut usize,
+    max_payload: Option<usize>,
+) -> Result<Decoded<BitStringValue>, Error> {
+    let (header, end, bits) = parse_root_tag_with_work(input, tag, true, limits, work)?;
     let mut value = BitAccumulator {
         bytes: Vec::new(),
         state: BitState {
@@ -1992,11 +2790,43 @@ fn parse_root_with_work(
     limits: &Limits,
     work: &mut usize,
 ) -> Result<(Header, usize, usize), Error> {
+    let number = u32::try_from(tag).map_err(|_| Error::SizeOverflow)?;
+    parse_root_tag_with_work(
+        input,
+        Tag::new(TagClass::Universal, number)?,
+        constructed,
+        limits,
+        work,
+    )
+}
+
+/// Parse a BER root against an effective class/number identifier.
+///
+/// # Parameters and returns
+/// `input` is available data; `tag` is the full expected identifier;
+/// `constructed` allows constructed form; `limits` and `work` bound the parse.
+/// Returns checked header, consumed prefix and wire bits.
+///
+/// # Errors
+/// Returns malformed/mismatched TLV, truncation, input/work, or size errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 BER root parsing. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: implicit record roots.
+/// Example: called by tagged OCTET/BIT STRING readers.
+fn parse_root_tag_with_work(
+    input: &[u8],
+    tag: Tag,
+    constructed: bool,
+    limits: &Limits,
+    work: &mut usize,
+) -> Result<(Header, usize, usize), Error> {
+    tag.validate()?;
     check(Resource::InputBytes, input.len(), limits.max_input_bytes)?;
     let header = parse_header(input, 0, input.len(), work, true, limits)?;
-    if header.class != 0 || header.tag != tag {
+    if TagClass::from_bits(header.class) != tag.class || header.tag != u64::from(tag.number) {
         return Err(invalid(
-            "BER identifier does not match expected universal tag",
+            "BER identifier does not match the expected effective tag",
         ));
     }
     if header.constructed && !constructed {
@@ -2040,7 +2870,7 @@ fn parse_header(
     let short = u64::from(first & 0x1f);
     let mut cursor = start + 1;
     let tag = if short == 0x1f {
-        let mut value = 0_u64;
+        let mut value = 0_u32;
         loop {
             require(input, cursor, 1, bound)?;
             if meter {
@@ -2050,13 +2880,19 @@ fn parse_header(
             cursor += 1;
             value = value
                 .checked_mul(128)
-                .and_then(|n| n.checked_add(u64::from(byte & 0x7f)))
+                .and_then(|n| n.checked_add(u32::from(byte & 0x7f)))
                 .ok_or(Error::SizeOverflow)?;
             if byte & 0x80 == 0 {
                 break;
             }
+            if value > MAX_TAG_NUMBER >> 7 {
+                return Err(Error::SizeOverflow);
+            }
         }
-        value
+        if value > MAX_TAG_NUMBER {
+            return Err(Error::SizeOverflow);
+        }
+        u64::from(value)
     } else {
         short
     };
@@ -2524,11 +3360,16 @@ fn primitive_field_size(content_len: usize) -> Result<usize, Error> {
 /// Source: X.690 CER OCTET STRING fragmentation. Version: 2026-10-31.
 /// Responsible: asn1c maintainers. History: bounded record strings.
 /// Example: `octet_field_size(1001, RecordEncoding::Cer)?`.
-fn octet_field_size(payload_len: usize, rule: RecordEncoding) -> Result<usize, Error> {
+fn octet_field_size(payload_len: usize, rule: RecordEncoding, tag: Tag) -> Result<usize, Error> {
     if rule == RecordEncoding::Cer && payload_len > CER_FRAGMENT_MAX {
-        fragmented_size(payload_len, payload_len.div_ceil(CER_FRAGMENT_MAX), false)
+        fragmented_size_tagged(
+            payload_len,
+            payload_len.div_ceil(CER_FRAGMENT_MAX),
+            false,
+            tag,
+        )
     } else {
-        primitive_field_size(payload_len)
+        tagged_primitive_field_size(tag, payload_len)
     }
 }
 
@@ -2545,17 +3386,40 @@ fn octet_field_size(payload_len: usize, rule: RecordEncoding) -> Result<usize, E
 /// Source: X.690 CER BIT STRING fragmentation. Version: 2026-10-31.
 /// Responsible: asn1c maintainers. History: bounded record strings.
 /// Example: `bit_field_size(1000, RecordEncoding::Cer)?`.
-fn bit_field_size(payload_len: usize, rule: RecordEncoding) -> Result<usize, Error> {
+fn bit_field_size(payload_len: usize, rule: RecordEncoding, tag: Tag) -> Result<usize, Error> {
     let content_len = payload_len.checked_add(1).ok_or(Error::SizeOverflow)?;
     if rule == RecordEncoding::Cer && content_len > CER_FRAGMENT_MAX {
-        fragmented_size(
+        fragmented_size_tagged(
             payload_len,
             payload_len.div_ceil(CER_FRAGMENT_MAX - 1),
             true,
+            tag,
         )
     } else {
-        primitive_field_size(content_len)
+        tagged_primitive_field_size(tag, content_len)
     }
+}
+
+/// Compute a tagged primitive TLV's exact encoded byte count.
+///
+/// # Parameters and returns
+/// `tag` is its class/number; `content_len` is content bytes. Returns full TLV size.
+///
+/// # Errors
+/// Returns `SizeOverflow` for arithmetic overflow or invalid tag values.
+///
+/// # Source, version, history, example
+/// Source: X.690 minimal identifier and length forms. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: tagged writers.
+/// Example: `tagged_primitive_field_size(tag, 1)?`.
+fn tagged_primitive_field_size(tag: Tag, content_len: usize) -> Result<usize, Error> {
+    if tag.class == TagClass::Universal && tag.number < 31 {
+        return primitive_field_size(content_len);
+    }
+    tag_identifier_size(tag)?
+        .checked_add(length_size(content_len))
+        .and_then(|n| n.checked_add(content_len))
+        .ok_or(Error::SizeOverflow)
 }
 
 /// Patch a DER SEQUENCE's placeholder length to its shortest definite form.
@@ -2683,9 +3547,32 @@ fn push_bit_fragment(
     unused: u8,
     limits: &Limits,
 ) -> Result<(), Error> {
+    push_bit_fragment_tagged(out, Tag::universal(3), payload, unused, limits)
+}
+
+/// Append primitive BIT STRING content under one effective identifier.
+///
+/// # Parameters and returns
+/// `tag` is the root identifier; `payload` and `unused` describe bit content;
+/// `limits` caps output. Returns success.
+///
+/// # Errors
+/// Returns invalid padding, tag, output-limit, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 BIT STRING IMPLICIT tagging. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: tagged string fields.
+/// Example: used for a short implicitly tagged BIT STRING.
+fn push_bit_fragment_tagged(
+    out: &mut Vec<u8>,
+    tag: Tag,
+    payload: &[u8],
+    unused: u8,
+    limits: &Limits,
+) -> Result<(), Error> {
     validate_bits(payload, unused)?;
     let size = payload.len().checked_add(1).ok_or(Error::SizeOverflow)?;
-    push_identifier(out, false, TAG_BIT_STRING, limits)?;
+    push_identifier_tagged(out, false, tag, limits)?;
     push_length(out, size, limits)?;
     push(out, &[unused], limits)?;
     push(out, payload, limits)
@@ -2714,6 +3601,48 @@ fn push_primitive(
     push(out, fragment, limits)
 }
 
+/// Append a primitive definite TLV with a checked effective identifier.
+///
+/// # Parameters and returns
+/// `tag` is the class/number identifier; `fragment` is encoded content; limits
+/// cap output. Returns success.
+///
+/// # Errors
+/// Returns invalid tag, output-limit, size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 primitive TLV encoding. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: tagged record fields.
+/// Example: writes an implicitly tagged BOOLEAN/INTEGER/string root.
+fn push_primitive_tagged(
+    out: &mut Vec<u8>,
+    tag: Tag,
+    fragment: &[u8],
+    limits: &Limits,
+) -> Result<(), Error> {
+    push_identifier_tagged(out, false, tag, limits)?;
+    push_length(out, fragment.len(), limits)?;
+    push(out, fragment, limits)
+}
+
+/// Append a constructed identifier and indefinite-length marker.
+///
+/// # Parameters and returns
+/// `out` receives the root header; `tag` is its effective identifier; `limits`
+/// caps output. Returns success.
+///
+/// # Errors
+/// Returns invalid tag, output-limit, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 CER indefinite constructed values. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: implicit string fragmentation.
+/// Example: used before universal string fragments.
+fn push_indefinite_header(out: &mut Vec<u8>, tag: Tag, limits: &Limits) -> Result<(), Error> {
+    push_identifier_tagged(out, true, tag, limits)?;
+    push(out, &[0x80], limits)
+}
+
 /// Compute exact encoded size for the CER constructed string framing.
 ///
 /// # Parameters and returns
@@ -2727,6 +3656,34 @@ fn push_primitive(
 /// Source: X.690 CER fragment form. Version: 2026-10-31.
 /// Responsible: maintainers. History: initial writer. Example: CER encoders.
 fn fragmented_size(payload_len: usize, fragments: usize, bits: bool) -> Result<usize, Error> {
+    let tag = if bits {
+        Tag::universal(3)
+    } else {
+        Tag::universal(4)
+    };
+    fragmented_size_tagged(payload_len, fragments, bits, tag)
+}
+
+/// Compute CER fragmented size with a possibly implicit root identifier.
+///
+/// # Parameters and returns
+/// `payload_len` is data octets; `fragments` is leaf count; `bits` adds one
+/// count octet per BIT fragment; `tag` is the outer effective identifier.
+/// Returns the exact total encoding size.
+///
+/// # Errors
+/// Returns invalid tag or `SizeOverflow` on checked arithmetic failure.
+///
+/// # Source, version, history, example
+/// Source: X.690 CER constructed string framing. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: IMPLICIT string roots.
+/// Example: `fragmented_size_tagged(n, count, false, tag)?`.
+fn fragmented_size_tagged(
+    payload_len: usize,
+    fragments: usize,
+    bits: bool,
+    tag: Tag,
+) -> Result<usize, Error> {
     if fragments == 0 {
         return Err(Error::SizeOverflow);
     }
@@ -2751,8 +3708,9 @@ fn fragmented_size(payload_len: usize, fragments: usize, bits: bool) -> Result<u
     let full_size = (fragments - 1)
         .checked_mul(1 + length_size(full_content) + full_content)
         .ok_or(Error::SizeOverflow)?;
-    4_usize
-        .checked_add(full_size)
+    tag_identifier_size(tag)?
+        .checked_add(3)
+        .and_then(|n| n.checked_add(full_size))
         .and_then(|n| n.checked_add(1 + length_size(last_content) + last_content))
         .ok_or(Error::SizeOverflow)
 }
@@ -2775,29 +3733,79 @@ fn push_identifier(
     tag: u64,
     limits: &Limits,
 ) -> Result<(), Error> {
-    let form = if constructed { 0x20 } else { 0 };
-    if tag < 31 {
-        return push(
-            out,
-            &[form | u8::try_from(tag).map_err(|_| Error::SizeOverflow)?],
-            limits,
-        );
+    let number = u32::try_from(tag).map_err(|_| Error::SizeOverflow)?;
+    let tag = Tag::new(TagClass::Universal, number)?;
+    push_identifier_tagged(out, constructed, tag, limits)
+}
+
+/// Return the minimal identifier width for a checked tag.
+///
+/// # Parameters and returns
+/// `tag` is a class and numeric tag. Returns one octet for low form and one
+/// plus the needed base-128 group count for high form.
+///
+/// # Errors
+/// Returns `InvalidEncoding` for a number outside the C tag range.
+///
+/// # Source, version, history, example
+/// Source: X.690 identifier width. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: tagged record support.
+/// Example: `tag_identifier_size(Tag::context_specific(31))? == 2`.
+fn tag_identifier_size(tag: Tag) -> Result<usize, Error> {
+    tag.validate()?;
+    if tag.number < 31 {
+        return Ok(1);
     }
-    push(out, &[form | 0x1f], limits)?;
-    let mut groups = [0_u8; 10];
-    let mut n = 0;
-    let mut value = tag;
-    loop {
-        groups[n] = (value & 0x7f) as u8;
-        n += 1;
+    let mut groups = 1_usize;
+    let mut value = tag.number >> 7;
+    while value != 0 {
+        groups = groups.checked_add(1).ok_or(Error::SizeOverflow)?;
         value >>= 7;
-        if value == 0 {
+    }
+    groups.checked_add(1).ok_or(Error::SizeOverflow)
+}
+
+/// Append a shortest class-aware identifier, including high-tag form.
+///
+/// # Parameters and returns
+/// `out` receives bytes; `constructed` selects form; `tag` carries class and
+/// number; `limits` caps output. Returns success.
+///
+/// # Errors
+/// Returns invalid tag, output-limit, size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 identifier encoding. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: class-aware tags.
+/// Example: emits canonical high-tag identifier groups.
+fn push_identifier_tagged(
+    out: &mut Vec<u8>,
+    constructed: bool,
+    tag: Tag,
+    limits: &Limits,
+) -> Result<(), Error> {
+    tag.validate()?;
+    let form = u8::from(constructed) << 5;
+    let class = (tag.class as u8) << 6;
+    if tag.number < 31 {
+        let number = u8::try_from(tag.number).map_err(|_| Error::SizeOverflow)?;
+        return push(out, &[class | form | number], limits);
+    }
+    push(out, &[class | form | 0x1f], limits)?;
+    let mut groups = [0_u8; 5];
+    let mut count = 0_usize;
+    let mut number = tag.number;
+    loop {
+        groups[count] = (number & 0x7f) as u8;
+        count += 1;
+        number >>= 7;
+        if number == 0 {
             break;
         }
     }
-    for index in (0..n).rev() {
-        let more = if index > 0 { 0x80 } else { 0 };
-        push(out, &[groups[index] | more], limits)?;
+    for index in (0..count).rev() {
+        let continuation = if index > 0 { 0x80 } else { 0 };
+        push(out, &[groups[index] | continuation], limits)?;
     }
     Ok(())
 }
@@ -4221,5 +5229,422 @@ mod tests {
                 &canonical.bytes
             )
             .is_err());
+    }
+
+    /// Round-trip tagged SEQUENCE and SET fields from all four BER classes.
+    /// Source: X.690 identifier classes; version: 2026-11-01; inputs: four classes.
+    /// Returns: assertions; errors: assertion failures; responsible: maintainers.
+    /// History: implicit tagging wave. Example: run via `cargo test`.
+    #[test]
+    fn tagged_records_preserve_class_kind_and_set_order() {
+        let limits = Limits::default();
+        let universal = Tag::new(TagClass::Universal, 1).unwrap();
+        let application = Tag::new(TagClass::Application, 30).unwrap();
+        let context_specific = Tag::new(TagClass::ContextSpecific, 31).unwrap();
+        let private = Tag::new(TagClass::Private, 128).unwrap();
+        let fields = [
+            RecordField::new(universal, FieldKind::Boolean).unwrap(),
+            RecordField::new(application, FieldKind::Integer).unwrap(),
+            RecordField::new(context_specific, FieldKind::OctetString).unwrap(),
+            RecordField::new(private, FieldKind::Enumerated).unwrap(),
+        ];
+
+        let mut context = RecordContext::new(&limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer.write_boolean_tagged(universal, true).unwrap();
+        writer.write_integer_tagged(application, 1, 0, 3).unwrap();
+        writer
+            .write_octet_string_tagged(context_specific, b"x", 1, 1)
+            .unwrap();
+        writer.write_enumerated_tagged(private, 2).unwrap();
+        let encoded = writer.finish().unwrap();
+        assert_eq!(
+            encoded.bytes,
+            [0x30, 15, 0x01, 1, 0xff, 0x5e, 1, 1, 0x9f, 0x1f, 1, b'x', 0xdf, 0x81, 0, 1, 2,]
+        );
+
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SequenceReader::new_tagged(&encoded.bytes, &fields, &mut context).unwrap();
+        assert!(reader.next_field().is_err());
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(universal));
+        assert!(reader.read_boolean().unwrap());
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(application));
+        assert_eq!(reader.read_integer(0, 3).unwrap(), 1);
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(context_specific));
+        assert_eq!(reader.read_octet_string(1, 1).unwrap(), [b'x']);
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(private));
+        assert_eq!(reader.read_enumerated().unwrap(), 2);
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        assert_eq!(reader.finish().unwrap().consumed_bytes, encoded.bytes.len());
+
+        let set_fields = [
+            RecordField::new(Tag::new(TagClass::Private, 0).unwrap(), FieldKind::Null).unwrap(),
+            RecordField::new(context_specific, FieldKind::OctetString).unwrap(),
+            RecordField::new(application, FieldKind::Integer).unwrap(),
+            RecordField::new(universal, FieldKind::Boolean).unwrap(),
+        ];
+        let mut context = RecordContext::new(&limits);
+        let mut writer = SetWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer.write_boolean_tagged(universal, false).unwrap();
+        writer.write_integer_tagged(application, 1, 0, 3).unwrap();
+        writer
+            .write_octet_string_tagged(context_specific, b"x", 1, 1)
+            .unwrap();
+        writer
+            .write_null_tagged(Tag::new(TagClass::Private, 0).unwrap())
+            .unwrap();
+        let canonical = writer.finish().unwrap();
+        assert_eq!(
+            canonical.bytes,
+            [0x31, 12, 0x01, 1, 0, 0x5e, 1, 1, 0x9f, 0x1f, 1, b'x', 0xc0, 0]
+        );
+
+        let reversed = [
+            0x31, 12, 0xc0, 0, 0x9f, 0x1f, 1, b'x', 0x5e, 1, 1, 0x01, 1, 0,
+        ];
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SetReader::new_tagged(&reversed, &set_fields, &mut context).unwrap();
+        assert_eq!(
+            reader.next_tagged_field().unwrap(),
+            Some(Tag::new(TagClass::Private, 0).unwrap())
+        );
+        reader.read_null().unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(context_specific));
+        assert_eq!(reader.read_octet_string(1, 1).unwrap(), [b'x']);
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(application));
+        assert_eq!(reader.read_integer(0, 3).unwrap(), 1);
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(universal));
+        assert!(!reader.read_boolean().unwrap());
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        reader.finish().unwrap();
+
+        let mut context = RecordContext::new(&limits);
+        let mut unordered = SetWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        unordered
+            .write_integer_tagged(application, 1, 0, 3)
+            .unwrap();
+        assert!(unordered.write_boolean_tagged(universal, true).is_err());
+    }
+
+    /// Round-trip same-kind fields under distinct effective tags and reject duplicates.
+    /// Source: tagged record API regression; version: 2026-11-01; inputs: two BOOLEAN fields.
+    /// Returns: assertions; errors: assertion failures; responsible: runtime maintainers.
+    /// History: verifies tag-based field tracking. Example: run via `cargo test`.
+    #[test]
+    fn tagged_records_allow_same_kind_and_reject_duplicate_effective_tags() {
+        let limits = Limits::default();
+        let first = Tag::context_specific(2);
+        let second = Tag::context_specific(3);
+        let fields = [
+            RecordField::new(first, FieldKind::Boolean).unwrap(),
+            RecordField::new(second, FieldKind::Boolean).unwrap(),
+        ];
+
+        let mut context = RecordContext::new(&limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer.write_boolean_tagged(first, true).unwrap();
+        writer.write_boolean_tagged(second, false).unwrap();
+        let encoded_sequence = writer.finish().unwrap();
+        assert_eq!(encoded_sequence.bytes, [0x30, 6, 0x82, 1, 0xff, 0x83, 1, 0]);
+
+        let mut context = RecordContext::new(&limits);
+        let mut reader =
+            SequenceReader::new_tagged(&encoded_sequence.bytes, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(first));
+        assert!(reader.read_boolean().unwrap());
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(second));
+        assert!(!reader.read_boolean().unwrap());
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        reader.finish().unwrap();
+
+        let mut context = RecordContext::new(&limits);
+        let mut writer = SetWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer.write_boolean_tagged(first, true).unwrap();
+        writer.write_boolean_tagged(second, false).unwrap();
+        let encoded_set = writer.finish().unwrap();
+        assert_eq!(encoded_set.bytes, [0x31, 6, 0x82, 1, 0xff, 0x83, 1, 0]);
+
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SetReader::new_tagged(&encoded_set.bytes, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(first));
+        assert!(reader.read_boolean().unwrap());
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(second));
+        assert!(!reader.read_boolean().unwrap());
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        reader.finish().unwrap();
+
+        let duplicate_fields = [fields[0], fields[0]];
+        let mut context = RecordContext::new(&limits);
+        assert!(SequenceReader::new_tagged(
+            &encoded_sequence.bytes,
+            &duplicate_fields,
+            &mut context
+        )
+        .is_err());
+        let mut context = RecordContext::new(&limits);
+        assert!(
+            SetReader::new_tagged(&encoded_set.bytes, &duplicate_fields, &mut context).is_err()
+        );
+
+        let duplicate_sequence = [0x30, 6, 0x82, 1, 0xff, 0x82, 1, 0];
+        let mut context = RecordContext::new(&limits);
+        let mut reader =
+            SequenceReader::new_tagged(&duplicate_sequence, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(first));
+        assert!(reader.read_boolean().unwrap());
+        assert!(reader.next_tagged_field().is_err());
+
+        let duplicate_set = [0x31, 6, 0x82, 1, 0xff, 0x82, 1, 0];
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SetReader::new_tagged(&duplicate_set, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(first));
+        assert!(reader.read_boolean().unwrap());
+        assert!(reader.next_tagged_field().is_err());
+
+        let mut context = RecordContext::new(&limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer.write_boolean_tagged(first, true).unwrap();
+        assert!(writer.write_boolean_tagged(first, false).is_err());
+        let mut context = RecordContext::new(&limits);
+        let mut writer = SetWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer.write_boolean_tagged(first, true).unwrap();
+        assert!(writer.write_boolean_tagged(first, false).is_err());
+    }
+
+    /// Cover C-compatible high-tag boundaries, aliases, truncation, and work.
+    /// Source: C `ber_fetch_tag`; version: 2026-11-01; inputs: 30/31/127/128/max.
+    /// Returns: assertions; errors: assertion failures; responsible: maintainers.
+    /// History: class-aware BER parser. Example: run via `cargo test`.
+    #[test]
+    fn tagged_identifiers_match_c_range_and_ber_permissiveness() {
+        let limits = Limits::default();
+        let vectors: &[(u32, &[u8])] = &[
+            (30, &[0x30, 3, 0x9e, 1, 0xff]),
+            (31, &[0x30, 4, 0x9f, 0x1f, 1, 0xff]),
+            (127, &[0x30, 4, 0x9f, 0x7f, 1, 0xff]),
+            (128, &[0x30, 5, 0x9f, 0x81, 0, 1, 0xff]),
+            (
+                MAX_TAG_NUMBER,
+                &[0x30, 8, 0x9f, 0x83, 0xff, 0xff, 0xff, 0x7f, 1, 0xff],
+            ),
+        ];
+        for (number, expected) in vectors {
+            let tag = Tag::new(TagClass::ContextSpecific, *number).unwrap();
+            let field = RecordField::new(tag, FieldKind::Boolean).unwrap();
+            let mut context = RecordContext::new(&limits);
+            let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+            writer.write_boolean_tagged(tag, true).unwrap();
+            let encoded = writer.finish().unwrap();
+            assert_eq!(encoded.bytes, *expected);
+
+            let mut context = RecordContext::new(&limits);
+            let fields = [field];
+            let mut reader =
+                SequenceReader::new_tagged(&encoded.bytes, &fields, &mut context).unwrap();
+            assert_eq!(reader.next_tagged_field().unwrap(), Some(tag));
+            assert!(reader.read_boolean().unwrap());
+            assert_eq!(reader.next_tagged_field().unwrap(), None);
+            reader.finish().unwrap();
+        }
+        assert!(Tag::new(TagClass::ContextSpecific, MAX_TAG_NUMBER + 1).is_err());
+        assert!(RecordField::new(Tag::universal(1), FieldKind::Integer).is_err());
+
+        let overflow = [0x30, 8, 0x9f, 0x84, 0x80, 0x80, 0x80, 0, 1, 0xff];
+        let tag31 = Tag::context_specific(31);
+        let field = RecordField::new(tag31, FieldKind::Boolean).unwrap();
+        let mut context = RecordContext::new(&limits);
+        let fields = [field];
+        let mut reader = SequenceReader::new_tagged(&overflow, &fields, &mut context).unwrap();
+        assert!(reader.next_tagged_field().is_err());
+
+        let truncated = [0x30, 3, 0x9f, 0x81, 0x80];
+        let mut context = RecordContext::new(&limits);
+        let fields = [field];
+        let mut reader = SequenceReader::new_tagged(&truncated, &fields, &mut context).unwrap();
+        assert!(reader.next_tagged_field().is_err());
+
+        let mut long_alias = vec![0x30, 44, 0x9f];
+        long_alias.extend([0x80; 40]);
+        long_alias.extend([0x1f, 1, 0xff]);
+        let mut context = RecordContext::new(&limits);
+        let fields = [field];
+        let mut reader = SequenceReader::new_tagged(&long_alias, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(tag31));
+        assert!(reader.read_boolean().unwrap());
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        let consumed = reader.finish().unwrap();
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer.write_boolean_tagged(tag31, true).unwrap();
+        let canonical = writer.finish().unwrap();
+        assert!(context
+            .verify_canonical(&long_alias, consumed.consumed_bytes, &canonical.bytes)
+            .is_err());
+
+        let mut constrained = limits;
+        constrained.max_work_bits = 80;
+        let mut context = RecordContext::new(&constrained);
+        let fields = [field];
+        let mut reader = SequenceReader::new_tagged(&long_alias, &fields, &mut context).unwrap();
+        assert!(reader.next_tagged_field().is_err());
+    }
+
+    /// Check tagged string short/fragment forms and universal nested fragments.
+    /// Source: X.690 CER strings; version: 2026-11-01; inputs: 1000/1001 octets.
+    /// Returns: assertions; errors: assertion failures; responsible: maintainers.
+    /// History: implicit string root support. Example: run via `cargo test`.
+    #[test]
+    fn tagged_strings_replace_only_the_outer_identifier() {
+        let limits = Limits::default();
+        let octet_tag = Tag::context_specific(31);
+        let octet_field = RecordField::new(octet_tag, FieldKind::OctetString).unwrap();
+        for (size, prefix) in [
+            (1000, &[0x9f, 0x1f, 0x82, 0x03, 0xe8][..]),
+            (1001, &[0xbf, 0x1f, 0x80, 0x04, 0x82, 0x03, 0xe8][..]),
+        ] {
+            let value = vec![0x5a; size];
+            let mut context = RecordContext::new(&limits);
+            let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+            writer
+                .write_octet_string_tagged(octet_tag, &value, size, size)
+                .unwrap();
+            let encoded = writer.finish().unwrap();
+            assert_eq!(&encoded.bytes[2..2 + prefix.len()], prefix);
+            if size == 1001 {
+                assert_eq!(encoded.bytes[9], 0x5a);
+            }
+
+            let mut context = RecordContext::new(&limits);
+            let fields = [octet_field];
+            let mut reader =
+                SequenceReader::new_tagged(&encoded.bytes, &fields, &mut context).unwrap();
+            assert_eq!(reader.next_tagged_field().unwrap(), Some(octet_tag));
+            assert_eq!(reader.read_octet_string(size, size).unwrap(), value);
+            assert_eq!(reader.next_tagged_field().unwrap(), None);
+            reader.finish().unwrap();
+        }
+
+        let bit_tag = Tag::new(TagClass::Application, 128).unwrap();
+        let bit_field = RecordField::new(bit_tag, FieldKind::BitString).unwrap();
+        for (size, constructed) in [(999, false), (1000, true)] {
+            let bytes = vec![0xff; size];
+            let bit_len = size * 8;
+            let mut context = RecordContext::new(&limits);
+            let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+            writer
+                .write_bit_string_tagged(bit_tag, &bytes, bit_len, bit_len, bit_len)
+                .unwrap();
+            let encoded = writer.finish().unwrap();
+            if constructed {
+                assert_eq!(&encoded.bytes[2..6], &[0x7f, 0x81, 0, 0x80]);
+                assert_eq!(&encoded.bytes[6..11], &[0x03, 0x82, 0x03, 0xe8, 0]);
+            } else {
+                assert_eq!(&encoded.bytes[2..9], &[0x5f, 0x81, 0, 0x82, 0x03, 0xe8, 0]);
+            }
+            let mut context = RecordContext::new(&limits);
+            let fields = [bit_field];
+            let mut reader =
+                SequenceReader::new_tagged(&encoded.bytes, &fields, &mut context).unwrap();
+            assert_eq!(reader.next_tagged_field().unwrap(), Some(bit_tag));
+            let decoded = reader.read_bit_string(bit_len, bit_len).unwrap();
+            assert_eq!(decoded.as_bytes(), bytes);
+            assert_eq!(reader.next_tagged_field().unwrap(), None);
+            reader.finish().unwrap();
+        }
+
+        let nested_octets = [
+            0x30, 0x80, 0xbf, 0x1f, 0x80, 0x24, 0x80, 0x04, 1, b'a', 0, 0, 0, 0, 0, 0,
+        ];
+        let mut context = RecordContext::new(&limits);
+        let fields = [octet_field];
+        let mut reader = SequenceReader::new_tagged(&nested_octets, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(octet_tag));
+        assert_eq!(reader.read_octet_string(1, 1).unwrap(), [b'a']);
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        assert_eq!(reader.finish().unwrap().consumed_bytes, nested_octets.len());
+
+        let bit_tag = Tag::context_specific(31);
+        let bit_field = RecordField::new(bit_tag, FieldKind::BitString).unwrap();
+        let nested_bits = [
+            0x30, 0x80, 0xbf, 0x1f, 0x80, 0x23, 0x80, 0x03, 2, 5, 0xa0, 0, 0, 0, 0, 0, 0,
+        ];
+        let mut context = RecordContext::new(&limits);
+        let fields = [bit_field];
+        let mut reader = SequenceReader::new_tagged(&nested_bits, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(bit_tag));
+        let decoded = reader.read_bit_string(3, 3).unwrap();
+        assert_eq!(decoded.as_bytes(), &[0xa0]);
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        reader.finish().unwrap();
+    }
+
+    /// Decode, re-encode, and compare a two-field tagged CER SET.
+    /// Source: tagged CER budget test helper; version: 2026-11-01.
+    /// Inputs: canonical CER SET and work ceiling. Returns cumulative work used.
+    /// Errors: malformed input, canonical mismatch, or exceeded budgets.
+    /// Responsible: runtime maintainers; history: shared tagged budget tests.
+    /// Example: `tagged_set_cer_work(input, ceiling)?`.
+    fn tagged_set_cer_work(input: &[u8], max_work_bits: usize) -> Result<usize, Error> {
+        let limits = Limits {
+            max_work_bits,
+            ..Limits::default()
+        };
+        let boolean_tag = Tag::context_specific(31);
+        let octet_tag = Tag::context_specific(32);
+        let fields = [
+            RecordField::new(boolean_tag, FieldKind::Boolean)?,
+            RecordField::new(octet_tag, FieldKind::OctetString)?,
+        ];
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SetReader::new_tagged(input, &fields, &mut context)?;
+        let mut boolean = false;
+        let mut octets = Vec::new();
+        while let Some(tag) = reader.next_tagged_field()? {
+            match tag {
+                tag if tag == boolean_tag => boolean = reader.read_boolean()?,
+                tag if tag == octet_tag => octets = reader.read_octet_string(1, 1)?,
+                _ => return Err(invalid("tagged SET budget helper found unknown field")),
+            }
+        }
+        let consumed = reader.finish()?;
+        let mut writer = SetWriter::new(RecordEncoding::Cer, &mut context)?;
+        writer.write_boolean_tagged(boolean_tag, boolean)?;
+        writer.write_octet_string_tagged(octet_tag, &octets, 1, 1)?;
+        let canonical = writer.finish()?;
+        context.verify_canonical(input, consumed.consumed_bytes, &canonical.bytes)?;
+        Ok(context.work_used)
+    }
+
+    /// Check tagged SET retained storage and exact cumulative strict CER work.
+    /// Source: operation-wide record budgets; version: 2026-11-01; inputs: 2 fields.
+    /// Returns: assertions; errors: assertion failures; responsible: maintainers.
+    /// History: tagged record budget tests. Example: run via `cargo test`.
+    #[test]
+    fn tagged_record_budgets_cover_fields_reencode_and_compare() {
+        let retained = [0x31, 10, 0x9f, 0x1f, 2, 0xaa, 0xbb, 0x9f, 0x20, 2, 0, 0x80];
+        let fields = [
+            RecordField::new(Tag::context_specific(31), FieldKind::OctetString).unwrap(),
+            RecordField::new(Tag::context_specific(32), FieldKind::BitString).unwrap(),
+        ];
+        let limits = Limits {
+            max_output_bytes: 2,
+            ..Limits::default()
+        };
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SetReader::new_tagged(&retained, &fields, &mut context).unwrap();
+        assert_eq!(
+            reader.next_tagged_field().unwrap(),
+            Some(Tag::context_specific(31))
+        );
+        assert_eq!(reader.read_octet_string(2, 2).unwrap(), [0xaa, 0xbb]);
+        assert_eq!(
+            reader.next_tagged_field().unwrap(),
+            Some(Tag::context_specific(32))
+        );
+        assert!(reader.read_bit_string(8, 8).is_err());
+
+        let canonical = [0x31, 0x80, 0x9f, 0x1f, 1, 0xff, 0x9f, 0x20, 1, b'x', 0, 0];
+        let required = tagged_set_cer_work(&canonical, usize::MAX).unwrap();
+        assert_eq!(tagged_set_cer_work(&canonical, required).unwrap(), required);
+        assert!(tagged_set_cer_work(&canonical, required - 1).is_err());
     }
 }

@@ -273,6 +273,55 @@
       "evidence": "SetBerCer.asn1; SetBerCerC.asn1; set_ber_cer_conformance.rs; c_set_ber_cer.c; check-rust-backend.sh"
     },
     {
+      "asn1_type": "SEQUENCE",
+      "feature": "flat direct universal and resolved context-specific IMPLICIT fields across BOOLEAN, bounded INTEGER, BIT/OCTET STRING, NULL, and nonextensible inline ENUMERATED; automatic tags; at most six unique effective tags",
+      "codec": "UPER + BER decode / DER encode + CER decode and encode",
+      "variants": [
+        "manual and AUTOMATIC TAGS copied from the fixed AST",
+        "context tag number boundaries 30, 31, 127, 128, and 0x3fffffff",
+        "repeated primitive kinds accepted only with unique effective tags",
+        "required, OPTIONAL, literal BOOLEAN/INTEGER DEFAULT, and declaration order",
+        "DER/CER and UPER roundtrips with exact prefix consumption",
+        "BER high-tag aliases accepted while strict CER canonical re-encoding rejects them",
+        "constructed implicit BER OCTET/BIT STRING flattening and strict CER rejection",
+        "CER tagged OCTET 1001 and BIT STRING 1000-payload-octet fragmentation",
+        "tag class, explicit mode, range, collision, alias, ANY, and nested-shape rejection",
+        "input, output, and work limits"
+      ],
+      "directions": [
+        "BER decode",
+        "DER encode",
+        "CER decode",
+        "CER encode",
+        "UPER encode/decode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "TaggedSequence.asn1; tagged_sequence_conformance.rs; c_tagged_sequence.c; check-rust-backend.sh"
+    },
+    {
+      "asn1_type": "SET",
+      "feature": "flat direct universal and resolved context-specific IMPLICIT fields in the six supported primitive kinds; automatic tags; unique effective class/number pairs; required/OPTIONAL and supported BOOLEAN/INTEGER DEFAULT",
+      "codec": "BER decode / DER encode + CER decode and encode",
+      "variants": [
+        "DER/CER SET sorting by effective class and number",
+        "arbitrary BER order and strict CER rejection of reordered fields",
+        "manual and AUTOMATIC TAGS with context tag 31, 128, and maximum range coverage",
+        "universal/context-specific tag mixtures and repeated primitive kinds",
+        "empty SET, OPTIONAL values, and DEFAULT omission/substitution",
+        "unknown, duplicate, missing, truncated, out-of-range, and wrong-kind children",
+        "explicit tags, other classes, excessive tags, duplicate tags, and unsupported shapes rejected",
+        "BER-only and CER-only selectors with strict Clippy"
+      ],
+      "directions": [
+        "BER decode",
+        "DER encode",
+        "CER decode",
+        "CER encode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "TaggedSet.asn1; TaggedSetC.asn1; tagged_set_conformance.rs; c_tagged_sequence.c; check-rust-backend.sh"
+    },
+    {
       "asn1_type": "OCTET STRING, BIT STRING",
       "feature": "direct fixed SIZE(N), bounded OCTET SIZE(l..u), and bounded BIT SIZE(l..u), all below 65536; standalone and required or OPTIONAL SEQUENCE field",
       "codec": "UPER",
@@ -418,14 +467,14 @@
   ],
   "not_yet_implemented_by_this_Rust_slice": [
     {
-      "family": "BER/DER outside the primitive slice",
+      "family": "BER/DER shapes outside flat tagged SEQUENCE and SET slices",
       "status": "not_implemented",
-      "note": "Constructed, tagged, and other primitive types are not qualified."
+      "note": "Nested records, extensions, CHOICE, aliases, unsupported tag modes/classes, and other primitive types are not qualified."
     },
     {
       "family": "APER/OER outside the primitive slice",
       "status": "not_implemented",
-      "note": "Constructed, tagged, extensible, unconstrained, and other primitive types are not qualified."
+      "note": "Constructed, tagged, extensible, unconstrained, and other primitive types are not qualified for APER/OER."
     },
     {
       "family": "XER and JER outside supported slices",

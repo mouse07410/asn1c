@@ -1,0 +1,37 @@
+TaggedSequence DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+TaggedRecord ::= SEQUENCE {
+    flag [31] IMPLICIT BOOLEAN,
+    count [128] IMPLICIT INTEGER (-3..3)
+}
+
+TaggedStringRecord ::= SEQUENCE {
+    octets [31] IMPLICIT OCTET STRING (SIZE(0..1001)),
+    bits [128] IMPLICIT BIT STRING (SIZE(0..8000)) OPTIONAL
+}
+
+TaggedOptionalRecord ::= SEQUENCE {
+    first [30] IMPLICIT BOOLEAN OPTIONAL,
+    second [31] IMPLICIT BOOLEAN OPTIONAL,
+    third [127] IMPLICIT BOOLEAN OPTIONAL,
+    fourth [128] IMPLICIT BOOLEAN OPTIONAL,
+    largest [1073741823] IMPLICIT BOOLEAN OPTIONAL
+}
+
+TaggedExtendedRecord ::= SEQUENCE {
+    flag [31] IMPLICIT BOOLEAN,
+    repeated [30] IMPLICIT BOOLEAN OPTIONAL,
+    count [2] IMPLICIT INTEGER (-3..3) DEFAULT 1,
+    bits [3] IMPLICIT BIT STRING (SIZE(0..16)) OPTIONAL,
+    octets [4] IMPLICIT OCTET STRING (SIZE(0..8)) OPTIONAL,
+    state [10] IMPLICIT ENUMERATED { queued(17), active(3), complete(91) } OPTIONAL
+}
+
+AutomaticRecord ::= SEQUENCE {
+    flag BOOLEAN,
+    count INTEGER (-2..2),
+    empty NULL OPTIONAL,
+    octets OCTET STRING (SIZE(0..4)) OPTIONAL
+}
+
+END
