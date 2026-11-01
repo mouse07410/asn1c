@@ -608,3 +608,23 @@ mixed definite/indefinite EXPLICIT wrapper combinations that the C BER adapter
 rejects; the fixture records this implementation divergence separately from
 canonical wire parity. Empty inline SET children remain excluded because the
 current C generator produces invalid C output for that schema.
+
+One same-module bounded `INTEGER` assignment may be referenced by one direct
+required or OPTIONAL member in a flat untagged SEQUENCE or SET. The target
+must have one finite contiguous range fitting `i64`; the generated public
+newtype validates construction and is written through the parent's shared
+record context. The field may be natural, context-specific IMPLICIT, or one
+EXPLICIT tag. Existing scalar siblings include BOOLEAN, NULL, bounded INTEGER,
+ENUMERATED, and finite bounded BIT/OCTET STRING fields, within the existing
+six-field cap. BER/CER selection is required.
+
+`NamedIntegerRecord.asn1`, `named_integer_record_conformance.rs`, and
+`c_named_integer_record.c` compare required and OPTIONAL newtypes, natural,
+IMPLICIT, and EXPLICIT tags, BIT STRING siblings, SET sorting, BER alias
+handling, range checking, prefix consumption, and resource limits. C verifies
+out-of-range BER values separately through `asn_check_constraints`. Alias,
+import, unbounded/union/extended/MIN..MAX target, extra member constraint,
+tagged target/root, nested, multiple-reference, duplicate-tag, DEFAULT, and
+unsupported target schemas fail before output publication. BER-only,
+CER-only, mixed-codec, and UPER-only selector behavior is checked; generated
+combined and codec-only crates run strict Clippy.

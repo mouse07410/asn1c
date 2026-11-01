@@ -1,0 +1,53 @@
+NamedIntegerRecord DEFINITIONS ::= BEGIN
+
+Small ::= INTEGER (0..5)
+
+Sequence ::= SEQUENCE {
+    flag BOOLEAN,
+    value Small,
+    tail OCTET STRING (SIZE(1))
+}
+
+SequenceBits ::= SEQUENCE {
+    value Small,
+    bits BIT STRING (SIZE(5..8))
+}
+
+SequenceOptional ::= SEQUENCE {
+    value Small OPTIONAL,
+    flag BOOLEAN
+}
+
+SequenceImplicit ::= SEQUENCE {
+    value [3] IMPLICIT Small,
+    flag BOOLEAN
+}
+
+SequenceExplicit ::= SEQUENCE {
+    value [3] EXPLICIT Small OPTIONAL,
+    flag BOOLEAN
+}
+
+Set ::= SET {
+    flag BOOLEAN,
+    value Small,
+    tail OCTET STRING (SIZE(1))
+}
+
+SetOptional ::= SET {
+    tail OCTET STRING (SIZE(1)),
+    value Small OPTIONAL,
+    flag BOOLEAN
+}
+
+SetImplicit ::= SET {
+    value [3] IMPLICIT Small,
+    flag BOOLEAN
+}
+
+SetExplicit ::= SET {
+    value [3] EXPLICIT Small OPTIONAL,
+    flag BOOLEAN
+}
+
+END

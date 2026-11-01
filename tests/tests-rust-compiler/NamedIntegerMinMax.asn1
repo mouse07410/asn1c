@@ -1,0 +1,4 @@
+NamedIntegerMinMax DEFINITIONS ::= BEGIN
+Wide ::= INTEGER (MIN..MAX)
+Packet ::= SEQUENCE { value Wide }
+END

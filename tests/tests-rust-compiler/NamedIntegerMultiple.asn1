@@ -1,0 +1,4 @@
+NamedIntegerMultiple DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..5)
+Packet ::= SEQUENCE { first Small, second Small }
+END

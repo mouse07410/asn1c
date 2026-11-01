@@ -1,0 +1,4 @@
+NamedIntegerDuplicateTag DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..5)
+Packet ::= SET { value [3] IMPLICIT Small, other [3] IMPLICIT BOOLEAN }
+END

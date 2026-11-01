@@ -12,7 +12,7 @@ strings, direct UTCTime, direct qualified GeneralizedTime, direct primitive
 collections, and direct primitive CHOICE. See
 `rust/asn1c-runtime/README.md` and
 `libasn1compiler/asn1c_rust.c`. The generator rejects many schemas supported by
-C, including imports, references, most root tags, and multi-tag stacks. These
+C, including imports, most references, most root tags, and multi-tag stacks. These
 rejections remain until the corresponding generated representation and codecs
 are implemented.
 
@@ -30,6 +30,8 @@ BER/CER-only untagged flat records additionally qualify one natural IA5String
 member, one natural non-IA5 restricted character-string member, up to one
 natural OBJECT IDENTIFIER and one natural RELATIVE-OID member, or one natural
 unconstrained `BigInteger` member, with the resource and schema gates below.
+One same-module bounded INTEGER reference member also qualifies under its
+separate gate below.
 
 The flat SET slice uses the same six direct field kinds under BER/CER-only
 selection. Its BER reader accepts arbitrary member order;
@@ -940,7 +942,7 @@ multibyte content, constructed BER and malformed fragments, SET reordering,
 duplicates, suffixes, all truncations, exact resource limits, C differential
 vectors, and no-publication schema gates.
 
-### Same-module named INTEGER fields (next reference gate)
+### Same-module named INTEGER fields (qualified reference slice)
 
 Accept one nonrecursive reference from an untagged flat SEQUENCE or SET member
 to a distinct same-module, untagged bounded `i64` INTEGER assignment that the
@@ -985,12 +987,68 @@ The C reference for `Small ::= INTEGER (0..5)` and
 `n = 2` and `flag = TRUE` emits DER
 `30 08 a3 03 02 01 02 01 01 ff` and CER
 `30 80 a3 80 02 01 02 00 00 01 01 ff 00 00`.
+The natural member emits DER `30 06 02 01 02 01 01 ff` and CER
+`30 80 02 01 02 01 01 ff 00 00`; a `[3] IMPLICIT` member changes
+the INTEGER identifier to `83`. An EXPLICIT SET with BOOLEAN TRUE emits
+DER `31 08 01 01 ff a3 03 02 01 02` and CER
+`31 80 01 01 ff a3 80 02 01 02 00 00 00 00`.
 Acceptance needs natural, IMPLICIT, and EXPLICIT forms in SEQUENCE and SET;
 present and absent values; out-of-range BER values; duplicate, unknown, and
 colliding member tags; SET ordering; exact prefix and shared resource limits;
 generated C/Rust differential vectors; and negative schemas that demonstrate
 rejection before publication. Imports and broader reference graphs follow
 only after this bounded reference ownership model passes those checks.
+
+### Same-module named SEQUENCE child (next composition gate)
+
+Accept one reference from an untagged flat SEQUENCE or SET to a distinct,
+same-module, untagged, nonrecursive named SEQUENCE assignment. An empty target
+is valid. A nonempty target may contain up to six existing direct BOOLEAN,
+NULL, bounded `i64` INTEGER,
+nonextensible ENUMERATED, or finite bounded BIT/OCTET STRING leaves with
+supported member tags and required/OPTIONAL presence. The parent may contain
+one such child, required or OPTIONAL, plus supported direct scalar siblings
+within its six-field cap. Parent scalar siblings retain existing required,
+OPTIONAL, and literal BOOLEAN or bounded INTEGER DEFAULT handling; DEFAULT
+remains excluded inside the named child. Accept a natural child identifier, one resolved
+context-specific IMPLICIT member tag, or one EXPLICIT wrapper under
+BER/CER-only selection. Reject imports, alias chains, parameters, target
+DEFAULT/extensions/references/nested members/CHOICE/collections, multiple
+named children, recursive targets, colliding effective tags, and mixed codecs
+before output publication. A named SET target and two named children follow
+as separate gates.
+
+Keep the named child's generated public type and its private record-field
+encode/decode helpers. Parent record callbacks enter that child through
+`write_nested_sequence` and `read_nested_sequence` with one
+`RecordContext::new_nested` operation; never call the child's public codec
+methods with fresh limits. An absent OPTIONAL child still selects nested
+accounting. The child must consume exactly its parent-bounded span and its
+matching EOC, and failed callbacks must roll back the current parent field
+without refunding work or retained allocations. Parent SET ordering uses the
+child's effective outer tag; strict CER re-encodes the complete parent and
+compares only the consumed prefix. Validate the resolved target's ownership,
+member descriptors, and generated name before publication.
+
+For `Inner ::= SEQUENCE { number INTEGER (0..5), flag BOOLEAN }` with child
+`(2, TRUE)` followed by `[4] IMPLICIT BOOLEAN TRUE`, C natural SEQUENCE DER is
+`30 0b 30 06 02 01 02 01 01 ff 84 01 ff`; CER is
+`30 80 30 80 02 01 02 01 01 ff 00 00 84 01 ff 00 00`.
+Changing the child to `[3] IMPLICIT` replaces its `30` identifier with `a3`;
+`[3] EXPLICIT` wraps the intrinsic SEQUENCE and its matching EOC under CER.
+Natural SET uses outer `31`; C BER accepts reversed member order, while
+strict CER rejects it. The absent child yields DER
+`30/31 03 84 01 ff` and CER `30/31 80 84 01 ff 00 00`.
+For `Empty ::= SEQUENCE {}` as a present child with an omitted FALSE DEFAULT
+sibling, C emits DER `30 02 30 00` and CER `30 80 30 80 00 00 00 00`.
+When both an OPTIONAL empty child and a defaulted scalar are absent, C emits
+DER `30 00` and CER `30 80 00 00`.
+Acceptance includes these C vectors, optional presence, SET ordering, exact
+prefixes, nested definite and indefinite lengths, malformed and extra EOCs,
+truncations, unknown/duplicate fields, out-of-range child leaves, exact
+work/scratch/depth limits, mutation tests, and no-publication schema gates.
+The earlier EXPLICIT mixed-length C BER divergence applies to this named
+child too; well-framed Rust BER may accept it, while strict CER rejects it.
 
 ## Decisions still required
 

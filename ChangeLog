@@ -1,4 +1,8 @@
 Changes since v1.5.3:
+	* Support one same-module named bounded INTEGER field in flat Rust
+	  BER/DER/CER SEQUENCE and SET records. Generate a checked newtype,
+	  preserve natural, IMPLICIT, and EXPLICIT member tags, share the parent
+	  record context, and reject unsupported target shapes before publication.
 	* Add one natural non-IA5 restricted character-string member to flat
 	  Rust BER/DER/CER SEQUENCE and SET records under BER/CER-only selection.
 	  Preserve Teletex/T61 and Visible/ISO646 identities, share aggregate

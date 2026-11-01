@@ -1,0 +1,5 @@
+NamedIntegerAlias DEFINITIONS ::= BEGIN
+Base ::= INTEGER (0..5)
+Small ::= Base
+Packet ::= SEQUENCE { value Small }
+END

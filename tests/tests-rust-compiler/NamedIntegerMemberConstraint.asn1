@@ -1,0 +1,4 @@
+NamedIntegerMemberConstraint DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..5)
+Packet ::= SEQUENCE { value Small (1..4) }
+END

@@ -1,0 +1,4 @@
+NamedIntegerUnion DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..1 | 4..5)
+Packet ::= SEQUENCE { value Small }
+END

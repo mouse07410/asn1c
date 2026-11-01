@@ -1,0 +1,4 @@
+NamedIntegerCollision DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..5)
+Packet ::= SEQUENCE { value Small, raw INTEGER (0..5) }
+END

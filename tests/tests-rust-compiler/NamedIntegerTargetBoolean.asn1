@@ -1,0 +1,4 @@
+NamedIntegerTargetBoolean DEFINITIONS ::= BEGIN
+Small ::= BOOLEAN
+Packet ::= SEQUENCE { value Small }
+END

@@ -37,6 +37,27 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/c_inline_choice.c \
     $(srcdir)/natural_choice_set_conformance.rs \
     $(srcdir)/c_natural_choice_set.c \
+    $(srcdir)/NamedIntegerRecord.asn1 \
+    $(srcdir)/NamedIntegerAlias.asn1 \
+    $(srcdir)/NamedIntegerCollision.asn1 \
+    $(srcdir)/NamedIntegerDefault.asn1 \
+    $(srcdir)/NamedIntegerDuplicateTag.asn1 \
+    $(srcdir)/NamedIntegerExtension.asn1 \
+    $(srcdir)/NamedIntegerImportBase.asn1 \
+    $(srcdir)/NamedIntegerImported.asn1 \
+    $(srcdir)/NamedIntegerMemberConstraint.asn1 \
+    $(srcdir)/NamedIntegerMinMax.asn1 \
+    $(srcdir)/NamedIntegerMultiple.asn1 \
+    $(srcdir)/NamedIntegerNested.asn1 \
+    $(srcdir)/NamedIntegerOutOfI64.asn1 \
+    $(srcdir)/NamedIntegerTaggedReference.asn1 \
+    $(srcdir)/NamedIntegerTaggedRoot.asn1 \
+    $(srcdir)/NamedIntegerTaggedTarget.asn1 \
+    $(srcdir)/NamedIntegerTargetBoolean.asn1 \
+    $(srcdir)/NamedIntegerUnion.asn1 \
+    $(srcdir)/NamedIntegerUnbounded.asn1 \
+    $(srcdir)/named_integer_record_conformance.rs \
+    $(srcdir)/c_named_integer_record.c \
     $(srcdir)/ChoiceBooleanOnly.asn1 \
     $(srcdir)/ChoiceNullOnly.asn1 \
     $(srcdir)/ChoiceIntegerOnly.asn1 \

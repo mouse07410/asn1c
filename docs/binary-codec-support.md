@@ -286,6 +286,16 @@ default C generation may use native `long`. C BER accepts empty INTEGER
 content that Rust rejects because `BigInteger` requires a nonempty value.
 Tagged, constrained, nested, referenced, imported, mixed semantic-field, and
 mixed-codec wide INTEGER record forms remain gated.
+One same-module bounded `INTEGER` assignment may also be used by one direct
+required or OPTIONAL field in a flat untagged SEQUENCE or SET. Its target has
+one finite contiguous range fitting `i64`; generated Rust exposes a checked
+newtype and uses the parent's shared BER/CER record context for reads and
+writes. Natural, context-specific IMPLICIT, and one EXPLICIT member tags are
+supported beside the existing scalar fields, including finite bounded
+BIT/OCTET STRING siblings, within the six-field cap. Aliases, imports,
+parameters, target extensions/unions, member constraints, DEFAULT, nested
+forms, duplicate effective tags, and non-BER/CER codec selections fail before
+output publication.
 Flat untagged SEQUENCE and SET records may also contain one natural direct
 non-IA5 restricted character-string field, required or OPTIONAL, beside the
 existing supported scalar siblings, including finite bounded BIT/OCT STRING

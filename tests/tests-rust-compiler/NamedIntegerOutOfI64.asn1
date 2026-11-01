@@ -1,0 +1,4 @@
+NamedIntegerOutOfI64 DEFINITIONS ::= BEGIN
+Small ::= INTEGER (-9223372036854775809..5)
+Packet ::= SEQUENCE { value Small }
+END

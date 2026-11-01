@@ -4428,4 +4428,132 @@ if ! "$test_tmp/c-natural-choice-set"; then
     exit 1
 fi
 
-echo "PASS: generated Rust UPER/CER/BER-DER primitive slice"
+# Same-module named bounded INTEGER assignments become checked record newtypes.
+named_rust="$test_tmp/named-integer-rust"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$named_rust" "$test_srcdir/NamedIntegerRecord.asn1"
+mkdir "$named_rust/tests"
+cp "$test_srcdir/named_integer_record_conformance.rs" "$named_rust/tests/"
+named_module="$named_rust/src/named_integer_record.rs"
+for expected in 'pub struct Small' 'pub const fn value' 'writer.write_integer(self.value.value()' \
+    'Small::new(value)?' 'RecordField::new_explicit' 'FieldKind::Integer'; do
+    if ! grep -F "$expected" "$named_module" >/dev/null; then
+        echo "FAIL: named INTEGER generated source omitted $expected"
+        exit 1
+    fi
+done
+if ! (cd "$named_rust" && CARGO_TARGET_DIR="$test_tmp/target-named-integer" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-named-integer" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/named-integer-rust.log" 2>&1; then
+    cat "$test_tmp/named-integer-rust.log"
+    echo "FAIL: named INTEGER vectors or strict Clippy"
+    exit 1
+fi
+
+for codec in BER CER; do
+    named_codec="$test_tmp/named-integer-$codec-only"
+    if [ "$codec" = BER ]; then
+        unwanted_methods='encode_cer|decode_cer'
+        "$asn1c_bin" --rust -gen-BER -no-gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$named_codec" "$test_srcdir/NamedIntegerRecord.asn1"
+    else
+        unwanted_methods='encode_der|decode_ber'
+        "$asn1c_bin" --rust -gen-CER -no-gen-BER -no-gen-UPER -S "$skeletons" \
+            -D "$named_codec" "$test_srcdir/NamedIntegerRecord.asn1"
+    fi
+    if ! (cd "$named_codec" && \
+        cargo clippy --offline --all-targets --all-features -- \
+        -W clippy::pedantic -W clippy::nursery -D warnings) \
+        >"$test_tmp/named-integer-$codec-only.log" 2>&1; then
+        cat "$test_tmp/named-integer-$codec-only.log"
+        echo "FAIL: named INTEGER $codec-only strict Clippy"
+        exit 1
+    fi
+    if grep -E "pub fn ($unwanted_methods)" \
+        "$named_codec/src/named_integer_record.rs" >/dev/null; then
+        echo "FAIL: named INTEGER $codec-only output has an unselected method"
+        exit 1
+    fi
+done
+
+for fixture in NamedIntegerAlias NamedIntegerUnbounded NamedIntegerUnion \
+    NamedIntegerExtension NamedIntegerOutOfI64 NamedIntegerTaggedTarget \
+    NamedIntegerMemberConstraint NamedIntegerMinMax NamedIntegerMultiple \
+    NamedIntegerCollision \
+    NamedIntegerDefault NamedIntegerNested NamedIntegerTaggedRoot \
+    NamedIntegerTargetBoolean NamedIntegerDuplicateTag NamedIntegerTaggedReference; do
+    rejected="$test_tmp/rejected-$fixture"
+    if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$rejected" "$test_srcdir/$fixture.asn1" \
+        >"$test_tmp/rejected-$fixture.log" 2>&1; then
+        echo "FAIL: named INTEGER gate accepted unsupported $fixture"
+        exit 1
+    fi
+    if [ -e "$rejected" ]; then
+        echo "FAIL: unsupported named INTEGER $fixture published output"
+        exit 1
+    fi
+done
+
+rejected_import="$test_tmp/rejected-NamedIntegerImported"
+if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$rejected_import" "$test_srcdir/NamedIntegerImportBase.asn1" \
+    "$test_srcdir/NamedIntegerImported.asn1" \
+    >"$test_tmp/rejected-NamedIntegerImported.log" 2>&1; then
+    echo "FAIL: named INTEGER gate accepted an imported target"
+    exit 1
+fi
+if [ -e "$rejected_import" ]; then
+    echo "FAIL: imported named INTEGER target published output"
+    exit 1
+fi
+
+for selection in mixed uper; do
+    rejected="$test_tmp/rejected-named-integer-codecs-$selection"
+    if [ "$selection" = mixed ]; then
+        if "$asn1c_bin" --rust -gen-BER -gen-CER -gen-UPER -S "$skeletons" \
+            -D "$rejected" "$test_srcdir/NamedIntegerRecord.asn1" \
+            >"$test_tmp/rejected-named-integer-$selection.log" 2>&1; then
+            echo "FAIL: named INTEGER gate accepted mixed codecs"
+            exit 1
+        fi
+    else
+        if "$asn1c_bin" --rust -gen-UPER -no-gen-BER -no-gen-CER -S "$skeletons" \
+            -D "$rejected" "$test_srcdir/NamedIntegerRecord.asn1" \
+            >"$test_tmp/rejected-named-integer-$selection.log" 2>&1; then
+            echo "FAIL: named INTEGER gate accepted UPER-only selection"
+            exit 1
+        fi
+    fi
+    if [ -e "$rejected" ]; then
+        echo "FAIL: rejected named INTEGER codec selection published output"
+        exit 1
+    fi
+done
+
+named_c="$test_tmp/named-integer-c"
+mkdir "$named_c"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$named_c" "$test_srcdir/NamedIntegerRecord.asn1" \
+    >"$test_tmp/named-integer-c-generate.log" 2>&1
+named_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$named_c/Makefile.am.libasncodec")
+rm -f "$named_c/converter-example.c" "$named_c/pdu_collection.c"
+if ! cc $named_cflags -I"$named_c" "$named_c"/*.c \
+    "$test_srcdir/c_named_integer_record.c" -lm -o "$test_tmp/c-named-integer-record" \
+    >"$test_tmp/named-integer-c-compile.log" 2>&1; then
+    cat "$test_tmp/named-integer-c-compile.log"
+    echo "FAIL: C named INTEGER differential fixture did not compile"
+    exit 1
+fi
+if ! "$test_tmp/c-named-integer-record"; then
+    echo "FAIL: C named INTEGER DER/CER vectors or BER aliases failed"
+    exit 1
+fi
+
+echo "PASS: generated Rust UPER/CER/BER-DER and named INTEGER record slice"

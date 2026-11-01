@@ -1,0 +1,4 @@
+NamedIntegerNested DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..5)
+Packet ::= SEQUENCE { child SEQUENCE { value Small } }
+END

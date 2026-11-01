@@ -1,0 +1,4 @@
+NamedIntegerExtension DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..5, ...)
+Packet ::= SEQUENCE { value Small }
+END

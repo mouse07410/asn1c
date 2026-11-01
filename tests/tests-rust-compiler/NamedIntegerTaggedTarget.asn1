@@ -1,0 +1,4 @@
+NamedIntegerTaggedTarget DEFINITIONS ::= BEGIN
+Small ::= [0] IMPLICIT INTEGER (0..5)
+Packet ::= SEQUENCE { value Small }
+END

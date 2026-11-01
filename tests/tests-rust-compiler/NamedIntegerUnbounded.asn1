@@ -1,0 +1,4 @@
+NamedIntegerUnbounded DEFINITIONS ::= BEGIN
+Small ::= INTEGER
+Packet ::= SEQUENCE { value Small }
+END

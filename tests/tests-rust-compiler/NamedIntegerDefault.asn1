@@ -1,0 +1,4 @@
+NamedIntegerDefault DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..5)
+Packet ::= SEQUENCE { value Small DEFAULT 1 }
+END

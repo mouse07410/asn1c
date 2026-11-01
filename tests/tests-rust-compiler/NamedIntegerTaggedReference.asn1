@@ -1,0 +1,4 @@
+NamedIntegerTaggedReference DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..5)
+Packet ::= SEQUENCE { value [APPLICATION 3] IMPLICIT Small }
+END

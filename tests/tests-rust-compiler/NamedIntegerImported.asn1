@@ -1,0 +1,4 @@
+NamedIntegerImported DEFINITIONS ::= BEGIN
+IMPORTS Small FROM NamedIntegerImportBase;
+Packet ::= SEQUENCE { value Small }
+END

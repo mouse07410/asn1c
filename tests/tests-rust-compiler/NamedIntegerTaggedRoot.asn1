@@ -1,0 +1,4 @@
+NamedIntegerTaggedRoot DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..5)
+Packet ::= [3] IMPLICIT SEQUENCE { value Small }
+END
