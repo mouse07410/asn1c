@@ -90,6 +90,7 @@ static int rust_write_containing(FILE *, const char *, asn1p_expr_t *, asn1p_exp
 static int rust_check_type(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_sequence(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_sequence_ber_cer(asn1p_module_t *, asn1p_expr_t *);
+static int rust_check_set_ber_cer(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_cbor_sequence(asn1p_module_t *, asn1p_expr_t *);
 static int rust_check_cbor_choice(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_sequence_tree(asn1p_module_t *, asn1p_expr_t *,
@@ -154,6 +155,10 @@ static int rust_write_enumerated_ber_cer(FILE *, asn1p_expr_t *, int);
 static int rust_write_integer_ber(FILE *, const char *, const char *);
 static int rust_write_sequence(FILE *, const char *, asn1p_expr_t *, int, uint64_t);
 static int rust_write_sequence_ber_cer(FILE *, const char *, asn1p_expr_t *, uint64_t);
+static int rust_write_set_ber_cer(FILE *, const char *, asn1p_expr_t *, uint64_t);
+static int rust_write_set_ber_cer_decode_method(FILE *, const char *, asn1p_expr_t *, int);
+static int rust_write_set_ber_cer_decode_helper(FILE *, const char *, asn1p_expr_t *);
+static int rust_write_set(FILE *, const char *, asn1p_expr_t *, uint64_t);
 static int rust_write_sequence_ber_cer_encode_field(FILE *, const char *, asn1p_expr_t *);
 static int rust_write_sequence_ber_cer_decode_field(FILE *, const char *, asn1p_expr_t *);
 static int rust_write_sequence_ber_cer_decode_method(FILE *, const char *, asn1p_expr_t *, int);
@@ -765,6 +770,8 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
     }
     if(expr->expr_type == ASN_CONSTR_SEQUENCE)
         return rust_check_sequence(module, expr, codecs);
+    if(expr->expr_type == ASN_CONSTR_SET)
+        return rust_check_set_ber_cer(module, expr, codecs);
     if(expr->expr_type == ASN_CONSTR_CHOICE)
         return rust_check_cbor_choice(module, expr, codecs);
     if(expr->expr_type == ASN_BASIC_ENUMERATED)
@@ -1033,6 +1040,59 @@ rust_check_sequence(asn1p_module_t *module, asn1p_expr_t *expr,
 }
 
 /*
+ * Gate flat untagged SET support to the direct unique-tag BER/CER subset.
+ * Parameters: module supplies diagnostics; expr is the SET; codecs selects
+ * BER/DER and/or CER. Returns zero on success, -1 otherwise.
+ * Errors: unsupported masks, tags, fields, defaults, and extensions fail.
+ * Original source: X.690 SET component order. Version/date: 2026-10-31.
+ * Author: asn1c maintainers. History: fourth-wave SET codecs.
+ * Example: `rust_check_set_ber_cer(module, set, RUST_CODEC_BER)`.
+ */
+static int
+rust_check_set_ber_cer(asn1p_module_t *module, asn1p_expr_t *expr,
+                       uint64_t codecs) {
+    asn1p_expr_t *member;
+    unsigned seen_tags = 0;
+    size_t count = 0;
+    const uint64_t supported = RUST_CODEC_BER | RUST_CODEC_CER;
+    if(expr->expr_type != ASN_CONSTR_SET || !(codecs & supported)
+       || (codecs & ~supported) || expr->reference || expr->auto_tags_OK
+       || expr->tag.tag_class != TC_NOCLASS || expr->constraints
+       || expr->combined_constraints || expr->lhs_params || expr->ioc_table
+       || expr->marker.flags || expr->rhs_pspecs) {
+        rust_diagnostic(module, expr,
+                        "BER/CER SET must be flat, untagged, and use only BER/CER codecs");
+        return -1;
+    }
+    TQ_FOR(member, &expr->members, next) {
+        uint64_t tag = rust_sequence_ber_cer_tag(member);
+        unsigned tag_mask = tag < 32 ? 1u << tag : 0;
+        int new_kind = member->expr_type == ASN_BASIC_ENUMERATED
+                    || member->expr_type == ASN_BASIC_OCTET_STRING
+                    || member->expr_type == ASN_BASIC_BIT_STRING;
+        if(++count > 6 || !tag || !rust_sequence_member_shape_valid(member)
+           || member->tag.tag_class != TC_NOCLASS || member->reference
+           || rust_containing_node(member->combined_constraints, 0)
+           || (new_kind && member->marker.flags != EM_NOMARK
+               && member->marker.flags != EM_OPTIONAL)
+           || rust_check_sequence_name(module, expr, member)
+           || rust_check_sequence_member(module, member)) {
+            rust_diagnostic(module, member,
+                            "BER/CER SET needs direct untagged supported fields with "
+                            "required, OPTIONAL, or supported BOOLEAN/INTEGER DEFAULT markers");
+            return -1;
+        }
+        if(seen_tags & tag_mask) {
+            rust_diagnostic(module, member,
+                            "BER/CER SET fields must have unique universal tags");
+            return -1;
+        }
+        seen_tags |= tag_mask;
+    }
+    return 0;
+}
+
+/*
  * Purpose: limit BER/DER/CER SEQUENCE generation to unique untagged primitives.
  * Inputs: module supplies diagnostics; expr owns the top-level record.
  * Returns zero when fields are direct unique-tag primitives in the six-tag
@@ -1205,7 +1265,8 @@ rust_check_module_nested_names(asn1p_module_t *module) {
     int failed = 0;
     TQ_FOR(expr, &module->members, next) {
         char *root;
-        if(expr->expr_type != ASN_CONSTR_SEQUENCE) continue;
+        if(expr->expr_type != ASN_CONSTR_SEQUENCE && expr->expr_type != ASN_CONSTR_SET)
+            continue;
         root = rust_identifier(expr->Identifier, 0);
         if(!root || rust_collect_nested_names(module, expr, root, names,
                                               &name_count, 0)) failed = 1;
@@ -2733,12 +2794,15 @@ rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
     int ret;
     (void)module;
     if(!name) return -1;
-    if(fputs("/// ASN.1 type generated from the fixed parser tree.\n", stream) == EOF) {
+    if(expr->expr_type != ASN_CONSTR_SET
+       && fputs("/// ASN.1 type generated from the fixed parser tree.\n", stream) == EOF) {
         free(name);
         return -1;
     }
     if(codecs == RUST_CODEC_XER) {
         ret = rust_write_xer_record(stream, name, expr);
+    } else if(expr->expr_type == ASN_CONSTR_SET) {
+        ret = rust_write_set(stream, name, expr, codecs);
     } else if(expr->expr_type == ASN_CONSTR_SEQUENCE) {
         ret = rust_write_all_sequences(stream, name, expr, 1, codecs);
     } else if(expr->expr_type == ASN_CONSTR_CHOICE) {
@@ -3147,6 +3211,275 @@ rust_write_sequence_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr
 }
 
 /*
+ * Emit DER/BER and CER methods for one validated direct-field SET.
+ * Parameters: stream receives Rust; parent names inline enums; expr owns
+ * unique-tag fields; codecs selects BER/DER and/or CER. Returns zero or -1.
+ * Errors: output failure; generated methods return runtime errors.
+ * Source: X.690 SET framing and the shared-budget runtime API.
+ * Version/date: 2026-10-31. Author: asn1c maintainers. History: fourth wave.
+ * Example: rust_write_set_ber_cer(out, name, expr, RUST_CODEC_BER).
+ */
+static int
+rust_write_set_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr,
+                       uint64_t codecs) {
+    static const uint64_t tag_order[] = {1, 2, 3, 4, 5, 10};
+    size_t i;
+    asn1p_expr_t *member;
+    int has_members = expr->members.tq_head != 0;
+    if(rust_write_method_doc(stream, "Encode this SET using the selected record rule.",
+        "`self` supplies fields; `limits` bounds the complete operation.",
+        "Returns one complete SET TLV.",
+        "Returns an error for invalid values or exhausted resources.",
+        "`let encoded = value.encode_der(&Default::default())?;")) return -1;
+    if(fprintf(stream,
+        "    fn encode_record_with_rule(&self, rule: ::asn1c_runtime::ber::RecordEncoding,\n"
+        "        context: &mut ::asn1c_runtime::ber::RecordContext) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+        "        let %swriter = ::asn1c_runtime::ber::SetWriter::new(rule, context)?;\n",
+        has_members ? "mut " : "") < 0) return -1;
+    if(!has_members && fputs("        let _ = self;\n", stream) == EOF) return -1;
+    for(i = 0; i < sizeof(tag_order) / sizeof(tag_order[0]); i++) {
+        TQ_FOR(member, &expr->members, next) {
+            if(rust_sequence_ber_cer_tag(member) == tag_order[i]
+               && rust_write_sequence_ber_cer_encode_field(stream, parent, member))
+                return -1;
+        }
+    }
+    if(fputs("        writer.finish()\n    }\n\n", stream) == EOF) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        if(rust_write_set_ber_cer_decode_helper(stream, parent, member)) return -1;
+    }
+    if(codecs & RUST_CODEC_BER) {
+        if(rust_write_method_doc(stream, "Encode this SET using DER.",
+            "`self` supplies fields; `limits` bounds the complete operation.",
+            "Returns the complete DER SET TLV.",
+            "Returns an error for invalid values or exhausted resources.",
+            "`let encoded = value.encode_der(&Default::default())?;")) return -1;
+        if(fputs(
+            "    pub fn encode_der(&self, limits: &::asn1c_runtime::Limits) ->\n"
+            "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+            "        let mut context = ::asn1c_runtime::ber::RecordContext::new(limits);\n"
+            "        self.encode_record_with_rule(\n"
+            "            ::asn1c_runtime::ber::RecordEncoding::Der, &mut context)\n"
+            "    }\n\n", stream) == EOF) return -1;
+        if(rust_write_set_ber_cer_decode_method(stream, parent, expr, 0)) return -1;
+    }
+    if(codecs & RUST_CODEC_CER) {
+        if(rust_write_method_doc(stream, "Encode this SET using CER.",
+            "`self` supplies fields; `limits` bounds the complete operation.",
+            "Returns the complete CER SET TLV.",
+            "Returns an error for invalid values or exhausted resources.",
+            "`let encoded = value.encode_cer(&Default::default())?;")) return -1;
+        if(fputs(
+            "    pub fn encode_cer(&self, limits: &::asn1c_runtime::Limits) ->\n"
+            "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+            "        let mut context = ::asn1c_runtime::ber::RecordContext::new(limits);\n"
+            "        self.encode_record_with_rule(\n"
+            "            ::asn1c_runtime::ber::RecordEncoding::Cer, &mut context)\n"
+            "    }\n\n", stream) == EOF) return -1;
+        if(rust_write_set_ber_cer_decode_method(stream, parent, expr, 1)) return -1;
+    }
+    return 0;
+}
+
+/*
+ * Emit a small typed SET-field decoder so record dispatch stays concise.
+ * Parameters: stream receives Rust; parent names inline enums; member is a
+ * validated direct field. Returns zero or -1. Errors: source write failure.
+ * Source: X.690 primitive field readers. Version/date: 2026-10-31.
+ * Author: asn1c maintainers. History: fourth-wave SET generation.
+ * Example: decode one BOOLEAN child after SetReader selects tag 1.
+ */
+static int
+rust_write_set_ber_cer_decode_helper(FILE *stream, const char *parent,
+                                     asn1p_expr_t *member) {
+    char *name = rust_identifier(member->Identifier, 1);
+    char *nested_type = member->expr_type == ASN_BASIC_ENUMERATED
+        ? rust_nested_type_name(parent, member) : NULL;
+    const char *type = member->expr_type == ASN_BASIC_BOOLEAN ? "bool"
+        : member->expr_type == ASN_BASIC_NULL ? "()"
+        : member->expr_type == ASN_BASIC_INTEGER ? "i64"
+        : member->expr_type == ASN_BASIC_OCTET_STRING ? "::std::vec::Vec<u8>"
+        : member->expr_type == ASN_BASIC_BIT_STRING
+          && rust_fixed_size(member, &(size_t){0}) == 0 ? "::std::vec::Vec<u8>"
+        : member->expr_type == ASN_BASIC_BIT_STRING ? "::asn1c_runtime::BitStringValue"
+        : nested_type;
+    int ret;
+    if(!name || !type) {
+        free(name);
+        free(nested_type);
+        return -1;
+    }
+    ret = fprintf(stream,
+        "    fn __asn1c_decode_set_field_%s(\n"
+        "        reader: &mut ::asn1c_runtime::ber::SetReader<'_, '_, '_>) ->\n"
+        "        ::core::result::Result<%s, ::asn1c_runtime::Error> {\n",
+        name, type);
+    if(ret >= 0 && member->expr_type == ASN_BASIC_NULL) {
+        ret = fputs("        reader.read_null()?;\n        Ok(())\n", stream) == EOF ? -1 : 0;
+    } else if(ret >= 0) {
+        if(rust_write_sequence_ber_cer_decode_value(stream, parent, member, "        "))
+            ret = -1;
+        else ret = fputs("        Ok(value)\n", stream) == EOF ? -1 : 0;
+    }
+    if(ret >= 0) ret = fputs("    }\n\n", stream) == EOF ? -1 : 0;
+    free(name);
+    free(nested_type);
+    return ret < 0 ? -1 : 0;
+}
+
+/*
+ * Emit one BER or strict CER decoder for a validated direct-field SET.
+ * Parameters: stream receives Rust; parent names inline enums; expr owns
+ * fields; cer selects canonical verification. Returns zero or -1.
+ * Errors: output failure; generated methods reject malformed wire values.
+ * Source: X.690 unordered SET fields and the record runtime. Version/date:
+ * 2026-10-31. Author: asn1c maintainers. History: fourth wave.
+ * Example: decode_cer rejects a reordered SET even when BER accepts it.
+ */
+static int
+rust_write_set_ber_cer_decode_method(FILE *stream, const char *parent,
+                                     asn1p_expr_t *expr, int cer) {
+    const char *suffix = cer ? "cer" : "ber";
+    asn1p_expr_t *member;
+    if(rust_write_method_doc(stream, cer
+        ? "Strictly decode one CER SET prefix."
+        : "Decode one BER SET prefix.",
+        "`input` supplies the prefix; `limits` bounds the complete operation.",
+        "Returns the validated record and consumed prefix lengths.",
+        cer ? "Returns an error for malformed, noncanonical, or over-limit input."
+            : "Returns an error for malformed, truncated, or over-limit input.",
+        cer ? "`let decoded = Type::decode_cer(input, &Default::default())?;"
+            : "`let decoded = Type::decode_ber(input, &Default::default())?;")) return -1;
+    if(fprintf(stream,
+        "    pub fn decode_%s(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+        "        let mut context = ::asn1c_runtime::ber::RecordContext::new(limits);\n"
+        "        let (value, consumed) = {\n"
+        "            let mut reader = ::asn1c_runtime::ber::SetReader::new(\n"
+        "                input, &[", suffix) < 0) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        if(fprintf(stream, "%s%llu", member == TQ_FIRST(&expr->members) ? "" : ", ",
+                   (unsigned long long)rust_sequence_ber_cer_tag(member)) < 0) return -1;
+    }
+    if(fputs("], &mut context)?;\n", stream) == EOF) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        char *name = rust_identifier(member->Identifier, 1);
+        int ret = name ? fprintf(stream, "            let mut __asn1c_%s = None;\n", name) : -1;
+        free(name);
+        if(ret < 0) return -1;
+    }
+    if(expr->members.tq_head) {
+        if(fputs(
+            "            while let Some(__asn1c_tag) = reader.next_field()? {\n"
+            "                match __asn1c_tag {\n", stream) == EOF) return -1;
+        TQ_FOR(member, &expr->members, next) {
+            char *name = rust_identifier(member->Identifier, 1);
+            unsigned tag = (unsigned)rust_sequence_ber_cer_tag(member);
+            int ret = name ? fprintf(stream,
+                "                    %u => __asn1c_%s = Some(Self::__asn1c_decode_set_field_%s(\n"
+                "                        &mut reader)?),\n", tag, name, name) : -1;
+            free(name);
+            if(ret < 0) return -1;
+        }
+        if(fputs(
+            "                    _ => {\n"
+            "                        return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+            "                            reason: \"unknown SET field\",\n"
+            "                        });\n"
+            "                    }\n"
+            "                }\n"
+            "            }\n", stream) == EOF) return -1;
+    } else if(fputs(
+        "            if reader.next_field()?.is_some() {\n"
+        "                return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+        "                    reason: \"unexpected field in empty SET\",\n"
+        "                });\n"
+        "            }\n", stream) == EOF) return -1;
+    if(fputs("            let consumed = reader.finish()?;\n"
+             "            let value = Self {\n", stream) == EOF) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        char *name = rust_identifier(member->Identifier, 1);
+        if(!name || fprintf(stream, "                %s: ", name) < 0) {
+            free(name);
+            return -1;
+        }
+        if(member->marker.flags == EM_OPTIONAL) {
+            if(fprintf(stream, "__asn1c_%s,\n", name) < 0) {
+                free(name);
+                return -1;
+            }
+        } else if(member->marker.flags == EM_DEFAULT) {
+            char literal[64];
+            if(rust_sequence_default_literal(member, literal, sizeof(literal))
+               || fprintf(stream, "__asn1c_%s.unwrap_or(%s),\n", name, literal) < 0) {
+                free(name);
+                return -1;
+            }
+        } else if(fprintf(stream,
+            "__asn1c_%s.ok_or(::asn1c_runtime::Error::InvalidEncoding {\n"
+            "                    reason: \"missing required SET field\",\n"
+            "                })?,\n", name) < 0) {
+            free(name);
+            return -1;
+        }
+        free(name);
+    }
+    if(fputs("            };\n            (value, consumed)\n        };\n", stream) == EOF)
+        return -1;
+    if(cer && fputs(
+        "        let canonical = value.encode_record_with_rule(\n"
+        "            ::asn1c_runtime::ber::RecordEncoding::Cer, &mut context)?;\n"
+        "        context.verify_canonical(input, consumed.consumed_bytes,\n"
+        "            &canonical.bytes)?;\n", stream) == EOF) return -1;
+    return fputs(
+        "        Ok(::asn1c_runtime::Decoded {\n"
+        "            value,\n"
+        "            consumed_bits: consumed.consumed_bits,\n"
+        "            consumed_bytes: consumed.consumed_bytes,\n"
+        "        })\n"
+        "    }\n\n", stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Emit the Rust data type and selected BER/CER methods for a flat SET.
+ * Parameters: stream receives Rust; name is sanitized; expr owns fields;
+ * codecs selects already-validated BER/CER methods. Returns zero or -1.
+ * Errors: output failure; no runtime errors are thrown during generation.
+ * Source: Rust record generator. Version/date: 2026-10-31.
+ * Author: asn1c maintainers. History: fourth wave. Example: emit a six-tag SET.
+ */
+static int
+rust_write_set(FILE *stream, const char *name, asn1p_expr_t *expr,
+               uint64_t codecs) {
+    asn1p_expr_t *member;
+    TQ_FOR(member, &expr->members, next) {
+        if(member->expr_type == ASN_BASIC_ENUMERATED) {
+            char *enum_name = rust_nested_type_name(name, member);
+            int ret = enum_name ? 0 : -1;
+            if(ret == 0 && strchr(enum_name, '_')
+               && fputs("#[allow(non_camel_case_types)]\n", stream) == EOF) ret = -1;
+            if(ret == 0) ret = rust_write_inline_enum(stream, enum_name, member, codecs);
+            free(enum_name);
+            if(ret) return -1;
+        }
+    }
+    if(fprintf(stream,
+        "/// ASN.1 SET record with direct inline fields.\n") < 0) return -1;
+    if(strchr(name, '_') && fputs("#[allow(non_camel_case_types)]\n", stream) == EOF)
+        return -1;
+    if(fprintf(stream,
+        "#[derive(Clone, Debug, Eq, PartialEq)]\n"
+        "pub struct %s {\n", name) < 0) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        if(rust_write_sequence_field(stream, name, member)) return -1;
+    }
+    if(fprintf(stream, "}\n\nimpl %s {\n", name) < 0) return -1;
+    if(rust_write_set_ber_cer(stream, name, expr, codecs)) return -1;
+    return fputs("}\n\n", stream) == EOF ? -1 : 0;
+}
+
+/*
  * Emit a Rust match from each inline enum variant to its ASN.1 numeric value.
  * Parameters: stream receives Rust; parent/member identify the nested enum;
  * value is its Rust expression. Returns zero or -1 on allocation/output error.
@@ -3281,10 +3614,7 @@ rust_write_sequence_ber_cer_encode_field(FILE *stream, const char *parent,
         if(fprintf(stream, "        if let Some(value) = self.%s.as_ref() {\n            ", name) < 0)
             goto cleanup;
         ret = rust_write_sequence_ber_cer_encode_value(stream, parent, member,
-            member->expr_type == ASN_BASIC_BIT_STRING
-                && rust_fixed_size(member, &(size_t){0}) ? "value" :
-            member->expr_type == ASN_BASIC_BIT_STRING
-                ? "value.as_slice()" :
+            member->expr_type == ASN_BASIC_BIT_STRING ? "value" :
             member->expr_type == ASN_BASIC_OCTET_STRING ? "value.as_slice()" :
             member->expr_type == ASN_BASIC_ENUMERATED ? "*value" :
             member->expr_type == ASN_BASIC_BOOLEAN || member->expr_type == ASN_BASIC_INTEGER

@@ -11,12 +11,17 @@ direct finite ENUMERATED, and fixed or bounded BIT/OCTET STRING values. See
 C, including imports, references, and tags. These rejections must remain
 until the corresponding generated representation and codecs are implemented.
 
-The next implemented slice handles empty or flat untagged SEQUENCE records
+The implemented SEQUENCE slice handles empty or flat untagged records
 with distinct direct BOOLEAN, NULL, bounded INTEGER, ENUMERATED, and finite
 bounded BIT/OCTET STRING fields. Required and OPTIONAL members and literal
-BOOLEAN/INTEGER DEFAULT members share one operation budget. SET, nested
-records, tagging, and broader primitive members remain in the staged parity
-matrix below.
+BOOLEAN/INTEGER DEFAULT members share one operation budget. Nested records,
+tagging, and broader primitive members remain in the staged parity matrix
+below.
+
+The following flat SET slice uses the same six direct universal field kinds
+under BER/CER-only selection. Its BER reader accepts arbitrary member order;
+the DER/CER writer emits ascending tags. Broader SET shapes, collections,
+nested records, and tagging remain future stages.
 
 ## Architecture and interfaces
 

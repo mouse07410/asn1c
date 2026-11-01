@@ -135,6 +135,10 @@ INTEGER, ENUMERATED, and finite bounded BIT/OCTET STRING fields also support
 required and OPTIONAL members, literal BOOLEAN/INTEGER DEFAULT members, and
 an empty record. Their BER/DER/CER operations share one record-wide resource
 budget.
+Flat untagged SET records support the same six distinct direct field kinds
+under BER/DER/CER-only selection (`-no-gen-UPER`), with unordered BER field
+decoding and canonical tag-ordered DER/CER output. The current XER-only SET
+slice remains a separate codec selection.
 Rust CER output is selected by default with UPER; `-no-gen-UPER` selects
 CER-only output. `-gen-BER` adds BER prefix decoding and DER encoding for
 these direct types. See [Rust output usage and limits](docs/rust/implementation.md)

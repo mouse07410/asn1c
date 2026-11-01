@@ -85,6 +85,18 @@ bytes, CER OCTET thresholds at 1000/1001, and CER BIT content thresholds at
 999/1000 payload octets. BER constructed OCTET/BIT fields, strict CER rejection
 of noncanonical fragments, unknown enum values, and cumulative record budgets
 are also covered.
+The fourth BER/CER slice adds flat untagged SET records with unique direct
+BOOLEAN, bounded INTEGER, fixed or bounded BIT/OCTET STRING, NULL, and inline
+nonextensible ENUMERATED members. SET members remain in declaration order in
+the Rust struct; DER and CER encode them in ascending universal-tag order. BER
+decoding accepts arbitrary child order, while strict CER rejects noncanonical
+ordering by re-encoding the record under the same resource context. Required,
+OPTIONAL, and literal BOOLEAN/INTEGER DEFAULT fields are covered, as are empty
+SET framing, string fragmentation, malformed fields, codec selectors, and
+negative shape gates. The generated C parity schema exercises nonempty SET
+cases. It excludes the Rust empty SET fixture because the current C generator
+emits an empty C enum for that type, which strict C compilation rejects; empty
+SET vectors are tested with the generated Rust wrapper and runtime.
 The fixed-size string fixture covers standalone OCTET STRING and BIT STRING,
 zero-sized values, bit packing inside a mixed SEQUENCE, malformed lengths and
 pad bits, truncation, and whole-operation budgets. It also checks that the

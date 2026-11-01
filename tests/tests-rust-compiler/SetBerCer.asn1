@@ -1,0 +1,32 @@
+SetBerCer DEFINITIONS ::= BEGIN
+
+SetAllRecord ::= SET {
+    number INTEGER (-3..3),
+    bits BIT STRING (SIZE(1..16)),
+    state ENUMERATED { queued(17), active(3), complete(91) },
+    flag BOOLEAN,
+    octets OCTET STRING (SIZE(0..128)),
+    empty NULL
+}
+
+SetPresenceRecord ::= SET {
+    number INTEGER (-3..3) DEFAULT 1,
+    bits BIT STRING (SIZE(1..16)) OPTIONAL,
+    state ENUMERATED { queued(17), active(3), complete(91) } OPTIONAL,
+    flag BOOLEAN DEFAULT FALSE,
+    octets OCTET STRING (SIZE(0..128)) OPTIONAL,
+    empty NULL OPTIONAL
+}
+
+SetEmptyRecord ::= SET { }
+
+SetBoundaryRecord ::= SET {
+    bits BIT STRING (SIZE(1..8000)) OPTIONAL,
+    octets OCTET STRING (SIZE(0..1001))
+}
+
+Hyphenated-set ::= SET {
+    state ENUMERATED { ready(8) }
+}
+
+END

@@ -41,6 +41,9 @@ bounded INTEGER, ENUMERATED, and bounded BIT/OCTET STRING fields also support
 BER/DER/CER. Tags, aliases, open types,
 and broader constructed records do not yet have BER/DER/CER parity. See the
 [parity design](ber-der-cer-design.md).
+The same direct-field subset supports flat untagged SET under a BER/CER-only
+codec selection (`-no-gen-UPER`); BER decoding accepts any member order while
+DER and CER encoding use ascending universal tags.
 
 Start with the [architecture decision](architecture.md) and
 [implementation plan](stage-one-plan.md). Supporting designs describe the

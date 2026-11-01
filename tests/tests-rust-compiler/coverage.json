@@ -247,6 +247,32 @@
       "evidence": "SequenceBerCer.asn1; sequence_ber_cer_conformance.rs; c_sequence_ber_cer.c; check-rust-backend.sh"
     },
     {
+      "asn1_type": "SET",
+      "feature": "empty or flat untagged direct fields with distinct universal tags: BOOLEAN, bounded INTEGER, fixed/bounded BIT and OCTET STRING, NULL, nonextensible inline ENUMERATED; required/OPTIONAL, literal BOOLEAN/INTEGER DEFAULT",
+      "codec": "BER decode / DER encode + CER decode and encode",
+      "variants": [
+        "DER definite-length and CER indefinite-length framing",
+        "DER/CER SET fields sorted by ascending universal tag independently of declaration order",
+        "all six field kinds, arbitrary BER child order, and all generated decoder tag assignments",
+        "empty, OPTIONAL, and BOOLEAN/INTEGER DEFAULT omission/substitution",
+        "CER rejection of reordered children and explicit DEFAULT values",
+        "ENUMERATED numeric mapping and unknown-value rejection",
+        "bounded OCTET STRING fragmentation at 1000/1001 content octets",
+        "bounded BIT STRING fragmentation at 999/1000 payload octets",
+        "unknown, duplicate, missing, truncated, and out-of-range fields",
+        "prefix consumption and input/output/work limits",
+        "unsupported codec masks, tags, aliases, repeated tags, nesting, defaults, and SIZE forms rejected"
+      ],
+      "directions": [
+        "BER decode",
+        "DER encode",
+        "CER decode",
+        "CER encode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "SetBerCer.asn1; SetBerCerC.asn1; set_ber_cer_conformance.rs; c_set_ber_cer.c; check-rust-backend.sh"
+    },
+    {
       "asn1_type": "OCTET STRING, BIT STRING",
       "feature": "direct fixed SIZE(N), bounded OCTET SIZE(l..u), and bounded BIT SIZE(l..u), all below 65536; standalone and required or OPTIONAL SEQUENCE field",
       "codec": "UPER",

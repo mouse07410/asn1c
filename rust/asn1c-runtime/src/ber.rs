@@ -18,15 +18,65 @@ const TAG_SEQUENCE: u64 = 16;
 const TAG_BOOLEAN: u64 = 1;
 const TAG_INTEGER: u64 = 2;
 const TAG_NULL: u64 = 5;
+const TAG_SET: u64 = 17;
 const MAX_SEQUENCE_FIELDS: usize = 6;
 
 /// Canonical encoding rule used for one generated record.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RecordEncoding {
-    /// Encode the outer SEQUENCE with a minimal definite length.
+    /// Encode the outer SEQUENCE or SET with a minimal definite length.
     Der,
-    /// Encode the outer SEQUENCE with indefinite length and EOC.
+    /// Encode the outer SEQUENCE or SET with indefinite length and EOC.
     Cer,
+}
+
+/// Component ordering and outer tag for one flat record container.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RecordKind {
+    /// Preserve schema declaration order for SEQUENCE components.
+    Sequence,
+    /// Accept arbitrary decode order and emit SET components by tag number.
+    Set,
+}
+
+impl RecordKind {
+    /// Return the universal constructed tag number for this container.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns 16 for SEQUENCE or 17 for SET.
+    ///
+    /// # Errors
+    /// This total helper cannot fail.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 universal constructed tags. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat SET support.
+    /// Example: `RecordKind::Set.universal_tag() == TAG_SET`.
+    const fn universal_tag(self) -> u64 {
+        match self {
+            Self::Sequence => TAG_SEQUENCE,
+            Self::Set => TAG_SET,
+        }
+    }
+
+    /// Return the first encoded identifier octet for this container.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns the constructed universal tag octet.
+    ///
+    /// # Errors
+    /// This total helper cannot fail.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 universal constructed tags. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat SET support.
+    /// Example: `RecordKind::Sequence.identifier() == 0x30`.
+    const fn identifier(self) -> u8 {
+        match self {
+            Self::Sequence => 0x30,
+            Self::Set => 0x31,
+        }
+    }
 }
 
 /// Shared resource accounting for one generated BER/DER/CER record operation.
@@ -64,12 +114,22 @@ struct FieldSpan {
 pub struct SequenceWriter<'context> {
     /// Encoding form selected for the outer record.
     rule: RecordEncoding,
+    /// Container tag and component ordering rule.
+    kind: RecordKind,
     /// Shared operation limits and work budget.
     context: &'context mut RecordContext,
     /// Complete output buffer with outer header placeholder; state variable.
     bytes: Vec<u8>,
     /// Bit mask of emitted universal tags; state variable.
     seen_mask: u8,
+    /// Last emitted universal tag for canonical SET component order; state variable.
+    last_tag: Option<u64>,
+}
+
+/// Encode flat SET fields under one bounded BER/DER/CER record context.
+pub struct SetWriter<'context> {
+    /// Shared typed-field encoder configured for SET tag order.
+    inner: SequenceWriter<'context>,
 }
 
 /// Read fields from one BER SEQUENCE prefix under a shared operation budget.
@@ -78,6 +138,8 @@ pub struct SequenceReader<'input, 'tags, 'context> {
     input: &'input [u8],
     /// Schema field tags in declaration order.
     expected_tags: &'tags [u64],
+    /// Container tag and BER component ordering rule.
+    kind: RecordKind,
     /// Shared operation limits and work budget.
     context: &'context mut RecordContext,
     /// Definite outer content end, or input end for indefinite form.
@@ -88,10 +150,18 @@ pub struct SequenceReader<'input, 'tags, 'context> {
     cursor: usize,
     /// Expected tag index of the last child; state variable.
     last_tag_index: Option<usize>,
+    /// Schema indices already observed; state variable.
+    seen_mask: u8,
     /// Current child span awaiting a typed reader; state variable.
     current: Option<FieldSpan>,
     /// Exact consumed end once the outer boundary has been reached; state variable.
     consumed_end: Option<usize>,
+}
+
+/// Read flat SET fields in any BER order under one bounded record context.
+pub struct SetReader<'input, 'tags, 'context> {
+    /// Shared typed-field reader configured for unordered SET components.
+    inner: SequenceReader<'input, 'tags, 'context>,
 }
 
 impl RecordContext {
@@ -251,13 +321,38 @@ impl SequenceWriter<'_> {
         rule: RecordEncoding,
         context: &mut RecordContext,
     ) -> Result<SequenceWriter<'_>, Error> {
+        Self::new_with_kind(rule, context, RecordKind::Sequence)
+    }
+
+    /// Begin a record writer for one container kind.
+    ///
+    /// # Parameters and returns
+    /// `rule` selects DER/CER; `context` owns shared budgets; `kind` selects
+    /// SEQUENCE declaration order or canonical SET tag order.
+    /// Returns a writer with the matching universal constructed identifier.
+    ///
+    /// # Errors
+    /// Returns output-limit, work-limit, or allocation errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 flat record framing. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: common SET implementation.
+    /// Example: called by `SequenceWriter::new` and `SetWriter::new`.
+    fn new_with_kind(
+        rule: RecordEncoding,
+        context: &mut RecordContext,
+        kind: RecordKind,
+    ) -> Result<SequenceWriter<'_>, Error> {
         let minimum_size = if rule == RecordEncoding::Cer { 4 } else { 2 };
         context.check_output(minimum_size)?;
         let mut bytes = Vec::new();
         bytes
             .try_reserve_exact(2)
             .map_err(|_| Error::AllocationFailed { requested_bytes: 2 })?;
-        bytes.extend_from_slice(&[0x30, if rule == RecordEncoding::Cer { 0x80 } else { 0 }]);
+        bytes.extend_from_slice(&[
+            kind.identifier(),
+            if rule == RecordEncoding::Cer { 0x80 } else { 0 },
+        ]);
         if rule == RecordEncoding::Cer {
             context.charge(2)?;
         } else {
@@ -265,9 +360,11 @@ impl SequenceWriter<'_> {
         }
         Ok(SequenceWriter {
             rule,
+            kind,
             context,
             bytes,
             seen_mask: 0,
+            last_tag: None,
         })
     }
 
@@ -372,7 +469,7 @@ impl SequenceWriter<'_> {
     ) -> Result<(), Error> {
         validate_size(value.len(), lower, upper)?;
         let field_size = octet_field_size(value.len(), self.rule)?;
-        self.prepare_field(field_size, 0x08)?;
+        self.prepare_field(TAG_OCTET_STRING, field_size, 0x08)?;
         match (self.rule, value.len() > CER_FRAGMENT_MAX) {
             (RecordEncoding::Cer, true) => {
                 push(&mut self.bytes, &[0x24, 0x80], &self.context.limits)?;
@@ -394,6 +491,7 @@ impl SequenceWriter<'_> {
             )?,
         }
         self.seen_mask |= 0x08;
+        self.last_tag = Some(TAG_OCTET_STRING);
         Ok(())
     }
 
@@ -426,7 +524,7 @@ impl SequenceWriter<'_> {
         validate_size(bit_len, lower_bits, upper_bits)?;
         let unused = unused_bits(bit_len);
         let field_size = bit_field_size(bytes.len(), self.rule)?;
-        self.prepare_field(field_size, 0x04)?;
+        self.prepare_field(TAG_BIT_STRING, field_size, 0x04)?;
         let content_len = bytes.len().checked_add(1).ok_or(Error::SizeOverflow)?;
         if self.rule == RecordEncoding::Cer && content_len > CER_FRAGMENT_MAX {
             push(&mut self.bytes, &[0x23, 0x80], &self.context.limits)?;
@@ -449,6 +547,7 @@ impl SequenceWriter<'_> {
             push_bit_fragment(&mut self.bytes, bytes, unused, &self.context.limits)?;
         }
         self.seen_mask |= 0x04;
+        self.last_tag = Some(TAG_BIT_STRING);
         Ok(())
     }
 
@@ -512,17 +611,19 @@ impl SequenceWriter<'_> {
             .checked_add(length_size(content.len()))
             .and_then(|n| n.checked_add(content.len()))
             .ok_or(Error::SizeOverflow)?;
-        self.prepare_field(field_size, mask)?;
+        self.prepare_field(tag, field_size, mask)?;
         push_primitive(&mut self.bytes, tag, content, &self.context.limits)?;
         self.seen_mask |= mask;
+        self.last_tag = Some(tag);
         Ok(())
     }
 
     /// Check uniqueness, complete output, and work before a field is appended.
     ///
     /// # Parameters and returns
-    /// `field_size` is the complete child TLV size; `mask` is its unique-tag
-    /// bit. Returns the mask after checks.
+    /// `tag` identifies the field; `field_size` is its complete child TLV size;
+    /// `mask` is its unique-tag bit. SET writers also check increasing tag order.
+    /// Returns success after validation and budget charging.
     ///
     /// # Errors
     /// Returns duplicate-tag, size, output-limit, or work-limit errors.
@@ -531,11 +632,14 @@ impl SequenceWriter<'_> {
     /// Source: shared bounded TLV writer. Version: 2026-10-31.
     /// Responsible: asn1c maintainers. History: direct string support.
     /// Example: called by each typed `write_*` method.
-    fn prepare_field(&mut self, field_size: usize, mask: u8) -> Result<(), Error> {
+    fn prepare_field(&mut self, tag: u64, field_size: usize, mask: u8) -> Result<(), Error> {
         if self.seen_mask & mask != 0 {
             return Err(invalid(
                 "flat SEQUENCE writer received a duplicate universal tag",
             ));
+        }
+        if self.kind == RecordKind::Set && self.last_tag.is_some_and(|last| tag <= last) {
+            return Err(invalid("SET writer fields must use increasing tag order"));
         }
         let content_size = self.bytes.len().checked_sub(2).ok_or(Error::SizeOverflow)?;
         let next_content = content_size
@@ -546,6 +650,163 @@ impl SequenceWriter<'_> {
         let work_bytes = field_size.checked_add(1).ok_or(Error::SizeOverflow)?;
         self.context.charge(work_bytes)?;
         Ok(())
+    }
+}
+
+impl<'context> SetWriter<'context> {
+    /// Begin one SET encoder using shared operation limits.
+    ///
+    /// # Parameters and returns
+    /// `rule` selects DER definite or CER indefinite framing; `context` owns
+    /// complete output and cumulative work ceilings. Returns a tag-sorted SET
+    /// writer.
+    ///
+    /// # Errors
+    /// Returns output-limit, work-limit, or allocation errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET framing. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat SET runtime API.
+    /// Example: `SetWriter::new(RecordEncoding::Der, &mut context)?`.
+    pub fn new(rule: RecordEncoding, context: &'context mut RecordContext) -> Result<Self, Error> {
+        Ok(Self {
+            inner: SequenceWriter::new_with_kind(rule, context, RecordKind::Set)?,
+        })
+    }
+
+    /// Append one BOOLEAN member in increasing universal-tag order.
+    ///
+    /// # Parameters and returns
+    /// `value` is the ASN.1 BOOLEAN. Returns success after encoding tag 1.
+    ///
+    /// # Errors
+    /// Returns duplicate/order, work/output-limit, size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET and BOOLEAN rules. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat SET fields.
+    /// Example: `writer.write_boolean(true)?`.
+    pub fn write_boolean(&mut self, value: bool) -> Result<(), Error> {
+        self.inner.write_boolean(value)
+    }
+
+    /// Append one NULL member in increasing universal-tag order.
+    ///
+    /// # Parameters and returns
+    /// No value is needed; returns success after encoding tag 5.
+    ///
+    /// # Errors
+    /// Returns duplicate/order, work/output-limit, size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET and NULL rules. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat SET fields.
+    /// Example: `writer.write_null()?`.
+    pub fn write_null(&mut self) -> Result<(), Error> {
+        self.inner.write_null()
+    }
+
+    /// Append one bounded INTEGER member in increasing tag order.
+    ///
+    /// # Parameters
+    /// `value` is signed; `lower` and `upper` are inclusive schema bounds.
+    ///
+    /// # Returns
+    /// `Ok(())` after encoding the minimal integer under tag 2.
+    ///
+    /// # Errors
+    /// Returns invalid bounds/value, duplicate/order, resource, size, or
+    /// allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET and INTEGER rules. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat SET fields.
+    /// Example: `writer.write_integer(-1, -3, 3)?`.
+    pub fn write_integer(&mut self, value: i64, lower: i64, upper: i64) -> Result<(), Error> {
+        self.inner.write_integer(value, lower, upper)
+    }
+
+    /// Append one numeric ENUMERATED member in increasing tag order.
+    ///
+    /// # Parameters and returns
+    /// `value` is the generated variant's numeric representation. Returns
+    /// success after encoding tag 10.
+    ///
+    /// # Errors
+    /// Returns duplicate/order, work/output-limit, size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET and ENUMERATED rules. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat SET fields.
+    /// Example: `writer.write_enumerated(1)?`.
+    pub fn write_enumerated(&mut self, value: i64) -> Result<(), Error> {
+        self.inner.write_enumerated(value)
+    }
+
+    /// Append one bounded OCTET STRING member in increasing tag order.
+    ///
+    /// # Parameters and returns
+    /// `value` is payload bytes; `lower` and `upper` are inclusive SIZE bounds.
+    /// Returns success after DER/CER canonical child encoding.
+    ///
+    /// # Errors
+    /// Returns invalid SIZE, duplicate/order, resource, size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET and OCTET STRING rules. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat SET fields.
+    /// Example: `writer.write_octet_string(b"x", 1, 4)?`.
+    pub fn write_octet_string(
+        &mut self,
+        value: &[u8],
+        lower: usize,
+        upper: usize,
+    ) -> Result<(), Error> {
+        self.inner.write_octet_string(value, lower, upper)
+    }
+
+    /// Append one bounded BIT STRING member in increasing tag order.
+    ///
+    /// # Parameters
+    /// `bytes` are packed bits; `bit_len` is exact width; `lower_bits` and
+    /// `upper_bits` are inclusive SIZE bounds.
+    ///
+    /// # Returns
+    /// `Ok(())` after DER/CER canonical child encoding.
+    ///
+    /// # Errors
+    /// Returns malformed bits, invalid SIZE, duplicate/order, resource, or
+    /// allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET and BIT STRING rules. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat SET fields.
+    /// Example: `writer.write_bit_string(&[0x80], 1, 1, 1)?`.
+    pub fn write_bit_string(
+        &mut self,
+        bytes: &[u8],
+        bit_len: usize,
+        lower_bits: usize,
+        upper_bits: usize,
+    ) -> Result<(), Error> {
+        self.inner
+            .write_bit_string(bytes, bit_len, lower_bits, upper_bits)
+    }
+
+    /// Finalize the SET and release its shared context borrow.
+    ///
+    /// # Parameters and returns
+    /// Consumes the writer. Returns complete DER/CER bytes and bit length.
+    ///
+    /// # Errors
+    /// Returns output/work-limit, size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 DER/CER SET framing. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat SET runtime API.
+    /// Example: `let encoded = writer.finish()?`.
+    pub fn finish(self) -> Result<Encoded, Error> {
+        self.inner.finish()
     }
 }
 
@@ -572,6 +833,30 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
         input: &'input [u8],
         expected_tags: &'tags [u64],
         context: &'context mut RecordContext,
+    ) -> Result<Self, Error> {
+        Self::new_with_kind(input, expected_tags, context, RecordKind::Sequence)
+    }
+
+    /// Construct a record reader for SEQUENCE or SET framing.
+    ///
+    /// # Parameters and returns
+    /// `input` is the full available slice; `expected_tags` lists supported
+    /// unique universal fields; `context` provides shared budgets; `kind`
+    /// selects the outer tag and component ordering behavior. Returns a cursor.
+    ///
+    /// # Errors
+    /// Returns input-limit, truncation, wrong-tag/form, duplicate-descriptor,
+    /// depth, size, or work errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 BER record framing. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: common SET parser.
+    /// Example: called by `SequenceReader::new` and `SetReader::new`.
+    fn new_with_kind(
+        input: &'input [u8],
+        expected_tags: &'tags [u64],
+        context: &'context mut RecordContext,
+        kind: RecordKind,
     ) -> Result<Self, Error> {
         check(
             Resource::InputBytes,
@@ -605,9 +890,9 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
         }
         let work = &mut context.work_used;
         let header = parse_header(input, 0, input.len(), work, true, &context.limits)?;
-        if header.class != 0 || header.tag != TAG_SEQUENCE || !header.constructed {
+        if header.class != 0 || header.tag != kind.universal_tag() || !header.constructed {
             return Err(invalid(
-                "BER record is not a constructed universal SEQUENCE",
+                "BER record has the wrong constructed universal tag",
             ));
         }
         let length_octets = header.content - header.identifier_len;
@@ -625,11 +910,13 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
         Ok(Self {
             input,
             expected_tags,
+            kind,
             context,
             content_bound,
             indefinite,
             cursor: header.content,
             last_tag_index: None,
+            seen_mask: 0,
             current: None,
             consumed_end: None,
         })
@@ -651,7 +938,7 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
     /// Example: `while let Some(tag) = reader.next_field()? { ... }`.
     pub fn next_field(&mut self) -> Result<Option<u64>, Error> {
         if self.current.is_some() {
-            return Err(invalid("SEQUENCE field must be decoded before advancing"));
+            return Err(invalid("record field must be decoded before advancing"));
         }
         if self.consumed_end.is_some() {
             return Ok(None);
@@ -676,7 +963,7 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
         )?;
         if header.class != 0 || header.tag == 0 {
             return Err(invalid(
-                "SEQUENCE child tag is not a supported universal field",
+                "record child tag is not a supported universal field",
             ));
         }
         let mut matching_index = None;
@@ -688,15 +975,18 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
             }
         }
         let Some(index) = matching_index else {
-            return Err(invalid("SEQUENCE contains an unknown field tag"));
+            return Err(invalid("record contains an unknown field tag"));
         };
-        if self
-            .last_tag_index
-            .is_some_and(|previous| index <= previous)
+        let field_mask = 1_u8 << index;
+        if self.seen_mask & field_mask != 0 {
+            return Err(invalid("record contains a duplicate field tag"));
+        }
+        if self.kind == RecordKind::Sequence
+            && self
+                .last_tag_index
+                .is_some_and(|previous| index <= previous)
         {
-            return Err(invalid(
-                "SEQUENCE fields are duplicated or out of declaration order",
-            ));
+            return Err(invalid("SEQUENCE fields are out of declaration order"));
         }
         self.context.charge(1)?;
         let start = self.cursor;
@@ -722,6 +1012,7 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
             content_end,
         });
         self.last_tag_index = Some(index);
+        self.seen_mask |= field_mask;
         self.cursor = end;
         Ok(Some(header.tag))
     }
@@ -951,6 +1242,184 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
             Some(_) => Err(invalid("SEQUENCE field reader does not match current tag")),
             None => Err(invalid("SEQUENCE has no current field")),
         }
+    }
+}
+
+impl<'input, 'tags, 'context> SetReader<'input, 'tags, 'context> {
+    /// Start decoding one BER SET prefix against its supported field tags.
+    ///
+    /// # Parameters
+    /// `input` is the full available slice; `expected_tags` lists up to six
+    /// unique supported universal tags in any schema order; `context` supplies
+    /// the shared input, output, retained-storage, and work budgets.
+    ///
+    /// # Returns
+    /// A cursor accepting definite or indefinite BER SET framing and arbitrary
+    /// member order.
+    ///
+    /// # Errors
+    /// Returns input-limit, truncation, wrong-tag/form, duplicate-descriptor,
+    /// depth, size, or work errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 BER SET framing. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat SET runtime API.
+    /// Example: `SetReader::new(input, &[1, 4, 10], &mut context)?`.
+    pub fn new(
+        input: &'input [u8],
+        expected_tags: &'tags [u64],
+        context: &'context mut RecordContext,
+    ) -> Result<Self, Error> {
+        Ok(Self {
+            inner: SequenceReader::new_with_kind(input, expected_tags, context, RecordKind::Set)?,
+        })
+    }
+
+    /// Advance to the next SET member, returning its universal tag number.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns `Some(tag)` for a member or `None` at the outer
+    /// definite boundary or matching EOC.
+    ///
+    /// # Errors
+    /// Returns malformed framing, unknown/duplicate tags, truncation, size,
+    /// depth, or work errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: BER SET field traversal. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat SET runtime API.
+    /// Example: `while let Some(tag) = reader.next_field()? { ... }`.
+    pub fn next_field(&mut self) -> Result<Option<u64>, Error> {
+        self.inner.next_field()
+    }
+
+    /// Decode the current BOOLEAN SET member and consume it.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns false for zero content and true for nonzero.
+    ///
+    /// # Errors
+    /// Returns malformed/form mismatch or work-limit errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 BER BOOLEAN. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat SET runtime API.
+    /// Example: `let enabled = reader.read_boolean()?`.
+    pub fn read_boolean(&mut self) -> Result<bool, Error> {
+        self.inner.read_boolean()
+    }
+
+    /// Decode the current empty NULL SET member and consume it.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns unit after validating empty content.
+    ///
+    /// # Errors
+    /// Returns malformed/form mismatch or work-limit errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 BER NULL. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat SET runtime API.
+    /// Example: `reader.read_null()?`.
+    pub fn read_null(&mut self) -> Result<(), Error> {
+        self.inner.read_null()
+    }
+
+    /// Decode the current bounded INTEGER SET member and consume it.
+    ///
+    /// # Parameters
+    /// `lower` and `upper` are the inclusive schema bounds.
+    ///
+    /// # Returns
+    /// The decoded signed integer.
+    ///
+    /// # Errors
+    /// Returns invalid bounds, malformed content, value-out-of-range, or work
+    /// errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 BER INTEGER. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat SET runtime API.
+    /// Example: `reader.read_integer(-4, 4)?`.
+    pub fn read_integer(&mut self, lower: i64, upper: i64) -> Result<i64, Error> {
+        self.inner.read_integer(lower, upper)
+    }
+
+    /// Decode the current numeric ENUMERATED SET member and consume it.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns the signed number mapped to a generated variant.
+    ///
+    /// # Errors
+    /// Returns malformed/form mismatch or work-limit errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 BER ENUMERATED. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat SET runtime API.
+    /// Example: `let number = reader.read_enumerated()?`.
+    pub fn read_enumerated(&mut self) -> Result<i64, Error> {
+        self.inner.read_enumerated()
+    }
+
+    /// Decode and flatten the current bounded OCTET STRING SET member.
+    ///
+    /// # Parameters
+    /// `lower` and `upper` are inclusive SIZE bounds.
+    ///
+    /// # Returns
+    /// Owned concatenated payload bytes.
+    ///
+    /// # Errors
+    /// Returns malformed BER, invalid SIZE, cumulative storage, or work errors.
+    /// No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 BER OCTET STRING. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat SET runtime API.
+    /// Example: `let bytes = reader.read_octet_string(1, 8)?`.
+    pub fn read_octet_string(&mut self, lower: usize, upper: usize) -> Result<Vec<u8>, Error> {
+        self.inner.read_octet_string(lower, upper)
+    }
+
+    /// Decode and flatten the current bounded BIT STRING SET member.
+    ///
+    /// # Parameters
+    /// `lower_bits` and `upper_bits` are inclusive logical SIZE bounds.
+    ///
+    /// # Returns
+    /// Packed bytes and their exact meaningful bit count.
+    ///
+    /// # Errors
+    /// Returns malformed BER, invalid SIZE, cumulative storage, or work errors.
+    /// No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 BER BIT STRING. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat SET runtime API.
+    /// Example: `let bits = reader.read_bit_string(1, 64)?`.
+    pub fn read_bit_string(
+        &mut self,
+        lower_bits: usize,
+        upper_bits: usize,
+    ) -> Result<BitStringValue, Error> {
+        self.inner.read_bit_string(lower_bits, upper_bits)
+    }
+
+    /// Finish traversal and return the exact SET prefix consumption.
+    ///
+    /// # Parameters and returns
+    /// Consumes the reader. Returns unit with whole-prefix byte and bit counts.
+    ///
+    /// # Errors
+    /// Returns `InvalidEncoding` if a member or outer EOC remains unread, or
+    /// size overflow. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: BER prefix-decoder contract. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat SET runtime API.
+    /// Example: `let span = reader.finish()?`.
+    pub fn finish(self) -> Result<Decoded<()>, Error> {
+        self.inner.finish()
     }
 }
 
@@ -3469,6 +3938,288 @@ mod tests {
         let reencoded = writer.finish().unwrap();
         assert!(context
             .verify_canonical(&noncanonical, consumed.consumed_bytes, &reencoded.bytes)
+            .is_err());
+    }
+
+    /// Advance a lexicographic permutation for exhaustive SET member-order tests.
+    /// Source: test-only permutation algorithm; version: 2026-10-31.
+    /// Inputs: a nonempty ascending suffix; returns whether it advanced.
+    /// Errors: none; responsible: runtime maintainers; history: flat SET tests.
+    /// Example: repeatedly call with `[0, 1, 2]` to visit all six permutations.
+    fn next_permutation(values: &mut [usize]) -> bool {
+        let Some(pivot) = (0..values.len().saturating_sub(1))
+            .rev()
+            .find(|index| values[*index] < values[*index + 1])
+        else {
+            return false;
+        };
+        let successor = (pivot + 1..values.len())
+            .rev()
+            .find(|index| values[pivot] < values[*index]);
+        let Some(successor) = successor else {
+            return false;
+        };
+        values.swap(pivot, successor);
+        values[pivot + 1..].reverse();
+        true
+    }
+
+    /// Check BER accepts every order and canonical SET output sorts by tag.
+    /// Source: X.690 SET component rules; version: 2026-10-31; inputs: 720 orders.
+    /// Returns: assertions; errors: assertion failures; responsible: maintainers.
+    /// History: first BER SET wave. Example: run via `cargo test`.
+    #[test]
+    fn set_reader_accepts_all_member_orders_and_writer_sorts() {
+        let limits = Limits::default();
+        let fields: [&[u8]; 6] = [
+            &[0x01, 0x01, 0xff],
+            &[0x02, 0x01, 0x07],
+            &[0x03, 0x02, 0x00, 0x80],
+            &[0x04, 0x01, 0xaa],
+            &[0x05, 0x00],
+            &[0x0a, 0x01, 0x02],
+        ];
+        let expected_tags = [
+            TAG_ENUMERATED,
+            TAG_OCTET_STRING,
+            TAG_INTEGER,
+            TAG_NULL,
+            TAG_BIT_STRING,
+            TAG_BOOLEAN,
+        ];
+        let mut permutation = [0, 1, 2, 3, 4, 5];
+        loop {
+            let mut input = vec![0x31, 18];
+            for index in permutation {
+                input.extend_from_slice(fields[index]);
+            }
+            input.extend_from_slice(&[0xde, 0xad]);
+
+            let mut context = RecordContext::new(&limits);
+            let mut reader = SetReader::new(&input, &expected_tags, &mut context).unwrap();
+            while let Some(tag) = reader.next_field().unwrap() {
+                match tag {
+                    TAG_BOOLEAN => assert!(reader.read_boolean().unwrap()),
+                    TAG_INTEGER => assert_eq!(reader.read_integer(-8, 8).unwrap(), 7),
+                    TAG_BIT_STRING => {
+                        let value = reader.read_bit_string(8, 8).unwrap();
+                        assert_eq!(value.as_bytes(), &[0x80]);
+                    }
+                    TAG_OCTET_STRING => {
+                        assert_eq!(reader.read_octet_string(1, 1).unwrap(), [0xaa]);
+                    }
+                    TAG_NULL => reader.read_null().unwrap(),
+                    TAG_ENUMERATED => assert_eq!(reader.read_enumerated().unwrap(), 2),
+                    _ => panic!("unsupported tag from validated SET reader"),
+                }
+            }
+            let consumed = reader.finish().unwrap();
+            assert_eq!(consumed.consumed_bytes, 20);
+            assert_eq!(consumed.consumed_bits, 160);
+
+            let mut writer = SetWriter::new(RecordEncoding::Der, &mut context).unwrap();
+            writer.write_boolean(true).unwrap();
+            writer.write_integer(7, -8, 8).unwrap();
+            writer.write_bit_string(&[0x80], 8, 8, 8).unwrap();
+            writer.write_octet_string(&[0xaa], 1, 1).unwrap();
+            writer.write_null().unwrap();
+            writer.write_enumerated(2).unwrap();
+            let mut canonical = vec![0x31, 18];
+            for field in fields {
+                canonical.extend_from_slice(field);
+            }
+            assert_eq!(writer.finish().unwrap().bytes, canonical);
+
+            if !next_permutation(&mut permutation) {
+                break;
+            }
+        }
+    }
+
+    /// Cover empty SET framing, canonical tag order, and writer order checks.
+    /// Source: X.690 DER/CER SET; version: 2026-10-31; inputs: empty and fields.
+    /// Returns: assertions; errors: assertion failures; responsible: maintainers.
+    /// History: first BER SET wave. Example: run via `cargo test`.
+    #[test]
+    fn set_writer_supports_empty_and_rejects_noncanonical_order() {
+        let limits = Limits::default();
+        for (rule, expected) in [
+            (RecordEncoding::Der, vec![0x31, 0]),
+            (RecordEncoding::Cer, vec![0x31, 0x80, 0, 0]),
+        ] {
+            let mut context = RecordContext::new(&limits);
+            let encoded = SetWriter::new(rule, &mut context)
+                .unwrap()
+                .finish()
+                .unwrap();
+            assert_eq!(encoded.bytes, expected);
+
+            let mut reader = SetReader::new(&expected, &[], &mut context).unwrap();
+            assert_eq!(reader.next_field().unwrap(), None);
+            assert_eq!(reader.finish().unwrap().consumed_bytes, expected.len());
+        }
+
+        let nonminimal_outer = [0x3f, 0x11, 0];
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SetReader::new(&nonminimal_outer, &[], &mut context).unwrap();
+        assert_eq!(reader.next_field().unwrap(), None);
+        assert_eq!(
+            reader.finish().unwrap().consumed_bytes,
+            nonminimal_outer.len()
+        );
+
+        let mut context = RecordContext::new(&limits);
+        let mut writer = SetWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer.write_integer(1, 0, 2).unwrap();
+        assert!(writer.write_boolean(false).is_err());
+        assert!(writer.write_integer(2, 0, 2).is_err());
+    }
+
+    /// Decode a test SET by dispatching every returned universal tag.
+    /// Source: test-only BER SET helper; version: 2026-10-31.
+    /// Inputs: one SET prefix and its unique supported descriptor tags.
+    /// Returns: exact prefix consumption; errors: malformed field or limits.
+    /// Responsible: runtime maintainers; history: SET malformed-input tests.
+    /// Example: `consume_set(&[0x31, 0], &[])?`.
+    fn consume_set(input: &[u8], tags: &[u64]) -> Result<Decoded<()>, Error> {
+        let mut context = RecordContext::new(&Limits::default());
+        let mut reader = SetReader::new(input, tags, &mut context)?;
+        while let Some(tag) = reader.next_field()? {
+            match tag {
+                TAG_BOOLEAN => {
+                    let _ = reader.read_boolean()?;
+                }
+                TAG_INTEGER => {
+                    let _ = reader.read_integer(i64::MIN, i64::MAX)?;
+                }
+                TAG_BIT_STRING => {
+                    let _ = reader.read_bit_string(0, usize::MAX)?;
+                }
+                TAG_OCTET_STRING => {
+                    let _ = reader.read_octet_string(0, usize::MAX)?;
+                }
+                TAG_NULL => reader.read_null()?,
+                TAG_ENUMERATED => {
+                    let _ = reader.read_enumerated()?;
+                }
+                _ => return Err(invalid("test SET reader returned an unknown field")),
+            }
+        }
+        reader.finish()
+    }
+
+    /// Check SET malformed members, framing, descriptors, and shared budgets.
+    /// Source: X.690 BER SET; version: 2026-10-31; inputs: hostile TLVs/limits.
+    /// Returns: assertions; errors: assertion failures; responsible: maintainers.
+    /// History: first BER SET wave. Example: run via `cargo test`.
+    #[test]
+    fn set_reader_rejects_malformed_members_and_limits() {
+        let limits = Limits::default();
+        let malformed: &[&[u8]] = &[
+            &[0x30, 0],
+            &[0x31, 1, 0],
+            &[0x31, 2, 1, 2],
+            &[0x31, 4, 1, 1, 0xff, 0x05],
+            &[0x31, 6, 1, 1, 0, 1, 1, 0],
+            &[0x31, 2, 6, 0],
+            &[0x31, 0x80],
+            &[0x31, 0x80, 0, 1, 0xff, 0, 0],
+            &[0x31, 0x80, 1, 1, 0xff],
+            &[0x31, 5, 0x24, 0x80, 4, 1, 0xaa],
+        ];
+        for input in malformed {
+            assert!(
+                consume_set(input, &[1, 2, 3, 4, 5, 10]).is_err(),
+                "accepted {input:02x?}"
+            );
+        }
+
+        let too_many_tags = [1, 2, 3, 4, 5, 10, 1];
+        let mut context = RecordContext::new(&limits);
+        assert!(SetReader::new(&[0x31, 0], &too_many_tags, &mut context).is_err());
+
+        let mut zero_work = limits;
+        zero_work.max_work_bits = 0;
+        let mut context = RecordContext::new(&zero_work);
+        assert!(SetReader::new(&[0x31, 0], &[], &mut context).is_err());
+
+        let mut storage_limited = limits;
+        storage_limited.max_output_bytes = 2;
+        let string_set = [0x31, 8, 4, 2, 0xaa, 0xbb, 3, 2, 0, 0x80];
+        let mut context = RecordContext::new(&storage_limited);
+        let mut reader = SetReader::new(&string_set, &[4, 3], &mut context).unwrap();
+        assert_eq!(reader.next_field().unwrap(), Some(4));
+        assert_eq!(reader.read_octet_string(0, 2).unwrap(), [0xaa, 0xbb]);
+        assert_eq!(reader.next_field().unwrap(), Some(3));
+        assert!(reader.read_bit_string(0, 8).is_err());
+
+        let mut small_output = limits;
+        small_output.max_output_bytes = 3;
+        let mut context = RecordContext::new(&small_output);
+        assert!(SetWriter::new(RecordEncoding::Cer, &mut context).is_err());
+    }
+
+    /// Require canonical CER SET order by re-encoding with the same context.
+    /// Source: X.690 CER SET sorting; version: 2026-10-31; inputs: tag permutations.
+    /// Returns: assertions; errors: assertion failures; responsible: maintainers.
+    /// History: first BER SET wave. Example: run via `cargo test`.
+    #[test]
+    fn strict_cer_set_rejects_unsorted_order_and_shares_work() {
+        let limits = Limits::default();
+        let mut encode_context = RecordContext::new(&limits);
+        let mut writer = SetWriter::new(RecordEncoding::Cer, &mut encode_context).unwrap();
+        writer.write_boolean(true).unwrap();
+        writer.write_integer(7, 0, 8).unwrap();
+        let canonical = writer.finish().unwrap();
+
+        let mut canonical_context = RecordContext::new(&limits);
+        let mut reader = SetReader::new(&canonical.bytes, &[1, 2], &mut canonical_context).unwrap();
+        assert_eq!(reader.next_field().unwrap(), Some(1));
+        assert!(reader.read_boolean().unwrap());
+        assert_eq!(reader.next_field().unwrap(), Some(2));
+        assert_eq!(reader.read_integer(0, 8).unwrap(), 7);
+        assert_eq!(reader.next_field().unwrap(), None);
+        let consumed = reader.finish().unwrap();
+        let mut writer = SetWriter::new(RecordEncoding::Cer, &mut canonical_context).unwrap();
+        writer.write_boolean(true).unwrap();
+        writer.write_integer(7, 0, 8).unwrap();
+        let reencoded = writer.finish().unwrap();
+        canonical_context
+            .verify_canonical(&canonical.bytes, consumed.consumed_bytes, &reencoded.bytes)
+            .unwrap();
+
+        let noncanonical = [0x31, 0x80, 0x02, 0x01, 0x07, 0x01, 0x01, 0xff, 0, 0];
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SetReader::new(&noncanonical, &[1, 2], &mut context).unwrap();
+        assert_eq!(reader.next_field().unwrap(), Some(2));
+        assert_eq!(reader.read_integer(0, 8).unwrap(), 7);
+        assert_eq!(reader.next_field().unwrap(), Some(1));
+        assert!(reader.read_boolean().unwrap());
+        assert_eq!(reader.next_field().unwrap(), None);
+        let consumed = reader.finish().unwrap();
+
+        let mut writer = SetWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer.write_boolean(true).unwrap();
+        writer.write_integer(7, 0, 8).unwrap();
+        let canonical = writer.finish().unwrap();
+        assert!(context
+            .verify_canonical(&noncanonical, consumed.consumed_bytes, &canonical.bytes)
+            .is_err());
+
+        let mut tight = limits;
+        tight.max_work_bits = 70;
+        let mut context = RecordContext::new(&tight);
+        let mut reader = SetReader::new(&[0x31, 0x80, 0, 0], &[], &mut context).unwrap();
+        assert_eq!(reader.next_field().unwrap(), None);
+        let consumed = reader.finish().unwrap();
+        let writer = SetWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        let canonical = writer.finish().unwrap();
+        assert!(context
+            .verify_canonical(
+                &[0x31, 0x80, 0, 0],
+                consumed.consumed_bytes,
+                &canonical.bytes
+            )
             .is_err());
     }
 }

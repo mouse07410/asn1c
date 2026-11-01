@@ -78,7 +78,8 @@ values with supported finite `SIZE` constraints. `-gen-BER` adds `decode_ber`
 and `encode_der` for those types. Its `--rust` defaults to UPER and CER.
 Empty or flat untagged SEQUENCE records with distinct direct BOOLEAN, NULL,
 bounded INTEGER, nonextensible ENUMERATED, and finite bounded BIT/OCTET STRING
-fields also have BER/DER/CER methods. Other constructed
+fields also have BER/DER/CER methods. Flat untagged SET records with the same
+distinct direct tags are available under a BER/CER-only selection. Other constructed
 records and many C-supported BER-family forms remain outside the implemented
 slice; see [the implementation matrix](implementation.md).
 
@@ -241,7 +242,7 @@ integer-width heuristics.
 | OBJECT IDENTIFIER | runtime `ObjectIdentifier` | Use checked arcs; do not assume every arc fits a machine integer. |
 | RELATIVE-OID | runtime `RelativeOid` | Same checked-arithmetic requirement as OID arcs. |
 | UTCTime, GeneralizedTime | runtime time wrapper or validated text newtype | Canonical rules need explicit APIs. |
-| SEQUENCE, SET | generated `struct` | UPER SEQUENCE fields use values and `Option<T>`; inline nested records share a cursor and put their presence bitmap before each record payload. The BER/DER/CER slice handles flat untagged SEQUENCE records with distinct direct BOOLEAN, NULL, bounded INTEGER, ENUMERATED, and BIT/OCTET STRING fields, including supported BOOLEAN/INTEGER defaults. SET is unsupported under these rules. |
+| SEQUENCE, SET | generated `struct` | UPER SEQUENCE fields use values and `Option<T>`; inline nested records share a cursor and put their presence bitmap before each record payload. The BER/DER/CER slice handles flat untagged records with distinct direct BOOLEAN, NULL, bounded INTEGER, ENUMERATED, and BIT/OCTET STRING fields, including supported BOOLEAN/INTEGER defaults. SET needs a BER/CER-only mask and emits members by ascending tag. |
 | CHOICE | generated `enum` | Include an unknown extension variant when the type is extensible. |
 | SEQUENCE OF, SET OF | `Vec<T>` newtype | Retain SET OF ordering rules in codec logic. |
 | Type reference | module-qualified reference | Use public newtypes for aliases that add constraints or API identity. |
@@ -255,7 +256,7 @@ range fitting `i64`; `new(value)` returns `Result` and checks that range.
 The BOOLEAN constructor is infallible. Direct nonextensible ENUMERATED and
 fixed or bounded BIT/OCTET STRING types also have BER/DER/CER methods when
 selected. Reject aliases, imports, tags, constructed types outside the
-documented UPER, CBOR, and BER/DER/CER SEQUENCE slices, and unsupported constraints before creating
+documented UPER, CBOR, and BER/DER/CER record slices, and unsupported constraints before creating
 output. UPER-only selection supports direct and SEQUENCE-member ENUMERATED
 and strings within the documented size bounds.
 Direct fixed-size OCTET STRING assignments also accept the JER codec alone or
@@ -399,7 +400,7 @@ The current Rust option handling is:
 | Option family | Rust handling |
 | --- | --- |
 | `-D` | Selects the output directory; Rust defaults to `asn1c-rust`. |
-| `-gen-*`, `-no-gen-*` | UPER and CER are default; APER/OER/BER/JER are opt-in for qualified slices; BER/DER/CER SEQUENCE requires the documented flat, unique-tag shape. |
+| `-gen-*`, `-no-gen-*` | UPER and CER are default; APER/OER/BER/JER are opt-in for qualified slices; BER/DER/CER records require the documented flat, unique-tag shape, and SET needs UPER disabled. |
 | C storage/layout/output flags | Fail as incompatible with `--rust`. |
 | `-S` | Selects standard modules and resolves the matching runtime assets. |
 | `-P`, `-R`, C helper/example flags | Fail as incompatible with `--rust`. |

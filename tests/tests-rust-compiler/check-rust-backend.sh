@@ -1668,6 +1668,188 @@ if ! cc $sequence_ber_cer_cflags -I"$sequence_ber_cer_c_out" \
 fi
 "$test_tmp/c-sequence-ber-cer"
 
+# Binary SET codecs are BER/CER-only; XER remains in its independent XER-only branch.
+set_ber_cer_out="$test_tmp/set-ber-cer-rust"
+"$asn1c_bin" --rust -gen-BER -no-gen-UPER -S "$skeletons" \
+    -D "$set_ber_cer_out" "$test_srcdir/SetBerCer.asn1"
+mkdir "$set_ber_cer_out/tests"
+cp "$test_srcdir/set_ber_cer_conformance.rs" "$set_ber_cer_out/tests/"
+if ! (cd "$set_ber_cer_out" && \
+    CARGO_TARGET_DIR="$test_tmp/target-set-ber-cer" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-set-ber-cer" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/check-set-ber-cer.log" 2>&1; then
+    cat "$test_tmp/check-set-ber-cer.log"
+    echo "FAIL: generated BER/CER SET tests or strict Clippy"
+    exit 1
+fi
+set_ber_cer_source="$set_ber_cer_out/src/set_ber_cer.rs"
+for method in encode_der decode_ber encode_cer decode_cer; do
+    grep -F "pub fn $method" "$set_ber_cer_source" >/dev/null
+done
+grep -F 'pub struct SetEmptyRecord' "$set_ber_cer_source" >/dev/null
+
+# Keep BER-only and CER-only SET output independently under strict linting.
+set_ber_only="$test_tmp/set-ber-only"
+"$asn1c_bin" --rust -gen-BER -no-gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$set_ber_only" "$test_srcdir/SetBerCer.asn1"
+if ! (cargo check --offline --manifest-path "$set_ber_only/Cargo.toml" && \
+    cargo clippy --offline --manifest-path "$set_ber_only/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/set-ber-only-check.log" 2>&1; then
+    cat "$test_tmp/set-ber-only-check.log"
+    echo "FAIL: BER-only SET crate did not compile under strict Clippy"
+    exit 1
+fi
+grep -F 'pub fn decode_ber' "$set_ber_only/src/set_ber_cer.rs" >/dev/null
+if grep -E 'pub fn (encode|decode)_cer' "$set_ber_only/src/set_ber_cer.rs" >/dev/null; then
+    echo "FAIL: BER-only SET output retained CER methods"
+    exit 1
+fi
+set_cer_only="$test_tmp/set-cer-only"
+"$asn1c_bin" --rust -gen-CER -no-gen-UPER -no-gen-BER -S "$skeletons" \
+    -D "$set_cer_only" "$test_srcdir/SetBerCer.asn1"
+if ! (cargo check --offline --manifest-path "$set_cer_only/Cargo.toml" && \
+    cargo clippy --offline --manifest-path "$set_cer_only/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/set-cer-only-check.log" 2>&1; then
+    cat "$test_tmp/set-cer-only-check.log"
+    echo "FAIL: CER-only SET crate did not compile under strict Clippy"
+    exit 1
+fi
+grep -F 'pub fn decode_cer' "$set_cer_only/src/set_ber_cer.rs" >/dev/null
+if grep -E 'pub fn (encode|decode)_(der|ber)' "$set_cer_only/src/set_ber_cer.rs" >/dev/null; then
+    echo "FAIL: CER-only SET output retained DER/BER methods"
+    exit 1
+fi
+
+# C's current empty SET output is not portable C; the C parity schema exercises
+# required/default fields while the empty SET fixture remains Rust-generated.
+set_ber_cer_c_out="$test_tmp/set-ber-cer-c"
+mkdir "$set_ber_cer_c_out"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -fwide-types -pdu=all \
+    -fgen-only-pdu-deps -no-gen-example -D "$set_ber_cer_c_out" \
+    "$test_srcdir/SetBerCerC.asn1" >"$test_tmp/set-ber-cer-c-generate.log" 2>&1
+set_ber_cer_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$set_ber_cer_c_out/Makefile.am.libasncodec")
+rm -f "$set_ber_cer_c_out/converter-example.c" "$set_ber_cer_c_out/pdu_collection.c"
+if ! cc $set_ber_cer_cflags -I"$set_ber_cer_c_out" \
+    "$set_ber_cer_c_out"/*.c "$test_srcdir/c_set_ber_cer.c" \
+    -lm -o "$test_tmp/c-set-ber-cer" >"$test_tmp/c-set-ber-cer-compile.log" 2>&1; then
+    cat "$test_tmp/c-set-ber-cer-compile.log"
+    echo "FAIL: generated C BER/CER SET reference did not compile"
+    exit 1
+fi
+"$test_tmp/c-set-ber-cer"
+
+# Fail closed on SET shapes and codec combinations outside the current slice.
+cat >"$test_tmp/SetTagged.asn1" <<'EOF'
+SetTagged DEFINITIONS ::= BEGIN
+Packet ::= SET { flag [0] BOOLEAN }
+END
+EOF
+cat >"$test_tmp/SetAutomatic.asn1" <<'EOF'
+SetAutomatic DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+Packet ::= SET { flag BOOLEAN }
+END
+EOF
+cat >"$test_tmp/SetAlias.asn1" <<'EOF'
+SetAlias DEFINITIONS ::= BEGIN
+Flag ::= BOOLEAN
+Packet ::= SET { flag Flag }
+END
+EOF
+cat >"$test_tmp/SetNested.asn1" <<'EOF'
+SetNested DEFINITIONS ::= BEGIN
+Packet ::= SET { child SEQUENCE { flag BOOLEAN } }
+END
+EOF
+cat >"$test_tmp/SetRepeatedTag.asn1" <<'EOF'
+SetRepeatedTag DEFINITIONS ::= BEGIN
+Packet ::= SET { first OCTET STRING (SIZE(1)), second OCTET STRING (SIZE(2)) }
+END
+EOF
+cat >"$test_tmp/SetNullDefault.asn1" <<'EOF'
+SetNullDefault DEFINITIONS ::= BEGIN
+Packet ::= SET { empty NULL DEFAULT NULL }
+END
+EOF
+cat >"$test_tmp/SetEnumDefault.asn1" <<'EOF'
+SetEnumDefault DEFINITIONS ::= BEGIN
+Packet ::= SET { state ENUMERATED { idle(0), busy(1) } DEFAULT idle }
+END
+EOF
+cat >"$test_tmp/SetStringDefault.asn1" <<'EOF'
+SetStringDefault DEFINITIONS ::= BEGIN
+Packet ::= SET { value OCTET STRING (SIZE(1..2)) DEFAULT '41'H }
+END
+EOF
+cat >"$test_tmp/SetUnbounded.asn1" <<'EOF'
+SetUnbounded DEFINITIONS ::= BEGIN
+Packet ::= SET { value OCTET STRING }
+END
+EOF
+cat >"$test_tmp/SetDisjointSize.asn1" <<'EOF'
+SetDisjointSize DEFINITIONS ::= BEGIN
+Packet ::= SET { value BIT STRING (SIZE(1..2 | 4..5)) }
+END
+EOF
+cat >"$test_tmp/SetExtensibleSize.asn1" <<'EOF'
+SetExtensibleSize DEFINITIONS ::= BEGIN
+Packet ::= SET { value OCTET STRING (SIZE(1..3,...)) }
+END
+EOF
+cat >"$test_tmp/SetContaining.asn1" <<'EOF'
+SetContaining DEFINITIONS ::= BEGIN
+Packet ::= SET { value OCTET STRING (CONTAINING INTEGER) }
+END
+EOF
+cat >"$test_tmp/SetNamedBits.asn1" <<'EOF'
+SetNamedBits DEFINITIONS ::= BEGIN
+Packet ::= SET { value BIT STRING { red(0), blue(1) } (SIZE(1..2)) }
+END
+EOF
+cat >"$test_tmp/SetExtensibleEnum.asn1" <<'EOF'
+SetExtensibleEnum DEFINITIONS ::= BEGIN
+Packet ::= SET { state ENUMERATED { idle(0), ..., busy(1) } }
+END
+EOF
+cat >"$test_tmp/SetExtension.asn1" <<'EOF'
+SetExtension DEFINITIONS ::= BEGIN
+Packet ::= SET { flag BOOLEAN, ..., empty NULL }
+END
+EOF
+for fixture in SetTagged SetAutomatic SetAlias SetNested SetRepeatedTag \
+    SetNullDefault SetEnumDefault SetStringDefault SetUnbounded SetDisjointSize \
+    SetExtensibleSize SetContaining SetNamedBits SetExtensibleEnum SetExtension; do
+    if "$asn1c_bin" --rust -gen-BER -no-gen-UPER -no-gen-CER \
+        -S "$skeletons" -D "$test_tmp/rejected-$fixture" \
+        "$test_tmp/$fixture.asn1" >"$test_tmp/$fixture.log" 2>&1; then
+        echo "FAIL: Rust BER backend accepted unsupported $fixture"
+        exit 1
+    fi
+    test ! -e "$test_tmp/rejected-$fixture"
+done
+
+if "$asn1c_bin" --rust -gen-BER -S "$skeletons" \
+    -D "$test_tmp/rejected-set-uper-mix" "$test_srcdir/SetBerCer.asn1" \
+    >"$test_tmp/set-uper-mix.log" 2>&1; then
+    echo "FAIL: BER SET backend accepted the default UPER codec mix"
+    exit 1
+fi
+test ! -e "$test_tmp/rejected-set-uper-mix"
+if "$asn1c_bin" --rust -gen-BER -gen-XER -no-gen-UPER -no-gen-CER \
+    -S "$skeletons" -D "$test_tmp/rejected-set-xer-mix" "$test_srcdir/SetBerCer.asn1" \
+    >"$test_tmp/set-xer-mix.log" 2>&1; then
+    echo "FAIL: binary SET backend accepted a mixed XER codec mask"
+    exit 1
+fi
+test ! -e "$test_tmp/rejected-set-xer-mix"
+
 # Reject field aliases, tags, repeated universal tags, and unsupported shapes.
 cat >"$test_tmp/SequenceBerCerTagged.asn1" <<'EOF'
 SequenceBerCerTagged DEFINITIONS ::= BEGIN

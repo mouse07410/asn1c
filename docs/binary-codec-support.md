@@ -147,6 +147,10 @@ field is a direct BOOLEAN, NULL, finite bounded INTEGER, nonextensible
 ENUMERATED, or finite bounded BIT/OCTET STRING with a distinct universal tag;
 empty records are supported. Other constructed records remain
 outside the Rust BER/DER/CER slice.
+Flat untagged SET records with the same six distinct direct field kinds are
+available when only BER and/or CER are selected. BER accepts members in any
+order; DER/CER emits them by ascending universal tag, and strict CER rejects
+a reordered input. The SET path uses the same bounded record context.
 Rust codec defaults include UPER and CER; `-no-gen-UPER` selects CER-only
 generation. See [the Rust implementation matrix](rust/implementation.md#implemented-boundary)
 and [parity design](rust/ber-der-cer-design.md) for the remaining C-supported

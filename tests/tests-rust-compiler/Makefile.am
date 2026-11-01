@@ -29,6 +29,8 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/EnumSlice.asn1 \
     $(srcdir)/BerCerSlice.asn1 \
     $(srcdir)/SequenceBerCer.asn1 \
+    $(srcdir)/SetBerCer.asn1 \
+    $(srcdir)/SetBerCerC.asn1 \
     $(srcdir)/ExtensibleEnum.asn1 \
     $(srcdir)/VariableString.asn1 \
     $(srcdir)/VariableSequence.asn1 \
@@ -115,5 +117,7 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/c_ber_cer.c \
     $(srcdir)/sequence_ber_cer_conformance.rs \
     $(srcdir)/c_sequence_ber_cer.c \
+    $(srcdir)/set_ber_cer_conformance.rs \
+    $(srcdir)/c_set_ber_cer.c \
     $(srcdir)/coverage.json \
     $(srcdir)/README.md

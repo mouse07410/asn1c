@@ -1,4 +1,8 @@
 Changes since v1.5.3:
+	* Add a bounded Rust BER/DER/CER flat SET slice with unordered BER field
+	  decoding, canonical tag-ordered DER/CER output, strict CER comparison,
+	  OPTIONAL/default handling, and shared record resource accounting.
+	  Compare generated C and Rust SET vectors and reject unsupported schemas.
 	* Extend flat Rust BER/DER/CER SEQUENCE fields to direct ENUMERATED and
 	  finite bounded BIT/OCTET STRING values. Keep constructed BER flattening,
 	  CER fragmentation, and strict canonical comparison on one record budget;

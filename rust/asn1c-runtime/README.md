@@ -125,17 +125,19 @@ CER shares the same work ceiling across parsing, fragment copies, canonical
 re-encoding, and byte comparison. SIZE constraints remain the generated type's
 responsibility.
 
-`RecordContext`, `SequenceReader`, and `SequenceWriter` compose a flat,
-untagged SEQUENCE with direct BOOLEAN, NULL, ENUMERATED, bounded INTEGER, and
-bounded BIT/OCTET STRING fields under one input/output/work budget. Supply the
-unique universal field tags in
-declaration order to `SequenceReader`; `next_field` advances one field and the
-matching `read_*` method consumes it. Optional/default omissions are represented
-by absent tags, while generated code checks required fields and omits values
-equal to DEFAULT. The reader rejects unknown, duplicate, or out-of-order tags,
-and `finish` requires the definite boundary or matching EOC to have been read.
-The writer emits declaration-order child TLVs with a definite DER outer length
-or indefinite CER outer length. `RecordContext::verify_canonical` charges the
+`RecordContext`, `SequenceReader`, `SequenceWriter`, `SetReader`, and `SetWriter`
+compose flat untagged SEQUENCE and SET values with direct BOOLEAN, NULL,
+ENUMERATED, bounded INTEGER, and bounded BIT/OCTET STRING fields under one
+input/output/work budget. Supply the unique universal field tags to a reader;
+`next_field` advances one field and the matching `read_*` method consumes it.
+SEQUENCE tags are supplied in declaration order and BER members must follow
+that order. SET accepts arbitrary BER member order and rejects unknown or
+duplicate tags. Optional/default omissions are represented by absent tags,
+while generated code checks required fields and omits values equal to DEFAULT.
+Both readers' `finish` methods require the definite boundary or matching EOC to
+have been read. Writers use definite DER or indefinite CER outer framing;
+SEQUENCE fields follow declaration order, while SET fields must be written in
+ascending universal-tag order. `RecordContext::verify_canonical` charges the
 final byte comparison after callers re-encode with that same context. This
 record API accepts at most six uniquely tagged fields, matching the supported
 universal tags. During decode, `max_output_bytes` also caps aggregate retained
