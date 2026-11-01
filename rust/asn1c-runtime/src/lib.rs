@@ -1,9 +1,10 @@
 //! Safe, bounded primitive codecs for generated ASN.1 Rust code.
 //!
 //! In addition to a limited PER/OER/CER/DER/BER codec slice, this crate covers
-//! BOOLEAN, NULL, bounded and arbitrary-precision signed INTEGER, direct ENUMERATED, fixed and
-//! bounded-size UPER strings, fixed or bounded JER strings, and direct CBOR
-//! primitives and opaque ANY values.
+//! BOOLEAN, NULL, bounded and arbitrary-precision signed INTEGER, direct
+//! ENUMERATED, OBJECT IDENTIFIER, RELATIVE-OID, fixed and bounded-size UPER
+//! strings, fixed or bounded JER strings, and direct CBOR primitives and opaque
+//! ANY values.
 //! It uses only the Rust standard library and applies caller-configurable input,
 //! output, and work limits before reading bits or allocating output storage.
 //!
@@ -19,7 +20,7 @@ use std::fmt;
 
 /// Primitive Aligned Packed Encoding Rules (APER) codecs.
 pub mod aper;
-/// Checked BER parsing and DER/CER string and ENUMERATED codecs.
+/// Checked BER parsing and DER/CER codecs for OIDs, strings, and ENUMERATED.
 pub mod ber;
 /// Bounded arbitrary-precision signed INTEGER type and BER/DER/CER codecs.
 pub mod big_integer;
@@ -40,10 +41,13 @@ pub use aper::{
 };
 pub use ber::{
     decode_bit_string_ber, decode_bit_string_cer, decode_enumerated_ber, decode_enumerated_cer,
-    decode_octet_string_ber, decode_octet_string_cer, encode_bit_string_cer, encode_bit_string_der,
-    encode_enumerated_cer, encode_enumerated_der, encode_octet_string_cer, encode_octet_string_der,
-    FieldKind, RecordContext, RecordEncoding, RecordField, SequenceReader, SequenceWriter,
-    SetReader, SetWriter, Tag, TagClass, MAX_TAG_NUMBER,
+    decode_object_identifier_ber, decode_object_identifier_cer, decode_octet_string_ber,
+    decode_octet_string_cer, decode_relative_oid_ber, decode_relative_oid_cer,
+    encode_bit_string_cer, encode_bit_string_der, encode_enumerated_cer, encode_enumerated_der,
+    encode_object_identifier_cer, encode_object_identifier_der, encode_octet_string_cer,
+    encode_octet_string_der, encode_relative_oid_cer, encode_relative_oid_der, FieldKind,
+    ObjectIdentifier, RecordContext, RecordEncoding, RecordField, RelativeOid, SequenceReader,
+    SequenceWriter, SetReader, SetWriter, Tag, TagClass, MAX_TAG_NUMBER,
 };
 pub use big_integer::{
     decode_big_integer_ber, decode_big_integer_cer, encode_big_integer_cer, encode_big_integer_der,

@@ -1,0 +1,13 @@
+OidValuesImport DEFINITIONS ::= BEGIN
+
+IMPORTS Remote FROM OidValuesRemote;
+
+OidValue ::= OBJECT IDENTIFIER
+
+END
+
+OidValuesRemote DEFINITIONS ::= BEGIN
+
+Remote ::= BOOLEAN
+
+END

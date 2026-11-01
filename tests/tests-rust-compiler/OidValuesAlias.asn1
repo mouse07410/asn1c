@@ -1,0 +1,6 @@
+OidValuesAlias DEFINITIONS ::= BEGIN
+
+Base ::= OBJECT IDENTIFIER
+Alias ::= Base
+
+END

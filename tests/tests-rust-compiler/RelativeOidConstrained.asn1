@@ -1,0 +1,5 @@
+RelativeOidConstrained DEFINITIONS ::= BEGIN
+
+RelativeValue ::= RELATIVE-OID (CONSTRAINED BY { -- custom -- })
+
+END

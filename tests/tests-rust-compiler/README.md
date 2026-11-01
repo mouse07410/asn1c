@@ -347,3 +347,22 @@ has unused bits; Rust rejects it according to the X.690 rule. C DER masks
 invalid in-memory BIT padding, while Rust rejects invalid padding at value
 construction, so malformed-value DER behavior is intentionally not claimed
 to match.
+
+Direct untagged unconstrained OBJECT IDENTIFIER and RELATIVE-OID roots are
+supported when BER and/or CER are selected without other codecs. Generated
+wrappers keep private canonical base-128 content and expose borrowed content
+bytes. Their fallible content constructors normalize redundant leading `80`
+groups while preserving arbitrarily wide subidentifiers; empty content and
+unterminated continuation groups are rejected. The first combined OBJECT
+IDENTIFIER subidentifier remains encoded content rather than a `u64` arc.
+Wrappers do not derive infallible `Clone`. Tags, constraints, aliases, imports,
+fields, and mixed or non-BER/CER codec selections fail before publication.
+
+`OidValues.asn1`, `oid_conformance.rs`, and `c_oid.c` compare DER/CER bytes and
+BER/CER decoded content for first-arc combinations, values beyond `u64`, and
+127/128/1001-byte content lengths. Tests also cover redundant base-128 groups,
+high-tag aliases, malformed and truncated input, prefix consumption, input
+mutations, and resource limits. C BER accepts empty and unterminated OID
+content and preserves nonminimal content; Rust rejects invalid empty or
+unterminated values and normalizes BER aliases. Strict CER rejects these
+noncanonical forms.

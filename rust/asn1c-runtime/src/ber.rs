@@ -1,4 +1,4 @@
-//! Checked BER parsing and DER/CER codecs for ENUMERATED and string primitives.
+//! Checked BER parsing and DER/CER codecs for OIDs, ENUMERATED, and strings.
 //!
 //! Original source: X.690 BER/DER/CER rules and asn1c runtime behavior.
 //! Version/date: first expansion, 2026-10-31. Responsible party: asn1c
@@ -21,9 +21,110 @@ const TAG_BOOLEAN: u64 = 1;
 const TAG_INTEGER: u64 = 2;
 const TAG_NULL: u64 = 5;
 const TAG_SET: u64 = 17;
+const TAG_OBJECT_IDENTIFIER: u32 = 6;
+const TAG_RELATIVE_OID: u32 = 13;
+/// Maximum simultaneous retained and canonical OID codec buffer capacity.
+const MAX_OID_SCRATCH_BYTES: usize = 128 * 1024 * 1024;
 const MAX_SEQUENCE_FIELDS: usize = 6;
 /// Largest BER tag number representable by the C runtime's packed tag value.
 pub const MAX_TAG_NUMBER: u32 = 0x3fff_ffff;
+
+/// Canonical encoded content octets for an ASN.1 OBJECT IDENTIFIER.
+///
+/// Each base-128 subidentifier is minimally encoded. The first subidentifier
+/// combines the first two arcs; this type intentionally exposes encoded content
+/// rather than a machine-sized numeric arc representation.
+#[derive(Debug, Eq, PartialEq)]
+pub struct ObjectIdentifier {
+    /// Canonical nonempty base-128 OBJECT IDENTIFIER content; state variable.
+    content: Vec<u8>,
+}
+
+impl ObjectIdentifier {
+    /// Create an OID from encoded content, removing redundant leading `0x80` groups.
+    ///
+    /// # Parameters and returns
+    /// `content` is the OID's encoded subidentifier content; `limits` caps input,
+    /// retained output, and work. Returns canonical content.
+    ///
+    /// # Errors
+    /// Returns invalid encoding for empty or unterminated content, resource
+    /// limit errors, checked-size errors, or fallible allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 8.19. Version: 2026-11-01. Responsible: runtime maintainers.
+    /// History: direct OID runtime gate. Example: `ObjectIdentifier::try_from_content(&[42], limits)?`.
+    pub fn try_from_content(content: &[u8], limits: &Limits) -> Result<Self, Error> {
+        Ok(Self {
+            content: normalize_oid_content(content, limits)?,
+        })
+    }
+
+    /// Borrow the canonical encoded OID content octets.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns nonempty, minimal base-128 subidentifier content.
+    ///
+    /// # Errors
+    /// This accessor cannot fail or panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 8.19 content form. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct OID runtime gate.
+    /// Example: `oid.as_content() == [42]`.
+    #[must_use]
+    pub fn as_content(&self) -> &[u8] {
+        &self.content
+    }
+}
+
+/// Canonical encoded content octets for an ASN.1 RELATIVE-OID.
+///
+/// Every arc is a minimally encoded base-128 subidentifier. The value keeps
+/// raw content octets so arc size is not limited by a machine integer.
+#[derive(Debug, Eq, PartialEq)]
+pub struct RelativeOid {
+    /// Canonical nonempty base-128 RELATIVE-OID content; state variable.
+    content: Vec<u8>,
+}
+
+impl RelativeOid {
+    /// Create a RELATIVE-OID from content, removing redundant leading `0x80` groups.
+    ///
+    /// # Parameters and returns
+    /// `content` is encoded base-128 arc content; `limits` caps input, retained
+    /// output, and work. Returns canonical content.
+    ///
+    /// # Errors
+    /// Returns invalid encoding for empty or unterminated content, resource
+    /// limit errors, checked-size errors, or fallible allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 8.20. Version: 2026-11-01. Responsible: runtime maintainers.
+    /// History: direct OID runtime gate. Example: `RelativeOid::try_from_content(&[42], limits)?`.
+    pub fn try_from_content(content: &[u8], limits: &Limits) -> Result<Self, Error> {
+        Ok(Self {
+            content: normalize_oid_content(content, limits)?,
+        })
+    }
+
+    /// Borrow the canonical encoded RELATIVE-OID content octets.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns nonempty, minimal base-128 arc content.
+    ///
+    /// # Errors
+    /// This accessor cannot fail or panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 8.20 content form. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct OID runtime gate.
+    /// Example: `oid.as_content() == [42]`.
+    #[must_use]
+    pub fn as_content(&self) -> &[u8] {
+        &self.content
+    }
+}
 
 /// BER identifier class, ordered by its two wire bits.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -3426,6 +3527,551 @@ pub fn decode_enumerated_cer(input: &[u8], limits: &Limits) -> Result<Decoded<i6
         limits,
     )?;
     Ok(decoded)
+}
+
+/// Encode an OBJECT IDENTIFIER as canonical DER.
+///
+/// # Parameters and returns
+/// `value` contains canonical encoded content; `limits` caps output, scratch,
+/// and work. Returns one primitive definite-length TLV.
+///
+/// # Errors
+/// Returns output/work/scratch limits, checked-size errors, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 8.19. Version: 2026-11-01. Responsible: runtime maintainers.
+/// History: direct OID runtime gate. Example: `encode_object_identifier_der(&oid, limits)?`.
+pub fn encode_object_identifier_der(
+    value: &ObjectIdentifier,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    let mut work = 0;
+    encode_oid_content(
+        &value.content,
+        value.content.capacity(),
+        TAG_OBJECT_IDENTIFIER,
+        limits,
+        &mut work,
+    )
+}
+
+/// Encode an OBJECT IDENTIFIER as canonical CER.
+///
+/// # Parameters and returns
+/// `value` contains canonical encoded content; `limits` caps output, scratch,
+/// and work. Returns one primitive definite-length TLV.
+///
+/// # Errors
+/// Returns output/work/scratch limits, checked-size errors, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 8.19. Version: 2026-11-01. Responsible: runtime maintainers.
+/// History: direct OID runtime gate. Example: `encode_object_identifier_cer(&oid, limits)?`.
+pub fn encode_object_identifier_cer(
+    value: &ObjectIdentifier,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    let mut work = 0;
+    encode_oid_content(
+        &value.content,
+        value.content.capacity(),
+        TAG_OBJECT_IDENTIFIER,
+        limits,
+        &mut work,
+    )
+}
+
+/// Decode and normalize one BER OBJECT IDENTIFIER prefix.
+///
+/// # Parameters and returns
+/// `input` may include a suffix; `limits` caps the full input, retained value,
+/// scratch, and cumulative work. Returns canonical content and exact prefix size.
+///
+/// # Errors
+/// Returns malformed/truncated BER, empty or unterminated content, limit,
+/// checked-size, or allocation errors. Empty content is deliberately rejected.
+///
+/// # Source, version, history, example
+/// Source: X.690 8.19 and C BER aliases. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OID runtime gate.
+/// Example: `decode_object_identifier_ber(input, limits)?`.
+pub fn decode_object_identifier_ber(
+    input: &[u8],
+    limits: &Limits,
+) -> Result<Decoded<ObjectIdentifier>, Error> {
+    let decoded = decode_oid_content(input, TAG_OBJECT_IDENTIFIER, limits, false)?;
+    Ok(Decoded {
+        value: ObjectIdentifier {
+            content: decoded.value,
+        },
+        consumed_bits: decoded.consumed_bits,
+        consumed_bytes: decoded.consumed_bytes,
+    })
+}
+
+/// Strictly decode one canonical CER OBJECT IDENTIFIER prefix.
+///
+/// # Parameters and returns
+/// `input` may include a suffix; `limits` caps input and retained/output scratch,
+/// plus one cumulative parse, normalization, re-encode, and compare budget.
+///
+/// # Errors
+/// Returns BER errors or `InvalidEncoding` if the consumed prefix is not
+/// canonical CER; empty and unterminated content are rejected.
+///
+/// # Source, version, history, example
+/// Source: X.690 8.19 strict CER comparison. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OID runtime gate.
+/// Example: `decode_object_identifier_cer(input, limits)?`.
+pub fn decode_object_identifier_cer(
+    input: &[u8],
+    limits: &Limits,
+) -> Result<Decoded<ObjectIdentifier>, Error> {
+    let decoded = decode_oid_content(input, TAG_OBJECT_IDENTIFIER, limits, true)?;
+    Ok(Decoded {
+        value: ObjectIdentifier {
+            content: decoded.value,
+        },
+        consumed_bits: decoded.consumed_bits,
+        consumed_bytes: decoded.consumed_bytes,
+    })
+}
+
+/// Encode a RELATIVE-OID as canonical DER.
+///
+/// # Parameters and returns
+/// `value` contains canonical encoded content; `limits` caps output, scratch,
+/// and work. Returns one primitive definite-length TLV.
+///
+/// # Errors
+/// Returns output/work/scratch limits, checked-size errors, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 8.20. Version: 2026-11-01. Responsible: runtime maintainers.
+/// History: direct OID runtime gate. Example: `encode_relative_oid_der(&oid, limits)?`.
+pub fn encode_relative_oid_der(value: &RelativeOid, limits: &Limits) -> Result<Encoded, Error> {
+    let mut work = 0;
+    encode_oid_content(
+        &value.content,
+        value.content.capacity(),
+        TAG_RELATIVE_OID,
+        limits,
+        &mut work,
+    )
+}
+
+/// Encode a RELATIVE-OID as canonical CER.
+///
+/// # Parameters and returns
+/// `value` contains canonical encoded content; `limits` caps output, scratch,
+/// and work. Returns one primitive definite-length TLV.
+///
+/// # Errors
+/// Returns output/work/scratch limits, checked-size errors, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 8.20. Version: 2026-11-01. Responsible: runtime maintainers.
+/// History: direct OID runtime gate. Example: `encode_relative_oid_cer(&oid, limits)?`.
+pub fn encode_relative_oid_cer(value: &RelativeOid, limits: &Limits) -> Result<Encoded, Error> {
+    let mut work = 0;
+    encode_oid_content(
+        &value.content,
+        value.content.capacity(),
+        TAG_RELATIVE_OID,
+        limits,
+        &mut work,
+    )
+}
+
+/// Decode and normalize one BER RELATIVE-OID prefix.
+///
+/// # Parameters and returns
+/// `input` may include a suffix; `limits` caps full input, retained value,
+/// scratch, and cumulative work. Returns canonical content and exact prefix size.
+///
+/// # Errors
+/// Returns malformed/truncated BER, empty or unterminated content, limit,
+/// checked-size, or allocation errors. Empty content is deliberately rejected.
+///
+/// # Source, version, history, example
+/// Source: X.690 8.20 and C BER aliases. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OID runtime gate.
+/// Example: `decode_relative_oid_ber(input, limits)?`.
+pub fn decode_relative_oid_ber(
+    input: &[u8],
+    limits: &Limits,
+) -> Result<Decoded<RelativeOid>, Error> {
+    let decoded = decode_oid_content(input, TAG_RELATIVE_OID, limits, false)?;
+    Ok(Decoded {
+        value: RelativeOid {
+            content: decoded.value,
+        },
+        consumed_bits: decoded.consumed_bits,
+        consumed_bytes: decoded.consumed_bytes,
+    })
+}
+
+/// Strictly decode one canonical CER RELATIVE-OID prefix.
+///
+/// # Parameters and returns
+/// `input` may include a suffix; `limits` caps input and retained/output scratch,
+/// plus one cumulative parse, normalization, re-encode, and compare budget.
+///
+/// # Errors
+/// Returns BER errors or `InvalidEncoding` if the consumed prefix is not
+/// canonical CER; empty and unterminated content are rejected.
+///
+/// # Source, version, history, example
+/// Source: X.690 8.20 strict CER comparison. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OID runtime gate.
+/// Example: `decode_relative_oid_cer(input, limits)?`.
+pub fn decode_relative_oid_cer(
+    input: &[u8],
+    limits: &Limits,
+) -> Result<Decoded<RelativeOid>, Error> {
+    let decoded = decode_oid_content(input, TAG_RELATIVE_OID, limits, true)?;
+    Ok(Decoded {
+        value: RelativeOid {
+            content: decoded.value,
+        },
+        consumed_bits: decoded.consumed_bits,
+        consumed_bytes: decoded.consumed_bytes,
+    })
+}
+
+/// Normalize one encoded OID content value under constructor limits.
+///
+/// # Parameters and returns
+/// `content` is encoded base-128 content; `limits` bounds input, retained
+/// storage, and work. Returns canonical nonempty content bytes.
+///
+/// # Errors
+/// Returns invalid empty/unterminated content, resource, size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 base-128 subidentifier form. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OID runtime gate.
+/// Example: called by both public OID constructors.
+fn normalize_oid_content(content: &[u8], limits: &Limits) -> Result<Vec<u8>, Error> {
+    check(Resource::InputBytes, content.len(), limits.max_input_bytes)?;
+    let mut work = 0;
+    let normalized_len = scan_oid_content(content, limits, &mut work)?;
+    check(
+        Resource::OutputBytes,
+        normalized_len,
+        limits.max_output_bytes,
+    )?;
+    check_oid_scratch(normalized_len)?;
+    charge_work(&mut work, content.len(), limits)?;
+    copy_oid_content(content, normalized_len, 0, limits)
+}
+
+/// Validate base-128 arc boundaries and count canonical content bytes.
+///
+/// # Parameters and returns
+/// `content` is the encoded value; `limits` bounds parsing; `work` is shared.
+/// Returns normalized byte length after removing leading `0x80` groups.
+///
+/// # Errors
+/// Returns empty/unterminated content, size overflow, or input/work limits.
+///
+/// # Source, version, history, example
+/// Source: X.690 8.19 and 8.20. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OID runtime gate.
+/// Example: used before reserving retained content.
+fn scan_oid_content(content: &[u8], limits: &Limits, work: &mut usize) -> Result<usize, Error> {
+    if content.is_empty() {
+        return Err(invalid("OID content must not be empty"));
+    }
+    if content.last().is_some_and(|octet| octet & 0x80 != 0) {
+        return Err(invalid(
+            "OID content ends with an unterminated base-128 arc",
+        ));
+    }
+    charge_work(work, content.len(), limits)?;
+    let mut normalized_len = 0_usize;
+    let mut at_arc_start = true;
+    for octet in content {
+        if at_arc_start && *octet == 0x80 {
+            continue;
+        }
+        normalized_len = normalized_len.checked_add(1).ok_or(Error::SizeOverflow)?;
+        at_arc_start = octet & 0x80 == 0;
+    }
+    if !at_arc_start {
+        return Err(invalid(
+            "OID content ends with an unterminated base-128 arc",
+        ));
+    }
+    if normalized_len == 0 {
+        return Err(invalid("OID content has no terminated base-128 arc"));
+    }
+    Ok(normalized_len)
+}
+
+/// Copy canonical OID bytes into a fallibly reserved retained buffer.
+///
+/// # Parameters and returns
+/// `content` is validated BER content; `normalized_len` is its canonical size;
+/// `additional_scratch` reserves room for a simultaneously live output buffer;
+/// the caller charges the full source traversal before allocation. Returns bytes.
+///
+/// # Errors
+/// Returns output/scratch limits, size overflow, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: bounded OID normalization. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OID runtime gate.
+/// Example: called after scan and work preflight.
+fn copy_oid_content(
+    content: &[u8],
+    normalized_len: usize,
+    additional_scratch: usize,
+    limits: &Limits,
+) -> Result<Vec<u8>, Error> {
+    check(
+        Resource::OutputBytes,
+        normalized_len,
+        limits.max_output_bytes,
+    )?;
+    let projected = normalized_len
+        .checked_add(additional_scratch)
+        .ok_or(Error::SizeOverflow)?;
+    check_oid_scratch(projected)?;
+    let mut normalized = Vec::new();
+    normalized
+        .try_reserve_exact(normalized_len)
+        .map_err(|_| Error::AllocationFailed {
+            requested_bytes: normalized_len,
+        })?;
+    let mut at_arc_start = true;
+    for octet in content {
+        if at_arc_start && *octet == 0x80 {
+            continue;
+        }
+        normalized.push(*octet);
+        at_arc_start = octet & 0x80 == 0;
+    }
+    if normalized.len() != normalized_len {
+        return Err(Error::SizeOverflow);
+    }
+    check_oid_scratch(
+        normalized
+            .capacity()
+            .checked_add(additional_scratch)
+            .ok_or(Error::SizeOverflow)?,
+    )?;
+    Ok(normalized)
+}
+
+/// Encode canonical OID content with one primitive universal identifier.
+///
+/// # Parameters and returns
+/// `content` is canonical; `retained_capacity` is a simultaneously live value
+/// allocation; `tag` selects 6 or 13; `limits` caps output/work/scratch;
+/// `work` shares cumulative bits with a strict BER/CER decode operation.
+/// Returns a complete shortest definite-length TLV after charging this pass.
+///
+/// # Errors
+/// Returns output/work/scratch limits, checked-size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 OBJECT IDENTIFIER and RELATIVE-OID forms. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OID runtime gate.
+/// Example: called by both OID encoders and strict CER validation.
+fn encode_oid_content(
+    content: &[u8],
+    retained_capacity: usize,
+    tag: u32,
+    limits: &Limits,
+    work: &mut usize,
+) -> Result<Encoded, Error> {
+    let total_len = oid_tlv_len(content.len())?;
+    check(Resource::OutputBytes, total_len, limits.max_output_bytes)?;
+    check_oid_scratch(
+        retained_capacity
+            .checked_add(total_len)
+            .ok_or(Error::SizeOverflow)?,
+    )?;
+    charge_work(work, total_len, limits)?;
+    let mut output = new_output(total_len, limits)?;
+    output.push(u8::try_from(tag).map_err(|_| Error::SizeOverflow)?);
+    let mut encoded_length = [0_u8; std::mem::size_of::<usize>() + 1];
+    let length_len = encode_length_bytes(content.len(), &mut encoded_length)?;
+    output.extend_from_slice(&encoded_length[..length_len]);
+    output.extend_from_slice(content);
+    if output.len() != total_len {
+        return Err(Error::SizeOverflow);
+    }
+    check_oid_scratch(
+        retained_capacity
+            .checked_add(output.capacity())
+            .ok_or(Error::SizeOverflow)?,
+    )?;
+    finish(output, limits)
+}
+
+/// Build canonical OID output after a strict decoder has precharged its work.
+///
+/// # Parameters and returns
+/// `content` is canonical; `retained_capacity` is live retained capacity;
+/// `tag` is 6 or 13; `limits` bounds resources. Returns the complete TLV.
+///
+/// # Errors
+/// Returns output/scratch limits, checked-size errors, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 OID canonical encoding. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: strict CER OID comparison.
+/// Example: called after the decoder precharges all remaining phases.
+fn encode_oid_content_precharged(
+    content: &[u8],
+    retained_capacity: usize,
+    tag: u32,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    let total_len = oid_tlv_len(content.len())?;
+    check(Resource::OutputBytes, total_len, limits.max_output_bytes)?;
+    check_oid_scratch(
+        retained_capacity
+            .checked_add(total_len)
+            .ok_or(Error::SizeOverflow)?,
+    )?;
+    let mut output = new_output(total_len, limits)?;
+    output.push(u8::try_from(tag).map_err(|_| Error::SizeOverflow)?);
+    let mut encoded_length = [0_u8; std::mem::size_of::<usize>() + 1];
+    let length_len = encode_length_bytes(content.len(), &mut encoded_length)?;
+    output.extend_from_slice(&encoded_length[..length_len]);
+    output.extend_from_slice(content);
+    if output.len() != total_len {
+        return Err(Error::SizeOverflow);
+    }
+    check_oid_scratch(
+        retained_capacity
+            .checked_add(output.capacity())
+            .ok_or(Error::SizeOverflow)?,
+    )?;
+    finish(output, limits)
+}
+
+/// Decode, normalize, and optionally canonically re-encode one OID prefix.
+///
+/// # Parameters and returns
+/// `input` is the full available slice; `tag` is 6 or 13; `limits` supplies
+/// operation budgets; `strict_cer` enables canonical comparison. Returns
+/// normalized content and exact prefix consumption.
+///
+/// # Errors
+/// Returns malformed BER, empty/unterminated content, canonical mismatch,
+/// limit, size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 BER/CER OID rules. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OID runtime gate.
+/// Example: called by the four standalone OID decoders.
+fn decode_oid_content(
+    input: &[u8],
+    tag: u32,
+    limits: &Limits,
+    strict_cer: bool,
+) -> Result<Decoded<Vec<u8>>, Error> {
+    let mut work = 0;
+    let (header, consumed_bytes, consumed_bits) =
+        parse_root_tag_with_work(input, Tag::universal(tag), false, limits, &mut work)?;
+    let content_len = header
+        .length
+        .ok_or_else(|| invalid("primitive OID length must be definite"))?;
+    let content_end = header
+        .content
+        .checked_add(content_len)
+        .ok_or(Error::SizeOverflow)?;
+    if content_end != consumed_bytes {
+        return Err(invalid("OID content length does not match primitive TLV"));
+    }
+    let content = input
+        .get(header.content..content_end)
+        .ok_or(Error::NeedMoreBytes {
+            required_bytes: content_end,
+            available_bytes: input.len(),
+        })?;
+    let normalized_len = scan_oid_content(content, limits, &mut work)?;
+    check(
+        Resource::OutputBytes,
+        normalized_len,
+        limits.max_output_bytes,
+    )?;
+    let encoded_len = oid_tlv_len(normalized_len)?;
+    let extra_scratch = if strict_cer { encoded_len } else { 0 };
+    if strict_cer {
+        check(Resource::OutputBytes, encoded_len, limits.max_output_bytes)?;
+    }
+    check_oid_scratch(
+        normalized_len
+            .checked_add(extra_scratch)
+            .ok_or(Error::SizeOverflow)?,
+    )?;
+    let comparison_len = if strict_cer {
+        consumed_bytes.max(encoded_len)
+    } else {
+        0
+    };
+    let future_work = content
+        .len()
+        .checked_add(if strict_cer { encoded_len } else { 0 })
+        .and_then(|bytes| bytes.checked_add(comparison_len))
+        .ok_or(Error::SizeOverflow)?;
+    charge_work(&mut work, future_work, limits)?;
+    let normalized = copy_oid_content(content, normalized_len, extra_scratch, limits)?;
+
+    if strict_cer {
+        let canonical =
+            encode_oid_content_precharged(&normalized, normalized.capacity(), tag, limits)?;
+        if input.get(..consumed_bytes) != Some(canonical.bytes.as_slice()) {
+            return Err(invalid("CER OID differs from canonical re-encoding"));
+        }
+    }
+    Ok(Decoded {
+        value: normalized,
+        consumed_bits,
+        consumed_bytes,
+    })
+}
+
+/// Calculate shortest primitive OID TLV size with checked arithmetic.
+///
+/// # Parameters and returns
+/// `content_len` is nonempty encoded content. Returns identifier, length, and
+/// content octets combined.
+///
+/// # Errors
+/// Returns `SizeOverflow` when a complete TLV size cannot be represented.
+///
+/// # Source, version, history, example
+/// Source: X.690 definite-length OID encoding. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OID runtime gate.
+/// Example: short content adds two framing octets.
+fn oid_tlv_len(content_len: usize) -> Result<usize, Error> {
+    1_usize
+        .checked_add(length_size(content_len))
+        .and_then(|size| size.checked_add(content_len))
+        .ok_or(Error::SizeOverflow)
+}
+
+/// Bound simultaneous retained and canonical OID buffers by the fixed scratch cap.
+///
+/// # Parameters and returns
+/// `bytes` is the checked sum of live OID buffer capacities. Returns success
+/// when within the fixed codec ceiling.
+///
+/// # Errors
+/// Returns `LimitExceeded(OutputBytes)` when the OID scratch cap is exceeded.
+///
+/// # Source, version, history, example
+/// Source: `BigInteger` scalar scratch policy. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OID runtime gate.
+/// Example: checks retained content plus canonical output.
+const fn check_oid_scratch(bytes: usize) -> Result<(), Error> {
+    check(Resource::OutputBytes, bytes, MAX_OID_SCRATCH_BYTES)
 }
 
 /// Encode OCTET STRING as a canonical DER primitive TLV.
@@ -9443,5 +10089,538 @@ mod tests {
         writer.write_integer_tagged(integer_tag, 2, 0, 3).unwrap();
         writer.write_boolean_tagged(boolean_tag, true).unwrap();
         assert!(writer.finish_tagged_root(high_tag).is_err());
+    }
+
+    /// Normalize independent base-128 arcs and reject empty or dangling content.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks both public constructors and retained canonical bytes.
+    ///
+    /// # Errors
+    /// Panics on an unexpected normalization or validation result.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 OID content rules. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct OID gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn oid_constructors_normalize_arcs_and_reject_dangling_content() {
+        let limits = Limits::default();
+        let oid = ObjectIdentifier::try_from_content(&[0x80, 0x80, 42, 0x80, 1], &limits).unwrap();
+        assert_eq!(oid.as_content(), [42, 1]);
+        let relative = RelativeOid::try_from_content(&[0x80, 0x80, 0, 0x81, 0], &limits).unwrap();
+        assert_eq!(relative.as_content(), [0, 0x81, 0]);
+
+        for invalid_content in [&[][..], &[0x80][..], &[1, 0x80][..], &[0, 0x80, 0x80][..]] {
+            assert!(ObjectIdentifier::try_from_content(invalid_content, &limits).is_err());
+            assert!(RelativeOid::try_from_content(invalid_content, &limits).is_err());
+        }
+
+        let exact_multi_group = Limits {
+            max_input_bytes: 3,
+            max_output_bytes: 1,
+            max_work_bits: 48,
+        };
+        assert!(ObjectIdentifier::try_from_content(&[0x80, 0x80, 42], &exact_multi_group).is_ok());
+        assert!(ObjectIdentifier::try_from_content(
+            &[0x80, 0x80, 42],
+            &Limits {
+                max_work_bits: 47,
+                ..exact_multi_group
+            }
+        )
+        .is_err());
+    }
+
+    /// Round-trip low, combined-first-arc, and wider-than-u64 OID content.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks DER/CER outputs and BER/CER prefix consumption.
+    ///
+    /// # Errors
+    /// Panics on codec or byte-vector mismatches.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 OBJECT IDENTIFIER and RELATIVE-OID. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct OID gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn oid_der_cer_round_trip_large_base128_subidentifiers() {
+        let limits = Limits::default();
+        let mut huge_arc = vec![0x81; 20];
+        huge_arc.push(0);
+        let oid_values: &[&[u8]] = &[&[0, 0], &[39], &[40], &[0x81, 0], &huge_arc];
+        for content in oid_values {
+            let value = ObjectIdentifier::try_from_content(content, &limits).unwrap();
+            let der = encode_object_identifier_der(&value, &limits).unwrap();
+            let cer = encode_object_identifier_cer(&value, &limits).unwrap();
+            assert_eq!(der.bytes, cer.bytes);
+            assert_eq!(
+                decode_object_identifier_ber(&der.bytes, &limits)
+                    .unwrap()
+                    .value,
+                value
+            );
+            assert_eq!(
+                decode_object_identifier_cer(&cer.bytes, &limits)
+                    .unwrap()
+                    .value,
+                value
+            );
+        }
+
+        let relative_values: &[&[u8]] = &[&[0], &[0x81, 0], &huge_arc];
+        for content in relative_values {
+            let value = RelativeOid::try_from_content(content, &limits).unwrap();
+            let der = encode_relative_oid_der(&value, &limits).unwrap();
+            let cer = encode_relative_oid_cer(&value, &limits).unwrap();
+            assert_eq!(der.bytes, cer.bytes);
+            assert_eq!(
+                decode_relative_oid_ber(&der.bytes, &limits).unwrap().value,
+                value
+            );
+            assert_eq!(
+                decode_relative_oid_cer(&cer.bytes, &limits).unwrap().value,
+                value
+            );
+        }
+    }
+
+    /// Accept C-compatible BER tag/content aliases and reject them in strict CER.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks high-tag aliases, arc normalization, and suffixes.
+    ///
+    /// # Errors
+    /// Panics on unexpected BER acceptance or CER canonicality results.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 identifiers and base-128 arcs. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct OID gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn oid_ber_accepts_high_tag_and_arc_aliases_but_cer_rejects() {
+        let limits = Limits::default();
+        let aliases: &[&[u8]] = &[
+            &[0x1f, 6, 1, 42],
+            &[6, 3, 0x80, 0x80, 42],
+            &[0x1f, 0x80, 6, 3, 0x80, 0x80, 42],
+        ];
+        for alias in aliases {
+            let decoded = decode_object_identifier_ber(alias, &limits).unwrap();
+            assert_eq!(decoded.value.as_content(), [42]);
+            assert_eq!(decoded.consumed_bytes, alias.len());
+            assert!(decode_object_identifier_cer(alias, &limits).is_err());
+        }
+        let relative_alias = [0x1f, 0x0d, 3, 0x80, 0x80, 42];
+        let decoded = decode_relative_oid_ber(&relative_alias, &limits).unwrap();
+        assert_eq!(decoded.value.as_content(), [42]);
+        assert!(decode_relative_oid_cer(&relative_alias, &limits).is_err());
+
+        let canonical_with_suffix = [6, 1, 42, 0xff];
+        let decoded = decode_object_identifier_cer(&canonical_with_suffix, &limits).unwrap();
+        assert_eq!(decoded.value.as_content(), [42]);
+        assert_eq!(decoded.consumed_bytes, 3);
+    }
+
+    /// Keep OID CER primitive at short, long-form, and 1001-byte content sizes.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks C vectors at 127, 128, and 1001 content octets.
+    ///
+    /// # Errors
+    /// Panics on output, length, primitive-form, or strict-decode mismatches.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 OID CER forms and C probes. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct OID gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn oid_cer_length_boundaries_remain_primitive() {
+        let limits = Limits::default();
+        for content_len in [127, 128, 1001] {
+            let content = vec![0; content_len];
+            let oid = ObjectIdentifier::try_from_content(&content, &limits).unwrap();
+            let relative = RelativeOid::try_from_content(&content, &limits).unwrap();
+            let oid_encoding = encode_object_identifier_cer(&oid, &limits).unwrap();
+            let relative_encoding = encode_relative_oid_cer(&relative, &limits).unwrap();
+            assert_oid_cer_length_vector(
+                TAG_OBJECT_IDENTIFIER,
+                content_len,
+                &oid_encoding,
+                decode_object_identifier_cer(&oid_encoding.bytes, &limits).is_ok(),
+            );
+            assert_oid_cer_length_vector(
+                TAG_RELATIVE_OID,
+                content_len,
+                &relative_encoding,
+                decode_relative_oid_cer(&relative_encoding.bytes, &limits).is_ok(),
+            );
+        }
+    }
+
+    /// Check one primitive OID CER TLV's shortest length boundary.
+    ///
+    /// # Parameters and returns
+    /// `tag`, `content_len`, and `encoded` identify the TLV; `decoded` reports
+    /// strict decoder success. Returns by assertion.
+    ///
+    /// # Errors
+    /// Panics when output length/header or strict decoding is incorrect.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 OID CER lengths. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct OID gate.
+    /// Example: called for both universal OID tags.
+    fn assert_oid_cer_length_vector(
+        tag: u32,
+        content_len: usize,
+        encoded: &Encoded,
+        decoded: bool,
+    ) {
+        let expected_len = match content_len {
+            127 => 129,
+            128 => 131,
+            _ => 1005,
+        };
+        assert_eq!(encoded.bytes.len(), expected_len);
+        assert_eq!(encoded.bytes[0], u8::try_from(tag).unwrap());
+        assert!(decoded);
+        match content_len {
+            127 => assert_eq!(&encoded.bytes[..2], &[u8::try_from(tag).unwrap(), 0x7f]),
+            128 => assert_eq!(
+                &encoded.bytes[..3],
+                &[u8::try_from(tag).unwrap(), 0x81, 0x80]
+            ),
+            _ => assert_eq!(
+                &encoded.bytes[..4],
+                &[u8::try_from(tag).unwrap(), 0x82, 3, 0xe9]
+            ),
+        }
+    }
+
+    /// Reject empty, dangling, malformed-length, constructed, and wrong-tag OIDs.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Exercises both OID types with malformed BER root forms.
+    ///
+    /// # Errors
+    /// Panics if malformed input is accepted.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 primitive OID rules. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct OID gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn oid_decoders_reject_empty_dangling_and_malformed_roots() {
+        let limits = Limits::default();
+        let invalid_values: &[&[u8]] = &[
+            &[0, 0],
+            &[0x26, 0],
+            &[0x2d, 0],
+            &[6, 0x80, 0, 0],
+            &[6, 0],
+            &[6, 1, 0x80],
+            &[6, 2, 1, 0x80],
+            &[6, 3, 0, 0x80, 0x80],
+            &[6, 0x82, 0],
+            &[6, 0x82, 0, 2, 1],
+            &[6, 0xff],
+            &[0x1f, 0x86],
+        ];
+        for input in invalid_values {
+            assert!(decode_object_identifier_ber(input, &limits).is_err());
+            assert!(decode_object_identifier_cer(input, &limits).is_err());
+            assert!(decode_relative_oid_ber(input, &limits).is_err());
+            assert!(decode_relative_oid_cer(input, &limits).is_err());
+        }
+        for invalid_content in [&[][..], &[1, 0x80][..], &[0, 0x80, 0x80][..]] {
+            let mut oid = vec![6, u8::try_from(invalid_content.len()).unwrap()];
+            oid.extend_from_slice(invalid_content);
+            let mut relative = vec![13, u8::try_from(invalid_content.len()).unwrap()];
+            relative.extend_from_slice(invalid_content);
+            assert!(decode_object_identifier_ber(&oid, &limits).is_err());
+            assert!(decode_object_identifier_cer(&oid, &limits).is_err());
+            assert!(decode_relative_oid_ber(&relative, &limits).is_err());
+            assert!(decode_relative_oid_cer(&relative, &limits).is_err());
+        }
+        let mut tag_overflow = vec![0x1f];
+        tag_overflow.extend([0xff; 5]);
+        tag_overflow.extend([0x7f, 1, 42]);
+        assert!(decode_object_identifier_ber(&tag_overflow, &limits).is_err());
+        let mut length_overflow = vec![6, 0x89];
+        length_overflow.extend([0xff; 9]);
+        assert!(decode_object_identifier_ber(&length_overflow, &limits).is_err());
+    }
+
+    /// Check OID constructor and encoder input/output/work ceilings exactly.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks exact limits and one-unit-below rejection.
+    ///
+    /// # Errors
+    /// Panics on unexpected boundary behavior.
+    ///
+    /// # Source, version, history, example
+    /// Source: runtime OID scalar resource policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct OID gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn oid_constructors_and_encoders_check_exact_limits() {
+        let exact = Limits {
+            max_input_bytes: 2,
+            max_output_bytes: 1,
+            max_work_bits: 32,
+        };
+        let oid = ObjectIdentifier::try_from_content(&[0x80, 42], &exact).unwrap();
+        assert_eq!(oid.as_content(), [42]);
+        for too_small in [
+            Limits {
+                max_input_bytes: 1,
+                ..exact
+            },
+            Limits {
+                max_output_bytes: 0,
+                ..exact
+            },
+            Limits {
+                max_work_bits: 31,
+                ..exact
+            },
+        ] {
+            assert!(ObjectIdentifier::try_from_content(&[0x80, 42], &too_small).is_err());
+        }
+
+        let exact_encode = Limits {
+            max_input_bytes: 1,
+            max_output_bytes: 3,
+            max_work_bits: 24,
+        };
+        assert_eq!(
+            encode_object_identifier_der(&oid, &exact_encode)
+                .unwrap()
+                .bytes,
+            [6, 1, 42]
+        );
+        assert!(encode_object_identifier_der(
+            &oid,
+            &Limits {
+                max_output_bytes: 2,
+                ..exact_encode
+            }
+        )
+        .is_err());
+        assert!(encode_object_identifier_der(
+            &oid,
+            &Limits {
+                max_work_bits: 23,
+                ..exact_encode
+            }
+        )
+        .is_err());
+        assert!(check_oid_scratch(MAX_OID_SCRATCH_BYTES).is_ok());
+        assert!(check_oid_scratch(MAX_OID_SCRATCH_BYTES + 1).is_err());
+        assert!(encode_oid_content_precharged(
+            &[0],
+            MAX_OID_SCRATCH_BYTES - 2,
+            TAG_OBJECT_IDENTIFIER,
+            &Limits::default()
+        )
+        .is_err());
+        assert!(copy_oid_content(&[0], 1, MAX_OID_SCRATCH_BYTES, &Limits::default()).is_err());
+    }
+
+    /// Check decoder whole-slice input, retained output, and exact work limits.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks BER OID and RELATIVE-OID limits at exact boundaries.
+    ///
+    /// # Errors
+    /// Panics on unexpected resource-limit results.
+    ///
+    /// # Source, version, history, example
+    /// Source: runtime prefix decoder resource contract. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct OID gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn oid_ber_decoders_check_whole_input_retained_output_and_work() {
+        let input = [6, 1, 42, 0xff];
+        let exact_work = minimum_oid_work(&input, |bytes, budget| {
+            decode_object_identifier_ber(bytes, budget).map(|_| ())
+        });
+        let exact_limits = Limits {
+            max_input_bytes: input.len(),
+            max_output_bytes: 1,
+            max_work_bits: exact_work,
+        };
+        let decoded = decode_object_identifier_ber(&input, &exact_limits).unwrap();
+        assert_eq!(decoded.value.as_content(), [42]);
+        assert_eq!(decoded.consumed_bytes, 3);
+        assert!(decode_object_identifier_ber(
+            &input,
+            &Limits {
+                max_input_bytes: input.len() - 1,
+                ..exact_limits
+            }
+        )
+        .is_err());
+        assert!(decode_object_identifier_ber(
+            &input,
+            &Limits {
+                max_output_bytes: 0,
+                ..exact_limits
+            }
+        )
+        .is_err());
+        assert!(decode_object_identifier_ber(
+            &input,
+            &Limits {
+                max_work_bits: exact_work - 1,
+                ..exact_limits
+            }
+        )
+        .is_err());
+
+        let relative = [13, 1, 42];
+        assert_eq!(
+            decode_relative_oid_ber(&relative, &exact_limits)
+                .unwrap()
+                .value
+                .as_content(),
+            [42]
+        );
+    }
+
+    /// Find the minimum work ceiling at which one valid OID decode passes.
+    ///
+    /// # Parameters and returns
+    /// `input` is canonical; `decode` is one strict OID decoder. Returns its
+    /// exact cumulative work threshold by binary search.
+    ///
+    /// # Errors
+    /// Panics if the canonical input fails at the default work ceiling.
+    ///
+    /// # Source, version, history, example
+    /// Source: scalar codec work budget. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct OID gate.
+    /// Example: called by the exact-work test below.
+    fn minimum_oid_work<F>(input: &[u8], decode: F) -> usize
+    where
+        F: Fn(&[u8], &Limits) -> Result<(), Error>,
+    {
+        let default_limit = Limits::default().max_work_bits;
+        let mut low = 0_usize;
+        let mut high = default_limit;
+        assert!(decode(input, &Limits::default()).is_ok());
+        while low < high {
+            let middle = low + (high - low) / 2;
+            let limits = Limits {
+                max_work_bits: middle,
+                ..Limits::default()
+            };
+            if decode(input, &limits).is_ok() {
+                high = middle;
+            } else {
+                low = middle + 1;
+            }
+        }
+        low
+    }
+
+    /// Verify strict CER OID work includes parse, scan, copy, output, and compare.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks exact and one-bit-below work for OID and RELATIVE-OID.
+    ///
+    /// # Errors
+    /// Panics on unexpected work accounting or canonicality behavior.
+    ///
+    /// # Source, version, history, example
+    /// Source: cumulative scalar CER work contract. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct OID gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn oid_strict_cer_uses_one_cumulative_work_budget() {
+        let limits = Limits::default();
+        let oid = encode_object_identifier_cer(
+            &ObjectIdentifier::try_from_content(&[0x81, 0], &limits).unwrap(),
+            &limits,
+        )
+        .unwrap();
+        let relative = encode_relative_oid_cer(
+            &RelativeOid::try_from_content(&[0x81, 0], &limits).unwrap(),
+            &limits,
+        )
+        .unwrap();
+        let oid_work = minimum_oid_work(&oid.bytes, |input, budget| {
+            decode_object_identifier_cer(input, budget).map(|_| ())
+        });
+        let relative_work = minimum_oid_work(&relative.bytes, |input, budget| {
+            decode_relative_oid_cer(input, budget).map(|_| ())
+        });
+        assert_eq!(oid_work, 128);
+        assert_eq!(relative_work, 128);
+        let exact_oid = Limits {
+            max_work_bits: oid_work,
+            ..limits
+        };
+        let below_oid = Limits {
+            max_work_bits: oid_work - 1,
+            ..limits
+        };
+        assert!(decode_object_identifier_cer(&oid.bytes, &exact_oid).is_ok());
+        assert!(decode_object_identifier_cer(&oid.bytes, &below_oid).is_err());
+
+        let exact_relative = Limits {
+            max_work_bits: relative_work,
+            ..limits
+        };
+        let below_relative = Limits {
+            max_work_bits: relative_work - 1,
+            ..limits
+        };
+        assert!(decode_relative_oid_cer(&relative.bytes, &exact_relative).is_ok());
+        assert!(decode_relative_oid_cer(&relative.bytes, &below_relative).is_err());
+    }
+
+    /// Mutate OID tag, length, and content bytes without allowing decoder panics.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Tries all byte substitutions and every proper prefix.
+    ///
+    /// # Errors
+    /// Panics only if a decoder unwinds on mutated untrusted input.
+    ///
+    /// # Source, version, history, example
+    /// Source: BER parser mutation hardening. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct OID gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn oid_single_byte_mutations_and_truncations_do_not_panic() {
+        let limits = Limits::default();
+        let vectors: &[&[u8]] = &[
+            &[6, 3, 0x2a, 0x86, 0x48],
+            &[13, 2, 0x81, 0],
+            &[0x1f, 0x80, 6, 3, 0x80, 0x80, 42],
+        ];
+        for vector in vectors {
+            for end in 0..vector.len() {
+                let truncated = &vector[..end];
+                let _ = decode_object_identifier_ber(truncated, &limits);
+                let _ = decode_object_identifier_cer(truncated, &limits);
+                let _ = decode_relative_oid_ber(truncated, &limits);
+                let _ = decode_relative_oid_cer(truncated, &limits);
+            }
+            for index in 0..vector.len() {
+                for replacement in 0_u8..=u8::MAX {
+                    let mut mutated = vector.to_vec();
+                    mutated[index] = replacement;
+                    let _ = decode_object_identifier_ber(&mutated, &limits);
+                    let _ = decode_object_identifier_cer(&mutated, &limits);
+                    let _ = decode_relative_oid_ber(&mutated, &limits);
+                    let _ = decode_relative_oid_cer(&mutated, &limits);
+                }
+            }
+        }
     }
 }

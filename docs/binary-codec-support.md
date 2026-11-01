@@ -163,6 +163,15 @@ including nested definite and indefinite lengths, while strict CER compares
 the canonical re-encoding. Rust rejects a non-final BER BIT STRING fragment
 with unused bits that the C BER decoder accepts; this malformed form violates
 X.690 section 8.6.4.
+Direct untagged, unconstrained OBJECT IDENTIFIER and RELATIVE-OID roots also
+support BER prefix decoding, DER and CER encoding, and strict CER decoding
+under BER/CER-only selection. Their Rust values retain canonical base-128
+content bytes, including subidentifiers larger than machine integers. BER
+normalizes redundant leading base-128 groups. Rust rejects empty or
+unterminated content that C BER may retain; strict CER requires the minimal
+primitive encoding. These roots use finite input, output, work, and aggregate
+scratch limits. Tagged, constrained, aliased, imported, and member OID forms
+remain outside the Rust slice.
 Flat SET records with an untagged outer type and the same six direct field kinds are
 available when only BER and/or CER are selected. BER accepts members in any
 order; DER/CER emits them by ascending effective tag class and number, and strict CER rejects

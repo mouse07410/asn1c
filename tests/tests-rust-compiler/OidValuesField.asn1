@@ -1,0 +1,5 @@
+OidValuesField DEFINITIONS ::= BEGIN
+
+Packet ::= SEQUENCE { oid OBJECT IDENTIFIER }
+
+END

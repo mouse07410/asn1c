@@ -97,6 +97,7 @@ fresh directory after adding application code or running Cargo there.
 | Top-level BOOLEAN, NULL, bounded INTEGER | Strict CER decoding; canonical short-form TLV only |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in BER prefix decoding and DER encoding with `-gen-BER` |
 | Direct unconstrained INTEGER | BER prefix decoding, DER encoding, CER encoding, and strict CER decoding under BER/CER-only selection; private arbitrary-precision signed-byte value, untagged root, finite operation limits |
+| Direct unconstrained OBJECT IDENTIFIER and RELATIVE-OID | BER prefix decoding, DER encoding, CER encoding, and strict CER decoding under BER/CER-only selection; untagged roots, private canonical base-128 content, arbitrarily large subidentifiers and finite operation limits |
 | Direct ENUMERATED | BER prefix decoding, DER encoding, CER encoding and strict CER decoding when selected |
 | Direct fixed/bounded OCTET STRING and BIT STRING | BER prefix decoding, DER encoding, CER encoding and strict CER decoding when selected; finite nonextensible SIZE below 65536 |
 | Direct unconstrained OCTET STRING and BIT STRING | BER prefix decoding, DER encoding, CER encoding, and strict CER decoding under BER/CER-only selection; untagged roots, owned values, complete-input and work limits; BIT STRING stores validated packed bytes and exact bit length |
@@ -112,7 +113,7 @@ fresh directory after adding application code or running Cargo there.
 | Direct ENUMERATED | Opt-in JER quoted-name encode/decode; complete input, JSON whitespace, unknown-name and resource-limit checks |
 | Flat SET and SEQUENCE | XER-only basic encoder for direct BOOLEAN, bounded INTEGER, unconstrained IA5String and REAL DEFAULT 0.5 fields; OPTIONAL and supported DEFAULT fields use `Option` |
 | XER and CBOR/JER outside the listed slices | Planned; unavailable in Rust mode |
-| SET outside the listed XER and BER/DER/CER slices, collections, CHOICE outside the listed CBOR slice, extensible, unbounded SIZE, or disjoint string constraints, named-bit strings, extensible ENUMERATED, aliases, imports, other top-level tagged types, and multi-tag member stacks | Planned; rejected in this slice |
+| SET outside the listed XER and BER/DER/CER slices, collections, CHOICE outside the listed CBOR slice, extensible, other unbounded SIZE forms, or disjoint string constraints, named-bit strings, extensible ENUMERATED, aliases, imports, other top-level tagged types, and multi-tag member stacks | Planned; rejected in this slice |
 | Encoding controls, other information-object forms, parameterized types | Planned; rejected in this slice |
 | IOC-selected OPEN TYPE | UPER, APER, OER, CBOR; one local nonextensible set, bounded INTEGER selector, BOOLEAN or bounded INTEGER rows, and a two-field required SEQUENCE; APER selector 0..255 and row spans <=255 |
 | Other CONTAINING and OPEN TYPE forms | Unsupported; rejected before output publication |

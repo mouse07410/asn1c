@@ -1,4 +1,8 @@
 Changes since v1.5.3:
+	* Add direct untagged OBJECT IDENTIFIER and RELATIVE-OID Rust
+	  BER/DER/CER roots under BER/CER-only selection. Retain arbitrarily
+	  large subidentifiers as canonical base-128 content, check malformed
+	  arcs and resource limits, and compare strict CER with C vectors.
 	* Extend generated Rust BER/DER/CER support to untagged, unconstrained
 	  top-level BIT STRING and OCTET STRING under BER/CER-only selection.
 	  Compare C and Rust at CER fragment boundaries, check constructed BER

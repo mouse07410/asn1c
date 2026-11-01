@@ -1,0 +1,6 @@
+OidValues DEFINITIONS ::= BEGIN
+
+OidValue ::= OBJECT IDENTIFIER
+RelativeValue ::= RELATIVE-OID
+
+END

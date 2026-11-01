@@ -2841,4 +2841,104 @@ if ! "$test_tmp/c-unconstrained-strings"; then
     exit 1
 fi
 
+# Direct OID values accept BER/CER only and keep canonical content private.
+for fixture in OidValuesAlias OidValuesConstrained OidValuesField \
+    OidValuesImport OidValuesTagged RelativeOidConstrained RelativeOidTagged; do
+    rejected_out="$test_tmp/rejected-$fixture"
+    if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$rejected_out" "$test_srcdir/$fixture.asn1" \
+        >"$test_tmp/$fixture.log" 2>&1; then
+        echo "FAIL: Rust backend accepted unsupported OID shape $fixture"
+        exit 1
+    fi
+    test ! -e "$rejected_out"
+done
+
+oid_mixed="$test_tmp/rejected-oid-mixed"
+if "$asn1c_bin" --rust -S "$skeletons" -D "$oid_mixed" \
+    "$test_srcdir/OidValues.asn1" >"$test_tmp/oid-mixed.log" 2>&1; then
+    echo "FAIL: mixed default codecs accepted direct OIDs"
+    exit 1
+fi
+test ! -e "$oid_mixed"
+oid_uper="$test_tmp/rejected-oid-uper"
+if "$asn1c_bin" --rust -gen-UPER -no-gen-BER -no-gen-CER -S "$skeletons" \
+    -D "$oid_uper" "$test_srcdir/OidValues.asn1" >"$test_tmp/oid-uper.log" 2>&1; then
+    echo "FAIL: UPER-only selection accepted direct OIDs"
+    exit 1
+fi
+test ! -e "$oid_uper"
+
+oid_rust="$test_tmp/oid-rust"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$oid_rust" "$test_srcdir/OidValues.asn1"
+mkdir "$oid_rust/tests"
+cp "$test_srcdir/oid_conformance.rs" "$oid_rust/tests/"
+oid_source="$oid_rust/src/oid_values.rs"
+for method in try_from_content as_content encode_der decode_ber encode_cer decode_cer; do
+    grep -F "pub fn $method" "$oid_source" >/dev/null
+done
+if grep -F '#[derive(Clone' "$oid_source" >/dev/null; then
+    echo "FAIL: OID wrappers derive infallible Clone"
+    exit 1
+fi
+if ! (cd "$oid_rust" && \
+    CARGO_TARGET_DIR="$test_tmp/target-oid" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-oid" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/oid-rust.log" 2>&1; then
+    cat "$test_tmp/oid-rust.log"
+    echo "FAIL: OID conformance or strict Clippy"
+    exit 1
+fi
+
+for codec in BER CER; do
+    if [ "$codec" = BER ]; then
+        oid_unwanted='encode_cer|decode_cer'
+        "$asn1c_bin" --rust -gen-BER -no-gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$test_tmp/oid-$codec-only" "$test_srcdir/OidValues.asn1"
+    else
+        oid_unwanted='encode_der|decode_ber'
+        "$asn1c_bin" --rust -gen-CER -no-gen-BER -no-gen-UPER -S "$skeletons" \
+            -D "$test_tmp/oid-$codec-only" "$test_srcdir/OidValues.asn1"
+    fi
+    oid_codec_out="$test_tmp/oid-$codec-only"
+    if (cargo check --offline --manifest-path "$oid_codec_out/Cargo.toml" && \
+        cargo clippy --offline --manifest-path "$oid_codec_out/Cargo.toml" \
+        --all-targets --all-features -- -W clippy::pedantic \
+        -W clippy::nursery -D warnings) >"$test_tmp/oid-$codec-only.log" 2>&1; then
+        :
+    else
+        cat "$test_tmp/oid-$codec-only.log"
+        echo "FAIL: OID $codec-only strict Clippy"
+        exit 1
+    fi
+    if grep -E "pub fn ($oid_unwanted)" "$oid_codec_out/src/oid_values.rs" >/dev/null; then
+        echo "FAIL: OID $codec-only output has unselected methods"
+        exit 1
+    fi
+done
+
+oid_c="$test_tmp/oid-c"
+mkdir "$oid_c"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$oid_c" "$test_srcdir/OidValues.asn1" \
+    >"$test_tmp/oid-c-generate.log" 2>&1
+oid_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' "$oid_c/Makefile.am.libasncodec")
+rm -f "$oid_c/converter-example.c" "$oid_c/pdu_collection.c"
+if ! cc $oid_cflags -I"$oid_c" "$oid_c"/*.c "$test_srcdir/c_oid.c" \
+    -lm -o "$test_tmp/c-oid" >"$test_tmp/oid-c-compile.log" 2>&1; then
+    cat "$test_tmp/oid-c-compile.log"
+    echo "FAIL: C OID differential fixture did not compile"
+    exit 1
+fi
+if ! "$test_tmp/c-oid"; then
+    echo "FAIL: C OID DER/CER vectors or BER compatibility probes failed"
+    exit 1
+fi
+
 echo "PASS: generated Rust UPER/CER/BER-DER primitive slice"

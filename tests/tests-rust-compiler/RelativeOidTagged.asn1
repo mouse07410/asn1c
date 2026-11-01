@@ -1,0 +1,5 @@
+RelativeOidTagged DEFINITIONS IMPLICIT TAGS ::= BEGIN
+
+RelativeValue ::= [1] IMPLICIT RELATIVE-OID
+
+END

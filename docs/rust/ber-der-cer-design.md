@@ -5,8 +5,9 @@ implemented. Full C parity has not been reached. The compatibility target is
 the C backend in this repository, qualified by the decisions below. The Rust
 runtime currently supplies BER prefix decoding and DER and CER encoding, plus
 strict CER prefix decoding, for BOOLEAN, NULL, finite bounded `i64` INTEGER,
-unconstrained arbitrary-precision INTEGER, direct finite ENUMERATED, and fixed,
-bounded, or direct unconstrained BIT/OCTET STRING values. See
+unconstrained arbitrary-precision INTEGER, direct finite ENUMERATED, direct
+unconstrained OBJECT IDENTIFIER and RELATIVE-OID, and fixed, bounded, or direct
+unconstrained BIT/OCTET STRING values. See
 `rust/asn1c-runtime/README.md` and
 `libasn1compiler/asn1c_rust.c`. The generator rejects many schemas supported by
 C, including imports, references, most root tags, and multi-tag stacks. These
@@ -335,9 +336,9 @@ The Rust `BitStringValue` constructor rejects it before either encoder runs;
 valid masked values encode identically. BER decoding of nonzero wire padding
 still normalizes it before strict CER comparison.
 
-### Direct OBJECT IDENTIFIER and RELATIVE-OID (approved next gate)
+### Direct OBJECT IDENTIFIER and RELATIVE-OID (qualified initial gate)
 
-The next scalar gate covers untagged, unconstrained, top-level OBJECT IDENTIFIER
+The initial scalar gate covers untagged, unconstrained, top-level OBJECT IDENTIFIER
 and RELATIVE-OID under BER/CER-only selection. Use distinct public Rust value
 types with private, nonempty, canonical base-128 content octets. This preserves
 subidentifiers larger than machine integers, which the C raw storage and CER

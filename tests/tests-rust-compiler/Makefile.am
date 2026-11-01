@@ -34,6 +34,16 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/UnconstrainedStringsTagged.asn1 \
     $(srcdir)/unconstrained_strings_conformance.rs \
     $(srcdir)/c_unconstrained_strings.c \
+    $(srcdir)/OidValues.asn1 \
+    $(srcdir)/OidValuesAlias.asn1 \
+    $(srcdir)/OidValuesConstrained.asn1 \
+    $(srcdir)/OidValuesField.asn1 \
+    $(srcdir)/OidValuesImport.asn1 \
+    $(srcdir)/OidValuesTagged.asn1 \
+    $(srcdir)/RelativeOidConstrained.asn1 \
+    $(srcdir)/RelativeOidTagged.asn1 \
+    $(srcdir)/oid_conformance.rs \
+    $(srcdir)/c_oid.c \
     $(srcdir)/FirstSlice.asn1 \
     $(srcdir)/SequenceSlice.asn1 \
     $(srcdir)/StringSlice.asn1 \

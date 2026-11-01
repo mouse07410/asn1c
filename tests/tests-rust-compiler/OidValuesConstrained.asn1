@@ -1,0 +1,6 @@
+OidValuesConstrained DEFINITIONS ::= BEGIN
+
+OidValue ::= OBJECT IDENTIFIER (CONSTRAINED BY { -- custom -- })
+RelativeValue ::= RELATIVE-OID (CONSTRAINED BY { -- custom -- })
+
+END

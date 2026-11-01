@@ -89,6 +89,7 @@ static int rust_check_module_types(asn1p_module_t *, int *, uint64_t);
 static int rust_check_type_name(asn1p_module_t *, asn1p_expr_t *);
 static int rust_check_unconstrained_string_codecs(asn1p_module_t *,
                                                 asn1p_expr_t *, uint64_t);
+static int rust_check_oid_codecs(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static asn1p_expr_t *rust_contained_primitive(asn1p_module_t *, asn1p_expr_t *);
 static const asn1p_constraint_t *rust_containing_node(const asn1p_constraint_t *, unsigned);
 static int rust_write_containing(FILE *, const char *, asn1p_expr_t *, asn1p_expr_t *, uint64_t);
@@ -171,6 +172,8 @@ static int rust_write_big_integer_ber_cer(FILE *, int);
 static int rust_write_string(FILE *, const char *, asn1p_expr_t *, uint64_t);
 static int rust_write_unconstrained_string(FILE *, const char *, int, uint64_t);
 static int rust_write_unconstrained_string_ber_cer(FILE *, int, int);
+static int rust_write_oid(FILE *, const char *, int, uint64_t);
+static int rust_write_oid_ber_cer(FILE *, int, int);
 static int rust_write_bounded_octets(FILE *, const char *, size_t, size_t,
                                     uint64_t);
 static int rust_write_bounded_octets_uper(FILE *, size_t, size_t);
@@ -802,6 +805,30 @@ rust_check_unconstrained_string_codecs(asn1p_module_t *module,
     return -1;
 }
 
+/* Validate the codec mask for a direct unconstrained OID assignment.
+ * Inputs: module and expr identify the type; codecs is the selected mask.
+ * Returns zero for BER/CER-only selection, otherwise -1 with a diagnostic.
+ * Errors: no exception. Original source: approved OID generator gate.
+ * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
+ * History: direct OBJECT IDENTIFIER and RELATIVE-OID support.
+ * Example: selecting BER and CER for an OBJECT IDENTIFIER is accepted.
+ */
+static int
+rust_check_oid_codecs(asn1p_module_t *module, asn1p_expr_t *expr,
+                      uint64_t codecs) {
+    const uint64_t ber_cer = RUST_CODEC_BER | RUST_CODEC_CER;
+    const char *kind = expr->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
+        ? "OBJECT IDENTIFIER" : "RELATIVE-OID";
+    char diagnostic[128];
+    int count;
+    if(codecs && !(codecs & ~ber_cer)) return 0;
+    count = snprintf(diagnostic, sizeof(diagnostic),
+                     "unconstrained %s requires BER/CER-only codec selection", kind);
+    if(count < 0 || (size_t)count >= sizeof(diagnostic)) return -1;
+    rust_diagnostic(module, expr, diagnostic);
+    return -1;
+}
+
 /*
  * Reject one unsupported type before output publication.
  * Parameters: module and expr identify the fixed assignment; codecs is the
@@ -894,6 +921,16 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
             return -1;
         }
         return 0;
+    }
+    if(expr->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
+       || expr->expr_type == ASN_BASIC_RELATIVE_OID) {
+        if(expr->constraints || expr->combined_constraints || expr->reference
+           || expr->rhs_pspecs || expr->marker.flags != EM_NOMARK) {
+            rust_diagnostic(module, expr,
+                "OBJECT IDENTIFIER and RELATIVE-OID require direct unconstrained roots");
+            return -1;
+        }
+        return rust_check_oid_codecs(module, expr, codecs);
     }
     if(expr->expr_type == ASN_BASIC_OCTET_STRING) {
         size_t lower, upper;
@@ -3439,6 +3476,10 @@ rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
     } else if(expr->expr_type == ASN_BASIC_INTEGER
               && !expr->constraints && !expr->combined_constraints) {
         ret = rust_write_big_integer(stream, name, codecs);
+    } else if(expr->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
+              || expr->expr_type == ASN_BASIC_RELATIVE_OID) {
+        ret = rust_write_oid(stream, name,
+            expr->expr_type == ASN_BASIC_RELATIVE_OID, codecs);
     } else {
         int64_t lower, upper;
         if(rust_integer_bounds(expr, &lower, &upper)) ret = -1;
@@ -6671,6 +6712,111 @@ rust_write_unconstrained_string_ber_cer(FILE *stream, int octets, int cer) {
         "        ::asn1c_runtime::decode_%s_%s(input, limits)\n"
         "            .map(|decoded| decoded.map(Self))\n    }\n",
         suffix, encoder, suffix) < 0) return -1;
+    return 0;
+}
+
+/*
+ * Emit one unbounded OBJECT IDENTIFIER or RELATIVE-OID wrapper.
+ * Inputs: stream receives Rust; name is the schema type; relative selects the
+ * runtime value type; codecs is the validated BER/CER-only mask. Returns zero
+ * or -1 on output failure. Methods propagate malformed-input and limit errors.
+ * Source: approved standalone BER/CER OID APIs. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: direct OID generator slice.
+ * Example: rust_write_oid(out, "ObjectId", 0, RUST_CODEC_BER).
+ */
+static int
+rust_write_oid(FILE *stream, const char *name, int relative, uint64_t codecs) {
+    const char *kind = relative ? "RELATIVE-OID" : "OBJECT IDENTIFIER";
+    const char *runtime_type = relative ? "RelativeOid" : "ObjectIdentifier";
+    if(fprintf(stream,
+        "/// Unconstrained ASN.1 %s with private canonical content.\n"
+        "#[derive(Debug, Eq, PartialEq)]\n"
+        "pub struct %s(\n"
+        "    /// Canonical base-128 content state variable.\n"
+        "    ::asn1c_runtime::%s\n"
+        ");\n\nimpl %s {\n", kind, name, runtime_type, name) < 0)
+        return -1;
+    if(rust_write_method_doc(stream, "Construct from encoded subidentifier content.",
+            "`content` contains base-128 groups; `limits` bounds input and work.",
+            "Returns owned content with redundant leading groups normalized.",
+            "Returns an error for empty, unterminated, or over-limit content.",
+            "`let value = Type::try_from_content(&[0x2a, 0x03], &limits)?;"))
+        return -1;
+    if(fprintf(stream,
+        "    pub fn try_from_content(\n"
+        "        content: &[u8], limits: &::asn1c_runtime::Limits\n"
+        "    ) -> ::core::result::Result<Self, ::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::%s::try_from_content(content, limits).map(Self)\n"
+        "    }\n", runtime_type) < 0)
+        return -1;
+    if(rust_write_method_doc(stream, "Borrow the canonical encoded subidentifier content.",
+            "`self` is the value to inspect.",
+            "Returns canonical base-128 content without a universal tag.",
+            "This accessor cannot fail.", "`let content = value.as_content();"))
+        return -1;
+    if(fprintf(stream,
+        "    #[must_use]\n"
+        "    pub fn as_content(&self) -> &[u8] { self.0.as_content() }\n") < 0)
+        return -1;
+    if((codecs & RUST_CODEC_BER)
+       && rust_write_oid_ber_cer(stream, relative, 0)) return -1;
+    if((codecs & RUST_CODEC_CER)
+       && rust_write_oid_ber_cer(stream, relative, 1)) return -1;
+    return fputs("}\n\n", stream) == EOF ? -1 : 0;
+}
+
+/* Emit one DER/BER or CER method pair for an OID wrapper.
+ * Inputs: stream receives Rust; relative selects RELATIVE-OID; cer selects CER.
+ * Returns zero or -1 on output failure. Runtime errors report invalid input.
+ * Source: standalone BER runtime OID APIs. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: codec-selective OID output.
+ * Example: rust_write_oid_ber_cer(stream, 1, 1) emits RELATIVE-OID CER methods.
+ */
+static int
+rust_write_oid_ber_cer(FILE *stream, int relative, int cer) {
+    const char *family = relative ? "relative_oid" : "object_identifier";
+    const char *suffix = cer ? "cer" : "ber";
+    const char *encode_suffix = cer ? "cer" : "der";
+    const char *description = cer
+        ? "Encode this value using canonical CER."
+        : "Encode this value using DER.";
+    const char *decode_description = cer
+        ? "Strictly decode one CER OID TLV and report prefix consumption."
+        : "Decode one BER OID TLV and report prefix consumption.";
+    const char *decode_error = cer
+        ? "Returns an error for malformed, noncanonical, or over-limit input."
+        : "Returns an error for malformed or over-limit input.";
+    const char *encode_example = cer
+        ? "`let encoded = value.encode_cer(&Default::default())?;"
+        : "`let encoded = value.encode_der(&Default::default())?;";
+    const char *decode_example = cer
+        ? "`let decoded = Type::decode_cer(input, &Default::default())?;"
+        : "`let decoded = Type::decode_ber(input, &Default::default())?;";
+
+    if(rust_write_method_doc(stream, description,
+            "`self` is validated; `limits` bounds output and work.",
+            "Returns the complete canonical universal OID TLV.",
+            "Returns a runtime error if a configured limit is exceeded.", encode_example))
+        return -1;
+    if(fprintf(stream,
+        "    pub fn encode_%s(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, "
+        "::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::encode_%s_%s(&self.0, limits)\n"
+        "    }\n", encode_suffix, family, encode_suffix) < 0)
+        return -1;
+    if(rust_write_method_doc(stream, decode_description,
+            "`input` is a prefix; `limits` bounds input, decoded storage, and work.",
+            "Returns the canonical value and exact consumed bit and byte counts.",
+            decode_error, decode_example)) return -1;
+    if(fprintf(stream,
+        "    pub fn decode_%s(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, "
+        "::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::decode_%s_%s(input, limits)\n"
+        "            .map(|decoded| decoded.map(Self))\n    }\n",
+        suffix, family, suffix) < 0)
+        return -1;
     return 0;
 }
 
