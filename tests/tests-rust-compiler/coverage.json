@@ -92,6 +92,25 @@
       "evidence": "big_integer_conformance.rs; c_big_integer.c; BigInteger.asn1"
     },
     {
+      "asn1_type": "BIT STRING, OCTET STRING",
+      "feature": "direct untagged unconstrained root values",
+      "codec": "BER/DER and CER only",
+      "variants": [
+        "empty values and 999/1000/1001 content boundaries",
+        "multi-fragment values including 2001 data octets",
+        "non-byte-aligned BIT STRING with validated zero padding",
+        "nested constructed BER, prefix consumption, aliases, malformed input",
+        "resource limits and input mutation/truncation checks"
+      ],
+      "directions": [
+        "DER and CER encode",
+        "BER prefix decode",
+        "strict CER prefix decode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "UnconstrainedStrings.asn1; unconstrained_strings_conformance.rs; c_unconstrained_strings.c; UnconstrainedStringsImport.asn1"
+    },
+    {
       "asn1_type": "BOOLEAN",
       "feature": "primitive, nonextensible",
       "codec": "CER",
@@ -619,7 +638,7 @@
   "comparison_policy": {
     "C_role": "Current C implementation is a comparison implementation, not a protocol oracle.",
     "independent_checks": "Rust fixed vectors, malformed-input checks, budgets, and round trips",
-    "canonicality": "CER claims are limited to listed generated record and primitive vectors, including BigInteger, and full-TLV bit counts."
+    "canonicality": "CER claims are limited to listed generated record and primitive vectors, including BigInteger and direct unbounded BIT/OCTET STRING; bit counts cover full TLVs."
   },
   "compiler_boundary_checks": {
     "rejected_before_output": [
@@ -636,7 +655,8 @@
       "bounded BIT STRING upper bound 65536",
       "bounded BIT STRING with codecs outside UPER, JER, BER, or CER",
       "bounded OCTET STRING with extensible, disjoint, oversized, or unsupported codec constraints",
-      "named BIT STRING forms with BER or CER selection"
+      "named BIT STRING forms with BER or CER selection",
+      "direct unbounded BIT/OCTET STRING with named bits, CONTAINING, explicit SIZE, tags, aliases, fields, imports, or non-BER/CER-only codec selection"
     ],
     "output_safety": [
       "unowned destination preservation",
@@ -650,7 +670,7 @@
     ]
   },
   "observed_counts": {
-    "generated_rust_test_functions": 66,
+    "generated_rust_test_functions": 71,
     "live_c_rust_vectors_each_direction": 8,
     "single_octet_mutation_inputs": 796,
     "JER_single_octet_mutation_inputs": 256,
@@ -667,6 +687,9 @@
     "BigInteger_test_functions": 6,
     "live_C_wide_INTEGER_vectors_each_direction": 12,
     "BigInteger_mutated_octet_inputs": 6,
-    "BigInteger_truncated_prefix_inputs": 6
+    "BigInteger_truncated_prefix_inputs": 6,
+    "live_C_unbounded_string_vectors_each_direction": 11,
+    "unbounded_string_single_octet_mutation_inputs": 2023,
+    "unbounded_string_truncated_prefix_inputs": 2037
   }
 }

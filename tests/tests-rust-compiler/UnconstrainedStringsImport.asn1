@@ -1,0 +1,13 @@
+UnconstrainedStringsImport DEFINITIONS ::= BEGIN
+
+IMPORTS Remote FROM RemoteModule;
+
+Octets ::= OCTET STRING
+
+END
+
+RemoteModule DEFINITIONS ::= BEGIN
+
+Remote ::= BOOLEAN
+
+END

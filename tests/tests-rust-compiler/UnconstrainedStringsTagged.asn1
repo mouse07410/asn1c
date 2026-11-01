@@ -1,0 +1,5 @@
+UnconstrainedStringsTagged DEFINITIONS ::= BEGIN
+
+Octets ::= [0] IMPLICIT OCTET STRING
+
+END

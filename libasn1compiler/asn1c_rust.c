@@ -87,6 +87,8 @@ static int rust_check_module(asn1p_t *, asn1p_module_t *, int *, uint64_t);
 static int rust_check_module_name(asn1p_t *, asn1p_module_t *);
 static int rust_check_module_types(asn1p_module_t *, int *, uint64_t);
 static int rust_check_type_name(asn1p_module_t *, asn1p_expr_t *);
+static int rust_check_unconstrained_string_codecs(asn1p_module_t *,
+                                                asn1p_expr_t *, uint64_t);
 static asn1p_expr_t *rust_contained_primitive(asn1p_module_t *, asn1p_expr_t *);
 static const asn1p_constraint_t *rust_containing_node(const asn1p_constraint_t *, unsigned);
 static int rust_write_containing(FILE *, const char *, asn1p_expr_t *, asn1p_expr_t *, uint64_t);
@@ -167,6 +169,8 @@ static int rust_write_integer(FILE *, const char *, int64_t, int64_t, uint64_t);
 static int rust_write_big_integer(FILE *, const char *, uint64_t);
 static int rust_write_big_integer_ber_cer(FILE *, int);
 static int rust_write_string(FILE *, const char *, asn1p_expr_t *, uint64_t);
+static int rust_write_unconstrained_string(FILE *, const char *, int, uint64_t);
+static int rust_write_unconstrained_string_ber_cer(FILE *, int, int);
 static int rust_write_bounded_octets(FILE *, const char *, size_t, size_t,
                                     uint64_t);
 static int rust_write_bounded_octets_uper(FILE *, size_t, size_t);
@@ -780,6 +784,24 @@ rust_check_big_integer_codecs(asn1p_module_t *module, asn1p_expr_t *expr,
     return -1;
 }
 
+/* Validate the codec selection for one unconstrained direct string root.
+ * Inputs: module and expr identify the assignment; codecs is the selected mask.
+ * Returns zero for BER/CER-only selection, otherwise -1 with a diagnostic.
+ * Errors: no exception. Original source: approved BER/CER string gate.
+ * Version/date: 2026-11-01. Responsible: asn1c maintainers.
+ * History: direct unconstrained BIT/OCTET STRING support.
+ * Example: BER plus CER is accepted; BER plus UPER is refused.
+ */
+static int
+rust_check_unconstrained_string_codecs(asn1p_module_t *module,
+                                       asn1p_expr_t *expr, uint64_t codecs) {
+    const uint64_t ber_cer = RUST_CODEC_BER | RUST_CODEC_CER;
+    if(codecs && !(codecs & ~ber_cer)) return 0;
+    rust_diagnostic(module, expr,
+        "unconstrained BIT/OCTET STRING requires BER/CER-only codec selection");
+    return -1;
+}
+
 /*
  * Reject one unsupported type before output publication.
  * Parameters: module and expr identify the fixed assignment; codecs is the
@@ -875,6 +897,8 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
     }
     if(expr->expr_type == ASN_BASIC_OCTET_STRING) {
         size_t lower, upper;
+        if(!expr->constraints && !expr->combined_constraints)
+            return rust_check_unconstrained_string_codecs(module, expr, codecs);
         if((!codecs || (codecs & ~(RUST_CODEC_UPER | RUST_CODEC_BER | RUST_CODEC_CER
                                    | RUST_CODEC_JER | RUST_CODEC_CBOR)))
            || !expr->combined_constraints
@@ -891,6 +915,8 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
     }
     if(expr->expr_type == ASN_BASIC_BIT_STRING) {
         size_t lower, upper;
+        if(!expr->constraints && !expr->combined_constraints)
+            return rust_check_unconstrained_string_codecs(module, expr, codecs);
         if(!codecs || (codecs & ~(RUST_CODEC_UPER | RUST_CODEC_BER | RUST_CODEC_CER
                                   | RUST_CODEC_JER | RUST_CODEC_CBOR))
            || !expr->combined_constraints
@@ -3400,6 +3426,11 @@ rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
     } else if((expr->expr_type == ASN_BASIC_OCTET_STRING || expr->expr_type == ASN_BASIC_BIT_STRING)
               && rust_containing_node(expr->combined_constraints, 0)) {
         ret = rust_write_containing(stream, name, expr, rust_contained_primitive(module, expr), codecs);
+    } else if((expr->expr_type == ASN_BASIC_OCTET_STRING
+               || expr->expr_type == ASN_BASIC_BIT_STRING)
+              && !expr->constraints && !expr->combined_constraints) {
+        ret = rust_write_unconstrained_string(stream, name,
+            expr->expr_type == ASN_BASIC_OCTET_STRING, codecs);
     } else if(expr->expr_type == ASN_BASIC_OCTET_STRING
               || expr->expr_type == ASN_BASIC_BIT_STRING) {
         ret = rust_write_string(stream, name, expr, codecs);
@@ -6512,6 +6543,134 @@ rust_write_string_ber_cer(FILE *stream, int octets, int fixed,
         "            consumed_bytes: decoded.consumed_bytes,\n"
         "        })\n    }\n", stream) == EOF) return -1;
     (void)upper;
+    return 0;
+}
+
+/*
+ * Emit a direct unconstrained string wrapper with ownership-taking storage.
+ * Inputs: stream receives Rust, name is the public name, octets selects OCTET
+ * STRING, and codecs is the validated BER/CER-only mask. Returns zero or -1.
+ * Errors: generated codec methods propagate runtime validation and limit errors.
+ * Original source: approved standalone BER/CER string API. Version/date:
+ * 2026-11-01. Responsible party: asn1c maintainers. History: unbounded strings.
+ * Example: rust_write_unconstrained_string(out, "Data", 1, RUST_CODEC_BER).
+ */
+static int
+rust_write_unconstrained_string(FILE *stream, const char *name, int octets,
+                                uint64_t codecs) {
+    const char *kind = octets ? "OCTET STRING" : "BIT STRING";
+    const char *storage = octets ? "::std::vec::Vec<u8>"
+                                 : "::asn1c_runtime::BitStringValue";
+    if(fprintf(stream,
+        "/// Unconstrained ASN.1 %s with validated private storage.\n"
+        "#[derive(Debug, Eq, PartialEq)]\n"
+        "pub struct %s(\n"
+        "    /// Owned ASN.1 string payload state variable.\n"
+        "    %s\n"
+        ");\n\nimpl %s {\n", kind, name, storage, name) < 0) return -1;
+    if(rust_write_method_doc(stream,
+            octets ? "Take ownership of OCTET STRING contents."
+                   : "Take ownership of a validated BIT STRING value.",
+            octets ? "`value` is the owned octet vector."
+                   : "`value` has exact bit length and zero padding from validated storage.",
+            "Returns a wrapper without copying its payload.",
+            "This constructor cannot fail.",
+            octets ? "`let value = Type::new(vec![0xA5]);"
+                   : "`let value = Type::new(BitStringValue::new(vec![0xA0], 3)?);"))
+        return -1;
+    if(octets) {
+        if(fputs("    #[must_use]\n"
+                 "    pub const fn new(value: ::std::vec::Vec<u8>) -> Self { Self(value) }\n",
+                 stream) == EOF) return -1;
+        if(rust_write_method_doc(stream, "Borrow the OCTET STRING contents.",
+                "`self` is the value to inspect.", "Returns its octets without copying.",
+                "This accessor cannot fail.", "`let bytes = value.as_bytes();"))
+            return -1;
+        if(fputs("    #[must_use]\n"
+                 "    pub fn as_bytes(&self) -> &[u8] { &self.0 }\n", stream) == EOF)
+            return -1;
+    } else {
+        if(fputs("    #[must_use]\n"
+                 "    pub const fn new(value: ::asn1c_runtime::BitStringValue) -> Self {\n"
+                 "        Self(value)\n    }\n", stream) == EOF) return -1;
+        if(rust_write_method_doc(stream, "Borrow the validated BIT STRING value.",
+                "`self` is the value to inspect.",
+                "Returns packed bytes and the exact logical bit length.",
+                "This accessor cannot fail.", "`let bits = value.as_bit_string();"))
+            return -1;
+        if(fputs("    #[must_use]\n"
+                 "    pub const fn as_bit_string(&self) -> &::asn1c_runtime::BitStringValue {\n"
+                 "        &self.0\n    }\n", stream) == EOF) return -1;
+        if(rust_write_method_doc(stream, "Borrow the packed BIT STRING bytes.",
+                "`self` is the value to inspect.", "Returns packed octets without copying.",
+                "This accessor cannot fail.", "`let bytes = value.as_bytes();"))
+            return -1;
+        if(fputs("    #[must_use]\n"
+                 "    pub fn as_bytes(&self) -> &[u8] { self.0.as_bytes() }\n",
+                 stream) == EOF) return -1;
+        if(rust_write_method_doc(stream, "Return the number of meaningful bits.",
+                "`self` is the value to inspect.", "Returns the exact logical bit length.",
+                "This accessor cannot fail.", "`let width = value.bit_len();")) return -1;
+        if(fputs("    #[must_use]\n"
+                 "    pub const fn bit_len(&self) -> usize { self.0.bit_len() }\n",
+                 stream) == EOF) return -1;
+    }
+    if((codecs & RUST_CODEC_BER)
+       && rust_write_unconstrained_string_ber_cer(stream, octets, 0)) return -1;
+    if((codecs & RUST_CODEC_CER)
+       && rust_write_unconstrained_string_ber_cer(stream, octets, 1)) return -1;
+    return fputs("}\n\n", stream) == EOF ? -1 : 0;
+}
+
+/* Emit one standalone DER/BER or CER codec pair for an unbounded string.
+ * Inputs: stream receives Rust; octets selects OCTET STRING; cer selects CER.
+ * Returns zero or -1 on write failure. Codec errors are returned to callers.
+ * Original source: BER runtime standalone string APIs. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: unconstrained string slice.
+ * Example: rust_write_unconstrained_string_ber_cer(out, 0, 1).
+ */
+static int
+rust_write_unconstrained_string_ber_cer(FILE *stream, int octets, int cer) {
+    const char *suffix = cer ? "cer" : "ber";
+    const char *encode_suffix = cer ? "cer" : "der";
+    const char *encoder = octets ? "octet_string" : "bit_string";
+    const char *description = cer ? "Encode this value using CER."
+                                  : "Encode this value using DER.";
+    const char *decode_description = cer
+        ? "Strictly decode one CER string TLV and report prefix consumption."
+        : "Decode one BER string TLV and report prefix consumption.";
+    const char *decode_error = cer
+        ? "Returns an error for malformed, noncanonical, or over-limit input."
+        : "Returns an error for malformed or over-limit input.";
+    const char *encode_example = cer
+        ? "`let encoded = value.encode_cer(&Default::default())?;"
+        : "`let encoded = value.encode_der(&Default::default())?;";
+    const char *decode_example = cer
+        ? "`let decoded = Type::decode_cer(input, &Default::default())?;"
+        : "`let decoded = Type::decode_ber(input, &Default::default())?;";
+
+    if(rust_write_method_doc(stream, description,
+            "`self` is the value; `limits` bounds output and work.",
+            "Returns the complete canonical string TLV.",
+            "Returns a runtime error if a configured limit is exceeded.", encode_example))
+        return -1;
+    if(fprintf(stream,
+        "    pub fn encode_%s(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, "
+        "::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::encode_%s_%s(&self.0, limits)\n"
+        "    }\n", encode_suffix, encoder, encode_suffix) < 0) return -1;
+    if(rust_write_method_doc(stream, decode_description,
+            "`input` is a prefix; `limits` bounds input, decoded storage, and work.",
+            "Returns the value and exact consumed bit and byte counts.",
+            decode_error, decode_example)) return -1;
+    if(fprintf(stream,
+        "    pub fn decode_%s(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, "
+        "::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::decode_%s_%s(input, limits)\n"
+        "            .map(|decoded| decoded.map(Self))\n    }\n",
+        suffix, encoder, suffix) < 0) return -1;
     return 0;
 }
 

@@ -1,0 +1,5 @@
+UnconstrainedStringsField DEFINITIONS ::= BEGIN
+
+Packet ::= SEQUENCE { payload OCTET STRING }
+
+END

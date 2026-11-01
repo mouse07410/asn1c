@@ -5,8 +5,8 @@ implemented. Full C parity has not been reached. The compatibility target is
 the C backend in this repository, qualified by the decisions below. The Rust
 runtime currently supplies BER prefix decoding and DER and CER encoding, plus
 strict CER prefix decoding, for BOOLEAN, NULL, finite bounded `i64` INTEGER,
-unconstrained arbitrary-precision INTEGER, direct finite ENUMERATED, and fixed
-or bounded BIT/OCTET STRING values. See
+unconstrained arbitrary-precision INTEGER, direct finite ENUMERATED, and fixed,
+bounded, or direct unconstrained BIT/OCTET STRING values. See
 `rust/asn1c-runtime/README.md` and
 `libasn1compiler/asn1c_rust.c`. The generator rejects many schemas supported by
 C, including imports, references, most root tags, and multi-tag stacks. These
@@ -302,7 +302,7 @@ signs across the `i64` boundary, 127/128 length transitions, malformed
 lengths, truncation, nonminimal BER padding, strict CER rejection, exact
 limits, and C wide-type interoperability.
 
-### Unconstrained direct BIT and OCTET STRING (approved next gate)
+### Unconstrained direct BIT and OCTET STRING (qualified direct gate)
 
 An untagged top-level `BIT STRING` or `OCTET STRING` without a constraint,
 named bits, or `CONTAINING` may use the existing standalone BER, DER, and CER
@@ -311,6 +311,7 @@ owns a `Vec<u8>`; the BIT STRING wrapper owns a validated `BitStringValue`.
 Constructors consume those values without an additional copy. The codecs
 check complete input, output, decoded storage, work, and exact prefix
 consumption using the existing standalone runtime limits. This gate does not
+derive an infallible `Clone` for potentially large owned values. It does not
 change bounded string APIs or record member representations. Other codec
 selections, tags, references, fields, and explicit `SIZE(0..MAX)` remain
 outside this gate until their constraints and composition are qualified.
@@ -328,6 +329,48 @@ test it. Strict CER rejects the noncanonical C input as well. The existing
 standalone string codecs bound retained and canonical buffers individually by
 `max_output_bytes`; aggregate simultaneous scratch policy remains a separate
 resource-design decision rather than a claim of complete C resource parity.
+Another C probe found that its DER encoder masks nonzero unused low bits from
+an invalid in-memory BIT STRING, while its CER encoder rejects that value.
+The Rust `BitStringValue` constructor rejects it before either encoder runs;
+valid masked values encode identically. BER decoding of nonzero wire padding
+still normalizes it before strict CER comparison.
+
+### Direct OBJECT IDENTIFIER and RELATIVE-OID (approved next gate)
+
+The next scalar gate covers untagged, unconstrained, top-level OBJECT IDENTIFIER
+and RELATIVE-OID under BER/CER-only selection. Use distinct public Rust value
+types with private, nonempty, canonical base-128 content octets. This preserves
+subidentifiers larger than machine integers, which the C raw storage and CER
+encoder accept. The first OBJECT IDENTIFIER subidentifier combines its first
+two arcs; the public bytes are encoded content, not a numeric arc list.
+These rules follow [X.690 sections 8.19 and 8.20](https://www.itu.int/rec/T-REC-X.690/en)
+and [X.680 sections 32 and 33](https://www.itu.int/rec/T-REC-X.680/en).
+Fallible constructors normalize redundant leading `80` groups in each
+subidentifier and reject empty or unterminated content. Borrowed accessors
+return canonical content; do not derive an infallible `Clone` for large values.
+The runtime types should be `ObjectIdentifier` and `RelativeOid`, each with
+`try_from_content(&[u8], &Limits)` and `as_content()`. Distinct
+`encode_object_identifier_{der,cer}` and
+`decode_object_identifier_{ber,cer}` functions, and the corresponding
+`relative_oid` functions, keep the universal tags explicit.
+
+BER decoding accepts C-compatible nonminimal high-tag aliases and redundant
+base-128 leading groups, then normalizes the value and reports exact prefix
+consumption. Strict CER re-encodes and compares through one cumulative input,
+retained-output, scratch, and work budget; it rejects every nonminimal form.
+The C BER decoder also accepts empty and unterminated contents and preserves
+nonminimal contents for its DER encoder. Rust deliberately rejects empty and
+unterminated values because they cannot represent valid OIDs. This difference
+must be tested and documented. Primitive constructed forms are invalid.
+
+The generator must reject tags, aliases, imports, constraints, fields, and
+other codec selections before publishing output. Compare C and Rust vectors
+for low and high combined first subidentifiers, relative arcs, values beyond
+`u32` and `u64`, and 127/128 content-length transitions. Test truncated
+base-128 runs, `80` at every subidentifier boundary, high-tag aliases,
+malformed lengths and EOCs, suffix consumption, exact resource ceilings, and
+mutations. Keep numeric-arc conversion optional and explicitly fallible if it
+is added later.
 
 ## Decisions still required
 

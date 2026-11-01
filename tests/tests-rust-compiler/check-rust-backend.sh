@@ -2124,7 +2124,9 @@ if cc $explicit_cflags -fsanitize=address -fno-omit-frame-pointer -g \
     if grep -Eq '^==[[:digit:]]+==AddressSanitizer: detect_leaks is not supported on this platform\.$' \
         "$test_tmp/c-explicit-record-asan.log" && \
         [ "$(wc -l <"$test_tmp/c-explicit-record-asan.log" | tr -d ' ')" -eq 1 ]; then
-        if ! ASAN_OPTIONS=detect_leaks=0 "$test_tmp/c-explicit-record-asan"; then
+        if ! ASAN_OPTIONS=detect_leaks=0 "$test_tmp/c-explicit-record-asan" \
+            >"$test_tmp/c-explicit-record-asan-fallback.log" 2>&1; then
+            cat "$test_tmp/c-explicit-record-asan-fallback.log"
             echo "FAIL: explicit C fixture AddressSanitizer fallback run"
             exit 1
         fi
@@ -2714,6 +2716,128 @@ if ! cc $big_integer_cflags -I"$big_integer_c" "$big_integer_c"/*.c \
 fi
 if ! "$test_tmp/c-big-integer"; then
     echo "FAIL: C wide INTEGER DER/CER vectors or decode probes did not match"
+    exit 1
+fi
+
+# Unconstrained strings are available only as direct BER/CER root values.
+for fixture in UnconstrainedStringsNamedBits UnconstrainedStringsSize \
+    UnconstrainedStringsTagged UnconstrainedStringsContaining \
+    UnconstrainedStringsAlias UnconstrainedStringsField \
+    UnconstrainedStringsImport; do
+    rejected_out="$test_tmp/rejected-$fixture"
+    if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$rejected_out" "$test_srcdir/$fixture.asn1" \
+        >"$test_tmp/$fixture.log" 2>&1; then
+        echo "FAIL: Rust backend accepted unsupported unconstrained string shape $fixture"
+        exit 1
+    fi
+    test ! -e "$rejected_out"
+done
+
+unbounded_strings_mixed="$test_tmp/rejected-unconstrained-strings-mixed"
+if "$asn1c_bin" --rust -S "$skeletons" -D "$unbounded_strings_mixed" \
+    "$test_srcdir/UnconstrainedStrings.asn1" \
+    >"$test_tmp/unconstrained-strings-mixed.log" 2>&1; then
+    echo "FAIL: mixed default codecs accepted unbounded strings"
+    exit 1
+fi
+test ! -e "$unbounded_strings_mixed"
+unbounded_strings_uper="$test_tmp/rejected-unconstrained-strings-uper"
+if "$asn1c_bin" --rust -gen-UPER -no-gen-BER -no-gen-CER -S "$skeletons" \
+    -D "$unbounded_strings_uper" "$test_srcdir/UnconstrainedStrings.asn1" \
+    >"$test_tmp/unconstrained-strings-uper.log" 2>&1; then
+    echo "FAIL: UPER-only selection accepted unbounded strings"
+    exit 1
+fi
+test ! -e "$unbounded_strings_uper"
+
+unbounded_strings_out="$test_tmp/unconstrained-strings-rust"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$unbounded_strings_out" "$test_srcdir/UnconstrainedStrings.asn1"
+mkdir "$unbounded_strings_out/tests"
+cp "$test_srcdir/unconstrained_strings_conformance.rs" \
+    "$unbounded_strings_out/tests/"
+unbounded_strings_source="$unbounded_strings_out/src/unconstrained_strings.rs"
+for method in new as_bytes as_bit_string encode_der decode_ber encode_cer decode_cer; do
+    if ! grep -Eq "pub (const )?fn $method" "$unbounded_strings_source"; then
+        echo "FAIL: unconstrained string wrapper is missing $method"
+        exit 1
+    fi
+done
+if ! grep -Eq 'pub (const )?fn bit_len' "$unbounded_strings_source"; then
+    echo "FAIL: unconstrained BIT STRING wrapper is missing bit_len"
+    exit 1
+fi
+if grep -F '#[derive(Clone' "$unbounded_strings_source" >/dev/null; then
+    echo "FAIL: unconstrained string wrappers derive Clone"
+    exit 1
+fi
+if ! (cd "$unbounded_strings_out" && \
+    CARGO_TARGET_DIR="$test_tmp/target-unconstrained-strings" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-unconstrained-strings" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/unconstrained-strings-rust.log" 2>&1; then
+    cat "$test_tmp/unconstrained-strings-rust.log"
+    echo "FAIL: unbounded string conformance or strict Clippy"
+    exit 1
+fi
+
+for codec in BER CER; do
+    if [ "$codec" = BER ]; then
+        unbounded_unwanted='encode_cer|decode_cer'
+    else
+        unbounded_unwanted='encode_der|decode_ber'
+    fi
+    unbounded_codec_out="$test_tmp/unconstrained-strings-$codec-only"
+    if [ "$codec" = BER ]; then
+        "$asn1c_bin" --rust -gen-BER -no-gen-UPER -no-gen-CER -S "$skeletons" \
+            -D "$unbounded_codec_out" "$test_srcdir/UnconstrainedStrings.asn1"
+    else
+        "$asn1c_bin" --rust -gen-CER -no-gen-UPER -no-gen-BER -S "$skeletons" \
+            -D "$unbounded_codec_out" "$test_srcdir/UnconstrainedStrings.asn1"
+    fi
+    if (cargo check --offline --manifest-path "$unbounded_codec_out/Cargo.toml" && \
+        cargo clippy --offline --manifest-path "$unbounded_codec_out/Cargo.toml" \
+        --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings) \
+        >"$test_tmp/unconstrained-strings-$codec-only.log" 2>&1; then
+        :
+    else
+        cat "$test_tmp/unconstrained-strings-$codec-only.log"
+        echo "FAIL: unbounded string $codec-only strict Clippy"
+        exit 1
+    fi
+    if grep -E "pub fn ($unbounded_unwanted)" \
+        "$unbounded_codec_out/src/unconstrained_strings.rs" >/dev/null; then
+        echo "FAIL: unbounded string $codec-only output has unselected methods"
+        exit 1
+    fi
+done
+
+# Generated C provides an independent BER/DER/CER reference for all boundaries.
+unbounded_strings_c="$test_tmp/unconstrained-strings-c"
+mkdir "$unbounded_strings_c"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$unbounded_strings_c" \
+    "$test_srcdir/UnconstrainedStrings.asn1" \
+    >"$test_tmp/unconstrained-strings-c-generate.log" 2>&1
+unbounded_strings_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$unbounded_strings_c/Makefile.am.libasncodec")
+rm -f "$unbounded_strings_c/converter-example.c" \
+    "$unbounded_strings_c/pdu_collection.c"
+if ! cc $unbounded_strings_cflags -I"$unbounded_strings_c" \
+    "$unbounded_strings_c"/*.c "$test_srcdir/c_unconstrained_strings.c" \
+    -lm -o "$test_tmp/c-unconstrained-strings" \
+    >"$test_tmp/unconstrained-strings-c-compile.log" 2>&1; then
+    cat "$test_tmp/unconstrained-strings-c-compile.log"
+    echo "FAIL: C unbounded string reference did not compile"
+    exit 1
+fi
+if ! "$test_tmp/c-unconstrained-strings"; then
+    echo "FAIL: C unbounded string DER/CER vectors or decode probes did not match"
     exit 1
 fi
 

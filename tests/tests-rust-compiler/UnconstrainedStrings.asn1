@@ -1,0 +1,6 @@
+UnconstrainedStrings DEFINITIONS ::= BEGIN
+
+Octets ::= OCTET STRING
+Bits ::= BIT STRING
+
+END

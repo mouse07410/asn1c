@@ -1,6 +1,6 @@
 # Binary codec support and dispatch
 
-Source-audited through 2026-10-30 against generated descriptors, the generic
+Source-audited through 2026-11-01 against generated descriptors, the generic
 dispatcher, and CER regression cases. This records available operations, not
 blanket support for every ASN.1 type or proof of canonical conformance.
 
@@ -154,6 +154,15 @@ and strict CER decoding under finite input, output, work, and scratch limits.
 The C comparison uses `-fwide-types`; the default native C INTEGER storage on
 the probed host did not represent values beyond `i64`. Rust deliberately
 rejects an empty BER INTEGER content that the wide C decoder accepts.
+Untagged, unconstrained top-level BIT STRING and OCTET STRING values also
+support the same BER/DER/CER operations under BER/CER-only selection. The
+generated wrappers own a validated BIT STRING value or OCTET STRING bytes.
+CER fragmentation starts above 1000 content octets; for BIT STRING the
+unused-bit count occupies one content octet. BER accepts constructed forms,
+including nested definite and indefinite lengths, while strict CER compares
+the canonical re-encoding. Rust rejects a non-final BER BIT STRING fragment
+with unused bits that the C BER decoder accepts; this malformed form violates
+X.690 section 8.6.4.
 Flat SET records with an untagged outer type and the same six direct field kinds are
 available when only BER and/or CER are selected. BER accepts members in any
 order; DER/CER emits them by ascending effective tag class and number, and strict CER rejects

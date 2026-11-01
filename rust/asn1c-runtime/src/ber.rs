@@ -6069,6 +6069,348 @@ mod tests {
         assert!(decode_bit_string_ber(&[0x23, 6, 3, 2, 1, 0x80, 3, 0], &limits).is_err());
     }
 
+    /// Accept empty constructed BER strings and nested definite/indefinite forms.
+    /// Source: X.690 BER constructed BIT/OCTET STRING values.
+    /// Version: 2026-11-01. Inputs: empty and mixed nested length forms.
+    /// Returns: assertions. Errors: assertion failures. Responsible: maintainers.
+    /// History: direct-string runtime gate. Example: run with `cargo test`.
+    #[test]
+    fn direct_ber_strings_accept_empty_and_nested_constructed_forms() {
+        let limits = Limits::default();
+        for input in [&[0x24, 0][..], &[0x24, 0x80, 0, 0][..]] {
+            let decoded = decode_octet_string_ber(input, &limits).unwrap();
+            assert_eq!(decoded.value, []);
+            assert_eq!(decoded.consumed_bytes, input.len());
+            assert!(decode_octet_string_cer(input, &limits).is_err());
+        }
+        for input in [&[0x23, 0][..], &[0x23, 0x80, 0, 0][..]] {
+            let decoded = decode_bit_string_ber(input, &limits).unwrap();
+            assert_eq!(decoded.value.as_bytes(), []);
+            assert_eq!(decoded.value.bit_len(), 0);
+            assert_eq!(decoded.consumed_bytes, input.len());
+            assert!(decode_bit_string_cer(input, &limits).is_err());
+        }
+
+        let octet_vectors: [&[u8]; 2] = [
+            &[0x24, 0x80, 0x24, 6, 4, 1, b'a', 4, 1, b'b', 0, 0],
+            &[0x24, 10, 0x24, 0x80, 4, 1, b'a', 4, 1, b'b', 0, 0],
+        ];
+        for input in octet_vectors {
+            let decoded = decode_octet_string_ber(input, &limits).unwrap();
+            assert_eq!(decoded.value, b"ab");
+            assert_eq!(decoded.consumed_bytes, input.len());
+        }
+
+        let bit_vectors: [&[u8]; 2] = [
+            &[0x23, 0x80, 0x23, 8, 3, 2, 0, 0x80, 3, 2, 0, 0x40, 0, 0],
+            &[0x23, 12, 0x23, 0x80, 3, 2, 0, 0x80, 3, 2, 0, 0x40, 0, 0],
+        ];
+        for input in bit_vectors {
+            let decoded = decode_bit_string_ber(input, &limits).unwrap();
+            assert_eq!(decoded.value.as_bytes(), [0x80, 0x40]);
+            assert_eq!(decoded.value.bit_len(), 16);
+            assert_eq!(decoded.consumed_bytes, input.len());
+        }
+    }
+
+    /// Preserve the deliberate rejection of C-accepted non-final BIT padding.
+    /// Source: C BER compatibility probe and X.690 8.6.4 fragment rules.
+    /// Version: 2026-11-01. Input: non-final fragment with three unused bits.
+    /// Returns: assertions. Errors: assertion failures. Responsible: maintainers.
+    /// History: direct-string runtime gate. Example: run with `cargo test`.
+    #[test]
+    fn bit_ber_rejects_nonfinal_unused_bits_accepted_by_c() {
+        let limits = Limits::default();
+        let c_accepted_nonfinal_padding = [
+            0x23, 0x80, 0x03, 0x02, 0x03, 0xa0, 0x03, 0x02, 0x00, 0xaa, 0, 0,
+        ];
+        assert!(decode_bit_string_ber(&c_accepted_nonfinal_padding, &limits).is_err());
+        assert!(decode_bit_string_cer(&c_accepted_nonfinal_padding, &limits).is_err());
+    }
+
+    /// Check canonical OCTET/BIT CER primitive and fragmentation boundaries.
+    /// Source: C CER boundary vectors and X.690 string content limits.
+    /// Version: 2026-11-01. Inputs: content lengths 999, 1000, and 1001.
+    /// Returns: assertions. Errors: assertion failures. Responsible: maintainers.
+    /// History: direct-string runtime gate. Example: run with `cargo test`.
+    #[test]
+    fn direct_cer_strings_cover_all_1000_octet_boundaries() {
+        let limits = Limits::default();
+        for size in [999, 1000] {
+            let payload = vec![0x5a; size];
+            let encoded = encode_octet_string_cer(&payload, &limits).unwrap();
+            assert_eq!(
+                &encoded.bytes[..5],
+                &[
+                    4,
+                    0x82,
+                    u8::try_from(size >> 8).unwrap(),
+                    u8::try_from(size & 0xff).unwrap(),
+                    0x5a,
+                ]
+            );
+            assert_eq!(
+                decode_octet_string_cer(&encoded.bytes, &limits)
+                    .unwrap()
+                    .value,
+                payload
+            );
+        }
+        let payload = vec![0x5a; 1001];
+        let encoded = encode_octet_string_cer(&payload, &limits).unwrap();
+        assert_eq!(&encoded.bytes[..7], &[0x24, 0x80, 4, 0x82, 3, 0xe8, 0x5a]);
+        assert_eq!(&encoded.bytes[1006..], &[4, 1, 0x5a, 0, 0]);
+        assert_eq!(
+            decode_octet_string_cer(&encoded.bytes, &limits)
+                .unwrap()
+                .value,
+            payload
+        );
+        let multi_fragment = vec![0x5a; 2001];
+        let encoded = encode_octet_string_cer(&multi_fragment, &limits).unwrap();
+        assert_eq!(encoded.bytes.len(), 2015);
+        assert_eq!(&encoded.bytes[..6], &[0x24, 0x80, 4, 0x82, 3, 0xe8]);
+        assert_eq!(&encoded.bytes[2010..], &[4, 1, 0x5a, 0, 0]);
+        assert_eq!(
+            decode_octet_string_cer(&encoded.bytes, &limits)
+                .unwrap()
+                .value,
+            multi_fragment
+        );
+
+        for (data_len, expected_tag) in [(998, 3), (999, 3)] {
+            let bits = BitStringValue::new(vec![0x5a; data_len], data_len * 8).unwrap();
+            let encoded = encode_bit_string_cer(&bits, &limits).unwrap();
+            assert_eq!(encoded.bytes[0], expected_tag);
+            assert_eq!(encoded.bytes[1], 0x82);
+            let content_len = data_len + 1;
+            assert_eq!(
+                encoded.bytes[2..4],
+                [0x03, u8::try_from(content_len & 0xff).unwrap()]
+            );
+            assert_eq!(
+                decode_bit_string_cer(&encoded.bytes, &limits)
+                    .unwrap()
+                    .value,
+                bits
+            );
+        }
+        let mut data = vec![0x5a; 999];
+        data.push(0xa0);
+        let bits = BitStringValue::new(data, 7999).unwrap();
+        let encoded = encode_bit_string_cer(&bits, &limits).unwrap();
+        assert_eq!(&encoded.bytes[..6], &[0x23, 0x80, 3, 0x82, 3, 0xe8]);
+        assert_eq!(&encoded.bytes[1006..], &[3, 2, 1, 0xa0, 0, 0]);
+        assert_eq!(
+            decode_bit_string_cer(&encoded.bytes, &limits)
+                .unwrap()
+                .value,
+            bits
+        );
+        let mut multi_fragment_data = vec![0x5a; 2000];
+        multi_fragment_data.push(0x58);
+        let multi_fragment_bits = BitStringValue::new(multi_fragment_data, 16_005).unwrap();
+        let encoded = encode_bit_string_cer(&multi_fragment_bits, &limits).unwrap();
+        assert_eq!(encoded.bytes.len(), 2018);
+        assert_eq!(&encoded.bytes[2010..], &[3, 4, 3, 0x5a, 0x5a, 0x58, 0, 0]);
+        assert_eq!(
+            decode_bit_string_cer(&encoded.bytes, &limits)
+                .unwrap()
+                .value,
+            multi_fragment_bits
+        );
+    }
+
+    /// Reject malformed EOCs, fragment tags, and truncated definite lengths.
+    /// Source: X.690 BER constructed-string boundary and fragment rules.
+    /// Version: 2026-11-01. Inputs: malformed OCTET and BIT STRING TLVs.
+    /// Returns: assertions. Errors: assertion failures. Responsible: maintainers.
+    /// History: direct-string runtime gate. Example: run with `cargo test`.
+    #[test]
+    fn direct_ber_strings_reject_malformed_eoc_fragments_and_lengths() {
+        let limits = Limits::default();
+        let malformed_octets: &[&[u8]] = &[
+            &[0x24, 0x80, 4, 1, b'x'],
+            &[0x24, 2, 0, 0],
+            &[0x24, 0x80, 0, 1],
+            &[0x24, 0x80, 5, 0, 0, 0],
+            &[4, 0x82, 0, 4, 1],
+        ];
+        for input in malformed_octets {
+            assert!(decode_octet_string_ber(input, &limits).is_err());
+            assert!(decode_octet_string_cer(input, &limits).is_err());
+        }
+
+        let malformed_bits: &[&[u8]] = &[
+            &[0x23, 0x80, 3, 2, 0, 0x80],
+            &[0x23, 2, 0, 0],
+            &[0x23, 0x80, 4, 2, 0, 0x80, 0, 0],
+            &[3, 0x82, 0, 4, 0],
+        ];
+        for input in malformed_bits {
+            assert!(decode_bit_string_ber(input, &limits).is_err());
+            assert!(decode_bit_string_cer(input, &limits).is_err());
+        }
+    }
+
+    /// Enforce exact input, retained-output, complete-output, and work boundaries.
+    /// Source: runtime BER/DER resource contract for standalone string codecs.
+    /// Version: 2026-11-01. Inputs: primitive OCTET/BIT values and tight limits.
+    /// Returns: assertions. Errors: assertion failures. Responsible: maintainers.
+    /// History: direct-string runtime gate. Example: run with `cargo test`.
+    #[test]
+    fn direct_string_codecs_check_exact_resource_limits() {
+        let defaults = Limits::default();
+        let octet_input = [4, 1, 0x5a];
+        let octet_work = decode_octet_ber_work(&octet_input, &defaults).unwrap().1;
+        let exact_octet_decode = Limits {
+            max_input_bytes: 3,
+            max_output_bytes: 1,
+            max_work_bits: octet_work,
+        };
+        assert_eq!(
+            decode_octet_string_ber(&octet_input, &exact_octet_decode)
+                .unwrap()
+                .value,
+            [0x5a]
+        );
+        let exact_octet_encode = Limits {
+            max_input_bytes: 3,
+            max_output_bytes: 3,
+            max_work_bits: 24,
+        };
+        assert_eq!(
+            encode_octet_string_der(&[0x5a], &exact_octet_encode)
+                .unwrap()
+                .bytes,
+            octet_input
+        );
+        for tight in [
+            Limits {
+                max_input_bytes: 2,
+                ..exact_octet_decode
+            },
+            Limits {
+                max_output_bytes: 0,
+                ..exact_octet_decode
+            },
+            Limits {
+                max_work_bits: octet_work - 1,
+                ..exact_octet_decode
+            },
+        ] {
+            assert!(decode_octet_string_ber(&octet_input, &tight).is_err());
+        }
+        assert!(encode_octet_string_der(
+            &[0x5a],
+            &Limits {
+                max_output_bytes: 2,
+                ..exact_octet_encode
+            }
+        )
+        .is_err());
+        assert!(encode_octet_string_der(
+            &[0x5a],
+            &Limits {
+                max_work_bits: 23,
+                ..exact_octet_encode
+            }
+        )
+        .is_err());
+        let suffix_input = [4, 1, 0x5a, 0xff];
+        assert!(decode_octet_string_ber(
+            &suffix_input,
+            &Limits {
+                max_input_bytes: 3,
+                ..defaults
+            }
+        )
+        .is_err());
+    }
+
+    /// Enforce exact retained-output and work boundaries for BIT STRING codecs.
+    /// Source: runtime BER/DER resource contract for standalone string codecs.
+    /// Version: 2026-11-01. Inputs: primitive BIT STRING values and tight limits.
+    /// Returns: assertions. Errors: assertion failures. Responsible: maintainers.
+    /// History: direct-string runtime gate. Example: run with `cargo test`.
+    #[test]
+    fn direct_bit_codecs_check_exact_resource_limits() {
+        let defaults = Limits::default();
+        let bit_value = BitStringValue::new(vec![0x80], 8).unwrap();
+        let bit_der = [3, 2, 0, 0x80];
+        let bit_work = decode_bit_ber_work(&bit_der, &defaults).unwrap().1;
+        let exact_bit = Limits {
+            max_input_bytes: bit_der.len(),
+            max_output_bytes: 1,
+            max_work_bits: bit_work,
+        };
+        assert_eq!(
+            decode_bit_string_ber(&bit_der, &exact_bit).unwrap().value,
+            bit_value
+        );
+        assert_eq!(
+            encode_bit_string_der(
+                &bit_value,
+                &Limits {
+                    max_output_bytes: 4,
+                    ..defaults
+                }
+            )
+            .unwrap()
+            .bytes,
+            bit_der
+        );
+        assert!(decode_bit_string_ber(
+            &bit_der,
+            &Limits {
+                max_work_bits: bit_work - 1,
+                ..exact_bit
+            }
+        )
+        .is_err());
+        assert!(decode_bit_string_ber(
+            &bit_der,
+            &Limits {
+                max_output_bytes: 0,
+                ..exact_bit
+            }
+        )
+        .is_err());
+    }
+
+    /// Verify strict CER BIT STRING shares one work ceiling across parse and re-encode.
+    /// Source: runtime strict CER cumulative work policy. Version: 2026-11-01.
+    /// Inputs: canonical fragmented BIT STRING; returns assertions.
+    /// Errors: assertion failures. Responsible: runtime maintainers.
+    /// History: direct-string runtime gate. Example: run with `cargo test`.
+    #[test]
+    fn direct_bit_cer_work_limit_covers_parse_reencode_and_compare() {
+        let defaults = Limits::default();
+        let value = BitStringValue::new(vec![0x5a; 1000], 8000).unwrap();
+        let canonical = encode_bit_string_cer(&value, &defaults).unwrap();
+        let (parsed, parse_work) = decode_bit_ber_work(&canonical.bytes, &defaults).unwrap();
+        assert_eq!(parsed.value, value);
+
+        // Encoding and byte-for-byte comparison each charge the canonical TLV size.
+        let canonical_work = canonical.bytes.len().checked_mul(16).unwrap();
+        let exact_work = parse_work.checked_add(canonical_work).unwrap();
+        let exact_limits = Limits {
+            max_work_bits: exact_work,
+            ..defaults
+        };
+        assert_eq!(
+            decode_bit_string_cer(&canonical.bytes, &exact_limits)
+                .unwrap()
+                .value,
+            value
+        );
+        let below_limits = Limits {
+            max_work_bits: exact_work - 1,
+            ..defaults
+        };
+        assert!(decode_bit_string_cer(&canonical.bytes, &below_limits).is_err());
+    }
+
     /// Ensure parser depth and operation budgets reject work incrementally.
     /// Source: BER safety limits; version: 2026-10-31; inputs: nested TLVs.
     /// Returns: assertions; errors: assertion failures; responsible: maintainers.

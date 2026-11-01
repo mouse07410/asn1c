@@ -1,4 +1,8 @@
 Changes since v1.5.3:
+	* Extend generated Rust BER/DER/CER support to untagged, unconstrained
+	  top-level BIT STRING and OCTET STRING under BER/CER-only selection.
+	  Compare C and Rust at CER fragment boundaries, check constructed BER
+	  input and resource limits, and reject unsupported schemas before output.
 	* Add a bounded-operation arbitrary-precision Rust INTEGER representation
 	  for untagged, unconstrained BER/DER/CER generation. Normalize signed
 	  bytes, validate malformed BER lengths and tags, compare strict CER with

@@ -1,0 +1,5 @@
+UnconstrainedStringsNamedBits DEFINITIONS ::= BEGIN
+
+Bits ::= BIT STRING { first(0), second(1) }
+
+END

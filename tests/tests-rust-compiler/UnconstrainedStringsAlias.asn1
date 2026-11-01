@@ -1,0 +1,6 @@
+UnconstrainedStringsAlias DEFINITIONS ::= BEGIN
+
+Base ::= OCTET STRING
+Alias ::= Base
+
+END

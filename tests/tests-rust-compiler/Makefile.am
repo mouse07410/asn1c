@@ -24,6 +24,16 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/BigIntegerField.asn1 \
     $(srcdir)/big_integer_conformance.rs \
     $(srcdir)/c_big_integer.c \
+    $(srcdir)/UnconstrainedStrings.asn1 \
+    $(srcdir)/UnconstrainedStringsAlias.asn1 \
+    $(srcdir)/UnconstrainedStringsContaining.asn1 \
+    $(srcdir)/UnconstrainedStringsField.asn1 \
+    $(srcdir)/UnconstrainedStringsImport.asn1 \
+    $(srcdir)/UnconstrainedStringsNamedBits.asn1 \
+    $(srcdir)/UnconstrainedStringsSize.asn1 \
+    $(srcdir)/UnconstrainedStringsTagged.asn1 \
+    $(srcdir)/unconstrained_strings_conformance.rs \
+    $(srcdir)/c_unconstrained_strings.c \
     $(srcdir)/FirstSlice.asn1 \
     $(srcdir)/SequenceSlice.asn1 \
     $(srcdir)/StringSlice.asn1 \

@@ -326,3 +326,24 @@ sign and universal high-tag aliases, strict CER rejection, malformed and
 truncated input, prefix consumption, input mutation, and resource limits.
 Wide C BER accepts empty INTEGER content, while Rust deliberately
 rejects empty content; this is a documented implementation divergence.
+
+Direct untagged unconstrained BIT STRING and OCTET STRING roots are supported
+only when BER and/or CER are selected without other codecs. The generated
+wrappers take ownership of their buffers and expose borrowed views; they do
+not implement infallible `Clone`. BIT values use validated packed storage:
+`bit_len` records the significant bits and unused low bits in the last octet
+must be zero. DER is emitted with BER prefix decoding when BER is selected;
+CER encoding and strict CER prefix decoding are available when CER is selected.
+Named bits, CONTAINING, explicit SIZE constraints, tags, aliases, fields,
+imports, and mixed or non-BER/CER selections fail before output publication.
+
+`UnconstrainedStrings.asn1`, `unconstrained_strings_conformance.rs`, and
+`c_unconstrained_strings.c` compare empty values, the 999/1000/1001 CER
+fragmentation boundary, multi-fragment values, and non-byte-aligned BIT
+STRINGs. Rust also checks constructed BER nesting, aliases, malformed and
+truncated input, prefix consumption, mutation safety, and resource limits.
+The C decoder accepts a constructed BER BIT STRING whose non-final fragment
+has unused bits; Rust rejects it according to the X.690 rule. C DER masks
+invalid in-memory BIT padding, while Rust rejects invalid padding at value
+construction, so malformed-value DER behavior is intentionally not claimed
+to match.

@@ -1,0 +1,5 @@
+UnconstrainedStringsSize DEFINITIONS ::= BEGIN
+
+Octets ::= OCTET STRING (SIZE(0..MAX))
+
+END

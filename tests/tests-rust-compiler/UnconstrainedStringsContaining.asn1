@@ -1,0 +1,5 @@
+UnconstrainedStringsContaining DEFINITIONS ::= BEGIN
+
+Octets ::= OCTET STRING (CONTAINING BOOLEAN)
+
+END

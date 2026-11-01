@@ -120,6 +120,9 @@ fragments (BIT STRING fragment content includes its unused-bit count). Strict
 CER string and ENUMERATED decoding parses BER then compares against canonical
 re-encoding. BER BIT STRING decoding masks unused low bits for C compatibility;
 strict CER rejects noncanonical padding through that re-encoding comparison.
+Constructed BER BIT STRING also requires every non-final fragment to have zero
+unused bits. The runtime rejects a malformed form that the C BER decoder
+accepts, following the X.690 fragment rule; strict CER rejects it as well.
 The parser charges traversal and fragment-copy work incrementally, and strict
 CER shares the same work ceiling across parsing, fragment copies, canonical
 re-encoding, and byte comparison. SIZE constraints remain the generated type's
