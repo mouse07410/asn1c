@@ -1,0 +1,4 @@
+NamedSetTaggedRoot DEFINITIONS ::= BEGIN
+InnerSet ::= SET { flag BOOLEAN }
+Packet ::= [2] IMPLICIT SEQUENCE { child InnerSet }
+END

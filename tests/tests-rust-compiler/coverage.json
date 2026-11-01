@@ -149,6 +149,25 @@
       "evidence": "NamedSequence*.asn1; named_sequence*_conformance.rs; c_named_sequence*.c"
     },
     {
+      "asn1_type": "same-module named SET child",
+      "feature": "one required or OPTIONAL same-module untagged SET target in flat SEQUENCE/SET",
+      "codec": "BER/DER and CER only",
+      "variants": [
+        "natural, context IMPLICIT, and EXPLICIT child tags under both parent kinds",
+        "nonempty child with bounded INTEGER and BOOLEAN leaves; parent literal DEFAULT",
+        "independent parent/child SET sorting, BER reversal, optional absence",
+        "malformed EOCs/wrappers, duplicate and unknown leaves, bounded child values",
+        "prefixes, truncations, mutations, limits, and pinned shared work"
+      ],
+      "directions": [
+        "DER and CER encode",
+        "BER prefix decode",
+        "strict CER prefix decode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "NamedSet*.asn1; named_set_child_conformance.rs; c_named_set_child.c"
+    },
+    {
       "asn1_type": "OBJECT IDENTIFIER, RELATIVE-OID",
       "feature": "direct untagged unconstrained root values with canonical base-128 content",
       "codec": "BER/DER and CER only",
@@ -1080,6 +1099,13 @@
     "live_C_named_sequence_noncanonical_and_boundary_forms": 5,
     "named_sequence_truncated_prefix_inputs": 13,
     "named_sequence_mutation_inputs": 34,
-    "named_sequence_exact_strict_CER_work_bits": 792
+    "named_sequence_exact_strict_CER_work_bits": 792,
+    "generated_named_set_child_test_functions": 6,
+    "named_set_negative_schema_cases": 17,
+    "live_C_named_set_canonical_vectors_each_direction": 12,
+    "live_C_named_set_reorder_malformed_and_bound_forms": 9,
+    "named_set_truncated_prefix_inputs": 17,
+    "named_set_mutation_inputs": 34,
+    "named_set_exact_strict_CER_work_bits": 752
   }
 }

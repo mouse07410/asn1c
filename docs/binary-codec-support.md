@@ -306,6 +306,18 @@ the named child type and calls its private field helpers with one shared
 nested record context for BER decoding, DER/CER encoding, and strict CER
 comparison. Imports, aliases, recursion, multiple named children, nested
 target members, target DEFAULT/extensions, and mixed codecs remain gated.
+One same-module named SET is also accepted as one required or OPTIONAL child
+of an untagged flat SEQUENCE or SET under BER/CER-only selection. The target is
+nonrecursive, untagged, unconstrained, and nonempty, with one through six
+supported direct primitive leaves. The child may use natural tag 17, one
+resolved context-specific IMPLICIT tag, or one EXPLICIT wrapper. Parent scalar
+and literal BOOLEAN/bounded INTEGER DEFAULT siblings retain their existing
+behavior. Target SET field ordering is computed independently of parent SET
+ordering; both share one nested record context for BER, DER/CER, and strict
+CER comparison. Empty named SET targets remain rejected because the generated
+C output does not compile them. Other aliases/references, imports, parameters,
+constraints, extensions, nested/CHOICE/collection members, multiple children,
+tag collisions, and mixed codecs fail before Rust output publication.
 Flat untagged SEQUENCE and SET records may also contain one natural direct
 non-IA5 restricted character-string field, required or OPTIONAL, beside the
 existing supported scalar siblings, including finite bounded BIT/OCT STRING

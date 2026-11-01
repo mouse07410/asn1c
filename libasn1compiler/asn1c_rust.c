@@ -139,6 +139,8 @@ static uint32_t rust_ber_cer_choice_arm_tag(asn1p_expr_t *);
 static int rust_ber_cer_has_tagged_members(asn1p_expr_t *);
 static int rust_ber_cer_has_nested_record(asn1p_expr_t *);
 static int rust_ber_cer_has_named_sequence_member(asn1p_expr_t *);
+static int rust_ber_cer_has_named_set_member(asn1p_expr_t *);
+static int rust_ber_cer_is_referenced_named_set(asn1p_expr_t *);
 static int rust_ber_cer_has_variable_content_member(asn1p_expr_t *);
 static int rust_ber_cer_has_big_integer_member(asn1p_expr_t *);
 static int rust_ber_cer_has_character_string_member(asn1p_expr_t *);
@@ -167,23 +169,25 @@ static int rust_check_ber_cer_big_integer_record_members(asn1p_module_t *,
 static int rust_integer_single_range_supported(const asn1p_constraint_t *,
                                                unsigned, int *);
 static asn1p_expr_t *rust_ber_cer_named_integer_target(const asn1p_expr_t *);
+static asn1p_expr_t *rust_ber_cer_named_record_target(const asn1p_expr_t *);
 static asn1p_expr_t *rust_ber_cer_named_sequence_target(const asn1p_expr_t *);
-static int rust_ber_cer_named_sequence_target_shape(asn1p_module_t *,
-                                                    asn1p_expr_t *, const char *);
+static asn1p_expr_t *rust_ber_cer_named_set_target(const asn1p_expr_t *);
+static int rust_ber_cer_named_record_target_shape(asn1p_module_t *,
+                                                  asn1p_expr_t *, const char *, int);
 static int rust_check_ber_cer_named_integer_member(asn1p_module_t *,
                                                    asn1p_expr_t *);
 static int rust_check_ber_cer_named_integer_record(asn1p_module_t *,
                                                     asn1p_expr_t *, uint64_t);
-static int rust_check_ber_cer_named_sequence_member(asn1p_module_t *,
-                                                    asn1p_expr_t *,
-                                                    asn1p_expr_t *, size_t *);
-static int rust_check_ber_cer_named_sequence_record(asn1p_module_t *,
-                                                    asn1p_expr_t *, uint64_t);
-static int rust_ber_cer_named_sequence_parent_scan(asn1p_expr_t *,
-                                                   asn1p_expr_t **, size_t *, int *);
-static int rust_ber_cer_named_sequence_parent_shape(asn1p_expr_t *,
-                                                    asn1p_expr_t *, size_t,
-                                                    int, uint64_t);
+static int rust_check_ber_cer_named_record_member(asn1p_module_t *,
+                                                  asn1p_expr_t *,
+                                                  asn1p_expr_t *, size_t *);
+static int rust_check_ber_cer_named_record_record(asn1p_module_t *,
+                                                  asn1p_expr_t *, uint64_t);
+static int rust_ber_cer_named_record_parent_scan(asn1p_expr_t *,
+                                                 asn1p_expr_t **, size_t *, int *);
+static int rust_ber_cer_named_record_parent_shape(asn1p_expr_t *,
+                                                  asn1p_expr_t *, size_t,
+                                                  int, uint64_t);
 static asn1p_expr_t *rust_ber_cer_choice_member(asn1p_expr_t *, size_t *);
 static int rust_ber_cer_has_empty_nested_record(asn1p_expr_t *);
 static int rust_ber_cer_record_encode_uses_self(asn1p_expr_t *);
@@ -905,42 +909,75 @@ rust_ber_cer_named_integer_target(const asn1p_expr_t *member) {
 }
 
 /*
- * Resolve one fixed-tree reference to a direct local named SEQUENCE.
- * Inputs: member is a simple type-reference field. Returns its target or NULL.
- * Errors: aliases, imports, tags, parameters, and malformed reference metadata
- * fail closed. Source: resolved ASN.1 assignment AST. Version/date: 2026-11-01.
- * Responsible party: asn1c maintainers. History: named child composition.
- * Example: a field referencing `Inner ::= SEQUENCE { ... }` resolves Inner.
+ * Resolve a reference to one direct same-module named record target.
+ * Inputs: member is a simple fixed-tree type-reference field.
+ * Returns an untagged SEQUENCE/SET target, or NULL for unsupported references.
+ * Errors: aliases, imports, tags, parameters, and malformed metadata fail closed.
+ * Source: resolved ASN.1 assignment AST. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: named record children.
+ * Example: `child Inner` resolves the local `Inner` assignment.
  */
 static asn1p_expr_t *
-rust_ber_cer_named_sequence_target(const asn1p_expr_t *member) {
+rust_ber_cer_named_record_target(const asn1p_expr_t *member) {
     asn1p_module_t *module;
     asn1p_expr_t *target;
     const char *name;
+    int kind;
     if(!rust_ber_cer_named_reference_shape(member)) return NULL;
     module = member->module;
     target = member->reference->ref_expr;
     name = member->reference->components[0].name;
-    if(!rust_ber_cer_named_sequence_target_shape(module, target, name)) return NULL;
+    if(target) kind = target->expr_type;
+    else return NULL;
+    if(kind != ASN_CONSTR_SEQUENCE && kind != ASN_CONSTR_SET) return NULL;
+    if(!rust_ber_cer_named_record_target_shape(module, target, name, kind)) return NULL;
     if(!rust_ber_cer_named_target_is_local_assignment(module, target)) return NULL;
     return target;
 }
 
 /*
- * Validate assignment metadata for a direct named SEQUENCE target.
- * Inputs: module owns target; name is the one resolved reference component.
- * Returns one for an untagged, unconstrained direct SEQUENCE assignment.
- * Errors: aliases, constraints, extensions, parameters, and encoding controls
- * return zero. Source: fixed ASN.1 type-assignment AST. Version/date: 2026-11-01.
- * Responsible party: asn1c maintainers. History: named child gate.
- * Example: direct `Inner ::= SEQUENCE { ... }` passes.
+ * Resolve a direct named SEQUENCE member, preserving the existing type-specific test.
+ * Inputs: member is a fixed-tree reference. Returns its SEQUENCE target or NULL.
+ * Errors: unsupported references return NULL; no diagnostic is emitted here.
+ * Source: same-module record resolver. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: named SEQUENCE child support.
+ * Example: a reference to `Inner ::= SEQUENCE` returns `Inner`.
+ */
+static asn1p_expr_t *
+rust_ber_cer_named_sequence_target(const asn1p_expr_t *member) {
+    asn1p_expr_t *target = rust_ber_cer_named_record_target(member);
+    return target && target->expr_type == ASN_CONSTR_SEQUENCE ? target : NULL;
+}
+
+/*
+ * Resolve a direct named SET member, preserving the target's SET identity.
+ * Inputs: member is a fixed-tree reference. Returns its SET target or NULL.
+ * Errors: unsupported references return NULL; no diagnostic is emitted here.
+ * Source: same-module record resolver. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: named SET child support.
+ * Example: a reference to `Inner ::= SET` returns `Inner`.
+ */
+static asn1p_expr_t *
+rust_ber_cer_named_set_target(const asn1p_expr_t *member) {
+    asn1p_expr_t *target = rust_ber_cer_named_record_target(member);
+    return target && target->expr_type == ASN_CONSTR_SET ? target : NULL;
+}
+
+/*
+ * Validate metadata for one direct named record assignment.
+ * Inputs: module owns target; name resolves the one reference component; kind
+ * is ASN_CONSTR_SEQUENCE or ASN_CONSTR_SET. Returns one when the assignment is
+ * untagged, unconstrained, and direct. Errors: unsupported metadata returns zero.
+ * Source: fixed ASN.1 assignment AST. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: named record child gates.
+ * Example: `Inner ::= SET { ... }` with no constraints passes.
  */
 static int
-rust_ber_cer_named_sequence_target_shape(asn1p_module_t *module,
-                                         asn1p_expr_t *target,
-                                         const char *name) {
+rust_ber_cer_named_record_target_shape(asn1p_module_t *module,
+                                       asn1p_expr_t *target,
+                                       const char *name, int kind) {
     return module && target && target->module == module
-        && target->meta_type == AMT_TYPE && target->expr_type == ASN_CONSTR_SEQUENCE
+        && target->meta_type == AMT_TYPE && target->expr_type == kind
         && target->Identifier && name && !strcmp(target->Identifier, name)
         && !target->reference && !target->constraints && !target->combined_constraints
         && !target->lhs_params && !target->rhs_pspecs && !target->ioc_table
@@ -954,15 +991,15 @@ rust_ber_cer_named_sequence_target_shape(asn1p_module_t *module,
  * Inputs: module supplies diagnostics; owner/member identify parent and field;
  * work accumulates child leaf checks against the generated-record ceiling.
  * Returns zero or -1. Errors: recursive, constrained, tagged, or unsupported
- * children are diagnosed. Source: named SEQUENCE composition design.
+ * children are diagnosed. Source: named SEQUENCE/SET composition design.
  * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
  * History: direct named child gate. Example: required `child Inner` is accepted.
  */
 static int
-rust_check_ber_cer_named_sequence_member(asn1p_module_t *module,
+rust_check_ber_cer_named_record_member(asn1p_module_t *module,
                                          asn1p_expr_t *owner,
                                          asn1p_expr_t *member, size_t *work) {
-    asn1p_expr_t *target = rust_ber_cer_named_sequence_target(member);
+    asn1p_expr_t *target = rust_ber_cer_named_record_target(member);
     int tag_class;
     uint32_t tag_number;
     int supported_tag;
@@ -976,7 +1013,7 @@ rust_check_ber_cer_named_sequence_member(asn1p_module_t *module,
        || !supported_tag || !supported_presence
        || !rust_ber_cer_nested_record_shape_valid(target)) {
         rust_diagnostic(module, member,
-            "named SEQUENCE fields need one direct same-module untagged child "
+            "named SEQUENCE/SET fields need one direct same-module untagged child "
             "with supported member tags and required or OPTIONAL presence");
         return -1;
     }
@@ -1113,7 +1150,8 @@ rust_check_ber_cer_named_integer_record(asn1p_module_t *module,
         TQ_FOR(member, &expr->members, next) {
             if(member->expr_type == A1TC_REFERENCE && member->reference
                && member->reference->ref_expr
-               && member->reference->ref_expr->expr_type == ASN_CONSTR_SEQUENCE)
+                && (member->reference->ref_expr->expr_type == ASN_CONSTR_SEQUENCE
+                    || member->reference->ref_expr->expr_type == ASN_CONSTR_SET))
                 return 0;
         }
     }
@@ -1128,16 +1166,16 @@ rust_check_ber_cer_named_integer_record(asn1p_module_t *module,
 }
 
 /*
- * Preflight one named SEQUENCE reference and its scalar parent siblings.
+ * Preflight one named record reference and its scalar parent siblings.
  * Inputs: module/expr identify the flat parent; codecs is its selected mask.
  * Returns zero when absent or structurally supported, otherwise -1.
  * Errors: multiple children, incompatible siblings, tags, roots, or codecs fail.
  * Source: named child composition design. Version/date: 2026-11-01.
  * Responsible party: asn1c maintainers. History: single named child gate.
- * Example: one required `Inner` beside BOOLEAN passes for BER/CER-only.
+ * Example: one required `Inner ::= SET` beside BOOLEAN passes for BER/CER-only.
  */
 static int
-rust_ber_cer_named_sequence_parent_scan(asn1p_expr_t *expr,
+rust_ber_cer_named_record_parent_scan(asn1p_expr_t *expr,
                                         asn1p_expr_t **child_out,
                                         size_t *references_out,
                                         int *excluded_out) {
@@ -1167,8 +1205,8 @@ rust_ber_cer_named_sequence_parent_scan(asn1p_expr_t *expr,
  * Example: an untagged Packet SEQUENCE with BER/CER passes.
  */
 static int
-rust_ber_cer_named_sequence_parent_root_valid(asn1p_expr_t *expr,
-                                              uint64_t codecs) {
+rust_ber_cer_named_record_parent_root_valid(asn1p_expr_t *expr,
+                                            uint64_t codecs) {
     const uint64_t supported = RUST_CODEC_BER | RUST_CODEC_CER;
     return expr && (expr->expr_type == ASN_CONSTR_SEQUENCE
                     || expr->expr_type == ASN_CONSTR_SET)
@@ -1182,47 +1220,48 @@ rust_ber_cer_named_sequence_parent_root_valid(asn1p_expr_t *expr,
 /*
  * Validate one named-child root candidate and its permitted direct siblings.
  * Inputs: expr/child identify the parent and child; references/excluded are scan results.
- * Returns one when one local named SEQUENCE and supported siblings are present.
+ * Returns one when one local named record and supported siblings are present.
  * Errors: unsupported child references, siblings, or root metadata return zero.
  * Source: named child composition gate. Version/date: 2026-11-01.
  * Responsible party: asn1c maintainers. History: bounded parent structure.
  * Example: one `Inner` reference plus BOOLEAN returns one.
  */
 static int
-rust_ber_cer_named_sequence_parent_shape(asn1p_expr_t *expr,
+rust_ber_cer_named_record_parent_shape(asn1p_expr_t *expr,
                                          asn1p_expr_t *child,
                                          size_t references, int excluded,
                                          uint64_t codecs) {
     if(references != 1 || !child || excluded
-       || !rust_ber_cer_named_sequence_target(child)) return 0;
-    return rust_ber_cer_named_sequence_parent_root_valid(expr, codecs);
+       || !rust_ber_cer_named_record_target(child)) return 0;
+    return rust_ber_cer_named_record_parent_root_valid(expr, codecs);
 }
 
 /*
- * Preflight one named SEQUENCE reference and its scalar parent siblings.
+ * Preflight one named record reference and its scalar parent siblings.
  * Inputs: module/expr identify the flat parent; codecs is its selected mask.
  * Returns zero when absent or structurally supported, otherwise -1.
  * Errors: multiple children, incompatible siblings, tags, roots, or codecs fail.
  * Source: named child composition design. Version/date: 2026-11-01.
  * Responsible party: asn1c maintainers. History: single named child gate.
- * Example: one required `Inner` beside BOOLEAN passes for BER/CER-only.
+ * Example: one required `Inner ::= SET` beside BOOLEAN passes for BER/CER-only.
  */
 static int
-rust_check_ber_cer_named_sequence_record(asn1p_module_t *module,
+rust_check_ber_cer_named_record_record(asn1p_module_t *module,
                                          asn1p_expr_t *expr, uint64_t codecs) {
     asn1p_expr_t *child;
     size_t references;
     int excluded;
     if(!module || !expr
-       || rust_ber_cer_named_sequence_parent_scan(expr, &child, &references,
+       || rust_ber_cer_named_record_parent_scan(expr, &child, &references,
                                                   &excluded)) return -1;
     if(!references) return 0;
     if(references == 1 && child && child->reference && child->reference->ref_expr
-       && child->reference->ref_expr->expr_type != ASN_CONSTR_SEQUENCE) return 0;
-    if(!rust_ber_cer_named_sequence_parent_shape(expr, child, references,
+       && child->reference->ref_expr->expr_type != ASN_CONSTR_SEQUENCE
+       && child->reference->ref_expr->expr_type != ASN_CONSTR_SET) return 0;
+    if(!rust_ber_cer_named_record_parent_shape(expr, child, references,
                                                  excluded, codecs)) {
         rust_diagnostic(module, expr,
-            "named SEQUENCE children require one untagged direct child, scalar "
+            "named SEQUENCE/SET children require one untagged direct child, scalar "
             "siblings, and BER/CER-only codecs");
         return -1;
     }
@@ -2337,7 +2376,7 @@ rust_check_sequence(asn1p_module_t *module, asn1p_expr_t *expr,
     if(rust_check_ber_cer_big_integer_record(module, expr, codecs)) return -1;
     if(rust_check_ber_cer_oid_record(module, expr, codecs)) return -1;
     if(rust_check_ber_cer_named_integer_record(module, expr, codecs)) return -1;
-    if(rust_check_ber_cer_named_sequence_record(module, expr, codecs)) return -1;
+    if(rust_check_ber_cer_named_record_record(module, expr, codecs)) return -1;
     if(rust_check_sequence_tree(module, expr, stack, 0, &nodes, &work, codecs)) return -1;
     if((codecs & RUST_CODEC_UPER)
        && (codecs & (RUST_CODEC_BER | RUST_CODEC_CER))
@@ -2385,7 +2424,7 @@ rust_check_set_ber_cer(asn1p_module_t *module, asn1p_expr_t *expr,
     if(rust_check_ber_cer_big_integer_record(module, expr, codecs)) return -1;
     if(rust_check_ber_cer_oid_record(module, expr, codecs)) return -1;
     if(rust_check_ber_cer_named_integer_record(module, expr, codecs)) return -1;
-    if(rust_check_ber_cer_named_sequence_record(module, expr, codecs)) return -1;
+    if(rust_check_ber_cer_named_record_record(module, expr, codecs)) return -1;
     TQ_FOR(member, &expr->members, next) {
         if(++count > RUST_BER_CER_FIELD_LIMIT || ++work > RUST_BER_CER_WORK_LIMIT) {
             rust_diagnostic(module, expr, "BER/CER SET exceeds the supported direct-field limit");
@@ -2513,8 +2552,8 @@ rust_check_ber_cer_member(asn1p_module_t *module, asn1p_expr_t *expr,
                           asn1p_expr_t *member, int set, size_t *work,
                           uint64_t codecs) {
     if(member->expr_type == A1TC_REFERENCE) {
-        if(rust_ber_cer_named_sequence_target(member)) {
-            if(rust_check_ber_cer_named_sequence_member(module, expr, member, work)
+        if(rust_ber_cer_named_record_target(member)) {
+            if(rust_check_ber_cer_named_record_member(module, expr, member, work)
                || (set && rust_check_sequence_name(module, expr, member))) return -1;
         } else if(rust_check_ber_cer_named_integer_member(module, member)
                   || (set && rust_check_sequence_name(module, expr, member))) {
@@ -2635,7 +2674,7 @@ rust_check_ber_cer_nested_record(asn1p_module_t *module,
         return -1;
     }
     if(record->expr_type == ASN_CONSTR_SET && !record->members.tq_head) {
-        rust_diagnostic(module, record, "empty inline SET children are not C-compatible");
+        rust_diagnostic(module, record, "empty nested SET children are not C-compatible");
         return -1;
     }
     TQ_FOR(member, &record->members, next) {
@@ -2691,6 +2730,7 @@ rust_sequence_ber_cer_tag(const asn1p_expr_t *member) {
     if(!member) return 0;
     if(rust_ber_cer_named_integer_target(member)) return 2;
     if(rust_ber_cer_named_sequence_target(member)) return 16;
+    if(rust_ber_cer_named_set_target(member)) return 17;
     switch(member->expr_type) {
     case ASN_BASIC_BOOLEAN: return 1;
     case ASN_BASIC_INTEGER: return 2;
@@ -2856,7 +2896,7 @@ rust_ber_cer_has_nested_record(asn1p_expr_t *expr) {
     TQ_FOR(member, &expr->members, next) {
         if(member->expr_type == ASN_CONSTR_SEQUENCE || member->expr_type == ASN_CONSTR_SET
            || member->expr_type == ASN_CONSTR_CHOICE
-           || rust_ber_cer_named_sequence_target(member)) return 1;
+           || rust_ber_cer_named_record_target(member)) return 1;
     }
     return 0;
 }
@@ -2875,6 +2915,50 @@ rust_ber_cer_has_named_sequence_member(asn1p_expr_t *expr) {
     if(!expr) return 0;
     TQ_FOR(member, &expr->members, next) {
         if(rust_ber_cer_named_sequence_target(member)) return 1;
+    }
+    return 0;
+}
+
+/*
+ * Detect a direct named SET child for tagged reader descriptor selection.
+ * Inputs: expr owns validated flat record fields. Returns one when present.
+ * Errors: none; preflight validates resolved references before emission.
+ * Source: same-module named SET resolver. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: named SET child support.
+ * Example: a parent with `child InnerSet` returns one.
+ */
+static int
+rust_ber_cer_has_named_set_member(asn1p_expr_t *expr) {
+    asn1p_expr_t *member;
+    if(!expr) return 0;
+    TQ_FOR(member, &expr->members, next) {
+        if(rust_ber_cer_named_set_target(member)) return 1;
+    }
+    return 0;
+}
+
+/*
+ * Find whether a top-level SET assignment is used as a named child.
+ * Inputs: target is one validated top-level SET assignment. Returns one when
+ * a direct member in this module resolves to it; no AST is mutated.
+ * Errors: malformed or absent module metadata returns zero.
+ * Source: fixed module member tree. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: avoid unused child callbacks.
+ * Example: `Packet ::= SEQUENCE { child InnerSet }` marks InnerSet referenced.
+ */
+static int
+rust_ber_cer_is_referenced_named_set(asn1p_expr_t *target) {
+    asn1p_expr_t *assignment;
+    asn1p_expr_t *member;
+    asn1p_module_t *module = target ? target->module : NULL;
+    if(!module || !target || target->expr_type != ASN_CONSTR_SET) return 0;
+    TQ_FOR(assignment, &module->members, next) {
+        if(assignment->meta_type != AMT_TYPE
+           || (assignment->expr_type != ASN_CONSTR_SEQUENCE
+               && assignment->expr_type != ASN_CONSTR_SET)) continue;
+        TQ_FOR(member, &assignment->members, next) {
+            if(rust_ber_cer_named_set_target(member) == target) return 1;
+        }
     }
     return 0;
 }
@@ -3055,6 +3139,7 @@ rust_ber_cer_field_kind(const asn1p_expr_t *member) {
     if(!member) return NULL;
     if(rust_ber_cer_named_integer_target(member)) return "Integer";
     if(rust_ber_cer_named_sequence_target(member)) return "Sequence";
+    if(rust_ber_cer_named_set_target(member)) return "Set";
     if(member->expr_type == ASN_BASIC_INTEGER && !member->constraints
        && !member->combined_constraints) return "BigInteger";
     switch(member->expr_type) {
@@ -3949,38 +4034,45 @@ rust_nested_type_name(const char *parent, const asn1p_expr_t *member) {
 }
 
 /*
- * Check one member while accumulating bounded inline-record traversal work.
- * Inputs: module/parent/member identify source; stack/depth track recursion;
- * nodes/work/count carry limits; codecs controls the supported mask.
- * Returns zero or -1 with a diagnostic. Source: Rust fixed-tree preflight.
- * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
- * History: inline BER/CER SET child gate. Example: validate one SET field.
+ * Validate one named reference encountered during inline record traversal.
+ * Inputs: module/parent/member identify the source; depth/nodes/work and codecs
+ * carry traversal bounds and selection. Returns zero or -1 with a diagnostic.
+ * Source: Rust fixed-tree preflight. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: named child record support.
+ * Example: a local named SET is accepted only at the record root.
  */
 static int
-rust_check_sequence_tree_member(asn1p_module_t *module, asn1p_expr_t *parent,
-                                asn1p_expr_t *member, asn1p_expr_t **stack,
-                                size_t depth, size_t *nodes, size_t *work,
-                                size_t *count, uint64_t codecs) {
-    if(++*count > RUST_SEQUENCE_FIELD_LIMIT || ++*work > RUST_SEQUENCE_WORK_LIMIT) {
-        rust_diagnostic(module, member, "SEQUENCE aggregate field-work limit exceeded");
+rust_check_sequence_tree_reference(asn1p_module_t *module, asn1p_expr_t *parent,
+                                   asn1p_expr_t *member, size_t depth,
+                                   size_t *nodes, size_t *work, uint64_t codecs) {
+    if(depth != 0 || (codecs & ~(RUST_CODEC_BER | RUST_CODEC_CER))) {
+        rust_diagnostic(module, member,
+            "named record references are supported only in flat BER/CER records");
         return -1;
     }
-    if(rust_check_sequence_name(module, parent, member)) return -1;
-    if(member->expr_type == A1TC_REFERENCE) {
-        if(depth != 0 || (codecs & ~(RUST_CODEC_BER | RUST_CODEC_CER))) {
-            rust_diagnostic(module, member,
-                "named record references are supported only in flat BER/CER records");
+    if(rust_ber_cer_named_record_target(member)) {
+        if(++*nodes > RUST_SEQUENCE_NODE_LIMIT) {
+            rust_diagnostic(module, member, "named child record node limit exceeded");
             return -1;
         }
-        if(rust_ber_cer_named_sequence_target(member)) {
-            if(++*nodes > RUST_SEQUENCE_NODE_LIMIT) {
-                rust_diagnostic(module, member, "named child record node limit exceeded");
-                return -1;
-            }
-            return rust_check_ber_cer_named_sequence_member(module, parent, member, work);
-        }
-        return rust_check_ber_cer_named_integer_member(module, member);
+        return rust_check_ber_cer_named_record_member(module, parent, member, work);
     }
+    return rust_check_ber_cer_named_integer_member(module, member);
+}
+
+/*
+ * Validate one inline CHOICE, SET, or SEQUENCE during record traversal.
+ * Inputs: module/parent/member identify source; stack/depth/nodes/work and
+ * codecs carry traversal state. Returns zero or -1 with a diagnostic.
+ * Source: bounded inline-record preflight. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: nested record support.
+ * Example: accept a direct inline SET only with BER/CER-only selection.
+ */
+static int
+rust_check_sequence_tree_constructed(asn1p_module_t *module, asn1p_expr_t *parent,
+                                     asn1p_expr_t *member, asn1p_expr_t **stack,
+                                     size_t depth, size_t *nodes, size_t *work,
+                                     uint64_t codecs) {
     if(member->expr_type == ASN_CONSTR_CHOICE) {
         if(++*nodes > RUST_SEQUENCE_NODE_LIMIT) {
             rust_diagnostic(module, member, "nested record node limit exceeded");
@@ -4001,18 +4093,29 @@ rust_check_sequence_tree_member(asn1p_module_t *module, asn1p_expr_t *parent,
         }
         return 0;
     }
-    if(member->expr_type == ASN_CONSTR_SEQUENCE) {
-        if(member->marker.flags == EM_DEFAULT) {
-            rust_diagnostic(module, member, "constructed DEFAULT fields are unsupported");
-            return -1;
-        }
-        if(!rust_sequence_member_shape_valid(member)) {
-            rust_diagnostic(module, member, "nested SEQUENCE has an unsupported field shape");
-            return -1;
-        }
-        return rust_check_sequence_tree(module, member, stack, depth + 1,
-                                        nodes, work, codecs);
+    if(member->marker.flags == EM_DEFAULT) {
+        rust_diagnostic(module, member, "constructed DEFAULT fields are unsupported");
+        return -1;
     }
+    if(!rust_sequence_member_shape_valid(member)) {
+        rust_diagnostic(module, member, "nested SEQUENCE has an unsupported field shape");
+        return -1;
+    }
+    return rust_check_sequence_tree(module, member, stack, depth + 1,
+                                    nodes, work, codecs);
+}
+
+/*
+ * Validate root-only variable fields or delegate a scalar field to its gate.
+ * Inputs: module/member identify source; depth is the inline-record level.
+ * Returns zero or -1 with a source-located diagnostic.
+ * Source: BER/CER fixed-tree type gate. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: variable root fields.
+ * Example: an unconstrained INTEGER is accepted only at the top level.
+ */
+static int
+rust_check_sequence_tree_variable(asn1p_module_t *module, asn1p_expr_t *member,
+                                  size_t depth) {
     if(member->expr_type == ASN_STRING_IA5String) {
         if(depth != 0) {
             rust_diagnostic(module, member,
@@ -4032,8 +4135,7 @@ rust_check_sequence_tree_member(asn1p_module_t *module, asn1p_expr_t *parent,
     if(member->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
        || member->expr_type == ASN_BASIC_RELATIVE_OID) {
         if(depth != 0) {
-            rust_diagnostic(module, member,
-                            "OID fields are supported only at the record root");
+            rust_diagnostic(module, member, "OID fields are supported only at the record root");
             return -1;
         }
         return rust_check_ber_cer_oid_member(module, member);
@@ -4048,6 +4150,37 @@ rust_check_sequence_tree_member(asn1p_module_t *module, asn1p_expr_t *parent,
         return rust_check_ber_cer_big_integer_member(module, member);
     }
     return rust_check_sequence_member(module, member);
+}
+
+/*
+ * Check one member while accumulating bounded inline-record traversal work.
+ * Inputs: module/parent/member identify source; stack/depth track recursion;
+ * nodes/work/count carry limits; codecs controls the supported mask.
+ * Returns zero or -1 with a diagnostic. Source: Rust fixed-tree preflight.
+ * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
+ * History: inline BER/CER record validation. Example: validate one SET field.
+ */
+static int
+rust_check_sequence_tree_member(asn1p_module_t *module, asn1p_expr_t *parent,
+                                asn1p_expr_t *member, asn1p_expr_t **stack,
+                                size_t depth, size_t *nodes, size_t *work,
+                                size_t *count, uint64_t codecs) {
+    if(++*count > RUST_SEQUENCE_FIELD_LIMIT || ++*work > RUST_SEQUENCE_WORK_LIMIT) {
+        rust_diagnostic(module, member, "SEQUENCE aggregate field-work limit exceeded");
+        return -1;
+    }
+    if(rust_check_sequence_name(module, parent, member)) return -1;
+    if(member->expr_type == A1TC_REFERENCE) {
+        return rust_check_sequence_tree_reference(module, parent, member, depth,
+                                                  nodes, work, codecs);
+    }
+    if(member->expr_type == ASN_CONSTR_CHOICE
+       || member->expr_type == ASN_CONSTR_SET
+       || member->expr_type == ASN_CONSTR_SEQUENCE) {
+        return rust_check_sequence_tree_constructed(module, parent, member, stack,
+                                                    depth, nodes, work, codecs);
+    }
+    return rust_check_sequence_tree_variable(module, member, depth);
 }
 
 /*
@@ -6484,36 +6617,44 @@ cleanup:
 }
 
 /*
- * Emit DER/CER methods for a validated direct-field SET.
- * Parameters: stream receives Rust; parent names inline enums; expr owns
- * unique-tag fields; codecs selects BER/DER and/or CER. Returns zero or -1.
- * Errors: output failure; generated methods return runtime errors.
- * Source: X.690 SET framing and the shared-budget runtime API.
- * Version/date: 2026-10-31. Author: asn1c maintainers. History: fourth wave.
- * Example: rust_write_set_ber_cer(out, name, expr, RUST_CODEC_BER).
+ * Emit bounded SET helpers needed by nested use and public decoding.
+ * Inputs: stream receives Rust; parent and expr identify the validated SET;
+ * nested indicates child use; referenced enables callbacks for a named target.
+ * Returns zero or -1. Errors: a helper writer reports output/name failures.
+ * Source: shared nested SET APIs. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: named SET child support.
+ * Example: emit callbacks only when a named SET target is actually referenced.
  */
 static int
-rust_write_set_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr,
-                       int top_level, uint64_t codecs) {
-    asn1p_expr_t *sorted[6];
-    asn1p_expr_t *choice;
-    size_t count;
+rust_write_set_ber_cer_helpers(FILE *stream, const char *parent,
+                               asn1p_expr_t *expr, int nested, int referenced) {
     asn1p_expr_t *member;
-    int has_members = expr->members.tq_head != 0;
-    int tagged_root = expr->tag.tag_class == TC_CONTEXT_SPECIFIC
-                   && expr->tag.tag_mode == TM_IMPLICIT;
-    choice = rust_ber_cer_choice_member(expr, NULL);
-    const char *context_constructor = rust_ber_cer_context_constructor(expr);
-    if(rust_ber_cer_sort_set_fields(expr, sorted,
-                                    sizeof(sorted) / sizeof(sorted[0]), &count)) return -1;
-    if(!top_level && rust_write_nested_ber_cer_fields(stream, expr, parent, 1)) return -1;
+    if((nested || referenced)
+       && rust_write_nested_ber_cer_fields(stream, expr, parent, 1)) return -1;
     TQ_FOR(member, &expr->members, next) {
         if(rust_write_set_ber_cer_decode_helper(stream, parent, member)) return -1;
     }
-    if(!top_level) {
-        if(rust_write_set_ber_cer_decode_fields(stream, expr)) return -1;
-        return 0;
-    }
+    if((nested || referenced) && rust_write_set_ber_cer_decode_fields(stream, expr))
+        return -1;
+    return 0;
+}
+
+/*
+ * Emit public methods for one validated top-level SET.
+ * Inputs: stream, parent, expr, ordered fields, CHOICE metadata, codec mask,
+ * root-tag state, member state, and context constructor select generated code.
+ * Returns zero or -1. Errors: output or runtime-operation emission failure.
+ * Source: X.690 SET framing and shared RecordContext APIs. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: top-level SET generation.
+ * Example: emit encode/decode methods over the generated private field helpers.
+ */
+static int
+rust_write_set_ber_cer_root_methods(FILE *stream, const char *parent,
+                                    asn1p_expr_t *expr, asn1p_expr_t **sorted,
+                                    size_t count, asn1p_expr_t *choice,
+                                    uint64_t codecs, int tagged_root,
+                                    int has_members,
+                                    const char *context_constructor) {
     if(rust_write_method_doc(stream, "Encode this SET using the selected record rule.",
         "`self` supplies fields; `limits` bounds the complete operation.",
         "Returns one complete SET TLV.",
@@ -6573,6 +6714,36 @@ rust_write_set_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr,
 }
 
 /*
+ * Emit BER/DER/CER code for one validated SET, private child, or top-level root.
+ * Inputs: stream receives Rust; parent names inline enums; expr owns validated
+ * fields; top_level and codecs select published methods. Returns zero or -1.
+ * Errors: output failures are returned; runtime methods report malformed values.
+ * Source: X.690 SET and shared record APIs. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: SET and named SET generation.
+ * Example: rust_write_set_ber_cer(out, "Packet", expr, 1, RUST_CODEC_BER).
+ */
+static int
+rust_write_set_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr,
+                       int top_level, uint64_t codecs) {
+    asn1p_expr_t *sorted[6];
+    asn1p_expr_t *choice = rust_ber_cer_choice_member(expr, NULL);
+    size_t count;
+    int has_members = expr->members.tq_head != 0;
+    int referenced = top_level && rust_ber_cer_is_referenced_named_set(expr);
+    int tagged_root = expr->tag.tag_class == TC_CONTEXT_SPECIFIC
+                   && expr->tag.tag_mode == TM_IMPLICIT;
+    const char *context_constructor = rust_ber_cer_context_constructor(expr);
+    if(rust_ber_cer_sort_set_fields(expr, sorted,
+                                    sizeof(sorted) / sizeof(sorted[0]), &count)) return -1;
+    if(rust_write_set_ber_cer_helpers(stream, parent, expr, !top_level,
+                                      referenced)) return -1;
+    if(!top_level) return 0;
+    return rust_write_set_ber_cer_root_methods(stream, parent, expr, sorted, count,
+                                                choice, codecs, tagged_root,
+                                                has_members, context_constructor);
+}
+
+/*
  * Emit a small typed SET-field decoder so record dispatch stays concise.
  * Parameters: stream receives Rust; parent names inline enums; member is a
  * validated direct field. Returns zero or -1. Errors: source write failure.
@@ -6623,18 +6794,18 @@ static const char *
 rust_ber_cer_record_field_type(const char *parent, asn1p_expr_t *member,
                                char **owned) {
     asn1p_expr_t *target = rust_ber_cer_named_integer_target(member);
-    asn1p_expr_t *named_sequence = rust_ber_cer_named_sequence_target(member);
+    asn1p_expr_t *named_record = rust_ber_cer_named_record_target(member);
     asn1p_expr_t *contained;
     if(!owned) return NULL;
     *owned = NULL;
     if(target) *owned = rust_identifier(target->Identifier, 0);
-    else if(named_sequence) *owned = rust_identifier(named_sequence->Identifier, 0);
+    else if(named_record) *owned = rust_identifier(named_record->Identifier, 0);
     else if(member->expr_type == ASN_CONSTR_SEQUENCE
             || member->expr_type == ASN_CONSTR_SET
             || member->expr_type == ASN_CONSTR_CHOICE
             || member->expr_type == ASN_BASIC_ENUMERATED)
         *owned = rust_nested_type_name(parent, member);
-    if(target || named_sequence || member->expr_type == ASN_CONSTR_SEQUENCE
+    if(target || named_record || member->expr_type == ASN_CONSTR_SEQUENCE
        || member->expr_type == ASN_CONSTR_SET || member->expr_type == ASN_CONSTR_CHOICE
        || member->expr_type == ASN_BASIC_ENUMERATED) return *owned;
     contained = rust_containing_node(member->combined_constraints, 0)
@@ -6978,6 +7149,7 @@ rust_write_set_ber_cer_decode_method(FILE *stream, const char *parent,
               || rust_ber_cer_has_big_integer_member(expr)
               || rust_ber_cer_has_character_string_member(expr)
               || rust_ber_cer_has_named_sequence_member(expr)
+              || rust_ber_cer_has_named_set_member(expr)
               || rust_ber_cer_choice_member(expr, NULL) != NULL;
     const char *context_constructor = rust_ber_cer_context_constructor(expr);
     if(rust_write_method_doc(stream, cer
@@ -7313,12 +7485,13 @@ rust_write_ber_cer_encode_nested(FILE *stream, const char *parent,
                                  asn1p_expr_t *member, const char *value,
                                  const char *tag_local, int tagged,
                                  int explicit_tag) {
-    asn1p_expr_t *named_sequence = rust_ber_cer_named_sequence_target(member);
-    char *nested_type = named_sequence
-        ? rust_identifier(named_sequence->Identifier, 0)
+    asn1p_expr_t *named_record = rust_ber_cer_named_record_target(member);
+    char *nested_type = named_record
+        ? rust_identifier(named_record->Identifier, 0)
         : rust_nested_type_name(parent, member);
-    int is_set = member->expr_type == ASN_CONSTR_SET;
-    int empty_child = named_sequence ? !named_sequence->members.tq_head
+    int is_set = (named_record ? named_record->expr_type : member->expr_type)
+               == ASN_CONSTR_SET;
+    int empty_child = named_record ? !named_record->members.tq_head
                                      : !member->members.tq_head;
     const char *constructor = explicit_tag ? "new_explicit" : "new";
     const char *kind = is_set ? "Set" : "Sequence";
@@ -7447,7 +7620,7 @@ rust_write_sequence_ber_cer_encode_value(FILE *stream, const char *parent,
     if(rust_ber_cer_named_integer_target(member))
         return rust_write_ber_cer_integer(stream, member, value, tag_argument,
                                           tagged, explicit_tag);
-    if(rust_ber_cer_named_sequence_target(member))
+    if(rust_ber_cer_named_record_target(member))
         return rust_write_ber_cer_encode_nested(stream, parent, member, value,
                                                 tag_local, tagged, explicit_tag);
     if(member->expr_type == ASN_CONSTR_CHOICE)
@@ -7481,7 +7654,7 @@ rust_write_sequence_ber_cer_encode_value(FILE *stream, const char *parent,
 static int
 rust_write_sequence_ber_cer_encode_optional(FILE *stream, const char *parent,
                                             asn1p_expr_t *member, const char *name) {
-    asn1p_expr_t *named = rust_ber_cer_named_sequence_target(member);
+    asn1p_expr_t *named = rust_ber_cer_named_record_target(member);
     int ret;
     if(member->expr_type == ASN_BASIC_NULL || (named && !named->members.tq_head)) {
         if(fprintf(stream, "        if self.%s.is_some() {\n            ", name) < 0) return -1;
@@ -7546,7 +7719,7 @@ rust_ber_cer_optional_value_expression(asn1p_expr_t *member) {
        || (member->expr_type == ASN_BASIC_INTEGER && !member->constraints
            && !member->combined_constraints)) return "value";
     if(member->expr_type == ASN_BASIC_BIT_STRING) return "value";
-    if(rust_ber_cer_named_sequence_target(member)
+    if(rust_ber_cer_named_record_target(member)
        || member->expr_type == ASN_CONSTR_SEQUENCE
        || member->expr_type == ASN_CONSTR_SET) return "value";
     if(member->expr_type == ASN_CONSTR_CHOICE) return "*value";
@@ -7928,7 +8101,7 @@ rust_write_sequence_ber_cer_decode_value(FILE *stream, const char *parent,
     const char *character_kind = rust_character_string_kind(member);
     if(rust_ber_cer_named_integer_target(member))
         return rust_write_ber_cer_decode_named_integer(stream, member, indent);
-    if(rust_ber_cer_named_sequence_target(member))
+    if(rust_ber_cer_named_record_target(member))
         return rust_write_nested_ber_cer_decode_value(stream, parent, member, indent);
     if(character_kind)
         return fprintf(stream,
@@ -7958,10 +8131,10 @@ rust_write_nested_ber_cer_decode_value(FILE *stream, const char *parent,
                                        asn1p_expr_t *member,
                                        const char *indent) {
     asn1p_expr_t *child;
-    asn1p_expr_t *named_sequence = rust_ber_cer_named_sequence_target(member);
-    asn1p_expr_t *child_record = named_sequence ? named_sequence : member;
-    char *nested_type = named_sequence
-        ? rust_identifier(named_sequence->Identifier, 0)
+    asn1p_expr_t *named_record = rust_ber_cer_named_record_target(member);
+    asn1p_expr_t *child_record = named_record ? named_record : member;
+    char *nested_type = named_record
+        ? rust_identifier(named_record->Identifier, 0)
         : rust_nested_type_name(parent, member);
     size_t indent_length = strlen(indent);
     char child_indent[32];
@@ -7988,7 +8161,7 @@ rust_write_nested_ber_cer_decode_value(FILE *stream, const char *parent,
         "%s    &__asn1c_child_fields,\n"
         "%s    %s::decode_record_fields,\n"
         "%s)?;\n",
-        indent, indent, member->expr_type == ASN_CONSTR_SET ? "set" : "sequence",
+        indent, indent, child_record->expr_type == ASN_CONSTR_SET ? "set" : "sequence",
         indent, indent, nested_type, indent);
     free(nested_type);
     return written < 0 ? -1 : 0;

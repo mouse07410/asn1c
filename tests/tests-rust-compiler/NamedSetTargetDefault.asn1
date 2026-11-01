@@ -1,0 +1,4 @@
+NamedSetTargetDefault DEFINITIONS ::= BEGIN
+InnerSet ::= SET { flag BOOLEAN }
+Packet ::= SEQUENCE { child InnerSet DEFAULT { flag TRUE } }
+END

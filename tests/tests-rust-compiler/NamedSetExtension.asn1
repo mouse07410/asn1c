@@ -1,0 +1,4 @@
+NamedSetExtension DEFINITIONS ::= BEGIN
+InnerSet ::= SET { flag BOOLEAN, ..., extra INTEGER }
+Packet ::= SEQUENCE { child InnerSet }
+END

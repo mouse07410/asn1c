@@ -1,0 +1,4 @@
+NamedSetParameterized DEFINITIONS ::= BEGIN
+InnerSet { T } ::= SET { value T }
+Packet ::= SEQUENCE { child InnerSet { BOOLEAN } }
+END

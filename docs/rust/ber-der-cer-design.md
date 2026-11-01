@@ -30,8 +30,8 @@ BER/CER-only untagged flat records additionally qualify one natural IA5String
 member, one natural non-IA5 restricted character-string member, up to one
 natural OBJECT IDENTIFIER and one natural RELATIVE-OID member, or one natural
 unconstrained `BigInteger` member, with the resource and schema gates below.
-One same-module bounded INTEGER reference member or one same-module named
-SEQUENCE child also qualifies under its separate gate below.
+One same-module bounded INTEGER reference member, named SEQUENCE child, or
+nonempty named SET child also qualifies under its separate gate below.
 
 The flat SET slice uses the same six direct field kinds under BER/CER-only
 selection. Its BER reader accepts arbitrary member order;
@@ -1015,8 +1015,8 @@ context-specific IMPLICIT member tag, or one EXPLICIT wrapper under
 BER/CER-only selection. Reject imports, alias chains, parameters, target
 DEFAULT/extensions/references/nested members/CHOICE/collections, multiple
 named children, recursive targets, colliding effective tags, and mixed codecs
-before output publication. A named SET target and two named children follow
-as separate gates.
+before output publication. A named SET target has its separate gate below;
+two named children follow as a later gate.
 
 Keep the named child's generated public type and its private record-field
 encode/decode helpers. Parent record callbacks enter that child through
@@ -1054,7 +1054,7 @@ work/scratch/depth limits, mutation tests, and no-publication schema gates.
 The earlier EXPLICIT mixed-length C BER divergence applies to this named
 child too; well-framed Rust BER may accept it, while strict CER rejects it.
 
-### Same-module named SET child (next composition gate)
+### Same-module named SET child (qualified composition slice)
 
 Accept one direct same-module reference to a distinct, untagged, nonrecursive
 named SET with one through six existing supported primitive leaves. The child
@@ -1094,6 +1094,52 @@ Acceptance includes both independent SET sorts and reversed BER orders,
 optional absence, exact prefix consumption, malformed EOCs and wrappers,
 duplicates/unknown fields, limits and mutation tests, C differential vectors,
 strict CER canonicality, and no-publication schema gates.
+
+### Two same-module named record children (qualified composition slice)
+
+Extend the one-child gate to exactly two direct named SEQUENCE or SET fields
+in an untagged flat SEQUENCE or SET parent. Each field resolves directly to a
+same-module, untagged, nonrecursive assignment and may be required or
+OPTIONAL. Keep the parent's six-field cap, existing scalar and literal
+DEFAULT siblings, and BER/CER-only codec selection. Each target retains its
+one-child leaf restrictions; a named SET target must be nonempty. The two
+fields may refer to the same target when their effective tags differ through
+supported context-specific IMPLICIT or EXPLICIT member tags. Reject equal
+effective tags, imports, aliases, recursive or extensible targets, target
+references or nested members, mixed inline and named constructed children,
+and unsupported codec combinations before publishing output.
+
+Both children use their existing private field helpers and enter through
+the same parent `RecordContext`. `nested_record_depth` counts active nesting,
+so it returns to the parent depth after the first child callback. Charge
+work, retained values, output, and temporary buffers across both children
+without resetting limits between siblings. Roll back a failed second field
+without refunding work already spent. Parent SET ordering uses each child's
+outer effective tag, while each child SET sorts its own members. Strict CER
+re-encodes and compares the entire consumed parent prefix.
+
+Generated C confirms these vectors for
+`A ::= SEQUENCE { n INTEGER (0..5) }`, `B ::= SET { b BOOLEAN }`, and
+`P ::= SEQUENCE { a A, b B OPTIONAL }` with `a.n = 2` and `b.b = TRUE`:
+DER `30 0a 30 03 02 01 02 31 03 01 01 ff`; CER
+`30 80 30 80 02 01 02 00 00 31 80 01 01 ff 00 00 00 00`.
+With `b` absent, DER is `30 05 30 03 02 01 02` and CER is
+`30 80 30 80 02 01 02 00 00 00 00`. For
+`T ::= SET { b B OPTIONAL, a A }` with both present, C emits DER
+`31 0a 30 03 02 01 02 31 03 01 01 ff` and CER
+`31 80 30 80 02 01 02 00 00 31 80 01 01 ff 00 00 00 00`.
+For two EXPLICIT references to `A`, with `a.n = 2` and `b.n = 3`, C emits
+DER `30 0e a2 05 30 03 02 01 02 a3 05 30 03 02 01 03` and CER
+`30 80 a2 80 30 80 02 01 02 00 00 00 00 a3 80 30 80 02 01 03
+00 00 00 00 00 00`. A reversed-order indefinite `T` is accepted by C BER
+but rejected by strict CER.
+
+Acceptance needs both children present, each OPTIONAL state, same-target
+distinct tags, parent and child SET sorting, exact shared limits and
+prefixes, failed second-child rollback, malformed wrappers and EOCs,
+duplicate and unknown tags, differential C vectors, and unsupported-schema
+no-publication tests. This slice does not establish arbitrary reference
+graphs or recursive constructed-type support.
 
 ## Decisions still required
 

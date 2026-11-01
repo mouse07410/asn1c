@@ -80,6 +80,27 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/named_sequence_empty_conformance.rs \
     $(srcdir)/c_named_sequence_record.c \
     $(srcdir)/c_named_sequence_empty.c \
+    $(srcdir)/NamedSetRecord.asn1 \
+    $(srcdir)/NamedSetEmpty.asn1 \
+    $(srcdir)/NamedSetAlias.asn1 \
+    $(srcdir)/NamedSetCollision.asn1 \
+    $(srcdir)/NamedSetExtension.asn1 \
+    $(srcdir)/NamedSetImportBase.asn1 \
+    $(srcdir)/NamedSetImported.asn1 \
+    $(srcdir)/NamedSetMemberConstraint.asn1 \
+    $(srcdir)/NamedSetMultiple.asn1 \
+    $(srcdir)/NamedSetNested.asn1 \
+    $(srcdir)/NamedSetParameterized.asn1 \
+    $(srcdir)/NamedSetRecursive.asn1 \
+    $(srcdir)/NamedSetTaggedRoot.asn1 \
+    $(srcdir)/NamedSetTaggedTarget.asn1 \
+    $(srcdir)/NamedSetTargetChoice.asn1 \
+    $(srcdir)/NamedSetTargetConstraint.asn1 \
+    $(srcdir)/NamedSetTargetDefault.asn1 \
+    $(srcdir)/NamedSetTargetOf.asn1 \
+    $(srcdir)/NamedSetTargetReference.asn1 \
+    $(srcdir)/named_set_child_conformance.rs \
+    $(srcdir)/c_named_set_child.c \
     $(srcdir)/ChoiceBooleanOnly.asn1 \
     $(srcdir)/ChoiceNullOnly.asn1 \
     $(srcdir)/ChoiceIntegerOnly.asn1 \

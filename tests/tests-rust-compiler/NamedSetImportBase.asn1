@@ -1,0 +1,3 @@
+NamedSetImportBase DEFINITIONS ::= BEGIN
+InnerSet ::= SET { flag BOOLEAN }
+END

@@ -1,0 +1,55 @@
+NamedSetRecord DEFINITIONS ::= BEGIN
+
+InnerSet ::= SET {
+    number [0] IMPLICIT INTEGER (0..5),
+    flag [1] IMPLICIT BOOLEAN
+}
+
+Standalone ::= SET { flag BOOLEAN }
+
+SequenceNatural ::= SEQUENCE {
+    child InnerSet,
+    after [4] IMPLICIT BOOLEAN
+}
+
+SequenceImplicit ::= SEQUENCE {
+    child [3] IMPLICIT InnerSet,
+    after [4] IMPLICIT BOOLEAN
+}
+
+SequenceExplicit ::= SEQUENCE {
+    child [3] EXPLICIT InnerSet,
+    after [4] IMPLICIT BOOLEAN
+}
+
+SequenceOptional ::= SEQUENCE {
+    child [3] EXPLICIT InnerSet OPTIONAL,
+    after [4] IMPLICIT BOOLEAN
+}
+
+SetNatural ::= SET {
+    child InnerSet,
+    after [4] IMPLICIT BOOLEAN
+}
+
+SetImplicit ::= SET {
+    child [3] IMPLICIT InnerSet,
+    after [4] IMPLICIT BOOLEAN
+}
+
+SetExplicit ::= SET {
+    child [3] EXPLICIT InnerSet,
+    after [4] IMPLICIT BOOLEAN
+}
+
+SetOptional ::= SET {
+    child [3] EXPLICIT InnerSet OPTIONAL,
+    after [4] IMPLICIT BOOLEAN
+}
+
+SetDefaults ::= SET {
+    child [3] EXPLICIT InnerSet,
+    enabled BOOLEAN DEFAULT FALSE
+}
+
+END

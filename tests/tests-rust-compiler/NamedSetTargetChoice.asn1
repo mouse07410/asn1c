@@ -1,0 +1,4 @@
+NamedSetTargetChoice DEFINITIONS ::= BEGIN
+InnerChoice ::= CHOICE { flag BOOLEAN, number INTEGER (0..5) }
+Packet ::= SEQUENCE { child InnerChoice }
+END

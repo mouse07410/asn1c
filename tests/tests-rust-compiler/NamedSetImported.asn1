@@ -1,0 +1,4 @@
+NamedSetImported DEFINITIONS ::= BEGIN
+IMPORTS InnerSet FROM NamedSetImportBase;
+Packet ::= SEQUENCE { child InnerSet }
+END

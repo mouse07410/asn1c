@@ -1,0 +1,5 @@
+NamedSetAlias DEFINITIONS ::= BEGIN
+InnerSet ::= SET { flag BOOLEAN }
+Alias ::= InnerSet
+Packet ::= SEQUENCE { child Alias }
+END

@@ -1,0 +1,4 @@
+NamedSetRecursive DEFINITIONS ::= BEGIN
+InnerSet ::= SET { child InnerSet OPTIONAL, flag BOOLEAN }
+Packet ::= SEQUENCE { child InnerSet }
+END

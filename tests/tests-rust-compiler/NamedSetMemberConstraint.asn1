@@ -1,0 +1,4 @@
+NamedSetMemberConstraint DEFINITIONS ::= BEGIN
+InnerSet ::= SET { flag BOOLEAN }
+Packet ::= SEQUENCE { child InnerSet (WITH COMPONENTS { flag (TRUE) }) }
+END

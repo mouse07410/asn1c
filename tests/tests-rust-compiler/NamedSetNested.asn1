@@ -1,0 +1,4 @@
+NamedSetNested DEFINITIONS ::= BEGIN
+InnerSet ::= SET { child SEQUENCE { flag BOOLEAN } }
+Packet ::= SEQUENCE { child InnerSet }
+END

@@ -660,3 +660,24 @@ framing, verify explicit BER DEFAULT decoding and strict CER rejection, and
 compile the empty target under the exact strict Clippy settings. The main
 named-child crate runs generated tests and strict Clippy under combined,
 BER-only, and CER-only selection.
+
+### Same-module named SET child
+
+`NamedSetRecord.asn1`, `named_set_child_conformance.rs`, and
+`c_named_set_child.c` exercise one same-module named SET child with natural,
+context-specific IMPLICIT, and EXPLICIT tags under flat SEQUENCE and SET roots.
+The target has required bounded INTEGER and BOOLEAN leaves with unique tags;
+parent roots include required and OPTIONAL children and a literal BOOLEAN
+DEFAULT. Empty named SET targets are rejected because generated C emits an
+invalid empty enum and tag map.
+
+Tests compare C and Rust DER/CER encodings and decoded values, exercise natural
+and tagged child order independently from parent SET order, accept BER
+permutations, and require strict CER to reject them. Malformed EOCs, duplicate
+and unknown child tags, a wrong EXPLICIT inner type, out-of-range child values,
+prefix suffixes, truncations, mutations, input/output limits, and a pinned
+shared-work threshold are covered. No-publication negatives cover empty,
+aliased, imported, parameterized, recursive, tagged, constrained, extended,
+nested, multiple-child, colliding, CHOICE, and collection targets, plus mixed
+or UPER-only selection. An unreferenced top-level SET remains free of unused
+private nested callbacks under strict Clippy.

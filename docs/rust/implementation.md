@@ -120,6 +120,7 @@ fresh directory after adding application code or running Cargo there.
 | One natural unconstrained INTEGER field in a flat untagged SEQUENCE or SET | `BigInteger` owned value without i64 narrowing; BER sign normalization, primitive DER/CER tag-2 output, strict CER comparison, one aggregate record budget, required/OPTIONAL presence, scalar siblings, and BER/CER-only selection |
 | One same-module named bounded INTEGER field in a flat untagged SEQUENCE or SET | Checked generated newtype with one finite contiguous `i64` range; natural, resolved context IMPLICIT, or one EXPLICIT tag; required/OPTIONAL; supported scalar siblings including finite bounded BIT/OCTET; shared record context and BER/CER-only selection |
 | One same-module named SEQUENCE child in a flat untagged SEQUENCE or SET | Required/OPTIONAL nonrecursive child, including empty; up to six supported direct primitive child leaves; natural, context IMPLICIT, or one EXPLICIT member tag; parent scalar DEFAULT behavior retained; shared nested context and strict CER comparison; BER/CER-only selection |
+| One same-module named SET child in a flat untagged SEQUENCE or SET | Required/OPTIONAL nonrecursive nonempty child; one to six supported direct primitive leaves; natural, context IMPLICIT, or one EXPLICIT member tag; parent scalar DEFAULT behavior retained; independent child/parent SET sorting, shared nested context, strict CER comparison; BER/CER-only selection |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in APER and OER encode/decode; each call begins at an octet boundary |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in JER encode/decode of one complete JSON primitive with -gen-JER |
 | Direct fixed OCTET/BIT STRING | Opt-in JER uppercase-hex encoding, case-insensitive complete-input decoding, exact packed size and zero-padding checks, and resource limits |
@@ -289,6 +290,20 @@ An empty inline child is supported under BER/CER-only selection. Mixed UPER
 with BER/CER currently requires a nonempty child because the generated empty
 UPER helper does not pass the required strict Clippy checks; that selection is
 rejected before output publication.
+
+One same-module untagged named SET may be used as one required or OPTIONAL
+child of a flat untagged SEQUENCE or SET. It must be nonrecursive and have one
+through six supported direct primitive leaves. Natural tag 17, one resolved
+context-specific IMPLICIT tag, or one EXPLICIT wrapper may identify the child.
+Parent scalar siblings and literal BOOLEAN/bounded INTEGER DEFAULT values keep
+their existing behavior. The generator emits the target's private SET field
+helpers only when a parent references it, so standalone SETs do not acquire
+unused callbacks. One nested `RecordContext` tracks the child and parent; the
+child SET sorts its own fields independently of a parent SET. Empty named SETs
+remain unsupported because the unmodified generated C target does not compile
+them. Aliases, imports, parameters, constrained/tagged/recursive targets,
+extensions, nested members, multiple children, tag collisions, and mixed
+codecs fail before output publication.
 
 `Encoded` carries output bytes and meaningful bit length. `Decoded<T>` carries
 the value and consumed bits and bytes. Prefix decoding may leave a suffix;

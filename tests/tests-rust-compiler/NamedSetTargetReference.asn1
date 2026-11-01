@@ -1,0 +1,5 @@
+NamedSetTargetReference DEFINITIONS ::= BEGIN
+Flag ::= BOOLEAN
+InnerSet ::= SET { flag Flag }
+Packet ::= SEQUENCE { child InnerSet }
+END

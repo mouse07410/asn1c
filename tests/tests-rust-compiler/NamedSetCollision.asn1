@@ -1,0 +1,7 @@
+NamedSetCollision DEFINITIONS ::= BEGIN
+InnerSet ::= SET { flag BOOLEAN }
+Packet ::= SEQUENCE {
+    child [3] IMPLICIT InnerSet,
+    other [3] IMPLICIT BOOLEAN
+}
+END

@@ -1,0 +1,4 @@
+NamedSetMultiple DEFINITIONS ::= BEGIN
+InnerSet ::= SET { flag BOOLEAN }
+Packet ::= SEQUENCE { first InnerSet, second InnerSet }
+END

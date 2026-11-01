@@ -1,0 +1,4 @@
+NamedSetTaggedTarget DEFINITIONS ::= BEGIN
+InnerSet ::= [2] IMPLICIT SET { flag BOOLEAN }
+Packet ::= SEQUENCE { child InnerSet }
+END

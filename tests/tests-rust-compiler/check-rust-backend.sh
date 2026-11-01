@@ -4660,7 +4660,7 @@ done
 for fixture in NamedSequenceAlias NamedSequenceMultiple NamedSequenceNested \
     NamedSequenceDefault NamedSequenceExtension NamedSequenceTaggedTarget \
     NamedSequenceTaggedRoot NamedSequenceCollision NamedSequenceTargetBoolean \
-    NamedSequenceRecursive NamedSequenceTargetSet NamedSequenceTargetChoice \
+    NamedSequenceRecursive NamedSequenceTargetChoice \
     NamedSequenceTargetOf NamedSequenceMemberConstraint; do
     rejected="$test_tmp/rejected-$fixture"
     if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
@@ -4674,6 +4674,19 @@ for fixture in NamedSequenceAlias NamedSequenceMultiple NamedSequenceNested \
         exit 1
     fi
 done
+
+# The named SET child gate now accepts this former negative SEQUENCE fixture.
+named_sequence_set_child="$test_tmp/named-sequence-set-child"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$named_sequence_set_child" "$test_srcdir/NamedSequenceTargetSet.asn1"
+if ! (cd "$named_sequence_set_child" && \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/named-sequence-set-child.log" 2>&1; then
+    cat "$test_tmp/named-sequence-set-child.log"
+    echo "FAIL: named SEQUENCE with SET child strict Clippy"
+    exit 1
+fi
 
 rejected_named_sequence_import="$test_tmp/rejected-NamedSequenceImported"
 if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
@@ -4757,4 +4770,151 @@ if ! "$test_tmp/c-named-sequence-empty"; then
     exit 1
 fi
 
-echo "PASS: generated Rust UPER/CER/BER-DER and named record/SEQUENCE-child slices"
+# Same-module named SET targets use target-derived descriptors and one nested context.
+named_set_rust="$test_tmp/named-set-rust"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$named_set_rust" "$test_srcdir/NamedSetRecord.asn1"
+mkdir "$named_set_rust/tests"
+cp "$test_srcdir/named_set_child_conformance.rs" "$named_set_rust/tests/"
+named_set_module="$named_set_rust/src/named_set_record.rs"
+for expected in 'pub struct InnerSet' 'pub struct SequenceNatural' \
+    'pub struct SetNatural' 'writer.write_nested_set' 'reader.read_nested_set' \
+    'self.child.encode_record_fields' 'InnerSet::decode_record_fields' \
+    'FieldKind::Set' 'RecordContext::new_nested'; do
+    if ! grep -F "$expected" "$named_set_module" >/dev/null; then
+        echo "FAIL: named SET generated source omitted $expected"
+        exit 1
+    fi
+done
+if grep -F 'Standalone::encode_record_fields' "$named_set_module" >/dev/null; then
+    echo "FAIL: unreferenced named SET emitted unused private field callbacks"
+    exit 1
+fi
+if ! (cd "$named_set_rust" && \
+    CARGO_TARGET_DIR="$test_tmp/target-named-set" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-named-set" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/named-set-rust.log" 2>&1; then
+    cat "$test_tmp/named-set-rust.log"
+    echo "FAIL: named SET generated Rust tests or strict Clippy"
+    exit 1
+fi
+
+for codec in BER CER; do
+    named_set_codec="$test_tmp/named-set-$codec-only"
+    if [ "$codec" = BER ]; then
+        unwanted_methods='pub fn encode_cer|pub fn decode_cer'
+        "$asn1c_bin" --rust -gen-BER -no-gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$named_set_codec" "$test_srcdir/NamedSetRecord.asn1"
+    else
+        unwanted_methods='pub fn encode_der|pub fn decode_ber'
+        "$asn1c_bin" --rust -gen-CER -no-gen-BER -no-gen-UPER -S "$skeletons" \
+            -D "$named_set_codec" "$test_srcdir/NamedSetRecord.asn1"
+    fi
+    if ! (cd "$named_set_codec" && \
+        cargo clippy --offline --all-targets --all-features -- \
+        -W clippy::pedantic -W clippy::nursery -D warnings) \
+        >"$test_tmp/named-set-$codec-only.log" 2>&1; then
+        cat "$test_tmp/named-set-$codec-only.log"
+        echo "FAIL: named SET $codec-only strict Clippy"
+        exit 1
+    fi
+    if grep -E "$unwanted_methods" "$named_set_codec/src/named_set_record.rs" \
+        >/dev/null; then
+        echo "FAIL: named SET $codec-only output includes unselected methods"
+        exit 1
+    fi
+done
+
+for fixture in NamedSetAlias NamedSetCollision NamedSetEmpty NamedSetExtension \
+    NamedSetMemberConstraint NamedSetMultiple NamedSetNested NamedSetParameterized \
+    NamedSetRecursive NamedSetTaggedRoot NamedSetTaggedTarget NamedSetTargetChoice \
+    NamedSetTargetConstraint NamedSetTargetDefault NamedSetTargetOf \
+    NamedSetTargetReference; do
+    rejected="$test_tmp/rejected-$fixture"
+    if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$rejected" "$test_srcdir/$fixture.asn1" \
+        >"$test_tmp/rejected-$fixture.log" 2>&1; then
+        echo "FAIL: named SET gate accepted unsupported $fixture"
+        exit 1
+    fi
+    if [ -e "$rejected" ]; then
+        echo "FAIL: rejected named SET $fixture published output"
+        exit 1
+    fi
+done
+
+named_set_import="$test_tmp/rejected-NamedSetImported"
+if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$named_set_import" "$test_srcdir/NamedSetImportBase.asn1" \
+    "$test_srcdir/NamedSetImported.asn1" \
+    >"$test_tmp/rejected-NamedSetImported.log" 2>&1; then
+    echo "FAIL: named SET gate accepted imported target"
+    exit 1
+fi
+if [ -e "$named_set_import" ]; then
+    echo "FAIL: imported named SET target published output"
+    exit 1
+fi
+
+for selection in mixed uper; do
+    rejected="$test_tmp/rejected-named-set-codecs-$selection"
+    if [ "$selection" = mixed ]; then
+        if "$asn1c_bin" --rust -gen-BER -gen-CER -gen-UPER -S "$skeletons" \
+            -D "$rejected" "$test_srcdir/NamedSetRecord.asn1" \
+            >"$test_tmp/rejected-named-set-$selection.log" 2>&1; then
+            echo "FAIL: named SET gate accepted mixed codec selection"
+            exit 1
+        fi
+    else
+        if "$asn1c_bin" --rust -gen-UPER -no-gen-BER -no-gen-CER -S "$skeletons" \
+            -D "$rejected" "$test_srcdir/NamedSetRecord.asn1" \
+            >"$test_tmp/rejected-named-set-$selection.log" 2>&1; then
+            echo "FAIL: named SET gate accepted UPER-only selection"
+            exit 1
+        fi
+    fi
+    if [ -e "$rejected" ]; then
+        echo "FAIL: rejected named SET codec selection published output"
+        exit 1
+    fi
+done
+
+named_set_c="$test_tmp/named-set-c"
+mkdir "$named_set_c"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$named_set_c" "$test_srcdir/NamedSetRecord.asn1" \
+    >"$test_tmp/named-set-c-generate.log" 2>&1
+named_set_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$named_set_c/Makefile.am.libasncodec")
+rm -f "$named_set_c/converter-example.c" "$named_set_c/pdu_collection.c"
+if ! cc $named_set_cflags -I"$named_set_c" "$named_set_c"/*.c \
+    "$test_srcdir/c_named_set_child.c" -lm -o "$test_tmp/c-named-set-child" \
+    >"$test_tmp/named-set-c-compile.log" 2>&1; then
+    cat "$test_tmp/named-set-c-compile.log"
+    echo "FAIL: C named SET child fixture did not compile"
+    exit 1
+fi
+if ! "$test_tmp/c-named-set-child"; then
+    echo "FAIL: C named SET DER/CER vectors or BER boundary cases failed"
+    exit 1
+fi
+if ! cc -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer \
+    $named_set_cflags -I"$named_set_c" "$named_set_c"/*.c \
+    "$test_srcdir/c_named_set_child.c" -lm -o "$test_tmp/c-named-set-child-sanitize" \
+    >"$test_tmp/named-set-c-sanitize-compile.log" 2>&1; then
+    cat "$test_tmp/named-set-c-sanitize-compile.log"
+    echo "FAIL: C named SET sanitizer fixture did not compile"
+    exit 1
+fi
+if ! ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
+    "$test_tmp/c-named-set-child-sanitize"; then
+    echo "FAIL: C named SET fixture failed under ASan/UBSan"
+    exit 1
+fi
+
+echo "PASS: generated Rust UPER/CER/BER-DER and named record/SEQUENCE/SET-child slices"

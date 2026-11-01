@@ -1,0 +1,4 @@
+NamedSetTargetOf DEFINITIONS ::= BEGIN
+InnerList ::= SEQUENCE OF BOOLEAN
+Packet ::= SEQUENCE { child InnerList }
+END

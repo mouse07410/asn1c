@@ -1,0 +1,4 @@
+NamedSetEmpty DEFINITIONS ::= BEGIN
+EmptySet ::= SET { }
+Packet ::= SEQUENCE { child EmptySet }
+END
