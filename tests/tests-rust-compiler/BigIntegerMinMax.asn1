@@ -1,0 +1,5 @@
+BigIntegerMinMax DEFINITIONS ::= BEGIN
+
+Huge ::= INTEGER (MIN..MAX)
+
+END

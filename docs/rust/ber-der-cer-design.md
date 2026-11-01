@@ -5,7 +5,8 @@ implemented. Full C parity has not been reached. The compatibility target is
 the C backend in this repository, qualified by the decisions below. The Rust
 runtime currently supplies BER prefix decoding and DER and CER encoding, plus
 strict CER prefix decoding, for BOOLEAN, NULL, finite bounded `i64` INTEGER,
-direct finite ENUMERATED, and fixed or bounded BIT/OCTET STRING values. See
+unconstrained arbitrary-precision INTEGER, direct finite ENUMERATED, and fixed
+or bounded BIT/OCTET STRING values. See
 `rust/asn1c-runtime/README.md` and
 `libasn1compiler/asn1c_rust.c`. The generator rejects many schemas supported by
 C, including imports, references, most root tags, and multi-tag stacks. These
@@ -261,26 +262,30 @@ selection flags expose exactly the implemented operations, adversarial cases
 fail safely, and checks pass. The matrix is a target, not evidence that C
 implements every conceivable ASN.1 feature.
 
-### Arbitrary INTEGER representation (approved initial gate, not implemented)
+### Arbitrary INTEGER representation (qualified initial gate)
 
-The first arbitrary INTEGER stage will cover an untagged top-level,
-unconstrained `INTEGER` under BER/CER-only selection. It will introduce a
+The first arbitrary INTEGER stage covers an untagged top-level,
+unconstrained `INTEGER` under BER/CER-only selection. It introduces a
 separate Rust type that privately stores a nonempty, minimal, big-endian signed
 two's-complement byte sequence. Fallible constructors normalize sign padding;
 borrowed canonical bytes and fallible `i64` conversion provide access without
 a third-party bigint dependency. Existing bounded `i64` types and APIs remain
 unchanged. This representation is mathematically unbounded, but each operation
 is subject to the caller's finite input, output, work, and scratch limits.
-The intended runtime surface is `BigInteger::try_from_signed_bytes`,
+The runtime value and generated wrapper move ownership and expose borrowed
+inspection; they do not require an infallible `Clone` for large payloads.
+The runtime surface is `BigInteger::try_from_signed_bytes`,
 `as_signed_bytes`, and `try_to_i64`, plus separate
 `encode_big_integer_der`/`encode_big_integer_cer` and
 `decode_big_integer_ber`/`decode_big_integer_cer` functions. Conversion
 overflow uses its own small error type or an explicit `Option`; it must not
 silently truncate or change the existing runtime `Error` variants.
 
-The BER reader will accept redundant sign extension as a C compatibility
-extension, normalize the value, and preserve exact prefix consumption. It will
-reject an empty INTEGER content. A local C probe showed that the wide C
+The BER reader accepts redundant sign extension as a C compatibility
+extension and C-compatible nonminimal universal high-tag INTEGER identifiers,
+normalizes the value, and preserves exact prefix consumption. Strict CER rejects
+such identifier aliases by canonical comparison. The reader rejects an
+empty INTEGER content. A local C probe showed that the wide C
 `INTEGER_t` BER decoder accepts empty content, while strict CER rejects it;
 mapping that malformed input to a valid Rust value would hide the defect. DER
 and CER emit minimal primitive contents, and strict CER re-encodes and compares
@@ -288,14 +293,41 @@ through one operation budget. Input lengths and available bytes must be checked
 before allocation, with bounded retained capacity and checked work for sign
 trimming, copying, output, and comparison.
 
-The C comparison for arbitrary values must use generated `-fwide-types`
+The C comparison for arbitrary values uses generated `-fwide-types`
 descriptors: on the probed host, default unconstrained INTEGER generation used
 native `long` storage and rejected values outside its width. Native width
 variants, bounded ranges beyond `i64`, record fields, aliases, tags,
-extensions, and constraint timing require separate gates. Test both signs
-across the `i64` boundary, 127/128 length transitions, malformed lengths,
-truncation, nonminimal BER padding, strict CER rejection, exact limits, and C
-wide-type interoperability before enabling generator output.
+extensions, and constraint timing require separate gates. Tests cover both
+signs across the `i64` boundary, 127/128 length transitions, malformed
+lengths, truncation, nonminimal BER padding, strict CER rejection, exact
+limits, and C wide-type interoperability.
+
+### Unconstrained direct BIT and OCTET STRING (approved next gate)
+
+An untagged top-level `BIT STRING` or `OCTET STRING` without a constraint,
+named bits, or `CONTAINING` may use the existing standalone BER, DER, and CER
+runtime codecs under BER/CER-only selection. The generated OCTET STRING wrapper
+owns a `Vec<u8>`; the BIT STRING wrapper owns a validated `BitStringValue`.
+Constructors consume those values without an additional copy. The codecs
+check complete input, output, decoded storage, work, and exact prefix
+consumption using the existing standalone runtime limits. This gate does not
+change bounded string APIs or record member representations. Other codec
+selections, tags, references, fields, and explicit `SIZE(0..MAX)` remain
+outside this gate until their constraints and composition are qualified.
+
+Check C and Rust at empty, 999/1000/1001 content-octet boundaries, with
+multiple CER fragments and non-byte-aligned final BIT STRING fragments. Test
+constructed BER strings with definite and indefinite nesting, fragment tag
+aliases, padding normalization, malformed EOCs, lengths, unused-bit counts,
+truncations, and resource ceilings. A local C probe accepts a non-final BIT
+STRING fragment with unused bits, while the Rust BER reader rejects it.
+[X.690 section 8.6.4](https://www.itu.int/rec/T-REC-X.690/en) requires every
+segment except possibly the last to contain a
+multiple of eight bits. Retain this deliberate malformed-input difference and
+test it. Strict CER rejects the noncanonical C input as well. The existing
+standalone string codecs bound retained and canonical buffers individually by
+`max_output_bytes`; aggregate simultaneous scratch policy remains a separate
+resource-design decision rather than a claim of complete C resource parity.
 
 ## Decisions still required
 

@@ -25,12 +25,15 @@ nobase_dist_docs_DATA = docs/binary-codec-support.md docs/cer-encoder-plan.md \
     docs/issues-584-implied-enum.md docs/issue-586-aper-unknown-open-type.md \
     docs/rust/README.md docs/rust/architecture.md docs/rust/stage-one-plan.md \
     docs/rust/runtime.md docs/rust/code-generation.md docs/rust/testing.md \
-    docs/rust/implementation.md docs/rust/open-type-plan.md
+    docs/rust/implementation.md docs/rust/open-type-plan.md \
+    docs/rust/ber-der-cer-design.md
 
 # Rust output copies this matching runtime into each generated Cargo package.
 # Installing these sources requires no Rust compiler for the C compiler build.
 nobase_dist_pkgdata_DATA = rust/asn1c-runtime/Cargo.toml \
     rust/asn1c-runtime/README.md rust/asn1c-runtime/LICENSE \
-    rust/asn1c-runtime/src/lib.rs rust/asn1c-runtime/src/aper.rs rust/asn1c-runtime/src/cbor.rs \
+    rust/asn1c-runtime/src/lib.rs rust/asn1c-runtime/src/ber.rs \
+    rust/asn1c-runtime/src/big_integer.rs rust/asn1c-runtime/src/aper.rs \
+    rust/asn1c-runtime/src/cbor.rs \
     rust/asn1c-runtime/src/oer.rs rust/asn1c-runtime/src/jer.rs rust/asn1c-runtime/src/xer.rs \
     rust/asn1c-runtime/src/uper_cursor.rs

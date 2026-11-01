@@ -164,6 +164,8 @@ static int rust_write_boolean_ber(FILE *);
 static int rust_write_null(FILE *, const char *, uint64_t);
 static int rust_write_null_ber(FILE *);
 static int rust_write_integer(FILE *, const char *, int64_t, int64_t, uint64_t);
+static int rust_write_big_integer(FILE *, const char *, uint64_t);
+static int rust_write_big_integer_ber_cer(FILE *, int);
 static int rust_write_string(FILE *, const char *, asn1p_expr_t *, uint64_t);
 static int rust_write_bounded_octets(FILE *, const char *, size_t, size_t,
                                     uint64_t);
@@ -761,6 +763,23 @@ rust_tagged_record_root_candidate(const asn1p_expr_t *expr, uint64_t codecs) {
         && codecs && !(codecs & ~ber_cer);
 }
 
+/* Validate the codec mask for a direct unconstrained INTEGER assignment.
+ * Inputs: module and expr identify the source assignment; codecs is selected.
+ * Returns zero for BER/CER-only masks, otherwise -1 with a location diagnostic.
+ * Errors: no exception. Source: Rust BigInteger stage. Version/date: 2026-11-01.
+ * Responsible: asn1c maintainers. History: unbounded INTEGER codec gate.
+ * Example: BER plus CER passes; BER plus UPER fails.
+ */
+static int
+rust_check_big_integer_codecs(asn1p_module_t *module, asn1p_expr_t *expr,
+                              uint64_t codecs) {
+    const uint64_t ber_cer = RUST_CODEC_BER | RUST_CODEC_CER;
+    if(codecs && !(codecs & ~ber_cer)) return 0;
+    rust_diagnostic(module, expr,
+                    "unconstrained INTEGER requires BER/CER-only codec selection");
+    return -1;
+}
+
 /*
  * Reject one unsupported type before output publication.
  * Parameters: module and expr identify the fixed assignment; codecs is the
@@ -843,6 +862,8 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
         return 0;
     }
     if(expr->expr_type == ASN_BASIC_INTEGER) {
+        if(!expr->constraints && !expr->combined_constraints)
+            return rust_check_big_integer_codecs(module, expr, codecs);
         if(!expr->combined_constraints
            || !rust_constraint_supported(expr->combined_constraints, 0)
            || rust_integer_bounds(expr, &(int64_t){0}, &(int64_t){0})) {
@@ -2864,6 +2885,7 @@ rust_manifest_path_allowed(const char *path) {
        || !strcmp(path, "runtime/README.md")
        || !strcmp(path, "runtime/LICENSE")
        || !strcmp(path, "runtime/src/lib.rs")
+       || !strcmp(path, "runtime/src/big_integer.rs")
        || !strcmp(path, "runtime/src/ber.rs")
        || !strcmp(path, "runtime/src/cbor.rs")
        || !strcmp(path, "runtime/src/jer.rs")
@@ -2926,7 +2948,8 @@ rust_remove_tree(const char *path) {
 static int
 rust_copy_runtime(const char *source, const char *destination) {
     static const char *const files[] = {
-        "Cargo.toml", "README.md", "LICENSE", "src/lib.rs", "src/ber.rs",
+        "Cargo.toml", "README.md", "LICENSE", "src/lib.rs", "src/big_integer.rs",
+        "src/ber.rs",
         "src/cbor.rs", "src/jer.rs", "src/xer.rs", "src/aper.rs", "src/oer.rs", "src/uper_cursor.rs"
     };
     struct stat status;
@@ -3382,6 +3405,9 @@ rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
         ret = rust_write_string(stream, name, expr, codecs);
     } else if(expr->expr_type == ASN_BASIC_ENUMERATED) {
         ret = rust_write_enumerated(stream, name, expr, codecs);
+    } else if(expr->expr_type == ASN_BASIC_INTEGER
+              && !expr->constraints && !expr->combined_constraints) {
+        ret = rust_write_big_integer(stream, name, codecs);
     } else {
         int64_t lower, upper;
         if(rust_integer_bounds(expr, &lower, &upper)) ret = -1;
@@ -7158,6 +7184,118 @@ rust_write_integer_ber(FILE *stream, const char *low, const char *high) {
 }
 
 /*
+ * Emit an unconstrained signed INTEGER wrapper without exposing its storage.
+ * Inputs: stream receives Rust, name is the public type, and codecs is the
+ * validated BER/CER-only selection. Returns zero or -1 on output failure.
+ * Errors: emitted methods return runtime validation, decode, and limit errors.
+ * Source: new Rust BigInteger generator slice. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: initial unbounded INTEGER.
+ * Example: rust_write_big_integer(stream, "Huge", RUST_CODEC_BER).
+ */
+static int
+rust_write_big_integer(FILE *stream, const char *name, uint64_t codecs) {
+    if(fprintf(stream,
+        "/// Unconstrained ASN.1 INTEGER with canonical signed-byte storage.\n"
+        "#[derive(Debug, Eq, PartialEq)]\n"
+        "pub struct %s(\n"
+        "    /// Private arbitrary-precision INTEGER state variable.\n"
+        "    ::asn1c_runtime::BigInteger\n"
+        ");\n\nimpl %s {\n", name, name) < 0) return -1;
+    if(rust_write_method_doc(stream,
+            "Construct an INTEGER from signed big-endian two's-complement bytes.",
+            "`bytes` is nonempty signed input; `limits` bounds memory and work.",
+            "Returns a value holding a normalized copy of the integer bytes.",
+            "Returns an error for empty input, invalid representation, or limits.",
+            "`let value = Type::try_from_signed_bytes(&[0x80], &limits)?;"))
+        return -1;
+    if(fputs("    pub fn try_from_signed_bytes(\n"
+             "        bytes: &[u8], limits: &::asn1c_runtime::Limits\n"
+             "    ) -> ::core::result::Result<Self, ::asn1c_runtime::Error> {\n"
+             "        ::asn1c_runtime::BigInteger::try_from_signed_bytes(bytes, limits)\n"
+             "            .map(Self)\n    }\n", stream) == EOF) return -1;
+    if(rust_write_method_doc(stream, "Borrow the normalized signed INTEGER bytes.",
+            "`self` is the value to inspect.",
+            "Returns the minimal big-endian two's-complement byte representation.",
+            "This accessor cannot fail.", "`let bytes = value.as_signed_bytes();"))
+        return -1;
+    if(fputs("    #[must_use]\n"
+             "    pub fn as_signed_bytes(&self) -> &[u8] {\n"
+             "        self.0.as_signed_bytes()\n    }\n", stream) == EOF) return -1;
+    if(rust_write_method_doc(stream, "Return the value when it fits in i64.",
+            "`self` is the value to inspect.",
+            "Returns `Some` for values in the signed 64-bit range, otherwise `None`.",
+            "This accessor cannot fail.", "`let small = value.try_to_i64();"))
+        return -1;
+    if(fputs("    #[must_use]\n"
+             "    pub fn try_to_i64(&self) -> ::core::option::Option<i64> {\n"
+             "        self.0.try_to_i64()\n    }\n", stream) == EOF) return -1;
+    if((codecs & RUST_CODEC_BER)
+       && rust_write_big_integer_ber_cer(stream, 0)) return -1;
+    if((codecs & RUST_CODEC_CER)
+       && rust_write_big_integer_ber_cer(stream, 1)) return -1;
+    return fputs("}\n\n", stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Emit one syntax-specific arbitrary-precision INTEGER method pair.
+ * Inputs: stream receives source; cer selects CER instead of DER/BER.
+ * Returns zero or -1 on output failure. Runtime errors carry malformed and
+ * resource-limit failures. Source: new Rust BigInteger generator slice.
+ * Version/date: 2026-11-01. Responsible: asn1c maintainers.
+ * History: split syntax methods for codec-selective generation.
+ * Example: rust_write_big_integer_ber_cer(stream, 1) emits CER methods.
+ */
+static int
+rust_write_big_integer_ber_cer(FILE *stream, int cer) {
+    const char *lower = cer ? "cer" : "der";
+    const char *decode = cer ? "cer" : "ber";
+    const char *description = cer
+        ? "Encode this value using CER."
+        : "Encode this value using DER.";
+    const char *return_text = cer
+        ? "Returns the complete minimal signed INTEGER CER TLV."
+        : "Returns the complete minimal signed INTEGER DER TLV.";
+    const char *decode_description = cer
+        ? "Strictly decode one CER INTEGER TLV and report prefix consumption."
+        : "Decode one BER INTEGER TLV and report prefix consumption.";
+    const char *decode_error = cer
+        ? "Returns an error for truncated, noncanonical, malformed, or over-limit input."
+        : "Returns an error for truncated, malformed, or over-limit input.";
+    char example[96];
+    int written;
+
+    written = snprintf(example, sizeof(example),
+                       "`let encoded = value.encode_%s(&Default::default())?;", lower);
+    if(written < 0 || (size_t)written >= sizeof(example)) return -1;
+    if(rust_write_method_doc(stream, description,
+            "`self` is the value; `limits` bounds output and work.", return_text,
+            "Returns a runtime error if a configured limit is exceeded.", example))
+        return -1;
+    if(fprintf(stream,
+        "    pub fn encode_%s(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, "
+        "::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::encode_big_integer_%s(&self.0, limits)\n"
+        "    }\n", lower, lower) < 0) return -1;
+    written = snprintf(example, sizeof(example),
+                       "`let decoded = Type::decode_%s(input, &Default::default())?;",
+                       decode);
+    if(written < 0 || (size_t)written >= sizeof(example)) return -1;
+    if(rust_write_method_doc(stream, decode_description,
+            "`input` is the encoded prefix; `limits` bounds decoding.",
+            "Returns the value and consumed bit and byte counts.", decode_error,
+            example)) return -1;
+    if(fprintf(stream,
+        "    pub fn decode_%s(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, "
+        "::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::decode_big_integer_%s(input, limits)\n"
+        "            .map(|decoded| decoded.map(Self))\n    }\n", decode, decode) < 0)
+        return -1;
+    return 0;
+}
+
+/*
  * Emit one complete primitive APER, OER, or JER method pair.
  * Parameters: stream receives Rust; codec is "aper", "oer", or "jer"; kind is one of
  * "boolean", "null", or "integer"; low and high are required INTEGER bounds.
@@ -7340,7 +7478,8 @@ static int
 rust_write_manifest(asn1p_t *asn, const char *stage) {
     static const char *const fixed[] = {
         "Cargo.toml", "src/lib.rs", "runtime/Cargo.toml", "runtime/README.md",
-        "runtime/LICENSE", "runtime/src/lib.rs", "runtime/src/ber.rs",
+        "runtime/LICENSE", "runtime/src/lib.rs", "runtime/src/big_integer.rs",
+        "runtime/src/ber.rs",
         "runtime/src/cbor.rs", "runtime/src/jer.rs", "runtime/src/xer.rs",
         "runtime/src/aper.rs",
         "runtime/src/oer.rs", "runtime/src/uper_cursor.rs"

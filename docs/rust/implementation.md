@@ -96,6 +96,7 @@ fresh directory after adding application code or running Cargo there.
 | IOC-selected OPEN TYPE under CBOR | Narrow existing two-field required SEQUENCE and local object-set rows; direct BOOLEAN or bounded INTEGER selected value in a text-key map; selector agreement and complete selected value checked; unique unknown keys skipped and duplicate keys rejected |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Strict CER decoding; canonical short-form TLV only |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in BER prefix decoding and DER encoding with `-gen-BER` |
+| Direct unconstrained INTEGER | BER prefix decoding, DER encoding, CER encoding, and strict CER decoding under BER/CER-only selection; private arbitrary-precision signed-byte value, untagged root, finite operation limits |
 | Direct ENUMERATED | BER prefix decoding, DER encoding, CER encoding and strict CER decoding when selected |
 | Direct fixed/bounded OCTET STRING and BIT STRING | BER prefix decoding, DER encoding, CER encoding and strict CER decoding when selected; finite nonextensible SIZE below 65536 |
 | Flat SEQUENCE with untagged outer type | BER prefix decoding, DER encoding, CER encoding and strict CER decoding for empty records or up to six direct BOOLEAN, NULL, bounded i64 INTEGER, nonextensible ENUMERATED, and finite bounded BIT/OCTET STRING fields with distinct effective tags; untagged, resolved context-specific IMPLICIT or one EXPLICIT wrapper, or AUTOMATIC members; required, OPTIONAL, and literal BOOLEAN/INTEGER DEFAULT; one shared record budget |

@@ -125,6 +125,20 @@ CER shares the same work ceiling across parsing, fragment copies, canonical
 re-encoding, and byte comparison. SIZE constraints remain the generated type's
 responsibility.
 
+`BigInteger` stores a nonempty, minimal signed big-endian two's-complement
+value. `BigInteger::try_from_signed_bytes` accepts redundant leading `00` or
+`ff` sign-extension bytes and removes them; `as_signed_bytes` borrows the
+canonical bytes, and `try_to_i64` returns `None` when the value is wider than
+the signed 64-bit range. `encode_big_integer_der` and
+`encode_big_integer_cer` emit a shortest primitive universal INTEGER TLV.
+`decode_big_integer_ber` accepts redundant sign padding, nonminimal universal
+high-tag aliases, and nonminimal definite length octets, then reports exact
+prefix consumption. It rejects empty INTEGER content deliberately, although
+the C wide INTEGER BER decoder accepts an empty content octet sequence. The strict
+`decode_big_integer_cer` compares the consumed prefix with its canonical
+re-encoding using one cumulative input, retained-value, scratch, output, and
+work budget; it does not validate a suffix as part of the INTEGER value.
+
 `RecordContext`, `SequenceReader`, `SequenceWriter`, `SetReader`, and `SetWriter`
 compose flat SEQUENCE and SET values with direct BOOLEAN, NULL,
 ENUMERATED, bounded INTEGER, and bounded BIT/OCTET STRING fields under one

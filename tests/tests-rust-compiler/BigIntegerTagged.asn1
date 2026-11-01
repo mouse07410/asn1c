@@ -1,0 +1,5 @@
+BigIntegerTagged DEFINITIONS ::= BEGIN
+
+Huge ::= [0] IMPLICIT INTEGER
+
+END

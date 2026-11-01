@@ -147,6 +147,13 @@ field is a direct BOOLEAN, NULL, finite bounded INTEGER, nonextensible
 ENUMERATED, or finite bounded BIT/OCTET STRING with a distinct effective tag;
 empty records are supported. Other constructed records remain
 outside the Rust BER/DER/CER slice.
+An untagged, unconstrained top-level INTEGER also has a separate
+arbitrary-precision signed-byte Rust representation when only BER and/or CER
+are selected. It supports BER prefix decoding, DER encoding, CER encoding,
+and strict CER decoding under finite input, output, work, and scratch limits.
+The C comparison uses `-fwide-types`; the default native C INTEGER storage on
+the probed host did not represent values beyond `i64`. Rust deliberately
+rejects an empty BER INTEGER content that the wide C decoder accepts.
 Flat SET records with an untagged outer type and the same six direct field kinds are
 available when only BER and/or CER are selected. BER accepts members in any
 order; DER/CER emits them by ascending effective tag class and number, and strict CER rejects

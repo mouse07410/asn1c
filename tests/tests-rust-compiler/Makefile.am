@@ -18,6 +18,12 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/CborChoice.asn1 \
     $(srcdir)/CborContaining.asn1 \
     $(srcdir)/OpenSelected.asn1 \
+    $(srcdir)/BigInteger.asn1 \
+    $(srcdir)/BigIntegerMinMax.asn1 \
+    $(srcdir)/BigIntegerTagged.asn1 \
+    $(srcdir)/BigIntegerField.asn1 \
+    $(srcdir)/big_integer_conformance.rs \
+    $(srcdir)/c_big_integer.c \
     $(srcdir)/FirstSlice.asn1 \
     $(srcdir)/SequenceSlice.asn1 \
     $(srcdir)/StringSlice.asn1 \

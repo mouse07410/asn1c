@@ -73,6 +73,25 @@
       "evidence": "conformance.rs"
     },
     {
+      "asn1_type": "INTEGER",
+      "feature": "unconstrained arbitrary-precision signed value",
+      "codec": "BER/DER and CER only",
+      "variants": [
+        "zero and signed one-byte boundaries",
+        "i64 minimum and maximum",
+        "positive 2^64 and negative 2^65",
+        "129-octet content",
+        "BER redundant sign and universal high-tag aliases"
+      ],
+      "directions": [
+        "DER and CER encode",
+        "BER prefix decode",
+        "strict CER prefix decode"
+      ],
+      "status": "tested_with_live_wide_C_comparison",
+      "evidence": "big_integer_conformance.rs; c_big_integer.c; BigInteger.asn1"
+    },
+    {
       "asn1_type": "BOOLEAN",
       "feature": "primitive, nonextensible",
       "codec": "CER",
@@ -582,9 +601,9 @@
       "note": "XER supports only basic encoding of flat SET and SEQUENCE records with untagged or automatic-tagged direct BOOLEAN, bounded INTEGER, and unconstrained IA5String, and REAL DEFAULT 0.5 fields with finite limited values; decoding and mixed codec selection are unsupported. JER is qualified for listed primitives and strings."
     },
     {
-      "family": "constructed outside nested UPER SEQUENCE, extensible, unbounded, fragmented or disjoint strings, named-bit strings, CHOICE, extensible ENUMERATED, REAL, open types",
+      "family": "constructed outside nested UPER SEQUENCE, extensible, fragmented or disjoint strings, named-bit strings, CHOICE, extensible ENUMERATED, REAL, open types",
       "status": "outside_first_slice",
-      "note": "No Rust correctness or interoperability claim is made beyond the listed SEQUENCE and bounded string subsets."
+      "note": "No Rust correctness or interoperability claim is made beyond the listed INTEGER, SEQUENCE, and bounded string subsets."
     },
     {
       "family": "extensible constraints and cross-codec conversion",
@@ -600,13 +619,13 @@
   "comparison_policy": {
     "C_role": "Current C implementation is a comparison implementation, not a protocol oracle.",
     "independent_checks": "Rust fixed vectors, malformed-input checks, budgets, and round trips",
-    "canonicality": "CER claims are limited to listed generated record and primitive vectors and full-TLV bit counts."
+    "canonicality": "CER claims are limited to listed generated record and primitive vectors, including BigInteger, and full-TLV bit counts."
   },
   "compiler_boundary_checks": {
     "rejected_before_output": [
       "aliases and imports",
       "top-level explicit tags and encoding controls",
-      "unconstrained, extensible, union, and named-number INTEGER",
+      "unconstrained INTEGER with non-BER/CER-only selection, explicit MIN..MAX/open/extended constraints, fields, and tags",
       "unsupported DEFAULT forms, constructed DEFAULT, nested extensions, excessive nesting or aggregate field-work, generated nested-name collisions, extensible and otherwise unsupported constructed types",
       "duplicate --rust selectors and disabling all Rust codecs",
       "an incomplete runtime asset set beside explicit skeletons",
@@ -644,6 +663,10 @@
     "live_C_bounded_string_encode_vectors": 3,
     "live_C_bounded_bit_string_encode_vectors": 4,
     "live_C_ber_der_cer_encode_vectors": 34,
-    "bounded_BIT_single_bit_mutation_inputs": 8
+    "bounded_BIT_single_bit_mutation_inputs": 8,
+    "BigInteger_test_functions": 6,
+    "live_C_wide_INTEGER_vectors_each_direction": 12,
+    "BigInteger_mutated_octet_inputs": 6,
+    "BigInteger_truncated_prefix_inputs": 6
   }
 }

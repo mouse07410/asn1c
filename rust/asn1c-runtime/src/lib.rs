@@ -1,7 +1,7 @@
 //! Safe, bounded primitive codecs for generated ASN.1 Rust code.
 //!
 //! In addition to a limited PER/OER/CER/DER/BER codec slice, this crate covers
-//! BOOLEAN, NULL, bounded signed INTEGER, direct ENUMERATED, fixed and
+//! BOOLEAN, NULL, bounded and arbitrary-precision signed INTEGER, direct ENUMERATED, fixed and
 //! bounded-size UPER strings, fixed or bounded JER strings, and direct CBOR
 //! primitives and opaque ANY values.
 //! It uses only the Rust standard library and applies caller-configurable input,
@@ -21,6 +21,8 @@ use std::fmt;
 pub mod aper;
 /// Checked BER parsing and DER/CER string and ENUMERATED codecs.
 pub mod ber;
+/// Bounded arbitrary-precision signed INTEGER type and BER/DER/CER codecs.
+pub mod big_integer;
 /// Bounded primitive and opaque CBOR codecs.
 pub mod cbor;
 /// Bounded primitive JSON Encoding Rules (JER) codecs.
@@ -42,6 +44,10 @@ pub use ber::{
     encode_enumerated_cer, encode_enumerated_der, encode_octet_string_cer, encode_octet_string_der,
     FieldKind, RecordContext, RecordEncoding, RecordField, SequenceReader, SequenceWriter,
     SetReader, SetWriter, Tag, TagClass, MAX_TAG_NUMBER,
+};
+pub use big_integer::{
+    decode_big_integer_ber, decode_big_integer_cer, encode_big_integer_cer, encode_big_integer_der,
+    BigInteger,
 };
 pub use cbor::{
     decode_boolean_cbor, decode_integer_cbor, decode_null_cbor, encode_boolean_cbor,

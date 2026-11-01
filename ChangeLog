@@ -1,4 +1,10 @@
 Changes since v1.5.3:
+	* Add a bounded-operation arbitrary-precision Rust INTEGER representation
+	  for untagged, unconstrained BER/DER/CER generation. Normalize signed
+	  bytes, validate malformed BER lengths and tags, compare strict CER with
+	  canonical output, and check wide C interoperability and resource limits.
+	  Include the BER runtime modules in installed data and the parity design
+	  in distributed documentation.
 	* Extend the bounded Rust BER/DER/CER flat SET slice to one resolved
 	  context-specific IMPLICIT root tag under BER/CER-only selection. Preserve
 	  effective-tag output order, unordered BER input, and shared CER limits.

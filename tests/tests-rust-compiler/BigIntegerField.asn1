@@ -1,0 +1,5 @@
+BigIntegerField DEFINITIONS ::= BEGIN
+
+Packet ::= SEQUENCE { value INTEGER }
+
+END

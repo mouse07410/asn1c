@@ -307,3 +307,22 @@ and XER decoding are not supported. Output and work limits apply to the whole
 XML value; IA5 text accepts tab, line feed, carriage return, and ASCII 0x20–0x7f.
 Other IA5 controls and their XER control elements are unsupported. Carriage
 return is emitted as `&#xD;` to preserve it through XML line-ending normalization.
+
+The BigInteger BER/CER slice accepts exactly an untagged, unconstrained
+top-level INTEGER when BER/CER are the only selected codecs. Its generated
+wrapper owns a private normalized signed-byte `BigInteger`, constructs from
+fallible signed big-endian bytes, and exposes borrowed bytes plus an optional
+`i64` conversion. BER selection emits DER encoding and prefix BER decoding;
+CER selection emits CER encoding and strict prefix CER decoding. All paths
+share the caller's input, output, and work limits. Bounded `i64` INTEGER APIs
+remain unchanged. Tags, aliases, fields, imports, explicit bounds such as
+`MIN..MAX`, extensibility, and mixed codec selections fail before output.
+
+`big_integer_conformance.rs` and `c_big_integer.c` compare exact encodings for
+zero, signed byte boundaries, both `i64` boundaries, `2^64`, `-2^65`, and a
+129-octet content. The C reference is generated with `-fwide-types`; native C
+integer layouts are outside this comparison. Tests also cover BER redundant
+sign and universal high-tag aliases, strict CER rejection, malformed and
+truncated input, prefix consumption, input mutation, and resource limits.
+Wide C BER accepts empty INTEGER content, while Rust deliberately
+rejects empty content; this is a documented implementation divergence.

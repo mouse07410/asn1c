@@ -281,7 +281,8 @@ rust_out="$test_tmp/generated-rust"
 "$asn1c_bin" --rust -S "$skeletons" -D "$rust_out" \
     "$test_srcdir/FirstSlice.asn1"
 for generated in Cargo.toml src/lib.rs src/first_slice.rs runtime/Cargo.toml \
-    runtime/LICENSE runtime/src/lib.rs runtime/src/cbor.rs runtime/src/jer.rs runtime/src/aper.rs \
+    runtime/LICENSE runtime/src/lib.rs runtime/src/big_integer.rs runtime/src/cbor.rs \
+    runtime/src/jer.rs runtime/src/aper.rs \
     runtime/src/oer.rs \
     runtime/src/uper_cursor.rs; do
     if [ ! -f "$rust_out/$generated" ]; then
@@ -1251,7 +1252,7 @@ fi
 
 # Reject valid ASN.1 constructs outside this Rust slice before writing output.
 for fixture in Alias Import TaggedBoolean ExtensibleInteger UnionInteger \
-    UnconstrainedInteger NamedNumber EncodingControl; do
+    NamedNumber EncodingControl; do
     rejected_out="$test_tmp/rejected-$fixture"
     if "$asn1c_bin" --rust -S "$skeletons" -D "$rejected_out" \
         "$test_srcdir/$fixture.asn1" >"$test_tmp/rejected-$fixture.log" 2>&1; then
@@ -1266,7 +1267,7 @@ for fixture in Alias Import TaggedBoolean ExtensibleInteger UnionInteger \
         Alias) expected='Rust backend does not support' ;;
         Import) expected='IMPORTS are not supported' ;;
         TaggedBoolean) expected='type tags are supported only on BER/CER-only flat SEQUENCE/SET roots' ;;
-        ExtensibleInteger|UnionInteger|UnconstrainedInteger)
+        ExtensibleInteger|UnionInteger)
             expected='INTEGER needs one finite, nonextensible range fitting i64' ;;
         NamedNumber) expected='Rust backend does not support' ;;
         EncodingControl) expected='encoding controls are not supported' ;;
@@ -2607,5 +2608,113 @@ if "$asn1c_bin" --rust -gen-CER -no-gen-UPER -no-gen-BER -S "$skeletons" \
     exit 1
 fi
 test ! -e "$test_tmp/rejected-extensible-enum-cer"
+
+# Unconstrained INTEGER uses the private arbitrary-precision BER/CER wrapper.
+big_integer_mixed="$test_tmp/rejected-big-integer-default"
+if "$asn1c_bin" --rust -S "$skeletons" -D "$big_integer_mixed" \
+    "$test_srcdir/BigInteger.asn1" >"$test_tmp/big-integer-default.log" 2>&1; then
+    echo "FAIL: default mixed codecs accepted unconstrained INTEGER"
+    exit 1
+fi
+grep -F 'unconstrained INTEGER requires BER/CER-only codec selection' \
+    "$test_tmp/big-integer-default.log" >/dev/null
+test ! -e "$big_integer_mixed"
+
+big_integer_mixed="$test_tmp/rejected-big-integer-uper"
+if "$asn1c_bin" --rust -gen-BER -gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$big_integer_mixed" "$test_srcdir/BigInteger.asn1" \
+    >"$test_tmp/big-integer-uper.log" 2>&1; then
+    echo "FAIL: BER/UPER mixed selection accepted unconstrained INTEGER"
+    exit 1
+fi
+test ! -e "$big_integer_mixed"
+
+for fixture in BigIntegerMinMax BigIntegerTagged BigIntegerField; do
+    rejected_out="$test_tmp/rejected-$fixture"
+    if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$rejected_out" "$test_srcdir/$fixture.asn1" \
+        >"$test_tmp/$fixture.log" 2>&1; then
+        echo "FAIL: Rust backend accepted unsupported BigInteger fixture $fixture"
+        exit 1
+    fi
+    test ! -e "$rejected_out"
+done
+
+big_integer_out="$test_tmp/big-integer-rust"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$big_integer_out" "$test_srcdir/BigInteger.asn1"
+mkdir "$big_integer_out/tests"
+cp "$test_srcdir/big_integer_conformance.rs" "$big_integer_out/tests/"
+big_integer_source="$big_integer_out/src/big_integer.rs"
+for method in try_from_signed_bytes as_signed_bytes try_to_i64 \
+    encode_der decode_ber encode_cer decode_cer; do
+    grep -F "pub fn $method" "$big_integer_source" >/dev/null
+done
+if grep -F '#[derive(Clone' "$big_integer_source" >/dev/null; then
+    echo "FAIL: arbitrary-precision generated wrapper derives Clone"
+    exit 1
+fi
+if ! (cd "$big_integer_out" && \
+    CARGO_TARGET_DIR="$test_tmp/target-big-integer" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-big-integer" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/big-integer-rust.log" 2>&1; then
+    cat "$test_tmp/big-integer-rust.log"
+    echo "FAIL: BigInteger conformance or strict Clippy"
+    exit 1
+fi
+
+for codec in BER CER; do
+    if [ "$codec" = BER ]; then
+        unwanted='encode_cer|decode_cer'
+        codec_out="$test_tmp/big-integer-BER-only"
+        "$asn1c_bin" --rust -gen-BER -no-gen-UPER -no-gen-CER \
+            -S "$skeletons" -D "$codec_out" "$test_srcdir/BigInteger.asn1"
+    else
+        unwanted='encode_der|decode_ber'
+        codec_out="$test_tmp/big-integer-CER-only"
+        "$asn1c_bin" --rust -gen-CER -no-gen-UPER -no-gen-BER \
+            -S "$skeletons" -D "$codec_out" "$test_srcdir/BigInteger.asn1"
+    fi
+    if (cargo check --offline --manifest-path "$codec_out/Cargo.toml" && \
+        cargo clippy --offline --manifest-path "$codec_out/Cargo.toml" \
+        --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings) \
+        >"$test_tmp/big-integer-$codec-only.log" 2>&1; then
+        :
+    else
+        cat "$test_tmp/big-integer-$codec-only.log"
+        echo "FAIL: BigInteger $codec-only strict Clippy"
+        exit 1
+    fi
+    if grep -E "pub fn ($unwanted)" "$codec_out/src/big_integer.rs" >/dev/null; then
+        echo "FAIL: BigInteger $codec-only output includes the unselected codec"
+        exit 1
+    fi
+done
+
+# C wide INTEGER is the arbitrary-precision comparison target for this slice.
+big_integer_c="$test_tmp/big-integer-c"
+mkdir "$big_integer_c"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -fwide-types -pdu=all \
+    -fgen-only-pdu-deps -no-gen-example -D "$big_integer_c" \
+    "$test_srcdir/BigInteger.asn1" >"$test_tmp/big-integer-c-generate.log" 2>&1
+big_integer_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$big_integer_c/Makefile.am.libasncodec")
+rm -f "$big_integer_c/converter-example.c" "$big_integer_c/pdu_collection.c"
+if ! cc $big_integer_cflags -I"$big_integer_c" "$big_integer_c"/*.c \
+    "$test_srcdir/c_big_integer.c" -lm -o "$test_tmp/c-big-integer" \
+    >"$test_tmp/big-integer-c-compile.log" 2>&1; then
+    cat "$test_tmp/big-integer-c-compile.log"
+    echo "FAIL: C wide INTEGER reference did not compile"
+    exit 1
+fi
+if ! "$test_tmp/c-big-integer"; then
+    echo "FAIL: C wide INTEGER DER/CER vectors or decode probes did not match"
+    exit 1
+fi
 
 echo "PASS: generated Rust UPER/CER/BER-DER primitive slice"
