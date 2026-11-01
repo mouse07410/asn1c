@@ -247,6 +247,30 @@
       "evidence": "SequenceBerCer.asn1; sequence_ber_cer_conformance.rs; c_sequence_ber_cer.c; check-rust-backend.sh"
     },
     {
+      "asn1_type": "SEQUENCE",
+      "feature": "one context-specific IMPLICIT root tag on a flat top-level SEQUENCE of direct fields",
+      "codec": "BER decode / DER encode + CER decode and encode",
+      "variants": [
+        "BER/CER-only selector gate; mixed UPER and other codec masks rejected",
+        "root tags 0, 3, 30, 31, 127, and 0x3fffffff",
+        "DER definite root and CER indefinite root vectors",
+        "empty records and required, OPTIONAL, and DEFAULT field behavior",
+        "BER definite/indefinite decoding, exact prefix consumption, and limits",
+        "BER accepts a nonminimal high-tag alias while strict CER rejects it",
+        "primitive root form, mismatched tag, truncation, malformed EOC, and suffix checks",
+        "explicit/application roots, aliases, extensions, and nested children rejected",
+        "generated C DER/CER parity at tags 3, 31, and 0x3fffffff with decode probes"
+      ],
+      "directions": [
+        "BER decode",
+        "DER encode",
+        "CER decode",
+        "CER encode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "TaggedRootSequence.asn1; TaggedRootStack.asn1; tagged_root_conformance.rs; c_tagged_root.c; check-rust-backend.sh"
+    },
+    {
       "asn1_type": "SET",
       "feature": "empty or flat untagged direct fields with distinct universal tags: BOOLEAN, bounded INTEGER, fixed/bounded BIT and OCTET STRING, NULL, nonextensible inline ENUMERATED; required/OPTIONAL, literal BOOLEAN/INTEGER DEFAULT",
       "codec": "BER decode / DER encode + CER decode and encode",

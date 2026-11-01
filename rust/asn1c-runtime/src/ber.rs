@@ -1657,14 +1657,61 @@ impl SequenceWriter<'_> {
     /// Source: X.690 definite DER and indefinite CER SEQUENCE framing.
     /// Version: 2026-10-31. Responsible: asn1c maintainers.
     /// History: flat record runtime API. Example: `writer.finish()?`.
-    pub fn finish(mut self) -> Result<Encoded, Error> {
+    pub fn finish(self) -> Result<Encoded, Error> {
+        self.finish_with_root_tag(None)
+    }
+
+    /// Finalize the record with one context-specific IMPLICIT root tag.
+    ///
+    /// # Parameters and returns
+    /// `self` owns the fields; `tag` is the constructed context-specific
+    /// replacement for the universal SEQUENCE identifier. Returns complete
+    /// DER/CER bytes and their octet-aligned wire-bit count.
+    ///
+    /// # Errors
+    /// Returns invalid-tag, output/work-limit, checked-size, or allocation
+    /// errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 IMPLICIT constructed tagging and BER tag range.
+    /// Version: 2026-11-01. Responsible: asn1c maintainers.
+    /// History: flat context-specific root support.
+    /// Example: `writer.finish_tagged_root(Tag::context_specific(3))?`.
+    pub fn finish_tagged_root(self, tag: Tag) -> Result<Encoded, Error> {
+        validate_implicit_root_tag(tag)?;
+        self.finish_with_root_tag(Some(tag))
+    }
+
+    /// Finalize framing and optionally replace the universal root identifier.
+    ///
+    /// # Parameters and returns
+    /// `root_tag` is either absent for the unchanged universal output or the
+    /// validated context-specific IMPLICIT replacement. Returns `Encoded`.
+    ///
+    /// # Errors
+    /// Returns output/work-limit, checked-size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 DER/CER record framing. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: shared record finalizer.
+    /// Example: called by `finish` and `finish_tagged_root`.
+    fn finish_with_root_tag(mut self, root_tag: Option<Tag>) -> Result<Encoded, Error> {
+        let mut root_identifier = [0_u8; 6];
+        let identifier_len = if let Some(tag) = root_tag {
+            encode_identifier_bytes(tag, true, &mut root_identifier)?
+        } else {
+            1
+        };
         match self.rule {
             RecordEncoding::Der => {
                 let content_len = self.bytes.len().checked_sub(2).ok_or(Error::SizeOverflow)?;
                 let length_len = length_size(content_len);
-                let total_len = 1_usize
+                let natural_len = 1_usize
                     .checked_add(length_len)
                     .and_then(|n| n.checked_add(content_len))
+                    .ok_or(Error::SizeOverflow)?;
+                let total_len = natural_len
+                    .checked_add(identifier_len - 1)
                     .ok_or(Error::SizeOverflow)?;
                 self.context.check_output(total_len)?;
                 self.check_nested_storage(total_len)?;
@@ -1675,12 +1722,25 @@ impl SequenceWriter<'_> {
                 patch_der_length(&mut self.bytes, content_len)?;
             }
             RecordEncoding::Cer => {
-                let total_len = self.bytes.len().checked_add(2).ok_or(Error::SizeOverflow)?;
+                let content_len = self.bytes.len().checked_sub(2).ok_or(Error::SizeOverflow)?;
+                let total_len = identifier_len
+                    .checked_add(1)
+                    .and_then(|length| length.checked_add(content_len))
+                    .and_then(|length| length.checked_add(2))
+                    .ok_or(Error::SizeOverflow)?;
                 self.context.check_output(total_len)?;
                 self.check_nested_storage(total_len)?;
                 self.context.charge(2)?;
                 push(&mut self.bytes, &[0, 0], &self.context.limits)?;
             }
+        }
+        if root_tag.is_some() {
+            retag_root_record(
+                &mut self.bytes,
+                &root_identifier[..identifier_len],
+                self.context,
+                self.parent_capacity.unwrap_or(0),
+            )?;
         }
         self.check_actual_nested_storage()?;
         finish(self.bytes, &self.context.limits)
@@ -2237,6 +2297,35 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
         Self::new_with_kind(input, &[], Some(fields), context, RecordKind::Sequence)
     }
 
+    /// Start decoding a context-specific IMPLICIT SEQUENCE root.
+    ///
+    /// # Parameters
+    /// `input` is the full available slice; `tag` is the constructed
+    /// context-specific replacement identifier; `fields` lists the direct
+    /// members; `context` supplies shared operation budgets.
+    ///
+    /// # Returns
+    /// A cursor over the root record. `finish()` reports the exact consumed
+    /// prefix, leaving any following bytes unconsumed.
+    ///
+    /// # Errors
+    /// Returns invalid tag or descriptor, input-limit, truncation, framing,
+    /// size, or work errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 IMPLICIT constructed tagging. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: flat tagged-root support.
+    /// Example: `SequenceReader::new_tagged_root(input, tag, &fields, &mut context)?`.
+    pub fn new_tagged_root(
+        input: &'input [u8],
+        tag: Tag,
+        fields: &'tags [RecordField],
+        context: &'context mut RecordContext,
+    ) -> Result<Self, Error> {
+        validate_implicit_root_tag(tag)?;
+        Self::new_with_outer_tag(input, &[], Some(fields), context, RecordKind::Sequence, tag)
+    }
+
     /// Construct a record reader for SEQUENCE or SET framing.
     ///
     /// # Parameters and returns
@@ -2364,9 +2453,7 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
             || header.tag != u64::from(outer_tag.number)
             || !header.constructed
         {
-            return Err(invalid(
-                "BER record has the wrong constructed universal tag",
-            ));
+            return Err(invalid("BER record has the wrong constructed outer tag"));
         }
         let length_octets = header.content - header.identifier_len;
         context.charge(length_octets)?;
@@ -4605,6 +4692,86 @@ fn apply_nested_tagging(
             retained_capacity,
             limits,
         )?;
+    }
+    Ok(())
+}
+
+/// Validate a context-specific tag used to replace a SEQUENCE root identifier.
+///
+/// # Parameters and returns
+/// `tag` is the requested IMPLICIT root tag. Returns success when its class and
+/// numeric range are supported by the C-compatible BER runtime.
+///
+/// # Errors
+/// Returns `InvalidEncoding` for a non-context-specific or out-of-range tag.
+///
+/// # Source, version, history, example
+/// Source: X.690 identifier classes and C `ber_tlv_tag_t` range.
+/// Version: 2026-11-01. Responsible: asn1c maintainers.
+/// History: flat tagged-root support. Example: called before root parsing or encoding.
+fn validate_implicit_root_tag(tag: Tag) -> Result<(), Error> {
+    tag.validate()?;
+    if tag.class != TagClass::ContextSpecific {
+        return Err(invalid(
+            "IMPLICIT SEQUENCE root tag must be context-specific",
+        ));
+    }
+    Ok(())
+}
+
+/// Replace a completed root identifier and meter the bytes moved in place.
+///
+/// # Parameters and returns
+/// `bytes` is a complete SEQUENCE TLV; `identifier` is its shortest constructed
+/// replacement; `context` supplies shared work and output ceilings;
+/// `parent_capacity` is retained parent storage. Returns success after retagging.
+///
+/// # Errors
+/// Returns checked-size, output/scratch/work-limit, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 IMPLICIT constructed tag replacement.
+/// Version: 2026-11-01. Responsible: asn1c maintainers.
+/// History: root tag support. Example: called by `finish_tagged_root`.
+fn retag_root_record(
+    bytes: &mut Vec<u8>,
+    identifier: &[u8],
+    context: &mut RecordContext,
+    parent_capacity: usize,
+) -> Result<(), Error> {
+    let old_len = bytes.len();
+    let suffix_len = old_len.checked_sub(1).ok_or(Error::SizeOverflow)?;
+    let new_len = suffix_len
+        .checked_add(identifier.len())
+        .ok_or(Error::SizeOverflow)?;
+    context.check_output(new_len)?;
+    if context.nested_accounting {
+        check_combined_capacities(parent_capacity, new_len, context.retained_capacity)?;
+    }
+    let shifted_work = if identifier.len() > 1 {
+        suffix_len
+            .checked_add(identifier.len() - 1)
+            .ok_or(Error::SizeOverflow)?
+    } else {
+        0
+    };
+    context.charge(shifted_work)?;
+    if new_len > old_len {
+        bytes
+            .try_reserve_exact(new_len - old_len)
+            .map_err(|_| Error::AllocationFailed {
+                requested_bytes: new_len,
+            })?;
+    }
+    if context.nested_accounting {
+        check_combined_capacities(parent_capacity, bytes.capacity(), context.retained_capacity)?;
+    }
+    if identifier.len() == 1 {
+        bytes[0] = identifier[0];
+    } else {
+        bytes.resize(new_len, 0);
+        bytes.copy_within(1..old_len, identifier.len());
+        bytes[..identifier.len()].copy_from_slice(identifier);
     }
     Ok(())
 }
@@ -8320,5 +8487,271 @@ mod tests {
         );
         assert_eq!(reader.next_tagged_field().unwrap(), None);
         assert_eq!(reader.finish().unwrap().consumed_bytes, encoded.bytes.len());
+    }
+
+    /// Check the C fixture bytes and same-context CER canonical re-encoding.
+    /// Source: C RI [3] IMPLICIT SEQUENCE { x INTEGER }, x = 2.
+    /// Version: 2026-11-01. Inputs: DER and CER root values. Returns: assertions.
+    /// Errors: assertion failures. Responsible: runtime maintainers.
+    /// History: tagged-root regression. Example: run via `cargo test`.
+    #[test]
+    fn tagged_root_matches_c_der_and_cer_fixture() {
+        let limits = Limits::default();
+        let root_tag = Tag::context_specific(3);
+        let integer = RecordField::new(Tag::universal(2), FieldKind::Integer).unwrap();
+        let fields = [integer];
+
+        let mut context = RecordContext::new(&limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer.write_integer(2, 0, 3).unwrap();
+        let der = writer.finish_tagged_root(root_tag).unwrap();
+        assert_eq!(der.bytes, [0xa3, 3, 2, 1, 2]);
+
+        let mut context = RecordContext::new(&limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer.write_integer(2, 0, 3).unwrap();
+        let cer = writer.finish_tagged_root(root_tag).unwrap();
+        assert_eq!(cer.bytes, [0xa3, 0x80, 2, 1, 2, 0, 0]);
+
+        let mut input_with_suffix = cer.bytes.clone();
+        input_with_suffix.extend_from_slice(&[5, 0]);
+        let mut context = RecordContext::new(&limits);
+        let mut reader =
+            SequenceReader::new_tagged_root(&input_with_suffix, root_tag, &fields, &mut context)
+                .unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(integer.tag()));
+        assert_eq!(reader.read_integer(0, 3).unwrap(), 2);
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        let consumed = reader.finish().unwrap().consumed_bytes;
+        assert_eq!(consumed, cer.bytes.len());
+
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer.write_integer(2, 0, 3).unwrap();
+        let canonical = writer.finish_tagged_root(root_tag).unwrap();
+        context
+            .verify_canonical(&input_with_suffix, consumed, &canonical.bytes)
+            .unwrap();
+    }
+
+    /// Cover canonical high tags, BER-compatible aliases, and invalid root tags.
+    /// Source: X.690 high-tag identifier forms and C-compatible parser range.
+    /// Version: 2026-11-01. Inputs: boundary tags and malformed identifiers.
+    /// Returns: assertions. Errors: assertion failures. Responsible: maintainers.
+    /// History: tagged-root regression. Example: run via `cargo test`.
+    #[test]
+    fn tagged_root_high_tags_aliases_and_validation() {
+        let limits = Limits::default();
+        let integer = RecordField::new(Tag::universal(2), FieldKind::Integer).unwrap();
+        let fields = [integer];
+        for number in [30, 31, 127, MAX_TAG_NUMBER] {
+            let tag = Tag::context_specific(number);
+            let mut context = RecordContext::new(&limits);
+            let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+            writer.write_integer(2, 0, 3).unwrap();
+            let encoded = writer.finish_tagged_root(tag).unwrap();
+            let mut identifier = [0_u8; 6];
+            let identifier_len = encode_identifier_bytes(tag, true, &mut identifier).unwrap();
+            assert_eq!(
+                &encoded.bytes[..identifier_len],
+                &identifier[..identifier_len]
+            );
+
+            let mut context = RecordContext::new(&limits);
+            let mut reader =
+                SequenceReader::new_tagged_root(&encoded.bytes, tag, &fields, &mut context)
+                    .unwrap();
+            assert_eq!(reader.next_tagged_field().unwrap(), Some(integer.tag()));
+            assert_eq!(reader.read_integer(0, 3).unwrap(), 2);
+            assert_eq!(reader.next_tagged_field().unwrap(), None);
+            assert_eq!(reader.finish().unwrap().consumed_bytes, encoded.bytes.len());
+        }
+
+        for alias in [
+            [0xbf, 0x1e, 3, 2, 1, 2, 0, 0],
+            [0xbf, 0x80, 0x1f, 3, 2, 1, 2, 0],
+        ] {
+            let (tag, input) = if alias[1] == 0x1e {
+                (Tag::context_specific(30), &alias[..6])
+            } else {
+                (Tag::context_specific(31), &alias[..7])
+            };
+            let mut context = RecordContext::new(&limits);
+            let mut reader =
+                SequenceReader::new_tagged_root(input, tag, &fields, &mut context).unwrap();
+            assert_eq!(reader.next_tagged_field().unwrap(), Some(integer.tag()));
+            assert_eq!(reader.read_integer(0, 3).unwrap(), 2);
+            assert_eq!(reader.next_tagged_field().unwrap(), None);
+            assert_eq!(reader.finish().unwrap().consumed_bytes, input.len());
+        }
+
+        let wrong_classes = [
+            Tag::universal(3),
+            Tag {
+                class: TagClass::Application,
+                number: 3,
+            },
+            Tag {
+                class: TagClass::Private,
+                number: 3,
+            },
+            Tag {
+                class: TagClass::ContextSpecific,
+                number: MAX_TAG_NUMBER + 1,
+            },
+        ];
+        for tag in wrong_classes {
+            let mut context = RecordContext::new(&limits);
+            assert!(SequenceReader::new_tagged_root(&[], tag, &fields, &mut context).is_err());
+            let mut context = RecordContext::new(&limits);
+            let writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+            assert!(writer.finish_tagged_root(tag).is_err());
+        }
+        assert!(Tag::new(TagClass::ContextSpecific, MAX_TAG_NUMBER + 1).is_err());
+    }
+
+    /// Reject malformed framing while preserving exact prefix and whole-input limits.
+    /// Source: X.690 constructed roots, truncation, and EOC rules.
+    /// Version: 2026-11-01. Inputs: truncated, primitive, overflowing, and bad-EOC TLVs.
+    /// Returns: assertions. Errors: assertion failures. Responsible: maintainers.
+    /// History: tagged-root regression. Example: run via `cargo test`.
+    #[test]
+    fn tagged_root_rejects_malformed_framing_and_keeps_prefix_bounds() {
+        let limits = Limits::default();
+        let root_tag = Tag::context_specific(3);
+        let integer = RecordField::new(Tag::universal(2), FieldKind::Integer).unwrap();
+        let fields = [integer];
+        let valid = [0xa3, 3, 2, 1, 2];
+        let decode = |input: &[u8]| -> Result<(i64, usize), Error> {
+            let mut context = RecordContext::new(&limits);
+            let mut reader =
+                SequenceReader::new_tagged_root(input, root_tag, &fields, &mut context)?;
+            if reader.next_tagged_field()? != Some(integer.tag()) {
+                return Err(invalid("tagged-root fixture is missing its INTEGER"));
+            }
+            let value = reader.read_integer(0, 3)?;
+            if reader.next_tagged_field()?.is_some() {
+                return Err(invalid("tagged-root fixture has an extra field"));
+            }
+            let consumed = reader.finish()?.consumed_bytes;
+            Ok((value, consumed))
+        };
+
+        for end in 0..valid.len() {
+            assert!(decode(&valid[..end]).is_err());
+        }
+        assert_eq!(decode(&valid).unwrap(), (2, valid.len()));
+        let mut suffixed = valid.to_vec();
+        suffixed.extend_from_slice(&[5, 0]);
+        assert_eq!(decode(&suffixed).unwrap(), (2, valid.len()));
+        assert!(decode(&[0x83, 3, 2, 1, 2]).is_err());
+        assert!(decode(&[0xa3, 5, 0, 0, 2, 1, 2]).is_err());
+        assert!(decode(&[0xbf, 0x84, 0x80, 0x80, 0x80, 0, 3, 2, 1, 2]).is_err());
+        assert!(decode(&[0xa3, 0x80, 2, 1, 2]).is_err());
+
+        let tight_input = Limits {
+            max_input_bytes: valid.len(),
+            ..limits
+        };
+        assert!(decode(&valid).is_ok());
+        let mut context = RecordContext::new(&tight_input);
+        let reader = SequenceReader::new_tagged_root(&suffixed, root_tag, &fields, &mut context);
+        assert!(reader.is_err());
+
+        for index in 0..valid.len() {
+            for bit in 0..8 {
+                let mut changed = valid;
+                changed[index] ^= 1 << bit;
+                let _ = decode(&changed);
+            }
+        }
+    }
+
+    /// Enforce tagged-root output and shifted-work limits at exact boundaries.
+    /// Source: runtime complete-output and cumulative-work policy.
+    /// Version: 2026-11-01. Inputs: low/high-tag DER records and tight limits.
+    /// Returns: assertions. Errors: assertion failures. Responsible: maintainers.
+    /// History: tagged-root regression. Example: run via `cargo test`.
+    #[test]
+    fn tagged_root_checks_final_output_and_shift_work() {
+        let base_limits = Limits::default();
+        let root_tag = Tag::context_specific(31);
+        let output = |max_output_bytes| Limits {
+            max_output_bytes,
+            ..base_limits
+        };
+
+        let mut context = RecordContext::new(&output(6));
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer.write_integer(2, 0, 3).unwrap();
+        let encoded = writer.finish_tagged_root(root_tag).unwrap();
+        assert_eq!(encoded.bytes, [0xbf, 0x1f, 3, 2, 1, 2]);
+
+        let mut context = RecordContext::new(&output(5));
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer.write_integer(2, 0, 3).unwrap();
+        assert!(writer.finish_tagged_root(root_tag).is_err());
+
+        let mut measured = RecordContext::new(&base_limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut measured).unwrap();
+        writer.write_integer(2, 0, 3).unwrap();
+        writer.finish_tagged_root(root_tag).unwrap();
+        let exact_work_bits = measured.work_used;
+        let exact_limits = Limits {
+            max_work_bits: exact_work_bits,
+            ..base_limits
+        };
+        let mut exact = RecordContext::new(&exact_limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut exact).unwrap();
+        writer.write_integer(2, 0, 3).unwrap();
+        assert!(writer.finish_tagged_root(root_tag).is_ok());
+
+        let below_limits = Limits {
+            max_work_bits: exact_work_bits - 1,
+            ..base_limits
+        };
+        let mut below = RecordContext::new(&below_limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut below).unwrap();
+        writer.write_integer(2, 0, 3).unwrap();
+        assert!(writer.finish_tagged_root(root_tag).is_err());
+    }
+
+    /// Exercise outer DER length encoding at the 127/128 content boundary.
+    /// Source: X.690 shortest definite lengths and high-tag identifiers.
+    /// Version: 2026-11-01. Inputs: OCTET STRING content lengths around 127.
+    /// Returns: assertions. Errors: assertion failures. Responsible: maintainers.
+    /// History: tagged-root regression. Example: run via `cargo test`.
+    #[test]
+    fn tagged_root_shifts_der_length_transition() {
+        let limits = Limits::default();
+        let root_tag = Tag::context_specific(31);
+        let octets = RecordField::new(Tag::universal(4), FieldKind::OctetString).unwrap();
+        let fields = [octets];
+        for payload_len in [125, 126] {
+            let payload = vec![0x5a; payload_len];
+            let mut context = RecordContext::new(&limits);
+            let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+            writer
+                .write_octet_string(&payload, payload_len, payload_len)
+                .unwrap();
+            let encoded = writer.finish_tagged_root(root_tag).unwrap();
+            assert_eq!(&encoded.bytes[..2], &[0xbf, 0x1f]);
+            if payload_len == 125 {
+                assert_eq!(encoded.bytes[2], 127);
+            } else {
+                assert_eq!(&encoded.bytes[2..4], &[0x81, 0x80]);
+            }
+
+            let mut context = RecordContext::new(&limits);
+            let mut reader =
+                SequenceReader::new_tagged_root(&encoded.bytes, root_tag, &fields, &mut context)
+                    .unwrap();
+            assert_eq!(reader.next_tagged_field().unwrap(), Some(octets.tag()));
+            assert_eq!(
+                reader.read_octet_string(payload_len, payload_len).unwrap(),
+                payload
+            );
+            assert_eq!(reader.next_tagged_field().unwrap(), None);
+            assert_eq!(reader.finish().unwrap().consumed_bytes, encoded.bytes.len());
+        }
     }
 }

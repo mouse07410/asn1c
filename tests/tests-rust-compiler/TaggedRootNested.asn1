@@ -1,0 +1,3 @@
+TaggedRootNested DEFINITIONS ::= BEGIN
+RootNested ::= [3] IMPLICIT SEQUENCE { child SEQUENCE { x INTEGER (0..255) } }
+END

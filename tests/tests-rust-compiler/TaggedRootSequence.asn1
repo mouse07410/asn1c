@@ -1,0 +1,37 @@
+TaggedRootSequence DEFINITIONS ::= BEGIN
+
+RootTag0 ::= [0] IMPLICIT SEQUENCE {
+    x INTEGER (0..255)
+}
+
+RootTag3 ::= [3] IMPLICIT SEQUENCE {
+    x INTEGER (0..255)
+}
+
+RootTag30 ::= [30] IMPLICIT SEQUENCE {
+    x INTEGER (0..255)
+}
+
+RootTag31 ::= [31] IMPLICIT SEQUENCE {
+    x INTEGER (0..255)
+}
+
+RootTag127 ::= [127] IMPLICIT SEQUENCE {
+    x INTEGER (0..255)
+}
+
+RootTagMax ::= [1073741823] IMPLICIT SEQUENCE {
+    x INTEGER (0..255)
+}
+
+RootEmpty ::= [4] IMPLICIT SEQUENCE {}
+
+RootOptional ::= [5] IMPLICIT SEQUENCE {
+    x INTEGER (0..255) OPTIONAL
+}
+
+RootDefault ::= [6] IMPLICIT SEQUENCE {
+    x INTEGER (0..255) DEFAULT 2
+}
+
+END

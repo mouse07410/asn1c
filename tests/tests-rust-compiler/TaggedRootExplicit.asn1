@@ -1,0 +1,3 @@
+TaggedRootExplicit DEFINITIONS ::= BEGIN
+RootExplicit ::= [3] EXPLICIT SEQUENCE { x INTEGER (0..255) }
+END

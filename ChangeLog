@@ -1,4 +1,7 @@
 Changes since v1.5.3:
+	* Add one context-specific IMPLICIT tag on a direct flat Rust SEQUENCE
+	  root under BER/CER-only selection. Preserve the shared record budget,
+	  accept C-compatible BER root aliases, and require canonical CER framing.
 	* Add a bounded Rust BER/DER/CER inline SEQUENCE child in untagged SEQUENCE
 	  and BER/CER-only SET records. Share record limits across parent and child,
 	  support natural, IMPLICIT, and EXPLICIT child tags, and check nested EOCs,

@@ -126,7 +126,7 @@ re-encoding, and byte comparison. SIZE constraints remain the generated type's
 responsibility.
 
 `RecordContext`, `SequenceReader`, `SequenceWriter`, `SetReader`, and `SetWriter`
-compose flat untagged SEQUENCE and SET values with direct BOOLEAN, NULL,
+compose flat SEQUENCE and SET values with direct BOOLEAN, NULL,
 ENUMERATED, bounded INTEGER, and bounded BIT/OCTET STRING fields under one
 input/output/work budget. Supply the unique universal field tags to a reader;
 `next_field` advances one field and the matching `read_*` method consumes it.
@@ -143,8 +143,18 @@ record API accepts at most six fields with unique effective tags. During
 decode, `max_output_bytes` also caps aggregate retained BIT/OCTET STRING
 payload bytes across fields. DER string fields are primitive; CER uses
 1000-content-octet fragments, counting the BIT STRING unused-count octet.
-Tagged record containers, extensions, and deeper record trees remain outside
-this slice.
+Other tagged record containers, extensions, and deeper record trees remain
+outside this slice.
+
+For a flat SEQUENCE root with one context-specific IMPLICIT tag, use
+`SequenceReader::new_tagged_root(input, tag, fields, context)` and
+`SequenceWriter::finish_tagged_root(tag)`. These operations validate the root
+tag against the C runtime's `0x3fff_ffff` ceiling, require a constructed wire
+identifier, preserve the exact BER prefix length, and use the same record
+context for strict CER re-encoding. BER accepts C-compatible nonminimal high
+tag identifiers; canonical CER uses the shortest identifier and indefinite
+outer length. The root API preserves `RecordContext::new` flat-record resource
+behavior, including checked output and work for identifier growth.
 
 The record API also supports fixed effective tags with a separate `FieldKind`
 through `RecordField`, `Tag`, and `TagClass`. `SequenceReader::new_tagged` and

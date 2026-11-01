@@ -8,7 +8,7 @@ strict CER prefix decoding, for BOOLEAN, NULL, finite bounded `i64` INTEGER,
 direct finite ENUMERATED, and fixed or bounded BIT/OCTET STRING values. See
 `rust/asn1c-runtime/README.md` and
 `libasn1compiler/asn1c_rust.c`. The generator rejects many schemas supported by
-C, including imports, references, root tags, and multi-tag stacks. These
+C, including imports, references, most root tags, and multi-tag stacks. These
 rejections remain until the corresponding generated representation and codecs
 are implemented.
 
@@ -25,6 +25,11 @@ The flat SET slice uses the same six direct field kinds under BER/CER-only
 selection. Its BER reader accepts arbitrary member order;
 the DER/CER writer emits ascending effective tags. Broader SET shapes,
 collections, broader nested records, and multi-tag stacks remain future stages.
+
+A BER/CER-only flat SEQUENCE may use one resolved context-specific IMPLICIT
+root tag in the C representable range. This replaces the outer SEQUENCE
+identifier while retaining the constructed form and field encodings. Other
+root tags and tagged roots combined with nested fields remain gated.
 
 ## Architecture and interfaces
 
@@ -77,6 +82,23 @@ and strict CER rejects them by re-encoding. The tagged-field generator
 gate limits tag numbers to the C target's representable range and rejects
 duplicate effective tags before publishing output. The existing untagged
 record API remains source compatible.
+
+### IMPLICIT flat SEQUENCE root (qualified slice)
+
+The tagged-root stage accepts a direct flat SEQUENCE assignment with one
+resolved context-specific IMPLICIT root tag from 0 through `0x3fff_ffff`,
+selected only for BER and/or CER. It reuses the existing direct-field and
+effective-tag validation. The runtime reader validates the constructed root
+identifier before entering a bounded record; the writer charges identifier
+growth and body movement to the same record context. DER emits a definite
+outer length, while CER emits an indefinite outer length and matching EOC.
+Strict CER compares the consumed prefix with a tagged-root re-encoding through
+the same context. BER may accept a nonminimal high-tag alias compatible with
+the C decoder, but strict CER rejects it.
+
+The generator keeps top-level aliases, references, imports, nested members,
+multi-tag stacks, other tag classes and modes, and mixed codec selections
+outside this gate. The untagged flat record API remains source compatible.
 
 ### EXPLICIT field wrappers (qualified slice)
 

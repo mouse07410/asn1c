@@ -59,8 +59,8 @@ Rust vectors and C decoding of a Rust-compatible present-default vector.
 Default UPER/CER selection rejects SEQUENCE shapes outside the direct
 BOOLEAN/NULL/bounded-INTEGER BER/CER subset; unsupported
 DEFAULT forms, nested constructed DEFAULTs, extensions, excessive nesting or
-aggregate field-work, generated-name collisions, and top-level tagged types fail
-before publication. Required and OPTIONAL inline records each write their own
+aggregate field-work, generated-name collisions, and tagged roots under mixed
+codec selection fail before publication. Required and OPTIONAL inline records each write their own
 presence bitmap immediately before payload. Private record helpers share the
 top-level cursor, budget, and final filler. The automatic component tags in
 `SequenceDefaults.asn1` are covered by live C encode/decode parity vectors.
@@ -115,6 +115,20 @@ AUTOMATIC TAGS, mixed universal/context SET order, BER redundant-tag aliases,
 and CER-fragmented tagged OCTET/BIT STRING values. The C parity schema omits the
 empty SET because current C code generation produces an empty enum that fails
 strict C compilation; the empty SET case is checked through the Rust wrapper.
+
+The tagged-root SEQUENCE slice accepts one context-specific IMPLICIT tag on a
+flat top-level SEQUENCE with direct supported fields, and only when BER/CER are
+the selected codecs. It keeps one `RecordContext` across the root wrapper,
+fields, and strict CER re-encoding. Tests cover tags 0, 3, 30, 31, 127, and
+`0x3fffffff`; definite and indefinite BER; canonical DER/CER bytes; prefix
+consumption; malformed root forms and EOC; nonminimal BER aliases rejected by
+strict CER; input/output/work limits; and rejection of mixed codecs, aliases,
+extensions, nested members, EXPLICIT tags, and non-context-specific classes.
+Empty records and OPTIONAL/DEFAULT fields retain their normal presence behavior.
+The parser rejects stacked-root syntax before Rust generation.
+The generated C fixture checks DER/CER parity for `[3] IMPLICIT SEQUENCE`,
+tags 31 and `0x3fffffff`, BER/CER decoding, indefinite BER, and the nonminimal
+root alias.
 
 The sixth BER/CER slice supports one resolved context-specific EXPLICIT wrapper
 on each supported direct SEQUENCE or SET field, alongside universal and

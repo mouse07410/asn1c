@@ -1,0 +1,3 @@
+TaggedRootExtension DEFINITIONS ::= BEGIN
+RootExtension ::= [3] IMPLICIT SEQUENCE { x INTEGER (0..255), ... }
+END

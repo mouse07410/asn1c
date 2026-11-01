@@ -1,0 +1,3 @@
+TaggedRootStack DEFINITIONS ::= BEGIN
+RootStack ::= [3] IMPLICIT [4] IMPLICIT SEQUENCE { x INTEGER (0..255) }
+END

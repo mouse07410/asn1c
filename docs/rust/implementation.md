@@ -99,6 +99,7 @@ fresh directory after adding application code or running Cargo there.
 | Direct ENUMERATED | BER prefix decoding, DER encoding, CER encoding and strict CER decoding when selected |
 | Direct fixed/bounded OCTET STRING and BIT STRING | BER prefix decoding, DER encoding, CER encoding and strict CER decoding when selected; finite nonextensible SIZE below 65536 |
 | Flat SEQUENCE with untagged outer type | BER prefix decoding, DER encoding, CER encoding and strict CER decoding for empty records or up to six direct BOOLEAN, NULL, bounded i64 INTEGER, nonextensible ENUMERATED, and finite bounded BIT/OCTET STRING fields with distinct effective tags; untagged, resolved context-specific IMPLICIT or one EXPLICIT wrapper, or AUTOMATIC members; required, OPTIONAL, and literal BOOLEAN/INTEGER DEFAULT; one shared record budget |
+| Flat SEQUENCE with one context-specific IMPLICIT root tag | BER prefix decoding, DER encoding, CER encoding, and strict CER decoding for the direct flat field slice above, with BER/CER-only codec selection and a root tag number through `0x3fff_ffff` |
 | Flat SET with untagged outer type | BER prefix decoding in any member order, effective-tag-ordered DER/CER encoding, and strict CER decoding for the same six direct field kinds; empty, required, OPTIONAL, and literal BOOLEAN/INTEGER DEFAULT records; resolved IMPLICIT/EXPLICIT/AUTOMATIC member tags; BER/CER-only codec selection |
 | One inline SEQUENCE child in an untagged SEQUENCE or SET | BER prefix decoding, DER encoding, CER encoding, and strict CER decoding; nonrecursive child with up to six direct supported primitive leaves, required/OPTIONAL members, and natural, resolved context-specific IMPLICIT or one EXPLICIT child tag; one shared record and scratch budget; SET and empty child require BER/CER-only selection |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in APER and OER encode/decode; each call begins at an octet boundary |
@@ -108,7 +109,7 @@ fresh directory after adding application code or running Cargo there.
 | Direct ENUMERATED | Opt-in JER quoted-name encode/decode; complete input, JSON whitespace, unknown-name and resource-limit checks |
 | Flat SET and SEQUENCE | XER-only basic encoder for direct BOOLEAN, bounded INTEGER, unconstrained IA5String and REAL DEFAULT 0.5 fields; OPTIONAL and supported DEFAULT fields use `Option` |
 | XER and CBOR/JER outside the listed slices | Planned; unavailable in Rust mode |
-| SET outside the listed XER and BER/DER/CER slices, collections, CHOICE outside the listed CBOR slice, extensible, unbounded or disjoint string constraints, named-bit strings, extensible ENUMERATED, aliases, imports, top-level tagged types, and multi-tag member stacks | Planned; rejected in this slice |
+| SET outside the listed XER and BER/DER/CER slices, collections, CHOICE outside the listed CBOR slice, extensible, unbounded or disjoint string constraints, named-bit strings, extensible ENUMERATED, aliases, imports, other top-level tagged types, and multi-tag member stacks | Planned; rejected in this slice |
 | Encoding controls, other information-object forms, parameterized types | Planned; rejected in this slice |
 | IOC-selected OPEN TYPE | UPER, APER, OER, CBOR; one local nonextensible set, bounded INTEGER selector, BOOLEAN or bounded INTEGER rows, and a two-field required SEQUENCE; APER selector 0..255 and row spans <=255 |
 | Other CONTAINING and OPEN TYPE forms | Unsupported; rejected before output publication |
@@ -229,7 +230,9 @@ re-encodes through the same operation context before comparing the consumed
 prefix, so parsing, output, and comparison share the work limit. Constructed
 BER BIT/OCTET STRING fields are flattened under that limit, and `max_output_bytes`
 also caps cumulative retained decoded string bytes. The generator rejects
-root-tagged, deeper nested, colliding-effective-tag, extensible, or unsupported field forms.
+deeper nested, colliding-effective-tag, extensible, or unsupported field forms.
+A direct flat SEQUENCE with one resolved context-specific IMPLICIT root tag is
+supported under BER/CER-only selection; other root tags are rejected.
 
 The flat SET slice uses the same six direct field kinds and record context.
 BER accepts members in any order, rejects duplicates and unknown tags, and
@@ -244,9 +247,12 @@ universal value. High tag numbers use checked identifiers up to `0x3fff_ffff`,
 the C runtime's packed-tag limit on this target. BER accepts C-compatible
 nonminimal high-tag aliases; strict CER rejects them. Constructed tagged
 strings retain universal fragment tags. Two fields of the same primitive
-kind are permitted when their effective class/number pairs differ. Root tags,
-multi-tag stacks, references, imports, and broader nested records remain outside
-this slice.
+kind are permitted when their effective class/number pairs differ. Tagged
+flat SEQUENCE roots replace the universal outer identifier with one resolved
+context-specific IMPLICIT tag under BER/CER-only selection. BER accepts
+C-compatible nonminimal root identifiers, and strict CER requires the shortest
+form and canonical indefinite framing. Other root tags, multi-tag stacks,
+references, imports, and broader nested records remain outside this slice.
 
 The nested record slice permits one nonrecursive inline SEQUENCE child in an
 untagged SEQUENCE or BER/CER-only SET. Child leaves use the supported direct

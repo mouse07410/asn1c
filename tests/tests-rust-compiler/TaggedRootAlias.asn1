@@ -1,0 +1,4 @@
+TaggedRootAlias DEFINITIONS ::= BEGIN
+RootAlias ::= [3] IMPLICIT RootBase
+RootBase ::= SEQUENCE { x INTEGER (0..255) }
+END

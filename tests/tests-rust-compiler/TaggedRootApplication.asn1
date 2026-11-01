@@ -1,0 +1,3 @@
+TaggedRootApplication DEFINITIONS ::= BEGIN
+RootApplication ::= [APPLICATION 3] IMPLICIT SEQUENCE { x INTEGER (0..255) }
+END

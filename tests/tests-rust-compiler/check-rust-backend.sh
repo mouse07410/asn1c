@@ -1161,15 +1161,15 @@ if "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" \
 fi
 test ! -e "$test_tmp/rejected-nested-depth"
 
-# Direct AUTOMATIC TAGS on SEQUENCE members are ignored by PER; top-level tags
-# remain outside the Rust subset and are rejected before output publication.
+# Direct AUTOMATIC TAGS on SEQUENCE members are ignored by PER. This tagged
+# BOOLEAN remains outside the Rust subset and is rejected before publication.
 if "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" \
     -D "$test_tmp/rejected-top-level-tag" "$test_tmp/SequenceTopTagged.asn1" \
     >"$test_tmp/rejected-top-level-tag.log" 2>&1; then
     echo "FAIL: Rust backend accepted a top-level tagged type"
     exit 1
 fi
-grep -F 'explicit type tags are not supported' \
+grep -F 'type tags are supported only on BER/CER-only flat SEQUENCE roots' \
     "$test_tmp/rejected-top-level-tag.log" >/dev/null
 test ! -e "$test_tmp/rejected-top-level-tag"
 
@@ -1265,7 +1265,7 @@ for fixture in Alias Import TaggedBoolean ExtensibleInteger UnionInteger \
     case "$fixture" in
         Alias) expected='Rust backend does not support' ;;
         Import) expected='IMPORTS are not supported' ;;
-        TaggedBoolean) expected='explicit type tags are not supported' ;;
+        TaggedBoolean) expected='type tags are supported only on BER/CER-only flat SEQUENCE roots' ;;
         ExtensibleInteger|UnionInteger|UnconstrainedInteger)
             expected='INTEGER needs one finite, nonextensible range fitting i64' ;;
         NamedNumber) expected='Rust backend does not support' ;;
@@ -1788,6 +1788,91 @@ if ! (cargo check --offline --manifest-path "$tagged_sequence_cer/Cargo.toml" &&
     echo "FAIL: tagged CER-only SEQUENCE strict Clippy"
     exit 1
 fi
+
+# A single context-specific IMPLICIT tag may replace a flat SEQUENCE root.
+tagged_root_out="$test_tmp/tagged-root-rust"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$tagged_root_out" "$test_srcdir/TaggedRootSequence.asn1"
+mkdir "$tagged_root_out/tests"
+cp "$test_srcdir/tagged_root_conformance.rs" "$tagged_root_out/tests/"
+if ! (cd "$tagged_root_out" && cargo test --offline --manifest-path Cargo.toml && \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/tagged-root-check.log" 2>&1; then
+    cat "$test_tmp/tagged-root-check.log"
+    echo "FAIL: tagged-root conformance or strict Clippy"
+    exit 1
+fi
+for method in encode_der decode_ber encode_cer decode_cer; do
+    grep -F "pub fn $method" "$tagged_root_out/src/tagged_root_sequence.rs" >/dev/null
+done
+if grep -E 'pub fn (encode|decode)_(uper|cbor|jer|xer|aper|oer)' \
+    "$tagged_root_out/src/tagged_root_sequence.rs" >/dev/null; then
+    echo "FAIL: tagged-root BER/CER output retained an unsupported codec"
+    exit 1
+fi
+
+tagged_root_ber="$test_tmp/tagged-root-ber-only"
+"$asn1c_bin" --rust -gen-BER -no-gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$tagged_root_ber" "$test_srcdir/TaggedRootSequence.asn1"
+if ! (cargo check --offline --manifest-path "$tagged_root_ber/Cargo.toml" && \
+    cargo clippy --offline --manifest-path "$tagged_root_ber/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/tagged-root-ber-only.log" 2>&1; then
+    cat "$test_tmp/tagged-root-ber-only.log"
+    echo "FAIL: tagged-root BER-only strict Clippy"
+    exit 1
+fi
+tagged_root_cer="$test_tmp/tagged-root-cer-only"
+"$asn1c_bin" --rust -gen-CER -no-gen-UPER -no-gen-BER -S "$skeletons" \
+    -D "$tagged_root_cer" "$test_srcdir/TaggedRootSequence.asn1"
+if ! (cargo check --offline --manifest-path "$tagged_root_cer/Cargo.toml" && \
+    cargo clippy --offline --manifest-path "$tagged_root_cer/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/tagged-root-cer-only.log" 2>&1; then
+    cat "$test_tmp/tagged-root-cer-only.log"
+    echo "FAIL: tagged-root CER-only strict Clippy"
+    exit 1
+fi
+
+for root_fixture in TaggedRootExplicit.asn1 TaggedRootApplication.asn1 \
+    TaggedRootNested.asn1 TaggedRootExtension.asn1 TaggedRootAlias.asn1 \
+    TaggedRootStack.asn1; do
+    rejected_out="$test_tmp/rejected-tagged-root-${root_fixture%.asn1}"
+    if "$asn1c_bin" --rust -gen-BER -no-gen-UPER -no-gen-CER -S "$skeletons" \
+        -D "$rejected_out" "$test_srcdir/$root_fixture" \
+        >"$test_tmp/rejected-tagged-root.log" 2>&1; then
+        echo "FAIL: unsupported tagged-root shape $root_fixture was accepted"
+        exit 1
+    fi
+    test ! -e "$rejected_out"
+done
+
+# Root tagging must not leak into the mixed UPER/BER/CER generator.
+if "$asn1c_bin" --rust -gen-BER -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/rejected-tagged-root-mixed" \
+    "$test_srcdir/TaggedRootSequence.asn1" \
+    >"$test_tmp/rejected-tagged-root-mixed.log" 2>&1; then
+    echo "FAIL: tagged-root mixed codec selection was accepted"
+    exit 1
+fi
+test ! -e "$test_tmp/rejected-tagged-root-mixed"
+
+# The generated C implementation independently checks DER/CER and BER aliases.
+tagged_root_c_out="$test_tmp/tagged-root-c"
+mkdir "$tagged_root_c_out"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -D "$tagged_root_c_out" \
+    "$test_srcdir/TaggedRootSequence.asn1" \
+    >"$test_tmp/tagged-root-c-generate.log" 2>&1
+rm -f "$tagged_root_c_out/converter-example.c" "$tagged_root_c_out/pdu_collection.c"
+if ! cc -I"$tagged_root_c_out" "$tagged_root_c_out"/*.c \
+    "$test_srcdir/c_tagged_root.c" -lm -o "$test_tmp/c-tagged-root" \
+    >"$test_tmp/tagged-root-c-compile.log" 2>&1; then
+    cat "$test_tmp/tagged-root-c-compile.log"
+    echo "FAIL: generated C tagged-root reference did not compile"
+    exit 1
+fi
+"$test_tmp/c-tagged-root"
 
 tagged_set_out="$test_tmp/tagged-set-rust"
 "$asn1c_bin" --rust -gen-BER -no-gen-UPER -S "$skeletons" -D "$tagged_set_out" \
