@@ -168,6 +168,26 @@
       "evidence": "NamedSet*.asn1; named_set_child_conformance.rs; c_named_set_child.c"
     },
     {
+      "asn1_type": "two same-module named SEQUENCE/SET children",
+      "feature": "one or two direct named records in a flat parent, six parent fields, twelve aggregate schema fields",
+      "codec": "BER/DER and CER only",
+      "variants": [
+        "required and OPTIONAL children, including empty SEQUENCE and nonempty SET",
+        "same target with distinct context IMPLICIT or EXPLICIT tags",
+        "independent parent and child SET sorting, scalar DEFAULT siblings",
+        "shared work, scratch, depth, callback failure and retry accounting",
+        "malformed second children, truncations, suffixes, and deterministic mutations",
+        "schema cap boundaries, unsupported mixtures, and no output publication"
+      ],
+      "directions": [
+        "DER and CER encode",
+        "BER prefix decode",
+        "strict CER prefix decode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "NamedRecordPair*.asn1; named_record_pair_conformance.rs; c_named_record_pair.c; runtime ber.rs"
+    },
+    {
       "asn1_type": "OBJECT IDENTIFIER, RELATIVE-OID",
       "feature": "direct untagged unconstrained root values with canonical base-128 content",
       "codec": "BER/DER and CER only",
@@ -1106,6 +1126,16 @@
     "live_C_named_set_reorder_malformed_and_bound_forms": 9,
     "named_set_truncated_prefix_inputs": 17,
     "named_set_mutation_inputs": 34,
-    "named_set_exact_strict_CER_work_bits": 752
+    "named_set_exact_strict_CER_work_bits": 752,
+    "generated_named_record_pair_test_functions": 9,
+    "named_record_pair_runtime_retry_and_boundary_tests": 3,
+    "live_C_named_record_pair_canonical_vectors_each_direction": 32,
+    "live_C_named_record_pair_reordered_inputs": 3,
+    "live_C_named_record_pair_padding_aliases": 1,
+    "live_C_named_record_pair_rejected_inputs": 4,
+    "named_record_pair_negative_schema_fixtures": 6,
+    "named_record_pair_positive_schema_boundaries": 2,
+    "named_record_pair_truncated_prefix_inputs": 30,
+    "named_record_pair_mutation_inputs": 144
   }
 }

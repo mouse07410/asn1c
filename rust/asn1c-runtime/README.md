@@ -388,8 +388,8 @@ parsing, child decoding, and strict CER re-encoding to the same record context.
 Explicit BIT/OCTET STRING children use their regular universal primitive or
 fragmented CER form inside the wrapper.
 
-The record API supports one inline SEQUENCE or SET child inside a flat SEQUENCE
-or SET. The child may use its natural tag, one IMPLICIT tag, or one
+The record API supports sequential SEQUENCE or SET child callbacks inside a
+flat SEQUENCE or SET. Each child may use its natural tag, one IMPLICIT tag, or one
 context-specific EXPLICIT wrapper, and contains up to six direct supported
 primitive members. Generated required/OPTIONAL checks remain type-specific.
 `write_nested_sequence`/`read_nested_sequence` and
@@ -407,7 +407,11 @@ rejects noncanonical mixed forms through canonical re-encoding comparison.
 DER writes definite nested lengths; CER writes indefinite nested records and
 EXPLICIT wrappers. SET output order uses each child's outer effective tag.
 
-Nested record callbacks are limited to one child level. Generated operations
+Nested record callbacks are limited to one active child level. Completing or
+failing one child releases that active level before the next sibling enters;
+the parent's work and allocation accounting continues across both callbacks.
+The generator currently validates one or two direct named record children;
+see the compiler support matrix for its schema restrictions. Generated operations
 for schemas containing a child use `RecordContext::new_nested` from the public
 operation boundary, even when an OPTIONAL child is absent. `RecordContext::new`
 retains the existing flat-record behavior, and nested callbacks fail closed

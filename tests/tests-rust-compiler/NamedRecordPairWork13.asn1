@@ -1,0 +1,18 @@
+NamedRecordPairWork13 DEFINITIONS ::= BEGIN
+A ::= SEQUENCE {
+    a0 [0] IMPLICIT INTEGER (0..5),
+    a1 [1] IMPLICIT INTEGER (0..5),
+    a2 [2] IMPLICIT INTEGER (0..5),
+    a3 [3] IMPLICIT INTEGER (0..5),
+    a4 [4] IMPLICIT INTEGER (0..5),
+    a5 [5] IMPLICIT INTEGER (0..5)
+}
+B ::= SET {
+    b0 [6] IMPLICIT INTEGER (0..5),
+    b1 [7] IMPLICIT INTEGER (0..5),
+    b2 [8] IMPLICIT INTEGER (0..5),
+    b3 [9] IMPLICIT INTEGER (0..5),
+    b4 [10] IMPLICIT INTEGER (0..5)
+}
+P ::= SEQUENCE { a A, b B }
+END

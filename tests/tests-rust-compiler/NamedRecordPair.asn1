@@ -1,0 +1,17 @@
+NamedRecordPair DEFINITIONS ::= BEGIN
+A ::= SEQUENCE { n INTEGER (0..5) }
+B ::= SET { b BOOLEAN }
+C ::= SET { flag [1] IMPLICIT BOOLEAN, number [0] IMPLICIT INTEGER (0..5) }
+EmptyRecord ::= SEQUENCE { }
+ByteA ::= SEQUENCE { octets OCTET STRING (SIZE(2)) }
+BitsB ::= SET { bits BIT STRING (SIZE(3)) }
+P ::= SEQUENCE { a A, b B OPTIONAL }
+O ::= SEQUENCE { a A OPTIONAL, b B OPTIONAL }
+T ::= SET { b B OPTIONAL, a A }
+Q ::= SEQUENCE { a A, c C OPTIONAL, enabled BOOLEAN DEFAULT FALSE }
+U ::= SET { c C OPTIONAL, a A }
+EmptyPair ::= SEQUENCE { empty EmptyRecord, b B OPTIONAL }
+OwnedPair ::= SEQUENCE { a ByteA, b BitsB }
+X ::= SEQUENCE { a [2] EXPLICIT A, b [3] EXPLICIT A }
+I ::= SEQUENCE { a [2] IMPLICIT A, b [3] IMPLICIT A }
+END

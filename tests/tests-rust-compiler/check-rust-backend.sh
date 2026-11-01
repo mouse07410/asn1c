@@ -4917,4 +4917,158 @@ if ! ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
     exit 1
 fi
 
-echo "PASS: generated Rust UPER/CER/BER-DER and named record/SEQUENCE/SET-child slices"
+# Two direct same-module named record children share one parent context.
+named_record_pair_rust="$test_tmp/named-record-pair-rust"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$named_record_pair_rust" "$test_srcdir/NamedRecordPair.asn1"
+mkdir "$named_record_pair_rust/tests"
+cp "$test_srcdir/named_record_pair_conformance.rs" "$named_record_pair_rust/tests/"
+named_record_pair_module="$named_record_pair_rust/src/named_record_pair.rs"
+for expected in 'pub struct A' 'pub struct B' 'pub struct C' 'pub struct EmptyRecord' \
+    'pub struct P' \
+    'pub struct O' 'pub struct Q' 'pub struct T' 'pub struct U' 'pub struct X' \
+    'pub struct I' 'writer.write_nested_sequence' 'writer.write_nested_set' \
+    'reader.read_nested_sequence' 'reader.read_nested_set' 'RecordContext::new_nested'; do
+    if ! grep -F "$expected" "$named_record_pair_module" >/dev/null; then
+        echo "FAIL: named record pair generated source omitted $expected"
+        exit 1
+    fi
+done
+if ! (cd "$named_record_pair_rust" && \
+    cargo test --offline --manifest-path Cargo.toml && \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/named-record-pair-rust.log" 2>&1; then
+    cat "$test_tmp/named-record-pair-rust.log"
+    echo "FAIL: named record pair tests or strict Clippy"
+    exit 1
+fi
+
+for codec in BER CER; do
+    named_record_pair_codec="$test_tmp/named-record-pair-$codec-only"
+    if [ "$codec" = BER ]; then
+        unwanted_methods='pub fn encode_cer|pub fn decode_cer'
+        "$asn1c_bin" --rust -gen-BER -no-gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$named_record_pair_codec" "$test_srcdir/NamedRecordPair.asn1"
+    else
+        unwanted_methods='pub fn encode_der|pub fn decode_ber'
+        "$asn1c_bin" --rust -gen-CER -no-gen-BER -no-gen-UPER -S "$skeletons" \
+            -D "$named_record_pair_codec" "$test_srcdir/NamedRecordPair.asn1"
+    fi
+    if ! (cd "$named_record_pair_codec" && \
+        cargo clippy --offline --all-targets --all-features -- \
+        -W clippy::pedantic -W clippy::nursery -D warnings) \
+        >"$test_tmp/named-record-pair-$codec-only.log" 2>&1; then
+        cat "$test_tmp/named-record-pair-$codec-only.log"
+        echo "FAIL: named record pair $codec-only strict Clippy"
+        exit 1
+    fi
+    if grep -E "$unwanted_methods" \
+        "$named_record_pair_codec/src/named_record_pair.rs" >/dev/null; then
+        echo "FAIL: named record pair $codec-only output has unselected methods"
+        exit 1
+    fi
+done
+
+# The twelve-field aggregate schema boundary includes both referenced targets.
+named_pair_work12="$test_tmp/named-record-pair-work12"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$named_pair_work12" "$test_srcdir/NamedRecordPairWork12.asn1"
+if ! (cd "$named_pair_work12" && \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/named-record-pair-work12.log" 2>&1; then
+    cat "$test_tmp/named-record-pair-work12.log"
+    echo "FAIL: twelve-field named record pair strict Clippy"
+    exit 1
+fi
+
+# Six direct parent fields stay supported; seven must fail before publication.
+named_pair_parent6="$test_tmp/named-record-pair-parent6"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$named_pair_parent6" "$test_srcdir/NamedRecordPairParent6.asn1"
+if ! (cd "$named_pair_parent6" && \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/named-record-pair-parent6.log" 2>&1; then
+    cat "$test_tmp/named-record-pair-parent6.log"
+    echo "FAIL: six-field named record pair strict Clippy"
+    exit 1
+fi
+
+for fixture in NamedRecordPairThree NamedRecordPairMixed NamedRecordPairScalarReference NamedRecordPairCollision \
+    NamedRecordPairWork13 NamedRecordPairParent7; do
+    rejected="$test_tmp/rejected-$fixture"
+    if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$rejected" "$test_srcdir/$fixture.asn1" \
+        >"$test_tmp/rejected-$fixture.log" 2>&1; then
+        echo "FAIL: two-child gate accepted unsupported $fixture"
+        exit 1
+    fi
+    if [ -e "$rejected" ]; then
+        echo "FAIL: rejected two-child schema $fixture published output"
+        exit 1
+    fi
+done
+
+for selection in mixed uper; do
+    rejected="$test_tmp/rejected-named-record-pair-codecs-$selection"
+    if [ "$selection" = mixed ]; then
+        if "$asn1c_bin" --rust -gen-BER -gen-CER -gen-UPER -S "$skeletons" \
+            -D "$rejected" "$test_srcdir/NamedRecordPair.asn1" \
+            >"$test_tmp/rejected-named-record-pair-$selection.log" 2>&1; then
+            echo "FAIL: two-child gate accepted mixed codecs"
+            exit 1
+        fi
+    else
+        if "$asn1c_bin" --rust -gen-UPER -no-gen-BER -no-gen-CER -S "$skeletons" \
+            -D "$rejected" "$test_srcdir/NamedRecordPair.asn1" \
+            >"$test_tmp/rejected-named-record-pair-$selection.log" 2>&1; then
+            echo "FAIL: two-child gate accepted UPER-only selection"
+            exit 1
+        fi
+    fi
+    if [ -e "$rejected" ]; then
+        echo "FAIL: rejected two-child codec selection published output"
+        exit 1
+    fi
+done
+
+named_record_pair_c="$test_tmp/named-record-pair-c"
+mkdir "$named_record_pair_c"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$named_record_pair_c" "$test_srcdir/NamedRecordPair.asn1" \
+    >"$test_tmp/named-record-pair-c-generate.log" 2>&1
+named_record_pair_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$named_record_pair_c/Makefile.am.libasncodec")
+rm -f "$named_record_pair_c/converter-example.c" \
+    "$named_record_pair_c/pdu_collection.c"
+if ! cc $named_record_pair_cflags -I"$named_record_pair_c" \
+    "$named_record_pair_c"/*.c "$test_srcdir/c_named_record_pair.c" -lm \
+    -o "$test_tmp/c-named-record-pair" \
+    >"$test_tmp/named-record-pair-c-compile.log" 2>&1; then
+    cat "$test_tmp/named-record-pair-c-compile.log"
+    echo "FAIL: C named record pair fixture did not compile"
+    exit 1
+fi
+if ! "$test_tmp/c-named-record-pair"; then
+    echo "FAIL: C named record pair DER/CER vectors or malformed cases failed"
+    exit 1
+fi
+if ! cc -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer \
+    $named_record_pair_cflags -I"$named_record_pair_c" "$named_record_pair_c"/*.c \
+    "$test_srcdir/c_named_record_pair.c" -lm -o "$test_tmp/c-named-record-pair-sanitize" \
+    >"$test_tmp/named-record-pair-c-sanitize-compile.log" 2>&1; then
+    cat "$test_tmp/named-record-pair-c-sanitize-compile.log"
+    echo "FAIL: C named record pair sanitizer fixture did not compile"
+    exit 1
+fi
+if ! ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
+    "$test_tmp/c-named-record-pair-sanitize"; then
+    echo "FAIL: C named record pair fixture failed under ASan/UBSan"
+    exit 1
+fi
+
+echo "PASS: generated Rust UPER/CER/BER-DER and named record pair slices"

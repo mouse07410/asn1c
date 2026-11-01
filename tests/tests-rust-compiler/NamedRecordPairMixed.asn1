@@ -1,0 +1,4 @@
+NamedRecordPairMixed DEFINITIONS ::= BEGIN
+A ::= SEQUENCE { n INTEGER (0..5) }
+P ::= SEQUENCE { a A, inline SEQUENCE { flag BOOLEAN } }
+END

@@ -1,0 +1,5 @@
+NamedRecordPairScalarReference DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..5)
+Child ::= SEQUENCE { flag BOOLEAN }
+Packet ::= SEQUENCE { child Child, number Small }
+END

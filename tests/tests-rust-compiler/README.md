@@ -649,9 +649,11 @@ high-tag aliases, malformed and mixed EXPLICIT frames, prefix suffixes,
 truncations, byte mutations, bounded child values, and a pinned shared-work
 limit. The C decoder rejects one validly framed mixed definite/indefinite
 EXPLICIT stack that generated Rust BER accepts; strict CER rejects that stack.
-Alias, import, recursive/nested, multiple-child, constrained/defaulted,
-extension, collision, tagged-root/target, and non-SEQUENCE target fixtures
-fail before output publication. Mixed and UPER-only selection is also rejected.
+Alias, import, recursive/nested, constrained/defaulted, extension,
+effective-tag collision, tagged-root/target, and non-SEQUENCE target fixtures
+fail before output publication. The legacy multiple-reference fixture remains
+negative because its natural child tags collide. Mixed and UPER-only selection
+is also rejected.
 
 `NamedSequenceEmpty.asn1`, `named_sequence_empty_conformance.rs`, and
 `c_named_sequence_empty.c` cover required and OPTIONAL empty children and
@@ -678,6 +680,33 @@ and unknown child tags, a wrong EXPLICIT inner type, out-of-range child values,
 prefix suffixes, truncations, mutations, input/output limits, and a pinned
 shared-work threshold are covered. No-publication negatives cover empty,
 aliased, imported, parameterized, recursive, tagged, constrained, extended,
-nested, multiple-child, colliding, CHOICE, and collection targets, plus mixed
-or UPER-only selection. An unreferenced top-level SET remains free of unused
-private nested callbacks under strict Clippy.
+nested, colliding, CHOICE, and collection targets, plus mixed or UPER-only
+selection. An unreferenced top-level SET remains free of unused private
+nested callbacks under strict Clippy.
+
+### Two same-module named record children
+
+`NamedRecordPair.asn1`, `named_record_pair_conformance.rs`, and
+`c_named_record_pair.c` cover one or two direct named SEQUENCE/SET children
+inside flat SEQUENCE and SET parents. They compare the approved C DER/CER
+vectors for required and OPTIONAL children, all OPTIONAL presence combinations,
+same-target distinct IMPLICIT and EXPLICIT tags, parent SET order, and a
+multi-member named SET whose own order is independent of its parent. The
+SEQUENCE pair also retains a scalar BOOLEAN DEFAULT sibling. A separate pair
+includes an empty named SEQUENCE target, and the multi-member parent checks
+the DEFAULT both omitted and emitted. Owned OCTET/BIT STRING children check
+retained values, BER padding normalization, and strict CER padding rejection.
+Tests check strict CER canonicality, BER
+permutations, suffix consumption, every proper DER/CER prefix, malformed EOCs
+and wrappers, duplicate and unknown child tags, target bounds, limits, and
+deterministic byte mutations. The generated
+module is checked for both nested writer/reader paths and strict Clippy runs
+under combined, BER-only, and CER-only selection.
+
+The schema gates accept the aggregate twelve-member work boundary and the
+six-field parent boundary; thirteen aggregate members, seven parent fields,
+three named children, mixed inline/named construction, mixed named scalar and
+record references, and duplicate effective tags fail without publishing output.
+The runtime suite separately exercises second-child failure/retry cleanup in
+writers and readers, shared work accounting, active nesting depth, and exact
+aggregate writer scratch limits.

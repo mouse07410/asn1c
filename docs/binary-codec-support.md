@@ -296,28 +296,22 @@ BIT/OCTET STRING siblings, within the six-field cap. Aliases, imports,
 parameters, target extensions/unions, member constraints, DEFAULT, nested
 forms, duplicate effective tags, and non-BER/CER codec selections fail before
 output publication.
-One same-module, untagged, nonrecursive named SEQUENCE may be a direct child
-of an untagged flat SEQUENCE or SET under BER/CER-only selection. The child
-may be empty or contain up to six already supported direct primitive leaves;
-it may be required or OPTIONAL with a natural, context IMPLICIT, or one
-EXPLICIT member tag. Parent scalar siblings retain their existing OPTIONAL
-and literal BOOLEAN/bounded INTEGER DEFAULT behavior. Generated code keeps
-the named child type and calls its private field helpers with one shared
-nested record context for BER decoding, DER/CER encoding, and strict CER
-comparison. Imports, aliases, recursion, multiple named children, nested
-target members, target DEFAULT/extensions, and mixed codecs remain gated.
-One same-module named SET is also accepted as one required or OPTIONAL child
-of an untagged flat SEQUENCE or SET under BER/CER-only selection. The target is
-nonrecursive, untagged, unconstrained, and nonempty, with one through six
-supported direct primitive leaves. The child may use natural tag 17, one
-resolved context-specific IMPLICIT tag, or one EXPLICIT wrapper. Parent scalar
-and literal BOOLEAN/bounded INTEGER DEFAULT siblings retain their existing
-behavior. Target SET field ordering is computed independently of parent SET
-ordering; both share one nested record context for BER, DER/CER, and strict
-CER comparison. Empty named SET targets remain rejected because the generated
-C output does not compile them. Other aliases/references, imports, parameters,
-constraints, extensions, nested/CHOICE/collection members, multiple children,
-tag collisions, and mixed codecs fail before Rust output publication.
+An untagged flat SEQUENCE or SET may contain one or two direct same-module
+named SEQUENCE/SET children under BER/CER-only selection. Each target is
+untagged and nonrecursive, has the existing direct primitive-leaf restrictions,
+and may be required or OPTIONAL with a natural tag, one resolved
+context-specific IMPLICIT tag, or one EXPLICIT wrapper. A target can be
+referenced twice when the two effective outer tags differ. The parent retains
+its six-field cap, and the parent fields plus both targets' direct members
+share a twelve-member schema-work cap. Parent scalar siblings retain their
+OPTIONAL and literal BOOLEAN/bounded INTEGER DEFAULT behavior. Generated code
+keeps named public child types and calls their private field helpers with one
+shared nested record context for BER decoding, DER/CER encoding, and strict
+CER comparison. Each child SET sorts its members independently of parent SET
+ordering. Empty named SET targets remain rejected because generated C output
+does not compile them. Aliases, imports, recursion, more than two children,
+mixed inline and named constructed children, nested target members, extensions,
+effective-tag collisions, and mixed codecs fail before Rust output publication.
 Flat untagged SEQUENCE and SET records may also contain one natural direct
 non-IA5 restricted character-string field, required or OPTIONAL, beside the
 existing supported scalar siblings, including finite bounded BIT/OCT STRING

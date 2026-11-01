@@ -1,0 +1,12 @@
+NamedRecordPairParent6 DEFINITIONS ::= BEGIN
+A ::= SEQUENCE { value BOOLEAN }
+B ::= SET { value BOOLEAN }
+P ::= SEQUENCE {
+    a A,
+    b B,
+    flag0 [0] IMPLICIT INTEGER (0..5),
+    flag1 [1] IMPLICIT INTEGER (0..5),
+    flag2 [2] IMPLICIT INTEGER (0..5),
+    flag3 [3] IMPLICIT INTEGER (0..5)
+}
+END

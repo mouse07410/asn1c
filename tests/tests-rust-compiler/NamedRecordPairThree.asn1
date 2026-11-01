@@ -1,0 +1,5 @@
+NamedRecordPairThree DEFINITIONS ::= BEGIN
+A ::= SEQUENCE { n INTEGER (0..5) }
+B ::= SET { b BOOLEAN }
+P ::= SEQUENCE { a A, b B, c A }
+END

@@ -101,6 +101,17 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/NamedSetTargetReference.asn1 \
     $(srcdir)/named_set_child_conformance.rs \
     $(srcdir)/c_named_set_child.c \
+    $(srcdir)/NamedRecordPair.asn1 \
+    $(srcdir)/NamedRecordPairScalarReference.asn1 \
+    $(srcdir)/NamedRecordPairCollision.asn1 \
+    $(srcdir)/NamedRecordPairMixed.asn1 \
+    $(srcdir)/NamedRecordPairParent6.asn1 \
+    $(srcdir)/NamedRecordPairParent7.asn1 \
+    $(srcdir)/NamedRecordPairThree.asn1 \
+    $(srcdir)/NamedRecordPairWork12.asn1 \
+    $(srcdir)/NamedRecordPairWork13.asn1 \
+    $(srcdir)/named_record_pair_conformance.rs \
+    $(srcdir)/c_named_record_pair.c \
     $(srcdir)/ChoiceBooleanOnly.asn1 \
     $(srcdir)/ChoiceNullOnly.asn1 \
     $(srcdir)/ChoiceIntegerOnly.asn1 \

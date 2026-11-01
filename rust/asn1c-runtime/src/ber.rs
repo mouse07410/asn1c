@@ -22621,6 +22621,205 @@ mod tests {
             .is_err());
     }
 
+    /// Preserve the first sibling while a failed second child is retried.
+    ///
+    /// # Parameters and returns
+    /// No parameters or return value. Checks transactional parent bytes and
+    /// field state for both DER and CER while keeping cumulative work charges.
+    ///
+    /// # Errors
+    /// Panics if rollback, shared work, depth cleanup, or retry encoding differs.
+    ///
+    /// # Source, version, history, example
+    /// Source: approved two-named-child composition design. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: sibling callback regression.
+    /// Example: `cargo test nested_sibling_writer_retry_preserves_first_child`.
+    #[test]
+    fn nested_sibling_writer_retry_preserves_first_child() {
+        let first = RecordField::new(Tag::universal(16), FieldKind::Sequence).unwrap();
+        let second = RecordField::new(Tag::universal(17), FieldKind::Set).unwrap();
+        let der = [0x30, 10, 0x30, 3, 2, 1, 2, 0x31, 3, 1, 1, 0xff];
+        let cer = [
+            0x30, 0x80, 0x30, 0x80, 2, 1, 2, 0, 0, 0x31, 0x80, 1, 1, 0xff, 0, 0, 0, 0,
+        ];
+        for (rule, expected) in [
+            (RecordEncoding::Der, &der[..]),
+            (RecordEncoding::Cer, &cer[..]),
+        ] {
+            let mut context = RecordContext::new_nested(&Limits::default());
+            let mut writer = SequenceWriter::new(rule, &mut context).unwrap();
+            writer
+                .write_nested_sequence(first, |child| child.write_integer(2, 0, 5))
+                .unwrap();
+            let saved_bytes = writer.bytes.clone();
+            let saved_work = writer.context.work_used;
+            let saved_depth = writer.context.depth;
+
+            // A callback may spend work before failing; only parent field state rolls back.
+            assert!(writer
+                .write_nested_set(second, |child| {
+                    child.write_boolean(true)?;
+                    Err(invalid("second child retry"))
+                })
+                .is_err());
+            assert_eq!(writer.bytes, saved_bytes);
+            assert_eq!(writer.field_count, 1);
+            assert!(writer.context.work_used > saved_work);
+            assert_eq!(writer.context.depth, saved_depth);
+            assert_eq!(writer.context.nested_record_depth, 0);
+
+            // Re-entering the same field must succeed after the failed sibling released its depth.
+            writer
+                .write_nested_set(second, |child| child.write_boolean(true))
+                .unwrap();
+            assert_eq!(writer.field_count, 2);
+            assert_eq!(writer.finish().unwrap().bytes, expected);
+        }
+    }
+
+    /// Enforce the scratch and active-depth ceilings across sequential children.
+    ///
+    /// # Parameters and returns
+    /// No parameters or return value. Measures real buffer capacities before
+    /// checking the exact aggregate scratch boundary and the next rejected byte.
+    ///
+    /// # Errors
+    /// Panics if the second sibling bypasses shared limits or corrupts parent state.
+    ///
+    /// # Source, version, history, example
+    /// Source: cumulative nested record resource contract. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: sibling boundary regressions.
+    /// Example: `cargo test nested_sibling_scratch_and_depth_boundaries`.
+    #[test]
+    fn nested_sibling_scratch_and_depth_boundaries() {
+        let first = RecordField::new(Tag::universal(16), FieldKind::Sequence).unwrap();
+        let second = RecordField::new(Tag::universal(17), FieldKind::Set).unwrap();
+        let limits = Limits::default();
+        let mut context = RecordContext::new_nested(&limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer
+            .write_nested_sequence(first, |child| child.write_integer(2, 0, 5))
+            .unwrap();
+        let mut child_capacity = 0;
+        writer
+            .write_nested_set(second, |child| {
+                child.write_boolean(true)?;
+                child_capacity = child.inner.bytes.capacity();
+                Ok(())
+            })
+            .unwrap();
+        let expected = writer.finish().unwrap();
+        let retained = MAX_RECORD_SCRATCH_BYTES - expected.bytes.capacity() - child_capacity;
+
+        // Both allocations contribute to the same scratch ceiling after the first sibling commits.
+        for excess in [0, 1] {
+            let mut context = RecordContext::new_nested(&limits);
+            context.retained_capacity = retained + excess;
+            let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+            writer
+                .write_nested_sequence(first, |child| child.write_integer(2, 0, 5))
+                .unwrap();
+            let saved_bytes = writer.bytes.clone();
+            let result = writer.write_nested_set(second, |child| child.write_boolean(true));
+            if excess == 0 {
+                result.unwrap();
+                assert_eq!(writer.finish().unwrap().bytes, expected.bytes);
+            } else {
+                assert!(result.is_err());
+                assert_eq!(writer.bytes, saved_bytes);
+                assert_eq!(writer.field_count, 1);
+            }
+        }
+
+        // The first sibling releases its active level; the second additionally needs its wrapper level.
+        let wrapped = RecordField::new_explicit(Tag::context_specific(3), FieldKind::Set).unwrap();
+        for available in [2, 1] {
+            let mut context = RecordContext::new_nested(&limits);
+            context.depth = MAX_DEPTH - available;
+            let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+            writer
+                .write_nested_sequence(first, |child| child.write_integer(2, 0, 5))
+                .unwrap();
+            let saved_bytes = writer.bytes.clone();
+            let result = writer.write_nested_set(wrapped, |child| child.write_boolean(true));
+            assert_eq!(result.is_ok(), available == 2);
+            assert_eq!(writer.context.depth, MAX_DEPTH - available);
+            assert_eq!(writer.context.nested_record_depth, 0);
+            if available == 1 {
+                assert_eq!(writer.bytes, saved_bytes);
+                assert_eq!(writer.field_count, 1);
+            }
+        }
+    }
+
+    /// Restore the second pending field without revisiting the decoded first child.
+    ///
+    /// # Parameters and returns
+    /// No parameters or return value. Uses C-derived DER/CER sibling vectors
+    /// and verifies consumed prefixes, retry state, depth, and cumulative work.
+    ///
+    /// # Errors
+    /// Panics if valid siblings fail or a failed callback corrupts parent traversal.
+    ///
+    /// # Source, version, history, example
+    /// Source: approved two-named-child composition design. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: sibling callback regression.
+    /// Example: `cargo test nested_sibling_reader_retry_preserves_first_child`.
+    #[test]
+    fn nested_sibling_reader_retry_preserves_first_child() {
+        let first = RecordField::new(Tag::universal(16), FieldKind::Sequence).unwrap();
+        let second = RecordField::new(Tag::universal(17), FieldKind::Set).unwrap();
+        let fields = [first, second];
+        let integer_fields = [RecordField::new(Tag::universal(2), FieldKind::Integer).unwrap()];
+        let boolean_fields = [RecordField::new(Tag::universal(1), FieldKind::Boolean).unwrap()];
+        let der = [0x30, 10, 0x30, 3, 2, 1, 2, 0x31, 3, 1, 1, 0xff];
+        let cer = [
+            0x30, 0x80, 0x30, 0x80, 2, 1, 2, 0, 0, 0x31, 0x80, 1, 1, 0xff, 0, 0, 0, 0,
+        ];
+        for input in [&der[..], &cer[..]] {
+            let mut context = RecordContext::new_nested(&Limits::default());
+            let mut reader = SequenceReader::new_tagged(input, &fields, &mut context).unwrap();
+            assert_eq!(reader.next_tagged_field().unwrap(), Some(first.tag()));
+            let value = reader
+                .read_nested_sequence(&integer_fields, |child| {
+                    assert_eq!(child.next_tagged_field()?, Some(Tag::universal(2)));
+                    let number = child.read_integer(0, 5)?;
+                    assert_eq!(child.next_tagged_field()?, None);
+                    Ok(number)
+                })
+                .unwrap();
+            assert_eq!(value, 2);
+            assert_eq!(reader.next_tagged_field().unwrap(), Some(second.tag()));
+            let saved_work = reader.context.work_used;
+            let saved_depth = reader.context.depth;
+
+            // Spending work in the second callback must not erase the first field or refund work.
+            assert!(reader
+                .read_nested_set::<(), _>(&boolean_fields, |child| {
+                    assert_eq!(child.next_tagged_field()?, Some(Tag::universal(1)));
+                    assert!(child.read_boolean()?);
+                    Err(invalid("second child retry"))
+                })
+                .is_err());
+            assert!(reader.context.work_used > saved_work);
+            assert_eq!(reader.context.depth, saved_depth);
+            assert_eq!(reader.context.nested_record_depth, 0);
+            assert_eq!(reader.next_tagged_field().unwrap(), Some(second.tag()));
+
+            // Retrying consumes the second child exactly once and then completes the parent prefix.
+            assert!(reader
+                .read_nested_set(&boolean_fields, |child| {
+                    assert_eq!(child.next_tagged_field()?, Some(Tag::universal(1)));
+                    let flag = child.read_boolean()?;
+                    assert_eq!(child.next_tagged_field()?, None);
+                    Ok(flag)
+                })
+                .unwrap());
+            assert_eq!(reader.next_tagged_field().unwrap(), None);
+            assert_eq!(reader.finish().unwrap().consumed_bytes, input.len());
+        }
+    }
+
     /// Reject malformed nested SET spans and preserve parent rollback.
     ///
     /// # Parameters and returns

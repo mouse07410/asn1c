@@ -186,8 +186,7 @@ static int rust_check_ber_cer_named_record_record(asn1p_module_t *,
 static int rust_ber_cer_named_record_parent_scan(asn1p_expr_t *,
                                                  asn1p_expr_t **, size_t *, int *);
 static int rust_ber_cer_named_record_parent_shape(asn1p_expr_t *,
-                                                  asn1p_expr_t *, size_t,
-                                                  int, uint64_t);
+                                                  size_t, int, uint64_t);
 static asn1p_expr_t *rust_ber_cer_choice_member(asn1p_expr_t *, size_t *);
 static int rust_ber_cer_has_empty_nested_record(asn1p_expr_t *);
 static int rust_ber_cer_record_encode_uses_self(asn1p_expr_t *);
@@ -1087,7 +1086,7 @@ rust_ber_cer_named_integer_excluded_sibling(const asn1p_expr_t *member) {
 }
 
 /*
- * Count references and scan for excluded siblings in one root record.
+ * Count references and mark unsupported siblings in one record.
  * Inputs: expr owns fields; references/excluded receive bounded scan results.
  * Returns zero or -1 for invalid output pointers; no exceptions.
  * Source: fixed record member list. Version/date: 2026-11-01.
@@ -1115,7 +1114,7 @@ rust_ber_cer_named_integer_record_scan(asn1p_expr_t *expr, size_t *references,
  * Errors: none; caller emits the source-located diagnostic.
  * Source: approved named INTEGER record design. Version/date: 2026-11-01.
  * Responsible party: asn1c maintainers. History: flat reference gate.
- * Example: BER/CER-only untagged root with one reference passes.
+ * Example: BER/CER-only untagged root with one INTEGER reference passes.
  */
 static int
 rust_ber_cer_named_integer_record_shape(const asn1p_expr_t *expr,
@@ -1146,14 +1145,12 @@ rust_check_ber_cer_named_integer_record(asn1p_module_t *module,
        || rust_ber_cer_named_integer_record_scan(expr, &references, &excluded))
         return -1;
     if(!references) return 0;
-    if(references == 1) {
-        TQ_FOR(member, &expr->members, next) {
-            if(member->expr_type == A1TC_REFERENCE && member->reference
-               && member->reference->ref_expr
-                && (member->reference->ref_expr->expr_type == ASN_CONSTR_SEQUENCE
-                    || member->reference->ref_expr->expr_type == ASN_CONSTR_SET))
-                return 0;
-        }
+    TQ_FOR(member, &expr->members, next) {
+        if(member->expr_type == A1TC_REFERENCE && member->reference
+           && member->reference->ref_expr
+           && (member->reference->ref_expr->expr_type == ASN_CONSTR_SEQUENCE
+               || member->reference->ref_expr->expr_type == ASN_CONSTR_SET))
+            return 0;
     }
     if(!rust_ber_cer_named_integer_record_shape(expr, codecs, references,
                                                 excluded)) {
@@ -1166,13 +1163,14 @@ rust_check_ber_cer_named_integer_record(asn1p_module_t *module,
 }
 
 /*
- * Preflight one named record reference and its scalar parent siblings.
- * Inputs: module/expr identify the flat parent; codecs is its selected mask.
- * Returns zero when absent or structurally supported, otherwise -1.
- * Errors: multiple children, incompatible siblings, tags, roots, or codecs fail.
+ * Count direct references and flag unsupported parent siblings.
+ * Inputs: expr owns fields; child_out, references_out, and excluded_out receive
+ * the last reference, total reference count, and unsupported-sibling flag.
+ * Returns zero after a complete scan or -1 for invalid input/output pointers.
+ * Errors: this scanner records shape information without diagnosing it.
  * Source: named child composition design. Version/date: 2026-11-01.
- * Responsible party: asn1c maintainers. History: single named child gate.
- * Example: one required `Inner ::= SET` beside BOOLEAN passes for BER/CER-only.
+ * Responsible party: asn1c maintainers. History: named child gate expansion.
+ * Example: two record references beside BOOLEAN report count two, excluded zero.
  */
 static int
 rust_ber_cer_named_record_parent_scan(asn1p_expr_t *expr,
@@ -1196,7 +1194,7 @@ rust_ber_cer_named_record_parent_scan(asn1p_expr_t *expr,
 }
 
 /*
- * Validate a named-child parent root and its codec mask.
+ * Validate a named-record parent root and its codec mask.
  * Inputs: expr is a flat parent; codecs is the requested selection.
  * Returns one for an untagged SEQUENCE/SET with BER/CER-only methods.
  * Errors: roots with constraints, tags, parameters, or controls return zero.
@@ -1218,31 +1216,40 @@ rust_ber_cer_named_record_parent_root_valid(asn1p_expr_t *expr,
 }
 
 /*
- * Validate one named-child root candidate and its permitted direct siblings.
- * Inputs: expr/child identify the parent and child; references/excluded are scan results.
- * Returns one when one local named record and supported siblings are present.
- * Errors: unsupported child references, siblings, or root metadata return zero.
+ * Validate one or two named-record references and their parent siblings.
+ * Inputs: expr identifies the parent; references/excluded are scan results;
+ * codecs is the selected BER/CER mask.
+ * Returns one when all references are local records and siblings are supported.
+ * Errors: excess fields, unsupported references, siblings, or roots return zero.
  * Source: named child composition gate. Version/date: 2026-11-01.
  * Responsible party: asn1c maintainers. History: bounded parent structure.
- * Example: one `Inner` reference plus BOOLEAN returns one.
+ * Example: two `Inner` references plus BOOLEAN return one.
  */
 static int
 rust_ber_cer_named_record_parent_shape(asn1p_expr_t *expr,
-                                         asn1p_expr_t *child,
                                          size_t references, int excluded,
                                          uint64_t codecs) {
-    if(references != 1 || !child || excluded
-       || !rust_ber_cer_named_record_target(child)) return 0;
+    asn1p_expr_t *member;
+    size_t fields = 0;
+    size_t seen_references = 0;
+    if(!expr || (references != 1 && references != 2) || excluded) return 0;
+    TQ_FOR(member, &expr->members, next) {
+        if(++fields > RUST_BER_CER_FIELD_LIMIT) return 0;
+        if(member->expr_type != A1TC_REFERENCE) continue;
+        seen_references++;
+        if(!rust_ber_cer_named_record_target(member)) return 0;
+    }
+    if(seen_references != references) return 0;
     return rust_ber_cer_named_record_parent_root_valid(expr, codecs);
 }
 
 /*
- * Preflight one named record reference and its scalar parent siblings.
+ * Preflight one or two named record references and scalar parent siblings.
  * Inputs: module/expr identify the flat parent; codecs is its selected mask.
  * Returns zero when absent or structurally supported, otherwise -1.
- * Errors: multiple children, incompatible siblings, tags, roots, or codecs fail.
+ * Errors: excess children, incompatible siblings, tags, roots, or codecs fail.
  * Source: named child composition design. Version/date: 2026-11-01.
- * Responsible party: asn1c maintainers. History: single named child gate.
+ * Responsible party: asn1c maintainers. History: named child gate expansion.
  * Example: one required `Inner ::= SET` beside BOOLEAN passes for BER/CER-only.
  */
 static int
@@ -1258,11 +1265,11 @@ rust_check_ber_cer_named_record_record(asn1p_module_t *module,
     if(references == 1 && child && child->reference && child->reference->ref_expr
        && child->reference->ref_expr->expr_type != ASN_CONSTR_SEQUENCE
        && child->reference->ref_expr->expr_type != ASN_CONSTR_SET) return 0;
-    if(!rust_ber_cer_named_record_parent_shape(expr, child, references,
-                                                 excluded, codecs)) {
+    if(!rust_ber_cer_named_record_parent_shape(expr, references, excluded,
+                                                codecs)) {
         rust_diagnostic(module, expr,
-            "named SEQUENCE/SET children require one untagged direct child, scalar "
-            "siblings, and BER/CER-only codecs");
+            "named SEQUENCE/SET children require one or two direct record references, "
+            "scalar siblings, and BER/CER-only codecs");
         return -1;
     }
     return 0;

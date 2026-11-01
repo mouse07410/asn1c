@@ -30,8 +30,10 @@ BER/CER-only untagged flat records additionally qualify one natural IA5String
 member, one natural non-IA5 restricted character-string member, up to one
 natural OBJECT IDENTIFIER and one natural RELATIVE-OID member, or one natural
 unconstrained `BigInteger` member, with the resource and schema gates below.
-One same-module bounded INTEGER reference member, named SEQUENCE child, or
-nonempty named SET child also qualifies under its separate gate below.
+One same-module bounded INTEGER reference member or up to two same-module
+named SEQUENCE/SET children also qualify under their separate gates below.
+The two-child gate preserves six parent fields and twelve aggregate schema
+fields, distinct effective tags, and one shared operation context.
 
 The flat SET slice uses the same six direct field kinds under BER/CER-only
 selection. Its BER reader accepts arbitrary member order;
@@ -1013,10 +1015,10 @@ OPTIONAL, and literal BOOLEAN or bounded INTEGER DEFAULT handling; DEFAULT
 remains excluded inside the named child. Accept a natural child identifier, one resolved
 context-specific IMPLICIT member tag, or one EXPLICIT wrapper under
 BER/CER-only selection. Reject imports, alias chains, parameters, target
-DEFAULT/extensions/references/nested members/CHOICE/collections, multiple
-named children, recursive targets, colliding effective tags, and mixed codecs
-before output publication. A named SET target has its separate gate below;
-two named children follow as a later gate.
+DEFAULT/extensions/references/nested members/CHOICE/collections, recursive
+targets, colliding effective tags, and mixed codecs before output publication.
+A named SET target has its separate gate below; the two-child gate below
+extends this initial one-child scope.
 
 Keep the named child's generated public type and its private record-field
 encode/decode helpers. Parent record callbacks enter that child through
@@ -1101,7 +1103,9 @@ Extend the one-child gate to exactly two direct named SEQUENCE or SET fields
 in an untagged flat SEQUENCE or SET parent. Each field resolves directly to a
 same-module, untagged, nonrecursive assignment and may be required or
 OPTIONAL. Keep the parent's six-field cap, existing scalar and literal
-DEFAULT siblings, and BER/CER-only codec selection. Each target retains its
+DEFAULT siblings, and BER/CER-only codec selection. The shared schema work
+cap is twelve: count every parent field, including the reference fields,
+plus every leaf in both referenced targets. Each target retains its
 one-child leaf restrictions; a named SET target must be nonempty. The two
 fields may refer to the same target when their effective tags differ through
 supported context-specific IMPLICIT or EXPLICIT member tags. Reject equal
@@ -1140,6 +1144,64 @@ prefixes, failed second-child rollback, malformed wrappers and EOCs,
 duplicate and unknown tags, differential C vectors, and unsupported-schema
 no-publication tests. This slice does not establish arbitrary reference
 graphs or recursive constructed-type support.
+
+### Imported bounded INTEGER field (next qualified composition gate)
+
+Permit one directly imported finite bounded INTEGER assignment as a required
+or OPTIONAL field of an untagged flat SEQUENCE or SET under BER/CER-only
+selection. Reuse the existing named INTEGER field limits, natural or
+context-specific IMPLICIT/EXPLICIT member tags, and supported scalar/default
+siblings. The first gate permits one IMPORTS group with one explicitly named
+symbol from a supplied, distinct module that has no imports. Reject aliases,
+re-exports, parameters, imported constructed types, additional member
+constraints, qualified references, assigned module identifiers, import
+successor/descendant options, and mixed codecs before publishing files.
+
+Resolve the import by both the declared source module and symbol. Check the
+source's pointer identity in the complete fixed module list, require a unique
+raw module name across that list, and exclude standard modules that are not
+emitted as Rust modules. Confirm that the fixed reference points to its direct named
+assignment. Validate exports: an omitted export declaration exports all
+assignments; an explicit list must include the imported symbol. Keep the
+existing direct untagged INTEGER metadata and finite contiguous i64 range
+checks. Validate every declared import even when no generated field uses it;
+an unsupported unused import must not bypass the module gate. Avoid enabling
+the fixer's permissive whole-module import fallback in Rust preflight.
+
+Emit the public field type and decoder constructor as
+`crate::<normalized_source_module>::<Type>`, preserving the target's range
+and generated invariants. Do not introduce a `use` declaration that can
+collide with a local type or another module's same-spelled assignment. Module
+normalization, reserved paths, target ownership, and all generated names
+must pass before the output transaction starts. Continue using the parent
+record reader/writer for the imported scalar; invoking its public codec
+would reset the parent's limits and is excluded.
+
+Permit identical ASN.1 assignment names in distinct generated Rust modules.
+The Rust frontend supplies the fixer's existing cross-module name
+disambiguation flag automatically; the C-specific `-fcompound-names` CLI
+option remains incompatible with Rust output. This only relaxes the fixer's
+global C namespace check. Rust module-name collisions and normalized type
+collisions within one module still fail preflight. Test independent bounds
+for two modules exporting identically spelled INTEGER assignments.
+
+Generated C confirms `Base` exporting `Small ::= INTEGER (0..5)` and `Client`
+importing `Small FROM Base`. For a SEQUENCE containing `value = 2` followed
+by `[4] IMPLICIT BOOLEAN TRUE`, natural DER is
+`30 06 02 01 02 84 01 ff` and CER is
+`30 80 02 01 02 84 01 ff 00 00`. An IMPLICIT `[3]` INTEGER changes `02`
+to `83`; an EXPLICIT `[3]` field emits DER
+`30 08 a3 03 02 01 02 84 01 ff` and CER
+`30 80 a3 80 02 01 02 00 00 84 01 ff 00 00`. C accepts omitted EXPORTS;
+`EXPORTS;` or an explicit list omitting `Small` fails during fixing.
+
+Acceptance includes these C vectors and round trips, OPTIONAL presence,
+parent SET ordering, suffix prefix consumption, strict CER rejection,
+out-of-range values, exact resource limits, same-spelled types in distinct
+source modules, both source-file orders, malformed input, and unsupported
+import metadata with no output publication. This gate establishes direct
+cross-module scalar ownership; imported records and transitive references
+require their own composition review.
 
 ## Decisions still required
 

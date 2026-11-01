@@ -1,4 +1,11 @@
 Changes since v1.5.3:
+	* Extend Rust BER/DER/CER flat SEQUENCE/SET records to compose up to two
+	  same-module named SEQUENCE/SET children under one shared nested context.
+	  Preserve distinct tagged references to one target, independent nested SET
+	  ordering, empty SEQUENCE children, OPTIONAL states, parent DEFAULT fields,
+	  the six-field parent and twelve-member aggregate caps, and no-publication
+	  schema gates. Add C/Rust vectors, malformed and mutation coverage, strict
+	  Clippy checks, and runtime retry/depth/shared-scratch regressions.
 	* Preserve the built-in PER character alphabet when a C type assignment
 	  aliases UTCTime, GeneralizedTime, or NumericString (issue #595). Emit
 	  seven-bit time characters and NumericString's canonical digit/space

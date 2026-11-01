@@ -1,0 +1,4 @@
+NamedRecordPairCollision DEFINITIONS ::= BEGIN
+A ::= SEQUENCE { n INTEGER (0..5) }
+P ::= SEQUENCE { a A, b A }
+END
