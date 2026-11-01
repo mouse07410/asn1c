@@ -25,6 +25,7 @@ check_PROGRAMS =                \
     check-JER                   \
     check-runtime-encoding-failures \
     check-CBOR                  \
+    check-CBOR-open-large       \
     check-binary-dispatch       \
     check-CER                   \
     check-CER-decode            \
@@ -178,6 +179,7 @@ LDADD_32 = -lm $(top_builddir)/skeletons/libasn1cskeletons_c89_32.la
 endif
 
 check_CBOR_SOURCES=check-CBOR.c
+check_CBOR_open_large_SOURCES = check-CBOR-open-large.c
 check_CER_SOURCES = check-CER.c $(top_srcdir)/skeletons/cer_encoder.c
 check_CER_CPPFLAGS = -DASN_CER_MAX_ENCODED_SIZE=4096u
 check_CER_LDADD = $(LDADD)

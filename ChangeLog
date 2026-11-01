@@ -1,4 +1,7 @@
 Changes since v1.5.3:
+	* Let CBOR validate an OPEN TYPE wrapper's immediate storage without
+	  traversing every unused IOC arm. Keep selected-arm bounds checks and
+	  add a large-alphabet regression alongside the F1AP conversion test.
 	* Support one same-module named bounded INTEGER field in flat Rust
 	  BER/DER/CER SEQUENCE and SET records. Generate a checked newtype,
 	  preserve natural, IMPLICIT, and EXPLICIT member tags, share the parent

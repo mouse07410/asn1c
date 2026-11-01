@@ -94,6 +94,9 @@ typedef struct asn_SET_member_view_s {
 /* Return 0 for known width, -1 for malformed layout, or -2 for unknown primitive. */
 int SET_inline_value_size(const asn_TYPE_descriptor_t *td, size_t *size);
 
+/* Validate only the descriptor's immediate storage; child codecs validate selected values. */
+int SET_shallow_inline_value_size(const asn_TYPE_descriptor_t *td, size_t *size);
+
 /* Use this child_index to request an ordinary, non-group SET member. */
 #define ASN_SET_DIRECT_MEMBER UINT_MAX
 

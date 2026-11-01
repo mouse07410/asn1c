@@ -44,8 +44,13 @@ SEQUENCE_cbor_shape(const asn_TYPE_descriptor_t *td) {
            || ((member->flags & ATF_OPEN_TYPE) && !member->type_selector)) return -1;
         if(!cbor_utf8_valid((const uint8_t *)member->name, strlen(member->name))) return -1;
         width = sizeof(void *);
-        if(!(member->flags & ATF_POINTER)
-           && SET_inline_value_size(member->type, &width)) return -1;
+        if(!(member->flags & ATF_POINTER)) {
+            /* The selected OPEN TYPE arm is validated by its child codec. */
+            int status = (member->flags & ATF_OPEN_TYPE)
+                ? SET_shallow_inline_value_size(member->type, &width)
+                : SET_inline_value_size(member->type, &width);
+            if(status) return -1;
+        }
         if(member->memb_offset > specs->struct_size
            || width > specs->struct_size - member->memb_offset) return -1;
         if(member->flags & ATF_OPEN_TYPE) open_count++;

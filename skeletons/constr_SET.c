@@ -413,10 +413,11 @@ typedef struct SET_validation_state_s {
  * Inputs: td is the descriptor and size receives its storage width.
  * Returns: 0 for valid, -1 for malformed, -2 for unknown primitive.
  * Errors: Invalid arguments fail. Author: maintainers.
- * History: Shared by cycle and nested-member validation. Example: INTEGER uses long storage.
+ * History: Shared by cycle, nested-member, and CBOR selected-arm validation.
+ * Example: INTEGER uses long storage without traversing sibling descriptors.
  */
-static int
-_SET_shallow_inline_size(const asn_TYPE_descriptor_t *td, size_t *size) {
+int
+SET_shallow_inline_value_size(const asn_TYPE_descriptor_t *td, size_t *size) {
     if(!td || !td->op || !td->op->free_struct || !size) return -1;
     if(td->op->kind == ASN_KIND_PRIMITIVE) return _SET_primitive_inline_size(td, size);
     if(!td->specifics) return -1;
@@ -524,7 +525,7 @@ _SET_inline_value_size_checked(const asn_TYPE_descriptor_t *td, size_t *size,
         if(state->path[i] == td) {
             if(!_SET_pointer_cycle(state, i, depth, incoming_pointer)) return -1;
             state->cycles++;
-            return _SET_shallow_inline_size(td, size);
+            return SET_shallow_inline_value_size(td, size);
         }
     }
     for(i = 0; i < state->count; i++) {
@@ -532,7 +533,7 @@ _SET_inline_value_size_checked(const asn_TYPE_descriptor_t *td, size_t *size,
     }
     state->path[depth] = td;
     state->pointer_edge[depth] = incoming_pointer != 0;
-    status = _SET_shallow_inline_size(td, size);
+    status = SET_shallow_inline_value_size(td, size);
     if(status) return status;
     members_inline = _SET_has_inline_members(td);
     if(members_inline) {
