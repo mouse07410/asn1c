@@ -14,6 +14,636 @@ const CER_FRAGMENT_MAX: usize = 1000;
 const TAG_BIT_STRING: u64 = 3;
 const TAG_OCTET_STRING: u64 = 4;
 const TAG_ENUMERATED: u64 = 10;
+const TAG_SEQUENCE: u64 = 16;
+const TAG_BOOLEAN: u64 = 1;
+const TAG_INTEGER: u64 = 2;
+const TAG_NULL: u64 = 5;
+const MAX_SEQUENCE_FIELDS: usize = 3;
+
+/// Canonical encoding rule used for one generated record.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RecordEncoding {
+    /// Encode the outer SEQUENCE with a minimal definite length.
+    Der,
+    /// Encode the outer SEQUENCE with indefinite length and EOC.
+    Cer,
+}
+
+/// Shared resource accounting for one generated BER/DER/CER record operation.
+///
+/// A context is created once for an encode or decode operation and may be
+/// reused for strict CER re-encoding and comparison.
+pub struct RecordContext {
+    /// Copied caller ceilings for this complete operation.
+    limits: Limits,
+    /// Cumulative work; this is a state variable.
+    work_used: usize,
+}
+
+/// One field header and content span in a flat SEQUENCE.
+#[derive(Clone, Copy)]
+struct FieldSpan {
+    /// Universal tag number of the current field.
+    tag: u64,
+    /// Whether the field uses constructed encoding.
+    constructed: bool,
+    /// First content byte in caller input.
+    content_start: usize,
+    /// Exclusive content end in caller input.
+    content_end: usize,
+}
+
+/// Encode direct primitive fields into one bounded SEQUENCE operation.
+pub struct SequenceWriter<'context> {
+    /// Encoding form selected for the outer record.
+    rule: RecordEncoding,
+    /// Shared operation limits and work budget.
+    context: &'context mut RecordContext,
+    /// Complete output buffer with outer header placeholder; state variable.
+    bytes: Vec<u8>,
+    /// Bit mask of BOOLEAN, INTEGER, and NULL tags already emitted; state variable.
+    seen_mask: u8,
+}
+
+/// Read fields from one BER SEQUENCE prefix under a shared operation budget.
+pub struct SequenceReader<'input, 'tags, 'context> {
+    /// Complete caller input, including any suffix; state variable.
+    input: &'input [u8],
+    /// Schema field tags in declaration order.
+    expected_tags: &'tags [u64],
+    /// Shared operation limits and work budget.
+    context: &'context mut RecordContext,
+    /// Definite outer content end, or input end for indefinite form.
+    content_bound: usize,
+    /// Whether the outer SEQUENCE uses indefinite length.
+    indefinite: bool,
+    /// Next child candidate offset; state variable.
+    cursor: usize,
+    /// Expected tag index of the last child; state variable.
+    last_tag_index: Option<usize>,
+    /// Current child span awaiting a typed reader; state variable.
+    current: Option<FieldSpan>,
+    /// Exact consumed end once the outer boundary has been reached; state variable.
+    consumed_end: Option<usize>,
+}
+
+impl RecordContext {
+    /// Create one operation context with a copy of the caller's ceilings.
+    ///
+    /// # Parameters and returns
+    /// `limits` supplies whole-input, complete-output, and cumulative-work
+    /// maxima. Returns an unused context ready for one record operation.
+    ///
+    /// # Errors
+    /// This constructor cannot fail and raises no exception.
+    ///
+    /// # Source, version, history, example
+    /// Source: bounded record-operation policy. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat record runtime API.
+    /// Example: `let mut context = RecordContext::new(&limits);`.
+    #[must_use]
+    pub const fn new(limits: &Limits) -> Self {
+        Self {
+            limits: *limits,
+            work_used: 0,
+        }
+    }
+
+    /// Compare a strict CER prefix with its canonical re-encoding.
+    ///
+    /// # Parameters
+    /// `input` is the complete available slice; `consumed` is the decoded
+    /// record prefix size; `canonical` is its CER encoding. Parsing and
+    /// encoding must already have charged this same context.
+    ///
+    /// # Returns
+    /// `Ok(())` when exactly the consumed prefix matches canonical bytes.
+    ///
+    /// # Errors
+    /// Returns `InvalidEncoding`, checked-size, or work-limit errors.
+    /// It raises no exception.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 strict CER via decode/re-encode comparison.
+    /// Version: 2026-10-31. Responsible: asn1c maintainers.
+    /// History: shared-budget record decoding. Example: `context.verify_canonical(input, n, bytes)?`.
+    pub fn verify_canonical(
+        &mut self,
+        input: &[u8],
+        consumed: usize,
+        canonical: &[u8],
+    ) -> Result<(), Error> {
+        ensure_canonical(
+            input,
+            consumed,
+            canonical,
+            &mut self.work_used,
+            &self.limits,
+        )
+    }
+
+    /// Charge newly visited wire octets against this operation.
+    ///
+    /// # Parameters and returns
+    /// `bytes` is work not charged by another pass; returns success if the
+    /// cumulative work stays within this context's ceiling.
+    ///
+    /// # Errors
+    /// Returns `SizeOverflow` or a work `LimitExceeded` error.
+    ///
+    /// # Source, version, history, example
+    /// Source: runtime cumulative work budget. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: record contexts.
+    /// Example: `context.charge(1)?` charges one octet of work.
+    fn charge(&mut self, bytes: usize) -> Result<(), Error> {
+        charge_work(&mut self.work_used, bytes, &self.limits)
+    }
+
+    /// Check projected complete record output before growing the buffer.
+    ///
+    /// # Parameters and returns
+    /// `bytes` is the projected encoded record size; returns success if allowed.
+    ///
+    /// # Errors
+    /// Returns output `LimitExceeded`; it raises no exception.
+    ///
+    /// # Source, version, history, example
+    /// Source: bounded record output policy. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: record contexts.
+    /// Example: `context.check_output(next_size)?`.
+    const fn check_output(&self, bytes: usize) -> Result<(), Error> {
+        check(Resource::OutputBytes, bytes, self.limits.max_output_bytes)
+    }
+}
+
+impl SequenceWriter<'_> {
+    /// Begin one SEQUENCE encoder using the shared operation context.
+    ///
+    /// # Parameters
+    /// `rule` selects DER definite or CER indefinite outer framing; `context`
+    /// owns the cumulative work ceiling and complete output limit.
+    ///
+    /// # Returns
+    /// A writer ready to receive its declaration-order primitive fields.
+    ///
+    /// # Errors
+    /// Returns output-limit, work-limit, or allocation errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SEQUENCE framing. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat record runtime API.
+    /// Example: `SequenceWriter::new(RecordEncoding::Der, &mut context)?`.
+    pub fn new(
+        rule: RecordEncoding,
+        context: &mut RecordContext,
+    ) -> Result<SequenceWriter<'_>, Error> {
+        let minimum_size = if rule == RecordEncoding::Cer { 4 } else { 2 };
+        context.check_output(minimum_size)?;
+        let mut bytes = Vec::new();
+        bytes
+            .try_reserve_exact(2)
+            .map_err(|_| Error::AllocationFailed { requested_bytes: 2 })?;
+        bytes.extend_from_slice(&[0x30, if rule == RecordEncoding::Cer { 0x80 } else { 0 }]);
+        if rule == RecordEncoding::Cer {
+            context.charge(2)?;
+        } else {
+            context.charge(1)?;
+        }
+        Ok(SequenceWriter {
+            rule,
+            context,
+            bytes,
+            seen_mask: 0,
+        })
+    }
+
+    /// Append one canonical BOOLEAN field with its universal tag.
+    ///
+    /// # Parameters and returns
+    /// `value` is the ASN.1 BOOLEAN; returns success after appending its TLV.
+    ///
+    /// # Errors
+    /// Returns duplicate-field, output/work-limit, size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 DER/CER BOOLEAN content. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat record runtime API.
+    /// Example: `writer.write_boolean(true)?`.
+    pub fn write_boolean(&mut self, value: bool) -> Result<(), Error> {
+        let content = [if value { 0xff } else { 0 }];
+        self.write_field(TAG_BOOLEAN, &content, 0x01)
+    }
+
+    /// Append one empty NULL field with its universal tag.
+    ///
+    /// # Parameters and returns
+    /// No value parameter is needed; returns success after appending `05 00`.
+    ///
+    /// # Errors
+    /// Returns duplicate-field, output/work-limit, size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 NULL content. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat record runtime API.
+    /// Example: `writer.write_null()?`.
+    pub fn write_null(&mut self) -> Result<(), Error> {
+        self.write_field(TAG_NULL, &[], 0x04)
+    }
+
+    /// Append one minimally encoded bounded signed INTEGER field.
+    ///
+    /// # Parameters
+    /// `value` is the signed value; `lower` and `upper` are inclusive schema
+    /// bounds. The writer's context covers encoding and the complete record.
+    ///
+    /// # Returns
+    /// `Ok(())` after appending a shortest two's-complement INTEGER TLV.
+    ///
+    /// # Errors
+    /// Returns invalid bounds, out-of-range, duplicate-field, resource, size,
+    /// or allocation errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 INTEGER content rules. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat record runtime API.
+    /// Example: `writer.write_integer(-2, -4, 4)?`.
+    pub fn write_integer(&mut self, value: i64, lower: i64, upper: i64) -> Result<(), Error> {
+        crate::validate_integer(value, lower, upper)?;
+        let full = value.to_be_bytes();
+        let first = minimal_signed_start(full);
+        self.write_field(TAG_INTEGER, &full[first..], 0x02)
+    }
+
+    /// Finalize the complete record and release the shared context borrow.
+    ///
+    /// # Parameters and returns
+    /// `self` owns the accumulated fields. Returns complete DER/CER bytes and
+    /// their octet-aligned wire-bit count.
+    ///
+    /// # Errors
+    /// Returns output/work-limit, size, or allocation errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 definite DER and indefinite CER SEQUENCE framing.
+    /// Version: 2026-10-31. Responsible: asn1c maintainers.
+    /// History: flat record runtime API. Example: `writer.finish()?`.
+    pub fn finish(mut self) -> Result<Encoded, Error> {
+        match self.rule {
+            RecordEncoding::Der => {
+                let content_len = self.bytes.len().checked_sub(2).ok_or(Error::SizeOverflow)?;
+                let length_len = length_size(content_len);
+                let total_len = 1_usize
+                    .checked_add(length_len)
+                    .and_then(|n| n.checked_add(content_len))
+                    .ok_or(Error::SizeOverflow)?;
+                self.context.check_output(total_len)?;
+                self.context.charge(length_len)?;
+                patch_der_length(&mut self.bytes, content_len)?;
+            }
+            RecordEncoding::Cer => {
+                let total_len = self.bytes.len().checked_add(2).ok_or(Error::SizeOverflow)?;
+                self.context.check_output(total_len)?;
+                self.context.charge(2)?;
+                push(&mut self.bytes, &[0, 0], &self.context.limits)?;
+            }
+        }
+        finish(self.bytes, &self.context.limits)
+    }
+
+    /// Append a typed field after checking uniqueness and cumulative budgets.
+    ///
+    /// # Parameters
+    /// `tag` is one supported universal field tag; `content` is its payload;
+    /// `mask` identifies it in the duplicate-detection state.
+    ///
+    /// # Returns
+    /// `Ok(())` after writing identifier, shortest length, and content.
+    ///
+    /// # Errors
+    /// Returns duplicate-tag, output/work-limit, size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: shared bounded TLV writer. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat record runtime API.
+    /// Example: used by the public typed field methods.
+    fn write_field(&mut self, tag: u64, content: &[u8], mask: u8) -> Result<(), Error> {
+        if self.seen_mask & mask != 0 {
+            return Err(invalid(
+                "flat SEQUENCE writer received a duplicate universal tag",
+            ));
+        }
+        let content_size = self.bytes.len().checked_sub(2).ok_or(Error::SizeOverflow)?;
+        let field_size = 1_usize
+            .checked_add(length_size(content.len()))
+            .and_then(|n| n.checked_add(content.len()))
+            .ok_or(Error::SizeOverflow)?;
+        let next_content = content_size
+            .checked_add(field_size)
+            .ok_or(Error::SizeOverflow)?;
+        self.context
+            .check_output(record_size(self.rule, next_content)?)?;
+        let work_bytes = field_size.checked_add(1).ok_or(Error::SizeOverflow)?;
+        self.context.charge(work_bytes)?;
+        push_primitive(&mut self.bytes, tag, content, &self.context.limits)?;
+        self.seen_mask |= mask;
+        Ok(())
+    }
+}
+
+impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
+    /// Start decoding one BER SEQUENCE prefix against declaration-order tags.
+    ///
+    /// # Parameters
+    /// `input` is the full available slice; `expected_tags` lists up to three
+    /// unique BOOLEAN, NULL, or INTEGER universal tags in schema order;
+    /// `context` supplies one whole-input and cumulative-work budget.
+    ///
+    /// # Returns
+    /// A cursor accepting definite or indefinite BER outer lengths.
+    ///
+    /// # Errors
+    /// Returns input-limit, truncation, wrong-tag/form, duplicate-descriptor,
+    /// depth, size, or work errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 BER SEQUENCE framing. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat record runtime API.
+    /// Example: `SequenceReader::new(input, &[1, 5, 2], &mut context)?`.
+    pub fn new(
+        input: &'input [u8],
+        expected_tags: &'tags [u64],
+        context: &'context mut RecordContext,
+    ) -> Result<Self, Error> {
+        check(
+            Resource::InputBytes,
+            input.len(),
+            context.limits.max_input_bytes,
+        )?;
+        if expected_tags.len() > MAX_SEQUENCE_FIELDS {
+            return Err(invalid(
+                "record reader supports at most three direct fields",
+            ));
+        }
+        for (index, tag) in expected_tags.iter().enumerate() {
+            context.charge(1)?;
+            if !matches!(*tag, TAG_BOOLEAN | TAG_INTEGER | TAG_NULL) {
+                return Err(invalid(
+                    "SEQUENCE descriptor contains an unsupported field tag",
+                ));
+            }
+            for previous in &expected_tags[..index] {
+                context.charge(1)?;
+                if previous == tag {
+                    return Err(invalid("SEQUENCE descriptor tags must be unique"));
+                }
+            }
+        }
+        let work = &mut context.work_used;
+        let header = parse_header(input, 0, input.len(), work, true, &context.limits)?;
+        if header.class != 0 || header.tag != TAG_SEQUENCE || !header.constructed {
+            return Err(invalid(
+                "BER record is not a constructed universal SEQUENCE",
+            ));
+        }
+        let length_octets = header.content - header.identifier_len;
+        context.charge(length_octets)?;
+        let (content_bound, indefinite) = if let Some(length) = header.length {
+            let end = header
+                .content
+                .checked_add(length)
+                .ok_or(Error::SizeOverflow)?;
+            require(input, header.content, length, input.len())?;
+            (end, false)
+        } else {
+            (input.len(), true)
+        };
+        Ok(Self {
+            input,
+            expected_tags,
+            context,
+            content_bound,
+            indefinite,
+            cursor: header.content,
+            last_tag_index: None,
+            current: None,
+            consumed_end: None,
+        })
+    }
+
+    /// Advance to the next field, returning its universal tag number.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns `Some(tag)` for a field or `None` after the
+    /// definite body or matching outer EOC has been consumed.
+    ///
+    /// # Errors
+    /// Returns malformed child framing, unknown/duplicate/out-of-order tags,
+    /// truncation, size, depth, or work errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: BER SEQUENCE field traversal. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat record runtime API.
+    /// Example: `while let Some(tag) = reader.next_field()? { ... }`.
+    pub fn next_field(&mut self) -> Result<Option<u64>, Error> {
+        if self.current.is_some() {
+            return Err(invalid("SEQUENCE field must be decoded before advancing"));
+        }
+        if self.consumed_end.is_some() {
+            return Ok(None);
+        }
+        if self.indefinite && is_eoc(self.input, self.cursor, self.input.len()) {
+            self.context.charge(2)?;
+            self.cursor = self.cursor.checked_add(2).ok_or(Error::SizeOverflow)?;
+            self.consumed_end = Some(self.cursor);
+            return Ok(None);
+        }
+        if !self.indefinite && self.cursor == self.content_bound {
+            self.consumed_end = Some(self.cursor);
+            return Ok(None);
+        }
+        let header = parse_header(
+            self.input,
+            self.cursor,
+            self.content_bound,
+            &mut self.context.work_used,
+            true,
+            &self.context.limits,
+        )?;
+        if header.class != 0 || header.tag == 0 {
+            return Err(invalid(
+                "SEQUENCE child tag is not a supported universal field",
+            ));
+        }
+        let mut matching_index = None;
+        for (index, tag) in self.expected_tags.iter().enumerate() {
+            self.context.charge(1)?;
+            if *tag == header.tag {
+                matching_index = Some(index);
+                break;
+            }
+        }
+        let Some(index) = matching_index else {
+            return Err(invalid("SEQUENCE contains an unknown field tag"));
+        };
+        if self
+            .last_tag_index
+            .is_some_and(|previous| index <= previous)
+        {
+            return Err(invalid(
+                "SEQUENCE fields are duplicated or out of declaration order",
+            ));
+        }
+        self.context.charge(1)?;
+        let start = self.cursor;
+        let end = scan(
+            self.input,
+            start,
+            self.content_bound,
+            1,
+            &mut self.context.work_used,
+            false,
+            &self.context.limits,
+        )?;
+        let content_end = header
+            .length
+            .and_then(|length| header.content.checked_add(length))
+            .unwrap_or_else(|| end.saturating_sub(2));
+        self.current = Some(FieldSpan {
+            tag: header.tag,
+            constructed: header.constructed,
+            content_start: header.content,
+            content_end,
+        });
+        self.last_tag_index = Some(index);
+        self.cursor = end;
+        Ok(Some(header.tag))
+    }
+
+    /// Decode the current primitive BOOLEAN field and consume it.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns false for zero content and true for nonzero.
+    ///
+    /// # Errors
+    /// Returns `InvalidEncoding` for a wrong/constructed tag or non-one-octet
+    /// content, or a work-limit error. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 BER BOOLEAN. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat record runtime API.
+    /// Example: `let enabled = reader.read_boolean()?;`.
+    pub fn read_boolean(&mut self) -> Result<bool, Error> {
+        let field = self.current_field(TAG_BOOLEAN)?;
+        if field.constructed || field.content_end - field.content_start != 1 {
+            return Err(invalid("BER BOOLEAN field must contain exactly one octet"));
+        }
+        self.context.charge(1)?;
+        let value = self.input[field.content_start] != 0;
+        self.current = None;
+        Ok(value)
+    }
+
+    /// Decode the current primitive NULL field and consume it.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns unit for an empty NULL content.
+    ///
+    /// # Errors
+    /// Returns `InvalidEncoding` for a wrong/constructed tag or nonempty
+    /// content, or a work-limit error. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 BER NULL. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat record runtime API.
+    /// Example: `reader.read_null()?;`.
+    pub fn read_null(&mut self) -> Result<(), Error> {
+        let field = self.current_field(TAG_NULL)?;
+        if field.constructed || field.content_start != field.content_end {
+            return Err(invalid("BER NULL field content must be empty"));
+        }
+        self.context.charge(1)?;
+        self.current = None;
+        Ok(())
+    }
+
+    /// Decode the current signed INTEGER field and validate its bounds.
+    ///
+    /// # Parameters
+    /// `lower` and `upper` are the inclusive bounds declared for this field.
+    ///
+    /// # Returns
+    /// The decoded signed integer.
+    ///
+    /// # Errors
+    /// Returns invalid bounds, malformed/out-of-range content, field mismatch,
+    /// value-out-of-range, or work-limit errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 BER INTEGER rules. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat record runtime API.
+    /// Example: `reader.read_integer(0, 255)?`.
+    pub fn read_integer(&mut self, lower: i64, upper: i64) -> Result<i64, Error> {
+        crate::validate_integer(lower, lower, upper)?;
+        let field = self.current_field(TAG_INTEGER)?;
+        if field.constructed {
+            return Err(invalid("BER INTEGER field must use primitive form"));
+        }
+        let contents = &self.input[field.content_start..field.content_end];
+        self.context.charge(contents.len())?;
+        let value = signed_value(contents)?;
+        crate::validate_integer(value, lower, upper)?;
+        self.current = None;
+        Ok(value)
+    }
+
+    /// Finish traversal and return the exact SEQUENCE prefix consumption.
+    ///
+    /// # Parameters and returns
+    /// Consumes `self`; returns unit with whole-prefix byte and bit counts.
+    ///
+    /// # Errors
+    /// Returns `InvalidEncoding` if a field or outer terminator remains unread.
+    /// It also returns size overflow. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: BER prefix-decoder contract. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat record runtime API.
+    /// Example: `let span = reader.finish()?;`.
+    pub fn finish(self) -> Result<Decoded<()>, Error> {
+        if self.current.is_some() {
+            return Err(invalid("SEQUENCE has a field that was not decoded"));
+        }
+        let end = self
+            .consumed_end
+            .ok_or_else(|| invalid("SEQUENCE reader did not reach its outer boundary"))?;
+        let bits = end.checked_mul(8).ok_or(Error::SizeOverflow)?;
+        Ok(Decoded {
+            value: (),
+            consumed_bits: bits,
+            consumed_bytes: end,
+        })
+    }
+
+    /// Return the current field only when it has the requested primitive tag.
+    ///
+    /// # Parameters and returns
+    /// `tag` is the expected universal number. Returns the current field span.
+    ///
+    /// # Errors
+    /// Returns `InvalidEncoding` when no field is pending or the tag differs.
+    ///
+    /// # Source, version, history, example
+    /// Source: typed BER field dispatch. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: flat record runtime API.
+    /// Example: called by each typed `read_*` method.
+    const fn current_field(&self, tag: u64) -> Result<FieldSpan, Error> {
+        match &self.current {
+            Some(field) if field.tag == tag => Ok(*field),
+            Some(_) => Err(invalid("SEQUENCE field reader does not match current tag")),
+            None => Err(invalid("SEQUENCE has no current field")),
+        }
+    }
+}
 
 /// Parsed BER identifier and length metadata.
 struct Header {
@@ -791,6 +1421,96 @@ fn signed_value(bytes: &[u8]) -> Result<i64, Error> {
     Ok(i64::from_be_bytes(full))
 }
 
+/// Find the first byte of the minimal signed representation of an i64.
+///
+/// # Parameters and returns
+/// `bytes` is the complete eight-octet big-endian two's-complement form.
+/// Returns its first nonredundant byte index.
+///
+/// # Errors
+/// Cannot fail because an i64 always has at least one content octet.
+///
+/// # Source, version, history, example
+/// Source: X.690 minimal signed INTEGER content. Version: 2026-10-31.
+/// Responsible: asn1c maintainers. History: shared primitive/record output.
+/// Example: `minimal_signed_start(128_i64.to_be_bytes())`.
+const fn minimal_signed_start(bytes: [u8; 8]) -> usize {
+    let mut first = 0;
+    while first < 7 {
+        let current = bytes[first];
+        let next = bytes[first + 1];
+        if (current == 0 && next & 0x80 == 0) || (current == 0xff && next & 0x80 != 0) {
+            first += 1;
+        } else {
+            break;
+        }
+    }
+    first
+}
+
+/// Compute the complete outer SEQUENCE size for one body length.
+///
+/// # Parameters and returns
+/// `rule` chooses DER or CER; `content_len` is the encoded child-TLV byte count.
+/// Returns total output bytes including canonical outer framing.
+///
+/// # Errors
+/// Returns `SizeOverflow` when the complete size cannot be represented.
+///
+/// # Source, version, history, example
+/// Source: X.690 constructed value framing. Version: 2026-10-31.
+/// Responsible: asn1c maintainers. History: shared record writer.
+/// Example: `record_size(RecordEncoding::Der, 0)? == 2`.
+fn record_size(rule: RecordEncoding, content_len: usize) -> Result<usize, Error> {
+    match rule {
+        RecordEncoding::Der => 1_usize
+            .checked_add(length_size(content_len))
+            .and_then(|size| size.checked_add(content_len))
+            .ok_or(Error::SizeOverflow),
+        RecordEncoding::Cer => 4_usize.checked_add(content_len).ok_or(Error::SizeOverflow),
+    }
+}
+
+/// Patch a DER SEQUENCE's placeholder length to its shortest definite form.
+///
+/// # Parameters and returns
+/// `output` begins with tag and one placeholder length octet; `content_len`
+/// gives body bytes. Returns success after inserting any additional length
+/// octets and shifting the body in-place.
+///
+/// # Errors
+/// Returns checked-size or allocation errors. No panic.
+///
+/// # Source, version, history, example
+/// Source: X.690 DER definite length. Version: 2026-10-31.
+/// Responsible: asn1c maintainers. History: flat record writer.
+/// Example: called by `SequenceWriter::finish`.
+fn patch_der_length(output: &mut Vec<u8>, content_len: usize) -> Result<(), Error> {
+    if content_len < 128 {
+        output[1] = u8::try_from(content_len).map_err(|_| Error::SizeOverflow)?;
+        return Ok(());
+    }
+    let length_bytes = content_len.to_be_bytes();
+    let first = length_bytes
+        .iter()
+        .position(|byte| *byte != 0)
+        .ok_or(Error::SizeOverflow)?;
+    let count = length_bytes.len() - first;
+    let extra = count;
+    let old_len = output.len();
+    let new_len = old_len.checked_add(extra).ok_or(Error::SizeOverflow)?;
+    output
+        .try_reserve(extra)
+        .map_err(|_| Error::AllocationFailed {
+            requested_bytes: new_len,
+        })?;
+    output.resize(new_len, 0);
+    output.copy_within(2..old_len, 2 + extra);
+    output[1] = 0x80 | u8::try_from(count).map_err(|_| Error::SizeOverflow)?;
+    output[2..2 + count].copy_from_slice(&length_bytes[first..]);
+    Ok(())
+}
+
 /// Encode a signed value as minimal canonical universal TLV.
 ///
 /// # Parameters and returns
@@ -806,16 +1526,7 @@ fn signed_value(bytes: &[u8]) -> Result<i64, Error> {
 /// Example: `encode_signed(TAG_ENUMERATED, 4, limits)?`.
 fn encode_signed(tag: u64, value: i64, limits: &Limits) -> Result<Encoded, Error> {
     let bytes = value.to_be_bytes();
-    let mut first = 0;
-    while first < 7 {
-        let a = bytes[first];
-        let b = bytes[first + 1];
-        if (a == 0 && b & 0x80 == 0) || (a == 0xff && b & 0x80 != 0) {
-            first += 1;
-        } else {
-            break;
-        }
-    }
+    let first = minimal_signed_start(bytes);
     write_primitive(tag, &bytes[first..], limits)
 }
 
@@ -1627,5 +2338,230 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Round-trip direct fields through DER, CER, and BER prefix readers.
+    /// Source: X.690 record framing; version: 2026-10-31; inputs: BOOLEAN,
+    /// NULL, and constrained INTEGER. Returns: assertions; errors: assertion
+    /// failures; responsible: maintainers. History: flat record support.
+    /// Example: run via `cargo test`.
+    #[test]
+    fn flat_sequence_writer_reader_round_trip() {
+        let limits = Limits::default();
+        let mut der_context = RecordContext::new(&limits);
+        let mut der = SequenceWriter::new(RecordEncoding::Der, &mut der_context).unwrap();
+        der.write_boolean(true).unwrap();
+        der.write_null().unwrap();
+        der.write_integer(-129, -200, 200).unwrap();
+        let der = der.finish().unwrap();
+        assert_eq!(der.bytes, [0x30, 9, 1, 1, 0xff, 5, 0, 2, 2, 0xff, 0x7f]);
+
+        let tags = [TAG_BOOLEAN, TAG_NULL, TAG_INTEGER];
+        let mut ber_context = RecordContext::new(&limits);
+        let mut reader = SequenceReader::new(&der.bytes, &tags, &mut ber_context).unwrap();
+        assert_eq!(reader.next_field().unwrap(), Some(TAG_BOOLEAN));
+        assert!(reader.read_boolean().unwrap());
+        assert_eq!(reader.next_field().unwrap(), Some(TAG_NULL));
+        reader.read_null().unwrap();
+        assert_eq!(reader.next_field().unwrap(), Some(TAG_INTEGER));
+        assert_eq!(reader.read_integer(-200, 200).unwrap(), -129);
+        assert_eq!(reader.next_field().unwrap(), None);
+        assert_eq!(reader.finish().unwrap().consumed_bytes, der.bytes.len());
+
+        let mut cer_context = RecordContext::new(&limits);
+        let mut cer = SequenceWriter::new(RecordEncoding::Cer, &mut cer_context).unwrap();
+        cer.write_boolean(true).unwrap();
+        cer.write_null().unwrap();
+        cer.write_integer(-129, -200, 200).unwrap();
+        let cer = cer.finish().unwrap();
+        assert_eq!(&cer.bytes[..2], &[0x30, 0x80]);
+        assert_eq!(&cer.bytes[cer.bytes.len() - 2..], &[0, 0]);
+
+        let mut strict_context = RecordContext::new(&limits);
+        let mut reader = SequenceReader::new(&cer.bytes, &tags, &mut strict_context).unwrap();
+        assert_eq!(reader.next_field().unwrap(), Some(TAG_BOOLEAN));
+        assert!(reader.read_boolean().unwrap());
+        assert_eq!(reader.next_field().unwrap(), Some(TAG_NULL));
+        reader.read_null().unwrap();
+        assert_eq!(reader.next_field().unwrap(), Some(TAG_INTEGER));
+        assert_eq!(reader.read_integer(-200, 200).unwrap(), -129);
+        assert_eq!(reader.next_field().unwrap(), None);
+        let prefix = reader.finish().unwrap();
+        let mut canonical = SequenceWriter::new(RecordEncoding::Cer, &mut strict_context).unwrap();
+        canonical.write_boolean(true).unwrap();
+        canonical.write_null().unwrap();
+        canonical.write_integer(-129, -200, 200).unwrap();
+        let canonical = canonical.finish().unwrap();
+        strict_context
+            .verify_canonical(&cer.bytes, prefix.consumed_bytes, &canonical.bytes)
+            .unwrap();
+    }
+
+    /// Preserve empty-record framing and exact prefix consumption.
+    /// Source: X.690 empty SEQUENCE forms; version: 2026-10-31; inputs: empty
+    /// DER/CER plus suffixes. Returns: assertions; errors: assertion failures.
+    /// Responsible: asn1c maintainers. History: flat record support.
+    /// Example: run via `cargo test`.
+    #[test]
+    fn empty_sequence_and_suffix_consumption() {
+        let limits = Limits::default();
+        let mut context = RecordContext::new(&limits);
+        let der = SequenceWriter::new(RecordEncoding::Der, &mut context)
+            .unwrap()
+            .finish()
+            .unwrap();
+        assert_eq!(der.bytes, [0x30, 0]);
+        let mut context = RecordContext::new(&limits);
+        let cer = SequenceWriter::new(RecordEncoding::Cer, &mut context)
+            .unwrap()
+            .finish()
+            .unwrap();
+        assert_eq!(cer.bytes, [0x30, 0x80, 0, 0]);
+
+        for bytes in [
+            [0x30, 0, 0xaa].as_slice(),
+            [0x30, 0x80, 0, 0, 0xaa].as_slice(),
+        ] {
+            let mut context = RecordContext::new(&limits);
+            let mut reader = SequenceReader::new(bytes, &[], &mut context).unwrap();
+            assert_eq!(reader.next_field().unwrap(), None);
+            let prefix = reader.finish().unwrap();
+            assert_eq!(prefix.consumed_bytes, bytes.len() - 1);
+        }
+    }
+
+    /// Reject invalid descriptors, duplicate/out-of-order fields, and truncation.
+    /// Source: C nonextensible SEQUENCE behavior; version: 2026-10-31; inputs:
+    /// malformed descriptors and BER child/body boundaries. Returns: assertions.
+    /// Errors: assertion failures; responsible: maintainers. History: record API.
+    /// Example: run via `cargo test`.
+    #[test]
+    fn sequence_rejects_ambiguous_and_malformed_fields() {
+        let limits = Limits::default();
+        let too_many_tags = [1, 2, 3, 4];
+        let mut context = RecordContext::new(&limits);
+        assert!(SequenceReader::new(&[0x30, 0], &too_many_tags, &mut context).is_err());
+        let unsupported_tag = [4];
+        let mut context = RecordContext::new(&limits);
+        assert!(SequenceReader::new(&[0x30, 0], &unsupported_tag, &mut context).is_err());
+        let duplicate_tags = [1, 1];
+        let mut context = RecordContext::new(&limits);
+        assert!(SequenceReader::new(&[0x30, 0], &duplicate_tags, &mut context).is_err());
+
+        let out_of_order = [0x30, 6, 2, 1, 1, 1, 1, 0];
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SequenceReader::new(&out_of_order, &[1, 2], &mut context).unwrap();
+        assert_eq!(reader.next_field().unwrap(), Some(TAG_INTEGER));
+        assert_eq!(reader.read_integer(0, 10).unwrap(), 1);
+        assert!(reader.next_field().is_err());
+
+        let duplicate_field = [0x30, 6, 1, 1, 0, 1, 1, 0xff];
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SequenceReader::new(&duplicate_field, &[1, 2], &mut context).unwrap();
+        assert_eq!(reader.next_field().unwrap(), Some(TAG_BOOLEAN));
+        assert!(!reader.read_boolean().unwrap());
+        assert!(reader.next_field().is_err());
+
+        let unknown = [0x30, 3, 3, 1, 0];
+        let mut context = RecordContext::new(&limits);
+        assert!(SequenceReader::new(&unknown, &[1, 2], &mut context)
+            .unwrap()
+            .next_field()
+            .is_err());
+        let child_crosses = [0x30, 2, 1, 2, 0];
+        let mut context = RecordContext::new(&limits);
+        assert!(SequenceReader::new(&child_crosses, &[1], &mut context)
+            .unwrap()
+            .next_field()
+            .is_err());
+        let no_eoc = [0x30, 0x80, 1, 1, 0xff];
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SequenceReader::new(&no_eoc, &[1], &mut context).unwrap();
+        assert_eq!(reader.next_field().unwrap(), Some(TAG_BOOLEAN));
+        reader.read_boolean().unwrap();
+        assert!(reader.next_field().is_err());
+    }
+
+    /// Check cumulative record work and complete output ceilings at boundaries.
+    /// Source: runtime resource policy; version: 2026-10-31; inputs: empty and
+    /// one-field records. Returns: assertions; errors: assertion failures.
+    /// Responsible: asn1c maintainers. History: shared record budgets.
+    /// Example: run via `cargo test`.
+    #[test]
+    fn sequence_context_enforces_work_and_output_limits() {
+        let limits = Limits {
+            max_work_bits: 15,
+            ..Limits::default()
+        };
+        let mut context = RecordContext::new(&limits);
+        let writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        assert!(writer.finish().is_err());
+
+        let limits = Limits {
+            max_output_bytes: 3,
+            ..Limits::default()
+        };
+        let mut context = RecordContext::new(&limits);
+        assert!(SequenceWriter::new(RecordEncoding::Cer, &mut context).is_err());
+
+        let limits = Limits {
+            max_input_bytes: 2,
+            ..Limits::default()
+        };
+        let mut context = RecordContext::new(&limits);
+        assert!(SequenceReader::new(&[0x30, 0, 0], &[], &mut context).is_err());
+    }
+
+    /// Apply one aggregate budget to CER parsing, re-encoding, and comparison.
+    /// Source: shared record-operation accounting; version: 2026-10-31; input:
+    /// one canonical BOOLEAN record. Returns: boundary assertions. Errors:
+    /// failed assertions; responsible: maintainers. History: record hardening.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn strict_cer_sequence_uses_one_cumulative_budget() {
+        let canonical = [0x30, 0x80, 0x01, 0x01, 0xff, 0, 0];
+        let tags = [TAG_BOOLEAN];
+        let limits = Limits {
+            max_work_bits: 208,
+            max_output_bytes: canonical.len(),
+            ..Limits::default()
+        };
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SequenceReader::new(&canonical, &tags, &mut context).unwrap();
+        assert_eq!(reader.next_field().unwrap(), Some(TAG_BOOLEAN));
+        assert!(reader.read_boolean().unwrap());
+        assert_eq!(reader.next_field().unwrap(), None);
+        let consumed = reader.finish().unwrap();
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer.write_boolean(true).unwrap();
+        let encoded = writer.finish().unwrap();
+        context
+            .verify_canonical(&canonical, consumed.consumed_bytes, &encoded.bytes)
+            .unwrap();
+
+        let limits = Limits {
+            max_work_bits: 207,
+            ..limits
+        };
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SequenceReader::new(&canonical, &tags, &mut context).unwrap();
+        assert_eq!(reader.next_field().unwrap(), Some(TAG_BOOLEAN));
+        assert!(reader.read_boolean().unwrap());
+        assert_eq!(reader.next_field().unwrap(), None);
+        let consumed = reader.finish().unwrap();
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer.write_boolean(true).unwrap();
+        let encoded = writer.finish().unwrap();
+        assert!(context
+            .verify_canonical(&canonical, consumed.consumed_bytes, &encoded.bytes)
+            .is_err());
+
+        let too_small_output = Limits {
+            max_output_bytes: canonical.len() - 1,
+            ..Limits::default()
+        };
+        let mut context = RecordContext::new(&too_small_output);
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        assert!(writer.write_boolean(true).is_err());
     }
 }

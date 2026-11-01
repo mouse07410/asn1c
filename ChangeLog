@@ -1,4 +1,9 @@
 Changes since v1.5.3:
+	* Add generated Rust BER prefix decoding, DER encoding, CER encoding, and
+	  strict CER decoding for flat untagged SEQUENCE records with unique direct
+	  BOOLEAN, NULL, and bounded INTEGER fields. Support required, OPTIONAL,
+	  literal BOOLEAN/INTEGER DEFAULT, and empty records with one shared resource
+	  budget and generated C interoperability vectors.
 	* Extend generated Rust BER decoding, DER encoding, CER encoding, and
 	  strict CER decoding to direct nonextensible ENUMERATED and finite-size
 	  BIT/OCTET STRING values. Add bounded constructed-string BER parsing,

@@ -98,6 +98,7 @@ fresh directory after adding application code or running Cargo there.
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in BER prefix decoding and DER encoding with `-gen-BER` |
 | Direct ENUMERATED | BER prefix decoding, DER encoding, CER encoding and strict CER decoding when selected |
 | Direct fixed/bounded OCTET STRING and BIT STRING | BER prefix decoding, DER encoding, CER encoding and strict CER decoding when selected; finite nonextensible SIZE below 65536 |
+| Flat untagged SEQUENCE | BER prefix decoding, DER encoding, CER encoding and strict CER decoding for empty records or distinct direct BOOLEAN, NULL, bounded i64 INTEGER fields; required, OPTIONAL, and literal BOOLEAN/INTEGER DEFAULT; one shared record budget |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in APER and OER encode/decode; each call begins at an octet boundary |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in JER encode/decode of one complete JSON primitive with -gen-JER |
 | Direct fixed OCTET/BIT STRING | Opt-in JER uppercase-hex encoding, case-insensitive complete-input decoding, exact packed size and zero-padding checks, and resource limits |
@@ -216,6 +217,15 @@ redundant sign-extension octets as a compatibility extension, while DER and
 CER output remain minimal. The wire-form distinctions follow
 [ITU-T X.690 (2021)](https://www.itu.int/rec/dologin_pub.asp?id=T-REC-X.690-202102-I%21%21PDF-E&lang=e&type=items),
 clauses 8.1.3, 8.2, and 8.3.
+
+The flat BER/DER/CER SEQUENCE slice keeps fields in declaration order and
+rejects duplicates, unknown tags, and missing required fields. BER accepts a
+definite or indefinite outer length and reports the exact consumed prefix.
+DER uses a definite outer length; CER uses an indefinite outer length with
+end-of-contents. Both omit literal DEFAULT values. Strict CER decoding
+re-encodes through the same operation context before comparing the consumed
+prefix, so parsing, output, and comparison share the work limit. The generator
+rejects tagged, nested, repeated-tag, extensible, or unsupported field forms.
 
 `Encoded` carries output bytes and meaningful bit length. `Decoded<T>` carries
 the value and consumed bits and bytes. Prefix decoding may leave a suffix;

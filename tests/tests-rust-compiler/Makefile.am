@@ -28,6 +28,7 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/OversizeBits.asn1 \
     $(srcdir)/EnumSlice.asn1 \
     $(srcdir)/BerCerSlice.asn1 \
+    $(srcdir)/SequenceBerCer.asn1 \
     $(srcdir)/ExtensibleEnum.asn1 \
     $(srcdir)/VariableString.asn1 \
     $(srcdir)/VariableSequence.asn1 \
@@ -112,5 +113,7 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/c_variable_bit_string.c \
     $(srcdir)/c_enum.c \
     $(srcdir)/c_ber_cer.c \
+    $(srcdir)/sequence_ber_cer_conformance.rs \
+    $(srcdir)/c_sequence_ber_cer.c \
     $(srcdir)/coverage.json \
     $(srcdir)/README.md

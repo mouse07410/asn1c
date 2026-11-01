@@ -56,13 +56,24 @@ present defaults, an OPTIONAL interleaved bitmap crossing an octet, cross-byte
 packing, zero-width fields and whole-value filler, full `i64` bounds, truncation,
 and exact work/input/output ceilings. The C fixture checks both C encoding of
 Rust vectors and C decoding of a Rust-compatible present-default vector.
-Default UPER/CER selection rejects SEQUENCE until CER support exists; unsupported
+Default UPER/CER selection rejects SEQUENCE shapes outside the direct
+BOOLEAN/NULL/bounded-INTEGER BER/CER subset; unsupported
 DEFAULT forms, nested constructed DEFAULTs, extensions, excessive nesting or
 aggregate field-work, generated-name collisions, and top-level tagged types fail
 before publication. Required and OPTIONAL inline records each write their own
 presence bitmap immediately before payload. Private record helpers share the
 top-level cursor, budget, and final filler. The automatic component tags in
 `SequenceDefaults.asn1` are covered by live C encode/decode parity vectors.
+The second BER/CER SEQUENCE slice supports empty records and flat, untagged
+records with unique BOOLEAN, NULL, and bounded INTEGER universal tags. Required,
+OPTIONAL, BOOLEAN DEFAULT, and INTEGER DEFAULT members preserve declaration
+order; DER omits default literals, BER decoding substitutes omitted defaults,
+and CER decoding verifies the complete canonical record against the same
+operation budget. Tests include fixed C encoder parity vectors, empty CER
+framing, unknown/duplicate/reordered fields, truncation, range violations, and
+resource ceilings. Tagged, automatic-tagged, nested, duplicate-tag, unbounded,
+and unsupported DEFAULT shapes fail before crate publication. The fixture also
+builds all three codec families together with UPER and runs strict Clippy.
 The fixed-size string fixture covers standalone OCTET STRING and BIT STRING,
 zero-sized values, bit packing inside a mixed SEQUENCE, malformed lengths and
 pad bits, truncation, and whole-operation budgets. It also checks that the

@@ -218,6 +218,30 @@
       "evidence": "sequence_conformance.rs; nested_conformance.rs; sequence_enum_conformance.rs; c_sequence.c; c_sequence_enum.c; C UPER encode/decode vectors"
     },
     {
+      "asn1_type": "SEQUENCE",
+      "feature": "empty or flat untagged direct BOOLEAN, NULL, and bounded INTEGER fields with unique universal tags; required, OPTIONAL, and literal BOOLEAN/INTEGER DEFAULT",
+      "codec": "UPER + BER decode / DER encode + CER decode and encode",
+      "variants": [
+        "DER definite-length and CER indefinite-length framing",
+        "required fields and absent/present OPTIONAL values",
+        "DEFAULT omission and BER substitution for literal BOOLEAN and INTEGER",
+        "CER rejection of explicit DEFAULT values",
+        "empty record encoding and decoding",
+        "unknown, duplicate, reordered, missing, truncated, and out-of-range fields",
+        "prefix consumption and cumulative input, output, and work limits",
+        "unsupported tags, aliases, repeated universal tags, nesting, and bounds rejected"
+      ],
+      "directions": [
+        "BER decode",
+        "DER encode",
+        "CER decode",
+        "CER encode",
+        "UPER encode/decode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "SequenceBerCer.asn1; sequence_ber_cer_conformance.rs; c_sequence_ber_cer.c; check-rust-backend.sh"
+    },
+    {
       "asn1_type": "OCTET STRING, BIT STRING",
       "feature": "direct fixed SIZE(N), bounded OCTET SIZE(l..u), and bounded BIT SIZE(l..u), all below 65536; standalone and required or OPTIONAL SEQUENCE field",
       "codec": "UPER",

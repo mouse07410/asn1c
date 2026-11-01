@@ -11,6 +11,12 @@ direct finite ENUMERATED, and fixed or bounded BIT/OCTET STRING values. See
 C, including imports, references, and tags. These rejections must remain
 until the corresponding generated representation and codecs are implemented.
 
+The next implemented slice handles empty or flat untagged SEQUENCE records
+with distinct direct BOOLEAN, NULL, and bounded INTEGER fields. Required,
+OPTIONAL, and literal BOOLEAN/INTEGER DEFAULT members share one operation
+budget. SET, nested records, tagging, and broader primitive members remain
+in the staged parity matrix below.
+
 ## Architecture and interfaces
 
 Use a shared, safe Rust TLV engine for identifiers, lengths, tag stacks and

@@ -994,10 +994,10 @@ if ! cc $enum_cflags -I"$enum_c_out" "$enum_c_out"/*.c \
 fi
 "$test_tmp/c-enum"
 
-# Flat required-field SEQUENCE is qualified only for an explicit UPER-only mask.
+# This wider string SEQUENCE remains outside the current BER/CER record slice.
 if "$asn1c_bin" --rust -S "$skeletons" -D "$test_tmp/rejected-sequence-default" \
     "$test_srcdir/SequenceSlice.asn1" >"$test_tmp/rejected-sequence-default.log" 2>&1; then
-    echo "FAIL: default Rust codecs accepted a SEQUENCE without CER support"
+    echo "FAIL: default Rust codecs accepted an unsupported BER/CER SEQUENCE shape"
     exit 1
 fi
 test ! -e "$test_tmp/rejected-sequence-default"
@@ -1574,6 +1574,131 @@ if ! cc $asn1c_module_cflags -I"$c_out" "$c_out"/*.c \
     exit 1
 fi
 "$test_tmp/c-ber-cer"
+
+# Flat, unique-tag direct SEQUENCE records compose UPER, DER/BER, and CER.
+sequence_ber_cer_out="$test_tmp/sequence-ber-cer-rust"
+"$asn1c_bin" --rust -gen-BER -S "$skeletons" -D "$sequence_ber_cer_out" \
+    "$test_srcdir/SequenceBerCer.asn1"
+mkdir "$sequence_ber_cer_out/tests"
+cp "$test_srcdir/sequence_ber_cer_conformance.rs" "$sequence_ber_cer_out/tests/"
+if ! (cd "$sequence_ber_cer_out" && \
+    CARGO_TARGET_DIR="$test_tmp/target-sequence-ber-cer" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-sequence-ber-cer" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/check-sequence-ber-cer.log" 2>&1; then
+    cat "$test_tmp/check-sequence-ber-cer.log"
+    echo "FAIL: generated mixed UPER/BER/CER SEQUENCE tests or strict Clippy"
+    exit 1
+fi
+sequence_ber_cer_source="$sequence_ber_cer_out/src/sequence_ber_cer.rs"
+for method in encode_uper encode_der decode_ber encode_cer decode_cer; do
+    grep -F "pub fn $method" "$sequence_ber_cer_source" >/dev/null
+done
+
+# Check the selector-conditioned record emitters without the mixed defaults.
+sequence_ber_only="$test_tmp/sequence-ber-only"
+"$asn1c_bin" --rust -gen-BER -no-gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$sequence_ber_only" "$test_srcdir/SequenceBerCer.asn1"
+if ! cargo check --offline --manifest-path "$sequence_ber_only/Cargo.toml" \
+    >"$test_tmp/sequence-ber-only-check.log" 2>&1; then
+    cat "$test_tmp/sequence-ber-only-check.log"
+    echo "FAIL: BER-only SEQUENCE crate did not compile"
+    exit 1
+fi
+sequence_ber_only_source="$sequence_ber_only/src/sequence_ber_cer.rs"
+grep -F 'pub fn encode_der' "$sequence_ber_only_source" >/dev/null
+grep -F 'pub fn decode_ber' "$sequence_ber_only_source" >/dev/null
+if grep -E 'pub fn (encode|decode)_(uper|cer)' \
+    "$sequence_ber_only_source" >/dev/null; then
+    echo "FAIL: BER-only SEQUENCE output retained UPER or CER"
+    exit 1
+fi
+
+sequence_cer_only="$test_tmp/sequence-cer-only"
+"$asn1c_bin" --rust -gen-CER -no-gen-UPER -no-gen-BER -S "$skeletons" \
+    -D "$sequence_cer_only" "$test_srcdir/SequenceBerCer.asn1"
+if ! cargo check --offline --manifest-path "$sequence_cer_only/Cargo.toml" \
+    >"$test_tmp/sequence-cer-only-check.log" 2>&1; then
+    cat "$test_tmp/sequence-cer-only-check.log"
+    echo "FAIL: CER-only SEQUENCE crate did not compile"
+    exit 1
+fi
+sequence_cer_only_source="$sequence_cer_only/src/sequence_ber_cer.rs"
+grep -F 'pub fn encode_cer' "$sequence_cer_only_source" >/dev/null
+grep -F 'pub fn decode_cer' "$sequence_cer_only_source" >/dev/null
+if grep -E 'pub fn (encode|decode)_(uper|der|ber)' \
+    "$sequence_cer_only_source" >/dev/null; then
+    echo "FAIL: CER-only SEQUENCE output retained UPER or BER/DER"
+    exit 1
+fi
+
+# Compare the same fixed DER/CER vectors with independently generated C code.
+sequence_ber_cer_c_out="$test_tmp/sequence-ber-cer-c"
+mkdir "$sequence_ber_cer_c_out"
+"$asn1c_bin" -S "$skeletons" -gen-CER -no-gen-UPER -no-gen-XER \
+    -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER -no-gen-print \
+    -no-gen-random-fill -fwide-types -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$sequence_ber_cer_c_out" \
+    "$test_srcdir/SequenceBerCer.asn1" \
+    >"$test_tmp/sequence-ber-cer-c-generate.log" 2>&1
+sequence_ber_cer_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$sequence_ber_cer_c_out/Makefile.am.libasncodec")
+rm -f "$sequence_ber_cer_c_out/converter-example.c" \
+    "$sequence_ber_cer_c_out/pdu_collection.c"
+if ! cc $sequence_ber_cer_cflags -I"$sequence_ber_cer_c_out" \
+    "$sequence_ber_cer_c_out"/*.c "$test_srcdir/c_sequence_ber_cer.c" \
+    -lm -o "$test_tmp/c-sequence-ber-cer" \
+    >"$test_tmp/c-sequence-ber-cer-compile.log" 2>&1; then
+    cat "$test_tmp/c-sequence-ber-cer-compile.log"
+    echo "FAIL: generated C BER/CER SEQUENCE reference did not compile"
+    exit 1
+fi
+"$test_tmp/c-sequence-ber-cer"
+
+# Reject field aliases, tags, repeated universal tags, and unsupported shapes.
+cat >"$test_tmp/SequenceBerCerTagged.asn1" <<'EOF'
+SequenceBerCerTagged DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { flag [0] BOOLEAN }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerAutomatic.asn1" <<'EOF'
+SequenceBerCerAutomatic DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+Packet ::= SEQUENCE { flag BOOLEAN }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerDuplicate.asn1" <<'EOF'
+SequenceBerCerDuplicate DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { first BOOLEAN, second BOOLEAN }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerNested.asn1" <<'EOF'
+SequenceBerCerNested DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { child SEQUENCE { flag BOOLEAN } }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerUnbounded.asn1" <<'EOF'
+SequenceBerCerUnbounded DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { number INTEGER }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerNullDefault.asn1" <<'EOF'
+SequenceBerCerNullDefault DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { empty NULL DEFAULT NULL }
+END
+EOF
+for fixture in SequenceBerCerTagged SequenceBerCerAutomatic \
+    SequenceBerCerDuplicate SequenceBerCerNested \
+    SequenceBerCerUnbounded SequenceBerCerNullDefault; do
+    if "$asn1c_bin" --rust -gen-BER -no-gen-UPER -no-gen-CER \
+        -S "$skeletons" -D "$test_tmp/rejected-$fixture" \
+        "$test_tmp/$fixture.asn1" >"$test_tmp/$fixture.log" 2>&1; then
+        echo "FAIL: Rust BER backend accepted unsupported $fixture"
+        exit 1
+    fi
+    test ! -e "$test_tmp/rejected-$fixture"
+done
 
 # Named BIT STRING roots require special trimming and remain outside this slice.
 if "$asn1c_bin" --rust -gen-BER -no-gen-UPER -no-gen-CER -S "$skeletons" \

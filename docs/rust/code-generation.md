@@ -76,8 +76,10 @@ NULL, finite nonextensible INTEGER ranges fitting `i64`, direct nonextensible
 ENUMERATED roots fitting `i64`, and direct fixed or bounded BIT/OCTET STRING
 values with supported finite `SIZE` constraints. `-gen-BER` adds `decode_ber`
 and `encode_der` for those types. Its `--rust` defaults to UPER and CER.
-Constructed records and many other C-supported BER-family forms remain outside
-the implemented slice; see [the implementation matrix](implementation.md).
+Empty or flat untagged SEQUENCE records with distinct direct BOOLEAN, NULL,
+and bounded INTEGER fields also have BER/DER/CER methods. Other constructed
+records and many C-supported BER-family forms remain outside the implemented
+slice; see [the implementation matrix](implementation.md).
 
 The example converter's baseline inputs are BER, OER, PER/UPER, APER, XER,
 JER, and CBOR; outputs are DER, OER, PER/UPER, APER, XER, JER, CBOR, text,
@@ -155,7 +157,8 @@ control only in Rust codecs that implement its behavior.
    output. The current gate accepts top-level BOOLEAN, NULL, and bounded,
    nonextensible INTEGER whose complete range fits `i64`, plus SEQUENCE with
    required and OPTIONAL direct or inline nested fields and literal BOOLEAN or
-   bounded INTEGER DEFAULT fields under UPER-only selection.
+   bounded INTEGER DEFAULT fields under UPER selection. A stricter flat,
+   unique-tag direct-field gate enables BER/DER/CER SEQUENCE methods.
 6. Runtime sources now live under `rust/asn1c-runtime/` and are included in
    Automake distribution and package-data installation. The CLI resolves the
    runtime separately from `-S`, which still selects C skeletons and standard
@@ -237,7 +240,7 @@ integer-width heuristics.
 | OBJECT IDENTIFIER | runtime `ObjectIdentifier` | Use checked arcs; do not assume every arc fits a machine integer. |
 | RELATIVE-OID | runtime `RelativeOid` | Same checked-arithmetic requirement as OID arcs. |
 | UTCTime, GeneralizedTime | runtime time wrapper or validated text newtype | Canonical rules need explicit APIs. |
-| SEQUENCE, SET | generated `struct` | UPER SEQUENCE fields use values and `Option<T>`; inline nested records share a cursor and put their presence bitmap before each record payload. Direct component tags are ignored by PER, BOOLEAN and bounded INTEGER DEFAULT are supported, SET is unsupported. |
+| SEQUENCE, SET | generated `struct` | UPER SEQUENCE fields use values and `Option<T>`; inline nested records share a cursor and put their presence bitmap before each record payload. The BER/DER/CER slice handles flat untagged SEQUENCE records with distinct direct BOOLEAN, NULL, and bounded INTEGER fields, including supported defaults. SET is unsupported under these rules. |
 | CHOICE | generated `enum` | Include an unknown extension variant when the type is extensible. |
 | SEQUENCE OF, SET OF | `Vec<T>` newtype | Retain SET OF ordering rules in codec logic. |
 | Type reference | module-qualified reference | Use public newtypes for aliases that add constraints or API identity. |
@@ -251,7 +254,7 @@ range fitting `i64`; `new(value)` returns `Result` and checks that range.
 The BOOLEAN constructor is infallible. Direct nonextensible ENUMERATED and
 fixed or bounded BIT/OCTET STRING types also have BER/DER/CER methods when
 selected. Reject aliases, imports, tags, constructed types outside the
-documented UPER and CBOR slices, and unsupported constraints before creating
+documented UPER, CBOR, and BER/DER/CER SEQUENCE slices, and unsupported constraints before creating
 output. UPER-only selection supports direct and SEQUENCE-member ENUMERATED
 and strings within the documented size bounds.
 Direct fixed-size OCTET STRING assignments also accept the JER codec alone or
@@ -394,7 +397,7 @@ The current Rust option handling is:
 | Option family | Rust handling |
 | --- | --- |
 | `-D` | Selects the output directory; Rust defaults to `asn1c-rust`. |
-| `-gen-*`, `-no-gen-*` | UPER and CER are default; APER/OER/BER/JER are opt-in for initial primitives; flat SEQUENCE, fixed strings, and ENUMERATED need UPER alone. |
+| `-gen-*`, `-no-gen-*` | UPER and CER are default; APER/OER/BER/JER are opt-in for qualified slices; BER/DER/CER SEQUENCE requires the documented flat, unique-tag shape. |
 | C storage/layout/output flags | Fail as incompatible with `--rust`. |
 | `-S` | Selects standard modules and resolves the matching runtime assets. |
 | `-P`, `-R`, C helper/example flags | Fail as incompatible with `--rust`. |

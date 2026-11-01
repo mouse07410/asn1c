@@ -1,0 +1,23 @@
+SequenceBerCer DEFINITIONS ::= BEGIN
+
+RequiredRecord ::= SEQUENCE {
+    flag BOOLEAN,
+    empty NULL,
+    number INTEGER (-3..3)
+}
+
+OptionalRecord ::= SEQUENCE {
+    flag BOOLEAN OPTIONAL,
+    empty NULL OPTIONAL,
+    number INTEGER (-3..3) OPTIONAL
+}
+
+DefaultRecord ::= SEQUENCE {
+    flag BOOLEAN DEFAULT FALSE,
+    empty NULL,
+    number INTEGER (-3..3) DEFAULT 1
+}
+
+EmptyRecord ::= SEQUENCE { }
+
+END
