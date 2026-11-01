@@ -1,0 +1,7 @@
+Self DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..5)
+END
+ImportedIntegerReservedClient DEFINITIONS ::= BEGIN
+IMPORTS Small FROM Self;
+Packet ::= SEQUENCE { value Small }
+END

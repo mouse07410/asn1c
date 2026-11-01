@@ -1336,7 +1336,7 @@ for fixture in Alias Import TaggedBoolean ExtensibleInteger UnionInteger \
     fi
     case "$fixture" in
         Alias) expected='Rust backend does not support' ;;
-        Import) expected='IMPORTS are not supported' ;;
+        Import) expected='IMPORTS require one direct exported bounded INTEGER' ;;
         TaggedBoolean) expected='type tags are supported only on BER/CER-only flat SEQUENCE/SET roots' ;;
         ExtensibleInteger|UnionInteger)
             expected='INTEGER needs one finite, nonextensible range fitting i64' ;;
@@ -4507,16 +4507,22 @@ for fixture in NamedIntegerAlias NamedIntegerUnbounded NamedIntegerUnion \
     fi
 done
 
-rejected_import="$test_tmp/rejected-NamedIntegerImported"
-if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
-    -D "$rejected_import" "$test_srcdir/NamedIntegerImportBase.asn1" \
+named_integer_imported="$test_tmp/named-integer-imported"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$named_integer_imported" "$test_srcdir/NamedIntegerImportBase.asn1" \
     "$test_srcdir/NamedIntegerImported.asn1" \
-    >"$test_tmp/rejected-NamedIntegerImported.log" 2>&1; then
-    echo "FAIL: named INTEGER gate accepted an imported target"
+    >"$test_tmp/named-integer-imported.log" 2>&1
+if ! grep -F 'crate::named_integer_import_base::Small' \
+    "$named_integer_imported/src/named_integer_imported.rs" >/dev/null; then
+    echo "FAIL: imported named INTEGER source path was not preserved"
     exit 1
 fi
-if [ -e "$rejected_import" ]; then
-    echo "FAIL: imported named INTEGER target published output"
+if ! (cd "$named_integer_imported" && \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/named-integer-imported-clippy.log" 2>&1; then
+    cat "$test_tmp/named-integer-imported-clippy.log"
+    echo "FAIL: imported named INTEGER strict Clippy"
     exit 1
 fi
 
@@ -5071,4 +5077,259 @@ if ! ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
     exit 1
 fi
 
-echo "PASS: generated Rust UPER/CER/BER-DER and named record pair slices"
+# A direct bounded INTEGER import keeps the caller's codec context and range.
+imported_integer_rust="$test_tmp/imported-integer-rust"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$imported_integer_rust" "$test_srcdir/ImportedIntegerBase.asn1" \
+    "$test_srcdir/ImportedIntegerClient.asn1"
+mkdir "$imported_integer_rust/tests"
+cp "$test_srcdir/imported_bounded_integer_conformance.rs" \
+    "$imported_integer_rust/tests/"
+for expected in 'crate::imported_integer_base::Small' \
+    'pub struct NaturalSequence' 'pub struct OptionalSequence' \
+    'pub struct NaturalSet' 'writer.write_integer(self.value.value(), 0, 5)?' \
+    'reader.read_integer(0, 5)?' \
+    'crate::imported_integer_base::Small::new(value)?'; do
+    if ! grep -F "$expected" "$imported_integer_rust/src/imported_integer_client.rs" \
+        >/dev/null; then
+        echo "FAIL: imported INTEGER generated source omitted $expected"
+        exit 1
+    fi
+done
+if ! (cd "$imported_integer_rust" && cargo test --offline --manifest-path Cargo.toml && \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/imported-integer-rust.log" 2>&1; then
+    cat "$test_tmp/imported-integer-rust.log"
+    echo "FAIL: imported INTEGER conformance tests or strict Clippy"
+    exit 1
+fi
+
+# Selected codec surfaces must compile without exposing unselected methods.
+for selection in ber cer; do
+    selected="$test_tmp/imported-integer-$selection"
+    if [ "$selection" = ber ]; then
+        "$asn1c_bin" --rust -gen-BER -no-gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$selected" "$test_srcdir/ImportedIntegerBase.asn1" \
+            "$test_srcdir/ImportedIntegerClient.asn1"
+        forbidden='pub fn .*_cer'
+    else
+        "$asn1c_bin" --rust -no-gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$selected" "$test_srcdir/ImportedIntegerBase.asn1" \
+            "$test_srcdir/ImportedIntegerClient.asn1"
+        forbidden='pub fn .*_(ber|der)'
+    fi
+    if grep -E "$forbidden" "$selected/src/imported_integer_client.rs" >/dev/null; then
+        echo "FAIL: imported INTEGER $selection selection exposed unselected codecs"
+        exit 1
+    fi
+    if ! (cd "$selected" && cargo clippy --offline --all-targets --all-features -- \
+        -W clippy::pedantic -W clippy::nursery -D warnings) \
+        >"$test_tmp/imported-integer-$selection.log" 2>&1; then
+        cat "$test_tmp/imported-integer-$selection.log"
+        echo "FAIL: imported INTEGER $selection selection strict Clippy"
+        exit 1
+    fi
+done
+
+# Import resolution is keyed by raw module name and symbol, not file order.
+for order in forward reverse; do
+    ordered="$test_tmp/imported-integer-$order"
+    if [ "$order" = forward ]; then
+        first_source="$test_srcdir/ImportedIntegerBase.asn1"
+        second_source="$test_srcdir/ImportedIntegerClient.asn1"
+    else
+        first_source="$test_srcdir/ImportedIntegerClient.asn1"
+        second_source="$test_srcdir/ImportedIntegerBase.asn1"
+    fi
+    "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$ordered" "$first_source" "$second_source"
+    if ! (cd "$ordered" && cargo clippy --offline --all-targets --all-features -- \
+        -W clippy::pedantic -W clippy::nursery -D warnings) \
+        >"$test_tmp/imported-integer-$order.log" 2>&1; then
+        cat "$test_tmp/imported-integer-$order.log"
+        echo "FAIL: imported INTEGER $order source order strict Clippy"
+        exit 1
+    fi
+done
+
+# Omitted EXPORTS, EXPORTS ALL, and an explicit export list all expose Small.
+for exports in omitted all explicit; do
+    export_dir="$test_tmp/imported-integer-exports-$exports"
+    if [ "$exports" = omitted ]; then
+        base="$test_srcdir/ImportedIntegerBase.asn1"
+        client="$test_srcdir/ImportedIntegerClient.asn1"
+    elif [ "$exports" = all ]; then
+        base="$test_srcdir/ImportedIntegerBaseAll.asn1"
+        client="$test_srcdir/ImportedIntegerClientAll.asn1"
+    else
+        base="$test_srcdir/ImportedIntegerBaseExplicit.asn1"
+        client="$test_srcdir/ImportedIntegerClientExplicit.asn1"
+    fi
+    "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$export_dir" "$base" "$client"
+    if ! (cd "$export_dir" && cargo clippy --offline --all-targets --all-features -- \
+        -W clippy::pedantic -W clippy::nursery -D warnings) \
+        >"$test_tmp/imported-integer-exports-$exports.log" 2>&1; then
+        cat "$test_tmp/imported-integer-exports-$exports.log"
+        echo "FAIL: imported INTEGER $exports EXPORTS strict Clippy"
+        exit 1
+    fi
+done
+
+# Same-spelled targets remain distinct when source modules appear in either order.
+for order in forward reverse; do
+    same_names="$test_tmp/imported-integer-same-names-$order"
+    if [ "$order" = forward ]; then
+        "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$same_names" "$test_srcdir/ImportedIntegerAlpha.asn1" \
+            "$test_srcdir/ImportedIntegerBeta.asn1" \
+            "$test_srcdir/ImportedIntegerSameNames.asn1"
+    else
+        "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$same_names" "$test_srcdir/ImportedIntegerSameNames.asn1" \
+            "$test_srcdir/ImportedIntegerBeta.asn1" \
+            "$test_srcdir/ImportedIntegerAlpha.asn1"
+    fi
+    mkdir "$same_names/tests"
+    cp "$test_srcdir/imported_integer_same_names.rs" "$same_names/tests/"
+    if ! (cd "$same_names" && cargo test --offline --manifest-path Cargo.toml && \
+        cargo clippy --offline --all-targets --all-features -- \
+        -W clippy::pedantic -W clippy::nursery -D warnings) \
+        >"$test_tmp/imported-integer-same-names-$order.log" 2>&1; then
+        cat "$test_tmp/imported-integer-same-names-$order.log"
+        echo "FAIL: imported INTEGER same-name $order order or strict Clippy"
+        exit 1
+    fi
+done
+
+# Rust module normalization handles reserved words and remains collision-safe.
+reserved="$test_tmp/imported-integer-reserved"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$reserved" "$test_srcdir/ImportedIntegerReservedModule.asn1"
+mkdir "$reserved/tests"
+cp "$test_srcdir/imported_integer_reserved_module.rs" "$reserved/tests/"
+if ! (cd "$reserved" && cargo test --offline --manifest-path Cargo.toml && \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/imported-integer-reserved.log" 2>&1; then
+    cat "$test_tmp/imported-integer-reserved.log"
+    echo "FAIL: imported INTEGER reserved module path or strict Clippy"
+    exit 1
+fi
+
+# Supported unused imports still validate and emit independent module codecs.
+for fixture in ImportedIntegerUnusedSupported; do
+    accepted="$test_tmp/accepted-$fixture"
+    "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$accepted" "$test_srcdir/$fixture.asn1"
+    mkdir "$accepted/tests"
+    cp "$test_srcdir/imported_integer_unused_supported.rs" "$accepted/tests/"
+    if ! (cd "$accepted" && cargo test --offline --manifest-path Cargo.toml && \
+        cargo clippy --offline --all-targets --all-features -- \
+        -W clippy::pedantic -W clippy::nursery -D warnings) \
+        >"$test_tmp/accepted-$fixture.log" 2>&1; then
+        cat "$test_tmp/accepted-$fixture.log"
+        echo "FAIL: supported imported INTEGER case $fixture or strict Clippy"
+        exit 1
+    fi
+done
+
+# Every unsupported declaration fails before publishing a generated project.
+for fixture in ImportedIntegerAlias ImportedIntegerReexport \
+    ImportedIntegerConstructed ImportedIntegerParameterized \
+    ImportedIntegerMemberConstraint ImportedIntegerUnusedImport \
+    ImportedIntegerUnusedNonExported ImportedIntegerUnusedUnsupported \
+    ImportedIntegerMultipleSymbols ImportedIntegerUndeclaredSymbol \
+    ImportedIntegerEmptyExports ImportedIntegerOmittedExport \
+    ImportedIntegerTransitive ImportedIntegerQualifiedReference \
+    ImportedIntegerLocalNameCollision ImportedIntegerSelfReference \
+    ImportedIntegerAssignedIdentifier ImportedIntegerSuccessors \
+    ImportedIntegerDescendants ImportedIntegerNormalizedModuleCollision \
+    ImportedIntegerDuplicateRawModule; do
+    rejected="$test_tmp/rejected-$fixture"
+    if ! "$asn1c_bin" -E "$test_srcdir/$fixture.asn1" \
+        >"$test_tmp/parsed-$fixture.log" 2>&1; then
+        cat "$test_tmp/parsed-$fixture.log"
+        echo "FAIL: imported INTEGER negative fixture $fixture is not valid ASN.1 syntax"
+        exit 1
+    fi
+    if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$rejected" "$test_srcdir/$fixture.asn1" \
+        >"$test_tmp/rejected-$fixture.log" 2>&1; then
+        echo "FAIL: imported INTEGER gate accepted unsupported $fixture"
+        exit 1
+    fi
+    if [ -e "$rejected" ]; then
+        echo "FAIL: rejected imported INTEGER schema $fixture published output"
+        exit 1
+    fi
+done
+
+# Imported fields remain limited to BER/CER-only generation.
+for selection in mixed uper; do
+    rejected="$test_tmp/rejected-imported-integer-codecs-$selection"
+    if [ "$selection" = mixed ]; then
+        if "$asn1c_bin" --rust -gen-BER -gen-CER -gen-UPER -S "$skeletons" \
+            -D "$rejected" "$test_srcdir/ImportedIntegerBase.asn1" \
+            "$test_srcdir/ImportedIntegerClient.asn1" \
+            >"$test_tmp/rejected-imported-integer-$selection.log" 2>&1; then
+            echo "FAIL: imported INTEGER gate accepted mixed codecs"
+            exit 1
+        fi
+    else
+        if "$asn1c_bin" --rust -gen-UPER -no-gen-BER -no-gen-CER -S "$skeletons" \
+            -D "$rejected" "$test_srcdir/ImportedIntegerBase.asn1" \
+            "$test_srcdir/ImportedIntegerClient.asn1" \
+            >"$test_tmp/rejected-imported-integer-$selection.log" 2>&1; then
+            echo "FAIL: imported INTEGER gate accepted UPER-only selection"
+            exit 1
+        fi
+    fi
+    if [ -e "$rejected" ]; then
+        echo "FAIL: rejected imported INTEGER codec selection published output"
+        exit 1
+    fi
+done
+
+# C generation supplies independent differential vectors for supported imports.
+imported_integer_c="$test_tmp/imported-integer-c"
+mkdir "$imported_integer_c"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$imported_integer_c" "$test_srcdir/ImportedIntegerBase.asn1" \
+    "$test_srcdir/ImportedIntegerClient.asn1" \
+    >"$test_tmp/imported-integer-c-generate.log" 2>&1
+imported_integer_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$imported_integer_c/Makefile.am.libasncodec")
+rm -f "$imported_integer_c/converter-example.c" \
+    "$imported_integer_c/pdu_collection.c"
+if ! cc $imported_integer_cflags -I"$imported_integer_c" \
+    "$imported_integer_c"/*.c "$test_srcdir/c_imported_bounded_integer.c" -lm \
+    -o "$test_tmp/c-imported-integer" \
+    >"$test_tmp/imported-integer-c-compile.log" 2>&1; then
+    cat "$test_tmp/imported-integer-c-compile.log"
+    echo "FAIL: C imported INTEGER fixture did not compile"
+    exit 1
+fi
+if ! "$test_tmp/c-imported-integer"; then
+    echo "FAIL: C imported INTEGER DER/CER vectors or malformed cases failed"
+    exit 1
+fi
+if ! cc -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer \
+    $imported_integer_cflags -I"$imported_integer_c" "$imported_integer_c"/*.c \
+    "$test_srcdir/c_imported_bounded_integer.c" -lm \
+    -o "$test_tmp/c-imported-integer-sanitize" \
+    >"$test_tmp/imported-integer-c-sanitize-compile.log" 2>&1; then
+    cat "$test_tmp/imported-integer-c-sanitize-compile.log"
+    echo "FAIL: C imported INTEGER sanitizer fixture did not compile"
+    exit 1
+fi
+if ! ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
+    "$test_tmp/c-imported-integer-sanitize"; then
+    echo "FAIL: C imported INTEGER fixture failed under ASan/UBSan"
+    exit 1
+fi
+
+echo "PASS: generated Rust UPER/CER/BER-DER, named record pair, and import slices"

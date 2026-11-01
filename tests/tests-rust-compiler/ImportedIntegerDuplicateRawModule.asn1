@@ -1,0 +1,15 @@
+ImportedIntegerDuplicateSource
+    { iso org(3) dod(6) internet(1) private(4) enterprise(1) 9204 1 }
+    DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..5)
+END
+ImportedIntegerDuplicateSource
+    { iso org(3) dod(6) internet(1) private(4) enterprise(1) 9204 2 }
+    DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..9)
+END
+ImportedIntegerDuplicateClient DEFINITIONS ::= BEGIN
+IMPORTS Small FROM ImportedIntegerDuplicateSource
+    { iso org(3) dod(6) internet(1) private(4) enterprise(1) 9204 1 };
+Packet ::= SEQUENCE { value Small }
+END

@@ -710,3 +710,31 @@ record references, and duplicate effective tags fail without publishing output.
 The runtime suite separately exercises second-child failure/retry cleanup in
 writers and readers, shared work accounting, active nesting depth, and exact
 aggregate writer scratch limits.
+
+### Direct imported bounded INTEGER field
+
+`ImportedIntegerBase.asn1`, `ImportedIntegerClient.asn1`,
+`imported_bounded_integer_conformance.rs`, and
+`c_imported_bounded_integer.c` cover one directly imported bounded INTEGER
+field in flat SEQUENCE and SET parents. Rust and generated C compare natural,
+OPTIONAL, IMPLICIT, and EXPLICIT fields, including both OPTIONAL states,
+parent SET ordering, and BOOLEAN DEFAULT omission/emission. Tests cover target
+range endpoints and out-of-range values, strict CER canonicality, BER/CER
+prefix consumption and truncations, malformed tags/wrappers/EOCs, duplicate
+and unknown members, deterministic mutations, and exact input/output/work
+limits. The C fixture records C's decode-then-constraint-check timing for an
+out-of-range value separately from Rust's generated decoder rejection.
+
+Import-resolution fixtures verify omitted, `EXPORTS ALL`, and explicit export
+lists; the same `Small` spelling in different source modules; both source file
+orders; and a Rust reserved-word module path. Unsupported aliases, re-exports,
+transitive or constructed targets, parameters, member constraints, unused
+unsupported imports, unused non-exported targets, import/module identifiers
+and options, local raw-symbol collisions, and duplicate normalized/raw module
+names must fail without publishing output. Positive generation and strict
+Clippy runs cover combined, BER-only, and CER-only selection; mixed and
+UPER-only selections fail before publication. The existing
+`NamedIntegerImported.asn1` smoke case now exercises a direct imported target.
+Supported unused imports compile and retain both modules' direct codecs.
+Each unsupported fixture is parsed first,
+so syntax errors cannot accidentally satisfy the no-publication checks.

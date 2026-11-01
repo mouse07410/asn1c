@@ -85,6 +85,7 @@ static int rust_check_xer_record(asn1p_module_t *, asn1p_expr_t *);
 static int rust_write_xer_record(FILE *, const char *, asn1p_expr_t *);
 static int rust_check_module(asn1p_t *, asn1p_module_t *, int *, uint64_t);
 static int rust_check_module_name(asn1p_t *, asn1p_module_t *);
+static int rust_check_ber_cer_imports(asn1p_t *, asn1p_module_t *, uint64_t);
 static int rust_check_module_types(asn1p_module_t *, int *, uint64_t);
 static int rust_check_type_name(asn1p_module_t *, asn1p_expr_t *);
 static int rust_check_unconstrained_string_codecs(asn1p_module_t *,
@@ -169,6 +170,19 @@ static int rust_check_ber_cer_big_integer_record_members(asn1p_module_t *,
 static int rust_integer_single_range_supported(const asn1p_constraint_t *,
                                                unsigned, int *);
 static asn1p_expr_t *rust_ber_cer_named_integer_target(const asn1p_expr_t *);
+static int rust_ber_cer_import_shape(asn1p_module_t *, asn1p_xports_t **,
+                                     asn1p_expr_t **);
+static int rust_ber_cer_imported_integer_target(asn1p_module_t *, const char *,
+                                                asn1p_expr_t *, asn1p_expr_t **);
+static int rust_ber_cer_import_source(asn1p_module_t *, asn1p_xports_t *,
+                                      asn1p_module_t **);
+static int rust_ber_cer_import_is_exported(asn1p_module_t *, asn1p_expr_t *);
+static int rust_ber_cer_import_assignment(asn1p_module_t *, asn1p_expr_t *,
+                                          asn1p_expr_t *, asn1p_expr_t **);
+static int rust_ber_cer_import_name_conflicts(asn1p_module_t *,
+                                              asn1p_expr_t *);
+static char *rust_ber_cer_named_integer_type_path(const asn1p_expr_t *,
+                                                  const asn1p_expr_t *);
 static asn1p_expr_t *rust_ber_cer_named_record_target(const asn1p_expr_t *);
 static asn1p_expr_t *rust_ber_cer_named_sequence_target(const asn1p_expr_t *);
 static asn1p_expr_t *rust_ber_cer_named_set_target(const asn1p_expr_t *);
@@ -810,7 +824,7 @@ rust_check_ber_cer_big_integer_record(asn1p_module_t *module,
 
 /*
  * Validate the reference node before looking up its target.
- * Inputs: member is a fixed-tree field. Returns one for one simple local name.
+ * Inputs: member is a fixed-tree field. Returns one for one simple symbol name.
  * Errors: malformed references and parameterized fields return zero.
  * Source: parser reference AST. Version/date: 2026-11-01.
  * Responsible party: asn1c maintainers. History: named INTEGER field gate.
@@ -885,12 +899,185 @@ rust_ber_cer_named_target_is_local_assignment(asn1p_module_t *module,
 }
 
 /*
- * Resolve a fixed-tree field reference to its same-module INTEGER assignment.
+ * Validate the importer's single supported IMPORTS group and symbol.
+ * Inputs: module owns the import list; group/symbol receive borrowed nodes.
+ * Returns zero on success, otherwise -1. Errors: group metadata or arity fails.
+ * Source: ASN.1 IMPORTS AST. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: direct imported INTEGER gate.
+ * Example: `Small FROM Base` yields its group and symbol nodes.
+ */
+static int
+rust_ber_cer_import_shape(asn1p_module_t *module, asn1p_xports_t **group_out,
+                          asn1p_expr_t **symbol_out) {
+    asn1p_xports_t *group;
+    asn1p_expr_t *symbol;
+    if(!module || !group_out || !symbol_out) return -1;
+    *group_out = NULL;
+    *symbol_out = NULL;
+    group = TQ_FIRST(&module->imports);
+    if(!group || TQ_NEXT(group, xp_next) || !group->fromModuleName
+       || !*group->fromModuleName || group->identifier.oid
+       || group->identifier.value || group->option != 0) return -1;
+    symbol = TQ_FIRST(&group->xp_members);
+    if(!symbol || TQ_NEXT(symbol, next) || symbol->expr_type != A1TC_REFERENCE
+       || !symbol->Identifier || !*symbol->Identifier) return -1;
+    *group_out = group;
+    *symbol_out = symbol;
+    return 0;
+}
+
+/*
+ * Find the one declared source module in the importer's fixed tree.
+ * Inputs: module owns the ASN tree; group names the declared source.
+ * source_out receives the unique nonstandard module on success. Returns zero
+ * or -1. Errors: missing, duplicate, self, standard, or importing sources fail.
+ * Source: fixed ASN.1 module list. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: imported INTEGER ownership.
+ * Example: `Small FROM Base` resolves the unique Base module pointer.
+ */
+static int
+rust_ber_cer_import_source(asn1p_module_t *module, asn1p_xports_t *group,
+                           asn1p_module_t **source_out) {
+    asn1p_t *asn;
+    asn1p_module_t *candidate;
+    asn1p_module_t *source = NULL; /* Resolved source state variable. */
+    size_t matches = 0; /* Matching module count state variable. */
+    int owner_seen = 0; /* Importer ownership state variable. */
+    if(!source_out) return -1;
+    *source_out = NULL;
+    if(!module || !group || !group->fromModuleName || !(asn = module->asn1p))
+        return -1;
+    TQ_FOR(candidate, &asn->modules, mod_next) {
+        if(candidate == module) owner_seen = 1;
+        if(candidate->ModuleName
+           && !strcmp(candidate->ModuleName, group->fromModuleName)) {
+            source = candidate;
+            matches++;
+        }
+    }
+    if(!owner_seen || matches != 1 || !source || source == module
+       || source->asn1p != module->asn1p || (source->_tags & MT_STANDARD_MODULE)
+       || source->imports.tq_head) return -1;
+    *source_out = source;
+    return 0;
+}
+
+/*
+ * Validate one direct exported INTEGER assignment before returning it.
+ * Inputs: source owns assignments; symbol is the import name; expected is the
+ * fixed field target or NULL for preflight. target_out receives the assignment.
+ * Returns zero or -1. Errors: aliases, bad bounds, and missing exports fail.
+ * Source: fixed ASN.1 assignment/export AST. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: bounded imported INTEGER.
+ * Example: exported `Small ::= INTEGER (0..5)` passes.
+ */
+static int
+rust_ber_cer_import_assignment(asn1p_module_t *source, asn1p_expr_t *symbol,
+                                asn1p_expr_t *expected,
+                                asn1p_expr_t **target_out) {
+    asn1p_expr_t *assignment;
+    asn1p_expr_t *target = NULL; /* Resolved assignment state variable. */
+    size_t matches = 0; /* Matching assignment count state variable. */
+    if(!source || !symbol || !symbol->Identifier || !target_out) return -1;
+    *target_out = NULL;
+    TQ_FOR(assignment, &source->members, next) {
+        if(assignment->Identifier
+           && !strcmp(assignment->Identifier, symbol->Identifier)) {
+            target = assignment;
+            matches++;
+        }
+    }
+    if(matches != 1 || !target) return -1;
+    if(expected && target != expected) return -1;
+    /* Confirm source ownership before inspecting assignment metadata. */
+    if(!rust_ber_cer_named_target_is_local_assignment(source, target)) return -1;
+    if(!rust_ber_cer_named_integer_target_shape(source, target, symbol->Identifier)
+       || !rust_ber_cer_named_integer_target_range(target)) return -1;
+    if(!rust_ber_cer_import_is_exported(source, symbol)) return -1;
+    *target_out = target;
+    return 0;
+}
+
+/*
+ * Determine whether the source module exports one imported symbol.
+ * Inputs: source owns its export declarations; symbol is the import name.
+ * Returns one when exported, otherwise zero. No EXPORTS clause exports all.
+ * Errors: malformed nodes fail closed. Source: fixed ASN.1 export AST.
+ * Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: imported INTEGER gate.
+ * Example: `Small` passes for EXPORTS Small; an empty list rejects it.
+ */
+static int
+rust_ber_cer_import_is_exported(asn1p_module_t *source, asn1p_expr_t *symbol) {
+    asn1p_xports_t *exports;
+    asn1p_expr_t *entry;
+    if(!source || !symbol || !symbol->Identifier) return 0;
+    exports = TQ_FIRST(&source->exports);
+    if(!exports) return 1;
+    TQ_FOR(entry, &exports->xp_members, next) {
+        if(entry->expr_type == A1TC_EXPORTVAR && entry->Identifier
+           && !strcmp(entry->Identifier, symbol->Identifier)) return 1;
+    }
+    return 0;
+}
+
+/*
+ * Reject a local assignment that shadows the one imported ASN.1 symbol.
+ * Inputs: module owns local assignments; symbol is the imported name.
+ * Returns zero when conflict-free, otherwise -1. Errors: duplicate ownership.
+ * Source: ASN.1 module assignment namespace. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: explicit import resolution.
+ * Example: local `Small` conflicts with `Small FROM Base`.
+ */
+static int
+rust_ber_cer_import_name_conflicts(asn1p_module_t *module,
+                                   asn1p_expr_t *symbol) {
+    asn1p_expr_t *assignment;
+    if(!module || !symbol || !symbol->Identifier) return -1;
+    TQ_FOR(assignment, &module->members, next) {
+        if(assignment->Identifier
+           && !strcmp(assignment->Identifier, symbol->Identifier)) return -1;
+    }
+    return 0;
+}
+
+/*
+ * Resolve and validate the sole imported finite bounded INTEGER assignment.
+ * Inputs: module owns imports; name/expected match a field when supplied.
+ * target_out receives the direct assignment on success. Returns zero or -1.
+ * Errors: import syntax, source resolution, local conflicts, or targets fail.
+ * Source: fixed module/import/export AST. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: qualified INTEGER ownership.
+ * Example: imported `Small ::= INTEGER (0..5)` resolves to its Base assignment.
+ */
+static int
+rust_ber_cer_imported_integer_target(asn1p_module_t *module, const char *name,
+                                     asn1p_expr_t *expected,
+                                     asn1p_expr_t **target_out) {
+    asn1p_xports_t *group;
+    asn1p_expr_t *symbol;
+    asn1p_module_t *source;
+    asn1p_expr_t *target;
+    if(!target_out) return -1;
+    *target_out = NULL;
+    if(!module || rust_ber_cer_import_shape(module, &group, &symbol)) return -1;
+    if(!name) name = symbol->Identifier;
+    if(strcmp(name, symbol->Identifier)
+       || rust_ber_cer_import_source(module, group, &source)
+       || rust_ber_cer_import_name_conflicts(module, symbol)
+       || rust_ber_cer_import_assignment(source, symbol, expected, &target))
+        return -1;
+    *target_out = target;
+    return 0;
+}
+
+/*
+ * Resolve a fixed-tree field to a local or explicitly imported INTEGER type.
  * Inputs: member is a type-reference field with retrieval metadata populated.
  * Returns a direct bounded target or NULL. Errors: unsupported shapes fail closed.
- * Source: fixed-tree reference metadata. Version/date: 2026-11-01.
- * Responsible party: asn1c maintainers. History: named INTEGER record gate.
- * Example: a field referencing local `Small ::= INTEGER (0..5)` resolves Small.
+ * Source: fixed-tree and IMPORTS metadata. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: local and imported INTEGER fields.
+ * Example: local or declared `Small ::= INTEGER (0..5)` resolves directly.
  */
 static asn1p_expr_t *
 rust_ber_cer_named_integer_target(const asn1p_expr_t *member) {
@@ -901,9 +1088,15 @@ rust_ber_cer_named_integer_target(const asn1p_expr_t *member) {
     module = member->module;
     target = member->reference->ref_expr;
     name = member->reference->components[0].name;
-    if(!rust_ber_cer_named_integer_target_shape(module, target, name)
-       || !rust_ber_cer_named_integer_target_range(target)
-       || !rust_ber_cer_named_target_is_local_assignment(module, target)) return NULL;
+    if(!target) return NULL;
+    if(target->module == module) {
+        if(!rust_ber_cer_named_integer_target_shape(module, target, name)
+           || !rust_ber_cer_named_integer_target_range(target)
+           || !rust_ber_cer_named_target_is_local_assignment(module, target))
+            return NULL;
+        return target;
+    }
+    if(rust_ber_cer_imported_integer_target(module, name, target, &target)) return NULL;
     return target;
 }
 
@@ -1316,17 +1509,43 @@ rust_check_module(asn1p_t *asn, asn1p_module_t *module, int *emitted,
         return -1;
     }
     if(rust_check_module_name(asn, module)) return -1;
-    if(module->imports.tq_head) {
-        rust_diagnostic(module, NULL,
-                        "IMPORTS are not supported by the initial Rust slice");
-        return -1;
-    }
+    if(rust_check_ber_cer_imports(asn, module, codecs)) return -1;
     if(module->module_flags & MSF_MASK_INSTRUCTIONS) {
         rust_diagnostic(module, NULL,
                         "module encoding instructions are not supported");
         return -1;
     }
     return rust_check_module_types(module, emitted, codecs);
+}
+
+/*
+ * Preflight the sole allowed imported bounded INTEGER before file staging.
+ * Inputs: asn/module identify the complete fixed tree; codecs selects output.
+ * Returns zero without imports or for the supported import, otherwise -1.
+ * Errors: unsupported codecs, imports, source modules, exports, or targets fail.
+ * Source: imported INTEGER design and fixed ASN.1 AST. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: narrow cross-module gate.
+ * Example: one `Small FROM Base` group passes for BER/CER-only selection.
+ */
+static int
+rust_check_ber_cer_imports(asn1p_t *asn, asn1p_module_t *module,
+                           uint64_t codecs) {
+    const uint64_t supported = RUST_CODEC_BER | RUST_CODEC_CER;
+    asn1p_xports_t *group;
+    asn1p_expr_t *target;
+    asn1p_expr_t *symbol;
+    if(!module) return -1;
+    if(!module->imports.tq_head) return 0;
+    if(!asn || module->asn1p != asn || !(codecs & supported)
+       || (codecs & ~supported)
+       || rust_ber_cer_imported_integer_target(module, NULL, NULL, &target)) {
+        group = TQ_FIRST(&module->imports);
+        symbol = group ? TQ_FIRST(&group->xp_members) : NULL;
+        rust_diagnostic(module, symbol,
+            "IMPORTS require one direct exported bounded INTEGER and BER/CER-only codecs");
+        return -1;
+    }
+    return 0;
 }
 
 /*
@@ -6788,6 +7007,58 @@ rust_ber_cer_primitive_field_type(asn1p_expr_t *member) {
 }
 
 /*
+ * Build a type path for a local or imported named INTEGER field.
+ * Inputs: member supplies the owner module; target is the validated assignment.
+ * Returns an allocated Rust path or NULL. Errors: invalid names or allocation.
+ * Source: generated crate module layout. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: imported INTEGER fields.
+ * Example: imported Base.Small maps to `crate::base::Small`.
+ */
+static char *
+rust_ber_cer_named_integer_type_path(const asn1p_expr_t *member,
+                                     const asn1p_expr_t *target) {
+    char *type_name;
+    char *module_name = NULL;
+    char *path;
+    size_t module_length;
+    size_t type_length;
+    size_t capacity;
+    int written;
+    if(!member || !target || !target->Identifier || !target->module) return NULL;
+    type_name = rust_identifier(target->Identifier, 0);
+    if(!type_name) return NULL;
+    if(target->module == member->module) return type_name;
+    if(!target->module->ModuleName
+       || !(module_name = rust_identifier(target->module->ModuleName, 1))) {
+        free(type_name);
+        return NULL;
+    }
+    module_length = strlen(module_name);
+    type_length = strlen(type_name);
+    if(type_length > SIZE_MAX - 10
+       || module_length > SIZE_MAX - type_length - 10) {
+        free(module_name);
+        free(type_name);
+        return NULL;
+    }
+    capacity = module_length + type_length + 10;
+    path = malloc(capacity);
+    if(!path) {
+        free(module_name);
+        free(type_name);
+        return NULL;
+    }
+    written = snprintf(path, capacity, "crate::%s::%s", module_name, type_name);
+    free(module_name);
+    free(type_name);
+    if(written < 0 || (size_t)written >= capacity) {
+        free(path);
+        return NULL;
+    }
+    return path;
+}
+
+/*
  * Purpose: choose the generated Rust storage type for one validated record field.
  * Inputs: parent names nested items; member is the fixed field; owned receives
  * an allocated named or nested type name when needed.
@@ -6795,7 +7066,7 @@ rust_ber_cer_primitive_field_type(asn1p_expr_t *member) {
  * Errors: unsupported nested names and allocation failures return NULL.
  * Source: validated ASN.1 field AST. Version/date: 2026-11-01.
  * Responsible party: asn1c maintainers. History: named reference field types.
- * Example: `Small` resolves to its generated newtype, while BOOLEAN is `bool`.
+ * Example: local `Small` stays unqualified; imported `Base.Small` uses its crate path.
  */
 static const char *
 rust_ber_cer_record_field_type(const char *parent, asn1p_expr_t *member,
@@ -6805,7 +7076,7 @@ rust_ber_cer_record_field_type(const char *parent, asn1p_expr_t *member,
     asn1p_expr_t *contained;
     if(!owned) return NULL;
     *owned = NULL;
-    if(target) *owned = rust_identifier(target->Identifier, 0);
+    if(target) *owned = rust_ber_cer_named_integer_type_path(member, target);
     else if(named_record) *owned = rust_identifier(named_record->Identifier, 0);
     else if(member->expr_type == ASN_CONSTR_SEQUENCE
             || member->expr_type == ASN_CONSTR_SET
@@ -8073,12 +8344,12 @@ rust_write_ber_cer_decode_owned(FILE *stream, asn1p_expr_t *member,
 }
 
 /*
- * Purpose: emit named-newtype decode using the target's shared bounded INTEGER.
+ * Purpose: emit local or imported newtype decode using shared bounded INTEGER.
  * Inputs: stream/member/indent identify the field and generated destination.
  * Returns zero or -1. Errors: name allocation, range formatting, or output fail.
- * Source: fixed same-module INTEGER assignment. Version/date: 2026-11-01.
+ * Source: fixed local or imported INTEGER assignment. Version/date: 2026-11-01.
  * Responsible party: asn1c maintainers. History: named INTEGER field decode.
- * Example: `read_integer(0, 5)` is wrapped with `Small::new`.
+ * Example: import `Base.Small` with `crate::base::Small::new`.
  */
 static int
 rust_write_ber_cer_decode_named_integer(FILE *stream, asn1p_expr_t *member,
@@ -8087,7 +8358,7 @@ rust_write_ber_cer_decode_named_integer(FILE *stream, asn1p_expr_t *member,
     char *named_type;
     int written;
     if(!target || rust_write_ber_cer_decode_integer(stream, member, indent)) return -1;
-    named_type = rust_identifier(target->Identifier, 0);
+    named_type = rust_ber_cer_named_integer_type_path(member, target);
     if(!named_type) return -1;
     written = fprintf(stream, "%slet value = %s::new(value)?;\n", indent, named_type);
     free(named_type);

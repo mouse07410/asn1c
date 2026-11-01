@@ -1,0 +1,7 @@
+ImportedIntegerParameterizedBase DEFINITIONS ::= BEGIN
+Small { T } ::= INTEGER (0..5)
+END
+ImportedIntegerParameterizedClient DEFINITIONS ::= BEGIN
+IMPORTS Small FROM ImportedIntegerParameterizedBase;
+Packet ::= SEQUENCE { value Small { INTEGER } }
+END

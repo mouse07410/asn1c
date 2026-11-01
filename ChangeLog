@@ -1,4 +1,10 @@
 Changes since v1.5.3:
+	* Support one directly imported bounded INTEGER field in flat Rust
+	  BER/DER/CER SEQUENCE and SET records. Resolve by source module and symbol,
+	  preserve exported target ranges through qualified Rust paths, and share
+	  the parent's record context. Add C/Rust vectors, exact limits, malformed
+	  and canonical cases, export/order/name checks, strict Clippy, and
+	  no-publication negatives for unsupported imports.
 	* Extend Rust BER/DER/CER flat SEQUENCE/SET records to compose up to two
 	  same-module named SEQUENCE/SET children under one shared nested context.
 	  Preserve distinct tagged references to one target, independent nested SET

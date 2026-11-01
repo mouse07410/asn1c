@@ -1,0 +1,4 @@
+ImportedIntegerClientExplicit DEFINITIONS ::= BEGIN
+IMPORTS Small FROM ImportedIntegerBaseExplicit;
+Packet ::= SEQUENCE { value Small }
+END

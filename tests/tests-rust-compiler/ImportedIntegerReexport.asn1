@@ -1,0 +1,12 @@
+ImportedIntegerReexportBase DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..5)
+END
+ImportedIntegerRelay DEFINITIONS ::= BEGIN
+EXPORTS Small;
+IMPORTS Small FROM ImportedIntegerReexportBase;
+Marker ::= BOOLEAN
+END
+ImportedIntegerReexportClient DEFINITIONS ::= BEGIN
+IMPORTS Small FROM ImportedIntegerRelay;
+Packet ::= SEQUENCE { value Small }
+END

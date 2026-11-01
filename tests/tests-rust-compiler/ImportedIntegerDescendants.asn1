@@ -1,0 +1,14 @@
+ImportedIntegerDescendantClient
+    { iso org(3) dod(6) internet(1) private(4) enterprise(1) 9203 }
+    DEFINITIONS ::= BEGIN
+IMPORTS Small FROM ImportedIntegerDescendantBase
+    { iso org(3) dod(6) internet(1) private(4) enterprise(1) 9203 major-version-1(1) }
+    WITH DESCENDANTS;
+Packet ::= SEQUENCE { value Small }
+END
+ImportedIntegerDescendantBase
+    { iso org(3) dod(6) internet(1) private(4) enterprise(1) 9203
+      major-version-1(1) super-minor-version(1) super-minor-version(1) }
+    DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..5)
+END

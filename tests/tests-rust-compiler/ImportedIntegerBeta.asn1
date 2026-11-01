@@ -1,0 +1,3 @@
+ImportedIntegerBeta DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..9)
+END

@@ -1,0 +1,8 @@
+ImportedIntegerLocalNameBase DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..5)
+END
+ImportedIntegerLocalNameClient DEFINITIONS ::= BEGIN
+IMPORTS Small FROM ImportedIntegerLocalNameBase;
+Small ::= BOOLEAN
+Packet ::= SEQUENCE { value Small }
+END

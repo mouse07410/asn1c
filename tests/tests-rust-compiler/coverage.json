@@ -188,6 +188,26 @@
       "evidence": "NamedRecordPair*.asn1; named_record_pair_conformance.rs; c_named_record_pair.c; runtime ber.rs"
     },
     {
+      "asn1_type": "direct imported bounded INTEGER field",
+      "feature": "one explicitly imported direct finite contiguous i64 INTEGER in an untagged flat record",
+      "codec": "BER/DER and CER only",
+      "variants": [
+        "required and OPTIONAL fields under SEQUENCE and SET",
+        "natural, context IMPLICIT, and one EXPLICIT member tag; scalar DEFAULT siblings",
+        "qualified module paths, same-spelled source types, source file order, and export forms",
+        "shared parent limits, malformed wrappers, bounds, suffixes, truncations, and mutations",
+        "unused import validation and rejection of undeclared whole-module lookup fallback",
+        "unsupported target/import metadata and no output publication"
+      ],
+      "directions": [
+        "DER and CER encode",
+        "BER prefix decode",
+        "strict CER prefix decode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "ImportedInteger*.asn1; imported_*integer*.rs; c_imported_bounded_integer.c"
+    },
+    {
       "asn1_type": "OBJECT IDENTIFIER, RELATIVE-OID",
       "feature": "direct untagged unconstrained root values with canonical base-128 content",
       "codec": "BER/DER and CER only",
@@ -998,12 +1018,12 @@
   },
   "compiler_boundary_checks": {
     "rejected_before_output": [
-      "aliases and imports",
+      "aliases and imports outside the qualified direct bounded-INTEGER record slice",
       "top-level explicit tags and encoding controls",
       "unconstrained INTEGER with non-BER/CER-only selection, explicit MIN..MAX/open/extended constraints, and tags",
       "unconstrained INTEGER record aliases/imports, constraints, DEFAULT, nesting, and multiplicity",
       "unconstrained INTEGER record IA5/OID coexistence and mixed codecs",
-      "named INTEGER record aliases/imports, unbounded/union/extended or out-of-i64 targets, extra constraints, tagged targets/roots, DEFAULT, nesting, multiplicity, collisions, and mixed codecs",
+      "named INTEGER record aliases, unsupported imports, unbounded/union/extended or out-of-i64 targets, extra constraints, tagged targets/roots, DEFAULT, nesting, multiplicity, collisions, and mixed codecs",
       "unsupported DEFAULT forms, constructed DEFAULT, nested extensions, excessive nesting or aggregate field-work, generated nested-name collisions, extensible and otherwise unsupported constructed types",
       "duplicate --rust selectors and disabling all Rust codecs",
       "an incomplete runtime asset set beside explicit skeletons",
@@ -1026,7 +1046,8 @@
       "direct GeneralizedTime with tags, constraints, aliases, fields, imports, or non-BER/CER-only codec selection",
       "direct collections with unsupported SIZE/tags/references/imports/nesting/elements/constraints/codecs",
       "inline CHOICE with unsupported tagging/arms, collisions, or codecs",
-      "natural top-level SET CHOICE with any sibling tag colliding with one of its arms"
+      "natural top-level SET CHOICE with any sibling tag colliding with one of its arms",
+      "imported INTEGER aliases/reexports, unsupported or unused imports, exports, undeclared lookup fallback, module identities/options, parameters, constraints, and mixed codecs"
     ],
     "output_safety": [
       "unowned destination preservation",
@@ -1040,7 +1061,7 @@
     ]
   },
   "observed_counts": {
-    "generated_rust_test_functions": 226,
+    "generated_rust_test_functions": 236,
     "generated_choice_test_functions": 4,
     "live_C_choice_canonical_vectors_each_direction": 5,
     "live_C_choice_BER_alias_vectors": 9,
@@ -1066,7 +1087,7 @@
     "BigInteger_record_mutation_inputs": 15,
     "BigInteger_record_truncated_prefix_inputs": 15,
     "generated_named_integer_record_test_functions": 8,
-    "named_integer_record_negative_schema_fixtures": 17,
+    "named_integer_record_negative_schema_fixtures": 16,
     "live_C_named_integer_record_canonical_vectors_each_direction": 13,
     "live_C_named_integer_record_alias_forms": 2,
     "live_C_unbounded_string_vectors_each_direction": 11,
@@ -1136,6 +1157,14 @@
     "named_record_pair_negative_schema_fixtures": 6,
     "named_record_pair_positive_schema_boundaries": 2,
     "named_record_pair_truncated_prefix_inputs": 30,
-    "named_record_pair_mutation_inputs": 144
+    "named_record_pair_mutation_inputs": 144,
+    "generated_imported_integer_test_functions": 10,
+    "live_C_imported_integer_canonical_vectors_each_direction": 28,
+    "live_C_imported_integer_malformed_BER_vectors": 6,
+    "live_C_imported_integer_explicit_DEFAULT_CER_rejections": 2,
+    "live_C_imported_integer_decode_then_constraint_checks": 1,
+    "imported_integer_negative_schema_fixtures": 21,
+    "imported_integer_truncated_decoder_inputs": 28,
+    "imported_integer_single_bit_mutation_inputs": 80
   }
 }

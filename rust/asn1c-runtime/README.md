@@ -417,6 +417,11 @@ operation boundary, even when an OPTIONAL child is absent. `RecordContext::new`
 retains the existing flat-record behavior, and nested callbacks fail closed
 when used with that flat context.
 
+A generated directly imported bounded INTEGER field uses these same scalar
+record readers and writers. Its source module supplies the checked newtype;
+its parent supplies the operation context. Crossing the module boundary does
+not start a new input, output, allocation, or work budget.
+
 The opt-in nested context caps live parent/child record-buffer capacities plus
 cumulative decoded string-buffer capacity charges at 128 MiB. Charges are
 conservative and remain after a failed callback because its values may have

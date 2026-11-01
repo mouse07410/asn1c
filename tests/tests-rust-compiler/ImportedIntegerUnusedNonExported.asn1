@@ -1,0 +1,9 @@
+ImportedIntegerUnusedNonExportedBase DEFINITIONS ::= BEGIN
+EXPORTS Other;
+Small ::= INTEGER (0..5)
+Other ::= BOOLEAN
+END
+ImportedIntegerUnusedNonExportedClient DEFINITIONS ::= BEGIN
+IMPORTS Small FROM ImportedIntegerUnusedNonExportedBase;
+Packet ::= SEQUENCE { value BOOLEAN }
+END

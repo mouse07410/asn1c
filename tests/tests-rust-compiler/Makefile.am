@@ -112,6 +112,43 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/NamedRecordPairWork13.asn1 \
     $(srcdir)/named_record_pair_conformance.rs \
     $(srcdir)/c_named_record_pair.c \
+    $(srcdir)/ImportedIntegerAlias.asn1 \
+    $(srcdir)/ImportedIntegerAlpha.asn1 \
+    $(srcdir)/ImportedIntegerAssignedIdentifier.asn1 \
+    $(srcdir)/ImportedIntegerBase.asn1 \
+    $(srcdir)/ImportedIntegerBaseAll.asn1 \
+    $(srcdir)/ImportedIntegerBaseExplicit.asn1 \
+    $(srcdir)/ImportedIntegerBeta.asn1 \
+    $(srcdir)/ImportedIntegerClient.asn1 \
+    $(srcdir)/ImportedIntegerClientAll.asn1 \
+    $(srcdir)/ImportedIntegerClientExplicit.asn1 \
+    $(srcdir)/ImportedIntegerConstructed.asn1 \
+    $(srcdir)/ImportedIntegerDescendants.asn1 \
+    $(srcdir)/ImportedIntegerDuplicateRawModule.asn1 \
+    $(srcdir)/ImportedIntegerEmptyExports.asn1 \
+    $(srcdir)/ImportedIntegerLocalNameCollision.asn1 \
+    $(srcdir)/ImportedIntegerMemberConstraint.asn1 \
+    $(srcdir)/ImportedIntegerNormalizedModuleCollision.asn1 \
+    $(srcdir)/ImportedIntegerOmittedExport.asn1 \
+    $(srcdir)/ImportedIntegerParameterized.asn1 \
+    $(srcdir)/ImportedIntegerQualifiedReference.asn1 \
+    $(srcdir)/ImportedIntegerReexport.asn1 \
+    $(srcdir)/ImportedIntegerReservedModule.asn1 \
+    $(srcdir)/ImportedIntegerSameNames.asn1 \
+    $(srcdir)/ImportedIntegerSelfReference.asn1 \
+    $(srcdir)/ImportedIntegerSuccessors.asn1 \
+    $(srcdir)/ImportedIntegerTransitive.asn1 \
+    $(srcdir)/ImportedIntegerUnusedImport.asn1 \
+    $(srcdir)/ImportedIntegerUnusedNonExported.asn1 \
+    $(srcdir)/ImportedIntegerUnusedSupported.asn1 \
+    $(srcdir)/ImportedIntegerUnusedUnsupported.asn1 \
+    $(srcdir)/ImportedIntegerMultipleSymbols.asn1 \
+    $(srcdir)/ImportedIntegerUndeclaredSymbol.asn1 \
+    $(srcdir)/imported_integer_unused_supported.rs \
+    $(srcdir)/imported_bounded_integer_conformance.rs \
+    $(srcdir)/imported_integer_reserved_module.rs \
+    $(srcdir)/imported_integer_same_names.rs \
+    $(srcdir)/c_imported_bounded_integer.c \
     $(srcdir)/ChoiceBooleanOnly.asn1 \
     $(srcdir)/ChoiceNullOnly.asn1 \
     $(srcdir)/ChoiceIntegerOnly.asn1 \

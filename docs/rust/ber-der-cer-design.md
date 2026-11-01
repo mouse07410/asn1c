@@ -12,7 +12,8 @@ strings, direct UTCTime, direct qualified GeneralizedTime, direct primitive
 collections, and direct primitive CHOICE. See
 `rust/asn1c-runtime/README.md` and
 `libasn1compiler/asn1c_rust.c`. The generator rejects many schemas supported by
-C, including imports, most references, most root tags, and multi-tag stacks. These
+C, including imports outside the direct bounded-INTEGER field slice, most
+references, most root tags, and multi-tag stacks. These
 rejections remain until the corresponding generated representation and codecs
 are implemented.
 
@@ -30,8 +31,8 @@ BER/CER-only untagged flat records additionally qualify one natural IA5String
 member, one natural non-IA5 restricted character-string member, up to one
 natural OBJECT IDENTIFIER and one natural RELATIVE-OID member, or one natural
 unconstrained `BigInteger` member, with the resource and schema gates below.
-One same-module bounded INTEGER reference member or up to two same-module
-named SEQUENCE/SET children also qualify under their separate gates below.
+One local or directly imported bounded INTEGER reference member or up to two
+same-module named SEQUENCE/SET children also qualify under their separate gates below.
 The two-child gate preserves six parent fields and twelve aggregate schema
 fields, distinct effective tags, and one shared operation context.
 
@@ -1145,7 +1146,7 @@ duplicate and unknown tags, differential C vectors, and unsupported-schema
 no-publication tests. This slice does not establish arbitrary reference
 graphs or recursive constructed-type support.
 
-### Imported bounded INTEGER field (next qualified composition gate)
+### Imported bounded INTEGER field (qualified composition slice)
 
 Permit one directly imported finite bounded INTEGER assignment as a required
 or OPTIONAL field of an untagged flat SEQUENCE or SET under BER/CER-only
@@ -1202,6 +1203,40 @@ source modules, both source-file orders, malformed input, and unsupported
 import metadata with no output publication. This gate establishes direct
 cross-module scalar ownership; imported records and transitive references
 require their own composition review.
+
+### Imported named record child (next qualified composition gate)
+
+Extend direct import ownership to an untagged named SEQUENCE or nonempty SET
+whose leaves satisfy the existing named-record gate. Keep one declared import
+group and symbol, a distinct nonstandard source without imports, explicit
+export checks, unique source-module identity, and fixed target pointer
+validation. Preserve the one/two-child parent gate, six parent fields, twelve
+aggregate schema fields, required/OPTIONAL presence, scalar DEFAULT siblings,
+and natural or supported context-specific member tags. One imported target
+may be referenced twice with distinct effective tags or combined with one
+local named record. Aliases, transitive or recursive graphs, child references,
+target nesting/defaults/extensions, mixed inline construction, and mixed codecs
+remain excluded before publication.
+
+Use the same qualified target-path builder for scalar and record references.
+Imported record fields and empty-child construction use
+`crate::<source_module>::<Target>`. Nonempty child field callbacks have
+`pub(crate)` visibility so sibling generated modules can call them without
+exposing a public runtime-helper API. Source SET callback discovery scans the
+complete fixed module tree, including accepted consumers in other modules;
+standalone unreferenced SETs retain their current helper-emission behavior.
+No callback may call the target's public codec or create another operation
+context. Cross-module composition adds no wire nesting level beyond the
+existing child and optional EXPLICIT wrapper.
+
+Acceptance requires split-file generation in both orders, natural imported
+SEQUENCE and SET children, optional absence and presence, repeated imported
+targets with distinct tags, a local/imported pair, empty SEQUENCE targets,
+independent SET ordering, owned leaf values, malformed second children,
+strict CER comparison, shared limits, and C differential vectors. Unused
+supported imports must not produce dead callbacks. Negative schemas cover
+invalid exports, import metadata, source ownership, source imports, target
+forms, effective-tag collisions, aggregate caps, and no output publication.
 
 ## Decisions still required
 

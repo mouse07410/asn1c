@@ -1,0 +1,7 @@
+ImportedIntegerMemberConstraintBase DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..5)
+END
+ImportedIntegerMemberConstraintClient DEFINITIONS ::= BEGIN
+IMPORTS Small FROM ImportedIntegerMemberConstraintBase;
+Packet ::= SEQUENCE { value Small (1..4) }
+END

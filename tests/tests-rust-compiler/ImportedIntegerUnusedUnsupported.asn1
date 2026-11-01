@@ -1,0 +1,7 @@
+ImportedIntegerUnusedUnsupportedBase DEFINITIONS ::= BEGIN
+Flag ::= BOOLEAN
+END
+ImportedIntegerUnusedUnsupportedClient DEFINITIONS ::= BEGIN
+IMPORTS Flag FROM ImportedIntegerUnusedUnsupportedBase;
+Packet ::= BOOLEAN
+END

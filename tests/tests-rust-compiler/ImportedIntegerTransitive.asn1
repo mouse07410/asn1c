@@ -1,0 +1,12 @@
+ImportedIntegerTransitiveBase DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..5)
+END
+ImportedIntegerTransitiveRelay DEFINITIONS ::= BEGIN
+EXPORTS RelaySmall;
+IMPORTS Small FROM ImportedIntegerTransitiveBase;
+RelaySmall ::= Small
+END
+ImportedIntegerTransitiveClient DEFINITIONS ::= BEGIN
+IMPORTS RelaySmall FROM ImportedIntegerTransitiveRelay;
+Packet ::= SEQUENCE { value RelaySmall }
+END

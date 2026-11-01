@@ -1,0 +1,4 @@
+ImportedIntegerClientAll DEFINITIONS ::= BEGIN
+IMPORTS Small FROM ImportedIntegerBaseAll;
+Packet ::= SEQUENCE { value Small }
+END

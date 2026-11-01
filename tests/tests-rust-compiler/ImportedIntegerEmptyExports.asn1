@@ -1,0 +1,8 @@
+ImportedIntegerEmptyExportsBase DEFINITIONS ::= BEGIN
+EXPORTS;
+Small ::= INTEGER (0..5)
+END
+ImportedIntegerEmptyExportsClient DEFINITIONS ::= BEGIN
+IMPORTS Small FROM ImportedIntegerEmptyExportsBase;
+Packet ::= SEQUENCE { value Small }
+END

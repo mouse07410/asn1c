@@ -1,0 +1,8 @@
+ImportedIntegerClientAlpha DEFINITIONS ::= BEGIN
+IMPORTS Small FROM ImportedIntegerAlpha;
+Packet ::= SEQUENCE { value Small }
+END
+ImportedIntegerClientBeta DEFINITIONS ::= BEGIN
+IMPORTS Small FROM ImportedIntegerBeta;
+Packet ::= SEQUENCE { value Small }
+END

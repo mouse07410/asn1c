@@ -1,0 +1,5 @@
+ImportedIntegerSelfReference DEFINITIONS ::= BEGIN
+IMPORTS Small FROM ImportedIntegerSelfReference;
+Small ::= INTEGER (0..5)
+Packet ::= SEQUENCE { value Small }
+END

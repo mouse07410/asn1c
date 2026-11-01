@@ -1,0 +1,48 @@
+ImportedIntegerClient DEFINITIONS ::= BEGIN
+IMPORTS Small FROM ImportedIntegerBase;
+Local ::= INTEGER (0..5)
+LocalSequence ::= SEQUENCE {
+    value Local,
+    tail [4] IMPLICIT BOOLEAN
+}
+NaturalSequence ::= SEQUENCE {
+    value Small,
+    tail [4] IMPLICIT BOOLEAN
+}
+OptionalSequence ::= SEQUENCE {
+    value Small OPTIONAL,
+    tail [4] IMPLICIT BOOLEAN
+}
+ImplicitSequence ::= SEQUENCE {
+    value [3] IMPLICIT Small,
+    tail [4] IMPLICIT BOOLEAN
+}
+ExplicitSequence ::= SEQUENCE {
+    value [3] EXPLICIT Small,
+    tail [4] IMPLICIT BOOLEAN
+}
+NaturalSet ::= SET {
+    tail [4] IMPLICIT BOOLEAN,
+    value Small
+}
+OptionalSet ::= SET {
+    tail [4] IMPLICIT BOOLEAN,
+    value Small OPTIONAL
+}
+ImplicitSet ::= SET {
+    tail [4] IMPLICIT BOOLEAN,
+    value [3] IMPLICIT Small
+}
+ExplicitSet ::= SET {
+    tail [4] IMPLICIT BOOLEAN,
+    value [3] EXPLICIT Small
+}
+DefaultSequence ::= SEQUENCE {
+    value Small,
+    enabled BOOLEAN DEFAULT FALSE
+}
+DefaultSet ::= SET {
+    value Small,
+    enabled [4] IMPLICIT BOOLEAN DEFAULT FALSE
+}
+END

@@ -994,24 +994,35 @@ asn1c_cli_options_destroy(asn1c_cli_options_t *options) {
 }
 
 /*
- * Import standard modules and run the ASN.1 fixer with CLI error policy.
+ * Import standard modules, bind module owners, and run the ASN.1 fixer.
  * Parameters: options contains fixer settings; asn is the parsed tree; result
  * receives EX_DATAERR for a nonfatal FATAL diagnostic allowed during -E -F.
  * Returns zero to continue or EX_DATAERR to stop. Original source: former main
  * tree-processing block. Version/date: 0.1.0, 2026-10-11. Responsible party:
  * asn1c maintainers. History: extracted to bound dispatch complexity. Example:
- * `asn1c_import_and_fix_tree(&options, tree, &result)`.
+ * `asn1c_import_and_fix_tree(&options, tree, &result)`. Rust automatically
+ * enables compound names in the fixer so distinct ASN.1 modules may define
+ * the same symbol; generated Rust module paths preserve each assignment's
+ * ownership. Module back-pointers are rebound after per-file trees merge.
+ * The C-only `-fcompound-names` option remains incompatible with `--rust`,
+ * and C invocations retain their selected fixer flags.
  */
 static int
 asn1c_import_and_fix_tree(asn1c_cli_options_t *options, asn1p_t *asn,
                           int *result) {
+    asn1p_module_t *module;
+    enum asn1f_flags fixer_flags = options->fixer_flags; /* Fixer policy state variable. */
     int fix_status;
     if(importStandardModules(asn, options->skeletons_dir)) {
         if(options->warnings_as_errors) return EX_DATAERR;
     } else {
         asn1f_use_standard_namespaces(asn);
     }
-    fix_status = asn1f_process(asn, options->fixer_flags, fixer_error_logger);
+    /* Per-file parse trees were merged; restore owners before fixer lookups. */
+    TQ_FOR(module, &asn->modules, mod_next) module->asn1p = asn;
+    /* Rust module paths disambiguate names, so its fixer may accept duplicates. */
+    if(options->rust_target) fixer_flags |= A1F_COMPOUND_NAMES;
+    fix_status = asn1f_process(asn, fixer_flags, fixer_error_logger);
     if(fix_status == -1 || (fix_status == 1 && options->warnings_as_errors))
         return EX_DATAERR;
     if(fixer_fatal_count) {

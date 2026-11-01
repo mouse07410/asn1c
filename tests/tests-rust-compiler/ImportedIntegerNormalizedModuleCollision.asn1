@@ -1,0 +1,10 @@
+Imported-Integer-Base DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..5)
+END
+ImportedIntegerBase DEFINITIONS ::= BEGIN
+Other ::= BOOLEAN
+END
+ImportedIntegerCollisionClient DEFINITIONS ::= BEGIN
+IMPORTS Small FROM Imported-Integer-Base;
+Packet ::= SEQUENCE { value Small }
+END

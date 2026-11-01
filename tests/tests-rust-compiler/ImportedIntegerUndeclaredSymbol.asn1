@@ -1,0 +1,8 @@
+ImportedIntegerUndeclaredSymbolBase DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..5)
+Other ::= INTEGER (0..9)
+END
+ImportedIntegerUndeclaredSymbolClient DEFINITIONS ::= BEGIN
+IMPORTS Other FROM ImportedIntegerUndeclaredSymbolBase;
+Packet ::= SEQUENCE { value Small }
+END

@@ -1,0 +1,7 @@
+ImportedIntegerConstructedBase DEFINITIONS ::= BEGIN
+Inner ::= SEQUENCE { value INTEGER (0..5) }
+END
+ImportedIntegerConstructedClient DEFINITIONS ::= BEGIN
+IMPORTS Inner FROM ImportedIntegerConstructedBase;
+Packet ::= SEQUENCE { value Inner }
+END

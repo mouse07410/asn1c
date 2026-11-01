@@ -1,0 +1,11 @@
+ImportedIntegerUnusedBase DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..5)
+END
+ImportedIntegerUnusedOther DEFINITIONS ::= BEGIN
+Noise ::= BOOLEAN
+END
+ImportedIntegerUnusedClient DEFINITIONS ::= BEGIN
+IMPORTS Small FROM ImportedIntegerUnusedBase
+    Noise FROM ImportedIntegerUnusedOther;
+Packet ::= SEQUENCE { value Small }
+END

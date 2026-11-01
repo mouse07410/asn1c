@@ -1,0 +1,7 @@
+ImportedIntegerQualifiedBase DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..5)
+END
+ImportedIntegerQualifiedClient DEFINITIONS ::= BEGIN
+IMPORTS Small FROM ImportedIntegerQualifiedBase;
+Packet ::= SEQUENCE { value ImportedIntegerQualifiedBase.Small }
+END

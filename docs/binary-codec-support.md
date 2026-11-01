@@ -292,10 +292,29 @@ one finite contiguous range fitting `i64`; generated Rust exposes a checked
 newtype and uses the parent's shared BER/CER record context for reads and
 writes. Natural, context-specific IMPLICIT, and one EXPLICIT member tags are
 supported beside the existing scalar fields, including finite bounded
-BIT/OCTET STRING siblings, within the six-field cap. Aliases, imports,
+BIT/OCTET STRING siblings, within the six-field cap. Aliases and imports outside
+the direct imported bounded-INTEGER record slice,
 parameters, target extensions/unions, member constraints, DEFAULT, nested
 forms, duplicate effective tags, and non-BER/CER codec selections fail before
 output publication.
+One directly imported bounded INTEGER assignment may also supply a required
+or OPTIONAL field in a flat untagged SEQUENCE or SET. The one explicitly named
+symbol comes from a distinct supplied module with no imports and resolves to a
+direct finite contiguous `i64` INTEGER target that is exported. Omitted
+EXPORTS and EXPORTS ALL export every assignment; explicit export lists must
+include the symbol. The source module name must be unique in the fixed module
+list and produce a Rust module. Natural, context-specific IMPLICIT, and one
+EXPLICIT member tags work with the existing scalar/default siblings. Generated
+fields use a fully qualified source-module type path and the parent context
+for scalar reads and writes, so the target range and shared operation limits
+remain in force. The generator validates all declared imports even when they
+are unused. Aliases, re-exports, parameters, imported constructed types, extra
+imports, member constraints, assigned module identifiers, successor/descendant
+import options, and non-BER/CER selections fail before Rust output publication.
+Tests compare C and Rust vectors for natural, OPTIONAL, tagged, SET ordering,
+DEFAULT, malformed, range, prefix, and exact resource-limit cases. Separate
+cases exercise same-spelled targets in distinct modules, both source orders,
+export behavior, and no-publication rejection.
 An untagged flat SEQUENCE or SET may contain one or two direct same-module
 named SEQUENCE/SET children under BER/CER-only selection. Each target is
 untagged and nonrecursive, has the existing direct primitive-leaf restrictions,

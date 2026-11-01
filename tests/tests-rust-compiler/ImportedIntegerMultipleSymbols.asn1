@@ -1,0 +1,8 @@
+ImportedIntegerMultipleSymbolsBase DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..5)
+Other ::= BOOLEAN
+END
+ImportedIntegerMultipleSymbolsClient DEFINITIONS ::= BEGIN
+IMPORTS Small, Other FROM ImportedIntegerMultipleSymbolsBase;
+Packet ::= SEQUENCE { value Small }
+END

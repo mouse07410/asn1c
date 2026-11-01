@@ -119,6 +119,7 @@ fresh directory after adding application code or running Cargo there.
 | Natural OBJECT IDENTIFIER and RELATIVE-OID fields in a flat untagged SEQUENCE or SET | BER prefix decoding normalizes base-128 content with one shared work and aggregate scratch budget; DER/CER emit primitive tag-6/tag-13 child TLVs; at most one of each kind with required/OPTIONAL presence, scalar siblings, strict CER comparison, and BER/CER-only selection |
 | One natural unconstrained INTEGER field in a flat untagged SEQUENCE or SET | `BigInteger` owned value without i64 narrowing; BER sign normalization, primitive DER/CER tag-2 output, strict CER comparison, one aggregate record budget, required/OPTIONAL presence, scalar siblings, and BER/CER-only selection |
 | One same-module named bounded INTEGER field in a flat untagged SEQUENCE or SET | Checked generated newtype with one finite contiguous `i64` range; natural, resolved context IMPLICIT, or one EXPLICIT tag; required/OPTIONAL; supported scalar siblings including finite bounded BIT/OCTET; shared record context and BER/CER-only selection |
+| One directly imported bounded INTEGER field in a flat untagged SEQUENCE or SET | Required/OPTIONAL, natural/IMPLICIT/one EXPLICIT member tag, and supported scalar/default siblings; one explicitly named import from a distinct supplied module with no imports; direct finite contiguous `i64` target; module ownership, exports, paths, and all declared imports are validated; shared parent context; BER/CER-only selection |
 | One or two same-module named SEQUENCE/SET children in a flat untagged SEQUENCE or SET | Required/OPTIONAL nonrecursive untagged targets with existing direct-leaf restrictions; natural, context-specific IMPLICIT, or one EXPLICIT member tag; distinct effective tags permit a repeated target; up to six parent fields and twelve total parent/target members; parent scalar DEFAULT behavior retained; independently sorted SET levels, shared nested context, strict CER comparison; BER/CER-only selection |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in APER and OER encode/decode; each call begins at an octet boundary |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in JER encode/decode of one complete JSON primitive with -gen-JER |
@@ -127,11 +128,35 @@ fresh directory after adding application code or running Cargo there.
 | Direct ENUMERATED | Opt-in JER quoted-name encode/decode; complete input, JSON whitespace, unknown-name and resource-limit checks |
 | Flat SET and SEQUENCE | XER-only basic encoder for direct BOOLEAN, bounded INTEGER, unconstrained IA5String and REAL DEFAULT 0.5 fields; OPTIONAL and supported DEFAULT fields use `Option` |
 | XER and CBOR/JER outside the listed slices | Planned; unavailable in Rust mode |
-| SET, collections, or CHOICE outside the listed slices; extensible, other unbounded SIZE forms, or disjoint string constraints; named-bit strings, extensible ENUMERATED, aliases, imports, other top-level tagged types, and multi-tag member stacks | Planned; rejected in this slice |
+| SET, collections, or CHOICE outside the listed slices; extensible, other unbounded SIZE forms, or disjoint string constraints; named-bit strings, extensible ENUMERATED, aliases, imports outside the listed imported bounded-INTEGER record slice, other top-level tagged types, and multi-tag member stacks | Planned; rejected in this slice |
 | Encoding controls, other information-object forms, parameterized types | Planned; rejected in this slice |
 | IOC-selected OPEN TYPE | UPER, APER, OER, CBOR; one local nonextensible set, bounded INTEGER selector, BOOLEAN or bounded INTEGER rows, and a two-field required SEQUENCE; APER selector 0..255 and row spans <=255 |
 | Other CONTAINING and OPEN TYPE forms | Unsupported; rejected before output publication |
 | ANY in SEQUENCE outside UPER/CBOR, and ANY under BER/DER, CER, or XER | Require codec-specific opaque-value semantics; rejected before output publication |
+
+### Direct imported bounded INTEGER field
+
+One directly imported bounded INTEGER assignment may supply one required or
+OPTIONAL field in a flat untagged SEQUENCE or SET. The schema uses one
+explicitly named import from a distinct supplied module with no imports. The
+target must be a direct named finite contiguous `i64` INTEGER assignment and
+must be exported: omitted EXPORTS and EXPORTS ALL export all assignments, and
+an explicit export list must include the target. The source module name must
+be unique in the fixed module list and must produce a Rust module.
+
+The generated field type uses a fully qualified source-module path. Its scalar
+read and write helper receives the parent's record context, preserving target
+range checks and shared resource accounting. Natural, resolved context-specific
+IMPLICIT, and one EXPLICIT member tag are supported with existing scalar
+siblings and literal BOOLEAN/INTEGER DEFAULT siblings. Every declared import
+is validated even when unused. Aliases, re-exports, parameters, imported
+constructed types, extra imports, member constraints, assigned module
+identifiers, import successor/descendant options, and unsupported module paths
+fail before output publication. Differential tests compare C and Rust
+DER/CER bytes and values across SEQUENCE/SET parents, OPTIONAL states, tags,
+defaults, limits, malformed values, suffixes, source orders, same-spelled
+target names, export rules, and no-publication negatives. Imports outside this
+narrow bounded INTEGER record slice remain unsupported.
 
 For CBOR SEQUENCE, an omitted literal DEFAULT decodes to the default value.
 The Rust record does not retain whether that field appeared on the wire, so
@@ -172,8 +197,9 @@ fields use their declared numeric values and encode declaration-order PER
 ranks; unknown values and spare ranks are rejected. Inline nested SEQUENCE fields use
 deterministic public Rust record types. Nested record types and aggregate field
 work are bounded during generation; cycles and generated-name collisions are
-rejected. Constructed DEFAULTs, extensions, aliases, and imports remain
-unsupported. DEFAULT is supported only for literal BOOLEAN and in-range finite
+rejected. Constructed DEFAULTs, extensions, aliases, and imports outside the
+narrow imported bounded INTEGER field slice remain unsupported. DEFAULT is
+supported only for literal BOOLEAN and in-range finite
 bounded INTEGER values. Each record writes or reads its own OPTIONAL and
 DEFAULT presence bitmap immediately before that record's payload. Encoding
 omits a DEFAULT payload when the field equals its literal; decoding substitutes

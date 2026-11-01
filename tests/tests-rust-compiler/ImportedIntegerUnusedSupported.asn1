@@ -1,0 +1,7 @@
+ImportedIntegerUnusedSupportedBase DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..5)
+END
+ImportedIntegerUnusedSupportedClient DEFINITIONS ::= BEGIN
+IMPORTS Small FROM ImportedIntegerUnusedSupportedBase;
+Packet ::= BOOLEAN
+END

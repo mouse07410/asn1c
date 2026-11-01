@@ -1,0 +1,8 @@
+ImportedIntegerAliasBase DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..5)
+Alias ::= Small
+END
+ImportedIntegerAliasClient DEFINITIONS ::= BEGIN
+IMPORTS Alias FROM ImportedIntegerAliasBase;
+Packet ::= SEQUENCE { value Alias }
+END

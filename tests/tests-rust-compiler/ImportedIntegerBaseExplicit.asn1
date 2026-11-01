@@ -1,0 +1,4 @@
+ImportedIntegerBaseExplicit DEFINITIONS ::= BEGIN
+EXPORTS Small;
+Small ::= INTEGER (0..5)
+END
