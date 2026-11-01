@@ -82,16 +82,18 @@ check_jer_roundtrip(const asn_TYPE_descriptor_t *td,
  * Exercise an alphabet whose boundaries surround the surrogate block.
  * Original source: this regression test.
  * Version/date: 1.0, 2026-11-01.
- * Inputs: td is BMPString or UniversalString; unit_bytes selects storage.
- * Returns: zero if every character is U+D7FF or U+E000 and JER round trips.
+ * Inputs: td is BMPString or UniversalString; unit_bytes selects storage;
+ *         lower and upper surround one edge of the surrogate block.
+ * Returns: zero if every character is a scalar and JER round trips.
  * Exceptions: none. Responsible party: asn1c maintainers.
- * History: initial implementation. Example: check_scalar_boundary(&asn_DEF_BMPString, 2).
+ * History: initial implementation; narrow boundary ranges avoid random misses.
+ * Example: check_scalar_boundary(&asn_DEF_BMPString, 2, 0xd7fe, 0xd801).
  */
 static int
 check_scalar_boundary(const asn_TYPE_descriptor_t *td,
-                      unsigned int unit_bytes) {
+                      unsigned int unit_bytes, int lower, int upper) {
     asn_per_constraints_t per = {
-        { APC_CONSTRAINED, 12, 12, 0xd7ff, 0xe000 },
+        { APC_CONSTRAINED, 2, 2, 0, 0 },
         { APC_CONSTRAINED, 0, 0, 16, 16 }, NULL, NULL
     };
     asn_encoding_constraints_t member = { 0 };
@@ -99,6 +101,8 @@ check_scalar_boundary(const asn_TYPE_descriptor_t *td,
     int failed = 0;
     int iteration;
 
+    per.value.lower_bound = lower;
+    per.value.upper_bound = upper;
     member.per_constraints = &per;
     for(iteration = 0; iteration < 16 && !failed; iteration++) {
         const OCTET_STRING_t *string_value;
@@ -118,7 +122,9 @@ check_scalar_boundary(const asn_TYPE_descriptor_t *td,
         for(offset = 0; offset < string_value->size; offset += unit_bytes) {
             uint32_t scalar = read_codepoint(string_value->buf + offset,
                                              unit_bytes);
-            if(scalar != 0xd7ff && scalar != 0xe000) failed = 1;
+            if(scalar < (uint32_t)lower || scalar > (uint32_t)upper
+               || (scalar >= 0xd800 && scalar <= 0xdfff))
+                failed = 1;
         }
         if(!failed) failed = check_jer_roundtrip(td, string_value);
     }
@@ -216,8 +222,10 @@ main(void) {
     || defined(ASN_DISABLE_JER_SUPPORT)
     return 77;
 #else
-    if(check_scalar_boundary(&asn_DEF_BMPString, 2)
-       || check_scalar_boundary(&asn_DEF_UniversalString, 4)
+    if(check_scalar_boundary(&asn_DEF_BMPString, 2, 0xd7fe, 0xd801)
+       || check_scalar_boundary(&asn_DEF_BMPString, 2, 0xdffe, 0xe001)
+       || check_scalar_boundary(&asn_DEF_UniversalString, 4, 0xd7fe, 0xd801)
+       || check_scalar_boundary(&asn_DEF_UniversalString, 4, 0xdffe, 0xe001)
        || check_builtin_range(&asn_DEF_BMPString, 2)
        || check_builtin_range(&asn_DEF_UniversalString, 4)
        || check_rejected_range(&asn_DEF_BMPString, 0xd800, 0xdfff)
