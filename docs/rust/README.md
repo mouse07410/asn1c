@@ -33,6 +33,11 @@ Direct nonextensible fixed-size OCTET STRING assignments additionally support
 opt-in JER encode/decode with `-gen-JER`.
 The same selection supports direct nonextensible ENUMERATED assignments;
 JER is also available for those assignments when selected explicitly.
+Direct nonextensible ENUMERATED values and fixed or bounded OCTET STRING and
+BIT STRING assignments also support BER prefix decoding, DER encoding, and
+CER encoding and strict decoding. This is a limited direct-type slice;
+constructed ASN.1 records, tags, aliases and open types do not yet have
+BER/DER/CER parity. See the [parity design](ber-der-cer-design.md).
 
 Start with the [architecture decision](architecture.md) and
 [implementation plan](stage-one-plan.md). Supporting designs describe the

@@ -1,4 +1,9 @@
 Changes since v1.5.3:
+	* Extend generated Rust BER decoding, DER encoding, CER encoding, and
+	  strict CER decoding to direct nonextensible ENUMERATED and finite-size
+	  BIT/OCTET STRING values. Add bounded constructed-string BER parsing,
+	  CER fragmentation, C interoperability vectors, and malformed-input tests.
+	  Record the architecture and remaining C parity work.
 	* Free partially decoded APER SET members in the truncation regression test,
 	  eliminating its LeakSanitizer failure in C/C++ CI and distcheck.
 	* Fix issue #594 C XER output: separate SET members with one newline,

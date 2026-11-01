@@ -17,6 +17,16 @@ bytes against independent vectors and C-produced primitive TLVs, BER prefix
 consumption, noncanonical but accepted BER forms, malformed input, and bounds.
 The harness also generates a BER-only crate to check codec selection.
 
+The first BER/DER/CER structured primitive expansion covers direct
+nonextensible ENUMERATED values and fixed or bounded OCTET STRING and BIT STRING
+types with finite SIZE constraints below 65536. ENUMERATED methods encode the
+declared signed numeric value and reject decoded values absent from the root.
+String decoders enforce the generated SIZE constraints, including exact logical
+BIT STRING width when the packed storage byte count is unchanged. The harness
+checks mixed UPER/BER/CER output, DER and CER vectors against live generated C,
+prefix consumption, wrong sizes, malformed input, and named BIT STRING
+rejection.
+
 The APER/OER primitive extension adds opt-in paired encode/decode methods for
 the same direct BOOLEAN, NULL, and bounded INTEGER subset. The harness builds
 each codec alone and together, runs generated Rust vectors and malformed-input

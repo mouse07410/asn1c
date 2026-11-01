@@ -19,6 +19,8 @@ use std::fmt;
 
 /// Primitive Aligned Packed Encoding Rules (APER) codecs.
 pub mod aper;
+/// Checked BER parsing and DER/CER string and ENUMERATED codecs.
+pub mod ber;
 /// Bounded primitive and opaque CBOR codecs.
 pub mod cbor;
 /// Bounded primitive JSON Encoding Rules (JER) codecs.
@@ -33,6 +35,11 @@ pub mod xer;
 pub use aper::{
     decode_boolean_aper, decode_integer_aper, decode_null_aper, encode_boolean_aper,
     encode_integer_aper, encode_null_aper,
+};
+pub use ber::{
+    decode_bit_string_ber, decode_bit_string_cer, decode_enumerated_ber, decode_enumerated_cer,
+    decode_octet_string_ber, decode_octet_string_cer, encode_bit_string_cer, encode_bit_string_der,
+    encode_enumerated_cer, encode_enumerated_der, encode_octet_string_cer, encode_octet_string_der,
 };
 pub use cbor::{
     decode_boolean_cbor, decode_integer_cbor, decode_null_cbor, encode_boolean_cbor,

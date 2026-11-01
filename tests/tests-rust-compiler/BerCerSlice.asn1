@@ -1,0 +1,12 @@
+BerCerSlice DEFINITIONS ::= BEGIN
+
+Color ::= ENUMERATED {
+    minimum(-3), zero(0), maximum(7),
+    wideMinimum(-9223372036854775808), wideMaximum(9223372036854775807)
+}
+Octets ::= OCTET STRING (SIZE(1..4))
+FixedOctets ::= OCTET STRING (SIZE(2))
+Bits ::= BIT STRING (SIZE(3..9))
+FixedBits ::= BIT STRING (SIZE(3))
+
+END

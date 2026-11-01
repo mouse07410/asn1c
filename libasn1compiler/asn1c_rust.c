@@ -141,6 +141,7 @@ static int rust_write_bounded_octets(FILE *, const char *, size_t, size_t,
                                     uint64_t);
 static int rust_write_bounded_octets_uper(FILE *, size_t, size_t);
 static int rust_write_bounded_octets_jer(FILE *, size_t, size_t);
+static int rust_write_string_ber_cer(FILE *, int, int, size_t, size_t, int);
 static int rust_write_octet_cbor(FILE *, size_t, size_t);
 static int rust_write_bit_cbor(FILE *, size_t, size_t, int);
 static int rust_write_bounded_bits(FILE *, const char *, size_t, size_t,
@@ -148,6 +149,7 @@ static int rust_write_bounded_bits(FILE *, const char *, size_t, size_t,
 static int rust_write_enumerated(FILE *, const char *, asn1p_expr_t *, uint64_t);
 static int rust_write_inline_enum(FILE *, const char *, asn1p_expr_t *);
 static int rust_write_enumerated_jer(FILE *, asn1p_expr_t *);
+static int rust_write_enumerated_ber_cer(FILE *, asn1p_expr_t *, int);
 static int rust_write_integer_ber(FILE *, const char *, const char *);
 static int rust_write_sequence(FILE *, const char *, asn1p_expr_t *, int, uint64_t);
 static int rust_write_all_sequences(FILE *, const char *, asn1p_expr_t *, int, uint64_t);
@@ -780,27 +782,28 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
     }
     if(expr->expr_type == ASN_BASIC_OCTET_STRING) {
         size_t lower, upper;
-        if((!codecs || (codecs & ~(RUST_CODEC_UPER | RUST_CODEC_JER | RUST_CODEC_CBOR)))
+        if((!codecs || (codecs & ~(RUST_CODEC_UPER | RUST_CODEC_BER | RUST_CODEC_CER
+                                   | RUST_CODEC_JER | RUST_CODEC_CBOR)))
            || !expr->combined_constraints
            || !rust_size_constraint_supported(expr->combined_constraints, 0)) {
             rust_diagnostic(module, expr,
-                "OCTET STRING needs UPER, JER, and/or CBOR with finite SIZE constraints");
+                "OCTET STRING needs supported codecs with finite SIZE constraints");
             return -1;
         }
         if(!rust_fixed_size(expr, &(size_t){0})) return 0;
-        if(!(codecs & ~(RUST_CODEC_UPER | RUST_CODEC_JER | RUST_CODEC_CBOR))
-           && !rust_bounded_size(expr, &lower, &upper)) return 0;
+        if(!rust_bounded_size(expr, &lower, &upper)) return 0;
         rust_diagnostic(module, expr,
             "OCTET STRING needs fixed or bounded SIZE below 65536");
         return -1;
     }
     if(expr->expr_type == ASN_BASIC_BIT_STRING) {
         size_t lower, upper;
-        if(!codecs || (codecs & ~(RUST_CODEC_UPER | RUST_CODEC_JER | RUST_CODEC_CBOR))
+        if(!codecs || (codecs & ~(RUST_CODEC_UPER | RUST_CODEC_BER | RUST_CODEC_CER
+                                  | RUST_CODEC_JER | RUST_CODEC_CBOR))
            || !expr->combined_constraints
            || !rust_size_constraint_supported(expr->combined_constraints, 0)) {
             rust_diagnostic(module, expr,
-                "BIT STRING needs UPER, JER, and/or CBOR with finite SIZE constraints");
+                "BIT STRING needs supported codecs with finite SIZE constraints");
             return -1;
         }
         if(!rust_fixed_size(expr, &(size_t){0})) return 0;
@@ -1662,12 +1665,13 @@ rust_check_enumerated(asn1p_module_t *module, asn1p_expr_t *expr,
                       uint64_t codecs) {
     asn1p_expr_t *item;
     size_t count = 0;
-    if(!(codecs & (RUST_CODEC_UPER | RUST_CODEC_JER))
-       || (codecs & ~(RUST_CODEC_UPER | RUST_CODEC_JER)) || expr->constraints
+    if(!codecs
+       || (codecs & ~(RUST_CODEC_UPER | RUST_CODEC_BER | RUST_CODEC_CER
+                      | RUST_CODEC_JER)) || expr->constraints
        || expr->combined_constraints || expr->lhs_params || expr->ioc_table
        || expr->rhs_pspecs) {
         rust_diagnostic(module, expr,
-            "ENUMERATED needs direct nonextensible values and UPER or JER");
+            "ENUMERATED needs direct nonextensible values and supported codecs");
         return -1;
     }
     TQ_FOR(item, &expr->members, next) {
@@ -2156,6 +2160,7 @@ rust_manifest_path_allowed(const char *path) {
        || !strcmp(path, "runtime/README.md")
        || !strcmp(path, "runtime/LICENSE")
        || !strcmp(path, "runtime/src/lib.rs")
+       || !strcmp(path, "runtime/src/ber.rs")
        || !strcmp(path, "runtime/src/cbor.rs")
        || !strcmp(path, "runtime/src/jer.rs")
        || !strcmp(path, "runtime/src/xer.rs")
@@ -2217,7 +2222,7 @@ rust_remove_tree(const char *path) {
 static int
 rust_copy_runtime(const char *source, const char *destination) {
     static const char *const files[] = {
-        "Cargo.toml", "README.md", "LICENSE", "src/lib.rs",
+        "Cargo.toml", "README.md", "LICENSE", "src/lib.rs", "src/ber.rs",
         "src/cbor.rs", "src/jer.rs", "src/xer.rs", "src/aper.rs", "src/oer.rs", "src/uper_cursor.rs"
     };
     struct stat status;
@@ -4124,6 +4129,10 @@ rust_write_bounded_octets(FILE *stream, const char *name,
        && rust_write_bounded_octets_uper(stream, lower, upper)) return -1;
     if((codecs & RUST_CODEC_JER)
        && rust_write_bounded_octets_jer(stream, lower, upper)) return -1;
+    if((codecs & RUST_CODEC_BER)
+       && rust_write_string_ber_cer(stream, 1, 0, lower, upper, 0)) return -1;
+    if((codecs & RUST_CODEC_CER)
+       && rust_write_string_ber_cer(stream, 1, 0, lower, upper, 1)) return -1;
     if((codecs & RUST_CODEC_CBOR)
        && rust_write_octet_cbor(stream, lower, upper)) return -1;
     if(fputs("}\n\n", stream) == EOF) return -1;
@@ -4331,6 +4340,10 @@ rust_write_bounded_bits(FILE *stream, const char *name,
             "            consumed_bytes: decoded.consumed_bytes,\n"
             "        })\n    }\n", lower, upper) < 0) return -1;
     }
+    if((codecs & RUST_CODEC_BER)
+       && rust_write_string_ber_cer(stream, 0, 0, lower, upper, 0)) return -1;
+    if((codecs & RUST_CODEC_CER)
+       && rust_write_string_ber_cer(stream, 0, 0, lower, upper, 1)) return -1;
     if((codecs & RUST_CODEC_CBOR)
        && rust_write_bit_cbor(stream, lower, upper, 1)) return -1;
     if(fputs("}\n\n", stream) == EOF) return -1;
@@ -4366,11 +4379,97 @@ rust_write_string(FILE *stream, const char *name, asn1p_expr_t *expr,
        && rust_write_string_uper(stream, length, octets)) return -1;
     if((codecs & RUST_CODEC_JER)
        && rust_write_string_jer(stream, length, octets)) return -1;
+    if((codecs & RUST_CODEC_BER)
+       && rust_write_string_ber_cer(stream, octets, 1, length, length, 0)) return -1;
+    if((codecs & RUST_CODEC_CER)
+       && rust_write_string_ber_cer(stream, octets, 1, length, length, 1)) return -1;
     if(codecs & RUST_CODEC_CBOR) {
         if(octets ? rust_write_octet_cbor(stream, length, length)
                   : rust_write_bit_cbor(stream, length, length, 0)) return -1;
     }
     return fputs("}\n\n", stream) == EOF ? -1 : 0;
+}
+
+/*
+ * Emit one DER/BER or CER method pair for a size-constrained string.
+ * Parameters: octets selects OCTET STRING; fixed selects byte-backed fixed
+ * BIT STRING adaptation; lower and upper are inclusive schema bit/octet
+ * bounds; cer selects CER over BER/DER. Returns zero or -1. Original source:
+ * ASN.1 runtime root APIs. Version/date: 0.8.0, 2026-10-31. Responsible
+ * party: asn1c maintainers. History: generated string BER/CER expansion.
+ * Example: rust_write_string_ber_cer(out, 1, 0, 1, 8, 0).
+ */
+static int
+rust_write_string_ber_cer(FILE *stream, int octets, int fixed,
+                          size_t lower, size_t upper, int cer) {
+    const char *suffix = cer ? "cer" : "ber";
+    const char *encode_suffix = cer ? "cer" : "der";
+    const char *encoder = octets ? "octet_string" : "bit_string";
+    const char *method = cer ? "encode_cer" : "encode_der";
+    const char *example = cer
+        ? "`let encoded = value.encode_cer(&Default::default())?;"
+        : "`let encoded = value.encode_der(&Default::default())?;";
+    const char *decode_example = cer
+        ? "`let decoded = Type::decode_cer(input, &Default::default())?;"
+        : "`let decoded = Type::decode_ber(input, &Default::default())?;";
+
+    if(rust_write_method_doc(stream,
+            octets ? "Encode this OCTET STRING using the selected canonical rules."
+                   : "Encode this BIT STRING using the selected canonical rules.",
+            "`self` is schema-validated; `limits` bounds output and work.",
+            octets ? "Returns the complete canonical OCTET STRING TLV."
+                   : "Returns the complete canonical BIT STRING TLV.",
+            "Returns an error when a resource limit is exceeded.", example)) return -1;
+    if(fprintf(stream,
+        "    pub fn %s(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n",
+        method) < 0) return -1;
+    if(!octets && fixed) {
+        if(fprintf(stream,
+            "        let value = ::asn1c_runtime::BitStringValue::from_bytes(\n"
+            "            &self.0, %zu)?;\n"
+            "        ::asn1c_runtime::encode_%s_%s(&value, limits)\n",
+            lower, encoder, encode_suffix) < 0) return -1;
+    } else if(fprintf(stream,
+        "        ::asn1c_runtime::encode_%s_%s(&self.0, limits)\n",
+        encoder, encode_suffix) < 0) return -1;
+    if(fputs("    }\n", stream) == EOF) return -1;
+
+    if(rust_write_method_doc(stream,
+            octets ? "Decode one OCTET STRING TLV and report prefix consumption."
+                   : "Decode one BIT STRING TLV and report prefix consumption.",
+            "`input` is the encoded prefix; `limits` bounds input and work.",
+            "Returns a schema-validated value and consumed prefix lengths.",
+            "Returns an error for malformed input, invalid SIZE, or limits.",
+            decode_example))
+        return -1;
+    if(fprintf(stream,
+        "    pub fn decode_%s(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+        "        let decoded = ::asn1c_runtime::decode_%s_%s(input, limits)?;\n",
+        suffix, encoder, suffix) < 0) return -1;
+    if(!octets && fixed) {
+        if(fprintf(stream,
+            "        if decoded.value.bit_len() != %zu {\n"
+            "            return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+            "                reason: \"BIT STRING length is outside its SIZE range\",\n"
+            "            });\n        }\n", lower) < 0) return -1;
+        if(fputs(
+            "        let value = Self::new(decoded.value.into_bytes())?;\n"
+            "        Ok(::asn1c_runtime::Decoded {\n"
+            "            value,\n"
+            "            consumed_bits: decoded.consumed_bits,\n"
+            "            consumed_bytes: decoded.consumed_bytes,\n"
+            "        })\n    }\n", stream) == EOF) return -1;
+    } else if(fputs(
+        "        let value = Self::new(decoded.value)?;\n"
+        "        Ok(::asn1c_runtime::Decoded {\n"
+        "            value,\n"
+        "            consumed_bits: decoded.consumed_bits,\n"
+        "            consumed_bytes: decoded.consumed_bytes,\n"
+        "        })\n    }\n", stream) == EOF) return -1;
+    (void)upper;
+    return 0;
 }
 
 /*
@@ -4457,7 +4556,94 @@ rust_write_enumerated(FILE *stream, const char *name, asn1p_expr_t *expr,
     }
     if((codecs & RUST_CODEC_JER) && rust_write_enumerated_jer(stream, expr))
         return -1;
+    if((codecs & RUST_CODEC_BER)
+       && rust_write_enumerated_ber_cer(stream, expr, 0)) return -1;
+    if((codecs & RUST_CODEC_CER)
+       && rust_write_enumerated_ber_cer(stream, expr, 1)) return -1;
     if(fputs("}\n\n", stream) == EOF) return -1;
+    return 0;
+}
+
+/*
+ * Emit DER/BER or CER methods mapping enum variants to their ASN.1 values.
+ * Parameters: stream receives Rust; expr supplies checked root values; cer
+ * selects CER over DER/BER. Returns zero or -1. Original source: ASN.1
+ * ENUMERATED value semantics and runtime root APIs. Version/date: 0.8.0,
+ * 2026-10-31. Responsible party: asn1c maintainers. History: generated
+ * enum BER/CER expansion. Example: rust_write_enumerated_ber_cer(out, e, 0).
+ */
+static int
+rust_write_enumerated_ber_cer(FILE *stream, asn1p_expr_t *expr, int cer) {
+    asn1p_expr_t *item;
+    const char *encoding = cer ? "cer" : "der";
+    const char *decoding = cer ? "cer" : "ber";
+    const char *encode_method = cer ? "encode_cer" : "encode_der";
+    const char *decode_example = cer
+        ? "`let decoded = Type::decode_cer(input, &Default::default())?;"
+        : "`let decoded = Type::decode_ber(input, &Default::default())?;";
+
+    if(rust_write_method_doc(stream,
+            cer ? "Encode this ENUMERATED value using CER."
+                : "Encode this ENUMERATED value using DER.",
+            "`self` is a root variant; `limits` bounds output and work.",
+            "Returns the canonical TLV for this ASN.1 numeric value.",
+            "Returns an error when a resource limit is exceeded.",
+            cer ? "`let encoded = value.encode_cer(&Default::default())?;"
+                : "`let encoded = value.encode_der(&Default::default())?;"))
+        return -1;
+    if(fprintf(stream,
+        "    pub fn %s(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+        "        let value = match self {\n", encode_method) < 0) return -1;
+    TQ_FOR(item, &expr->members, next) {
+        char *variant = rust_enum_variant(item->Identifier);
+        char value[64];
+        int invalid = !variant
+            || rust_format_bound(value, sizeof(value),
+                                 (int64_t)item->value->value.v_integer);
+        int ret = invalid ? -1 : fprintf(stream,
+            "            Self::%s => %s,\n", variant, value);
+        free(variant);
+        if(ret < 0) return -1;
+    }
+    if(fprintf(stream,
+        "        };\n"
+        "        ::asn1c_runtime::encode_enumerated_%s(value, limits)\n"
+        "    }\n", encoding) < 0) return -1;
+
+    if(rust_write_method_doc(stream,
+            cer ? "Decode one CER ENUMERATED TLV and report prefix consumption."
+                : "Decode one BER ENUMERATED TLV and report prefix consumption.",
+            "`input` is the encoded prefix; `limits` bounds input and work.",
+            "Returns the matching root variant and consumed prefix lengths.",
+            "Returns an error for malformed input, unknown values, or limits.",
+            decode_example)) return -1;
+    if(fprintf(stream,
+        "    pub fn decode_%s(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
+        "        let decoded = ::asn1c_runtime::decode_enumerated_%s(input, limits)?;\n"
+        "        let value = match decoded.value {\n", decoding, decoding) < 0) return -1;
+    TQ_FOR(item, &expr->members, next) {
+        char *variant = rust_enum_variant(item->Identifier);
+        char value[64];
+        int invalid = !variant
+            || rust_format_bound(value, sizeof(value),
+                                 (int64_t)item->value->value.v_integer);
+        int ret = invalid ? -1 : fprintf(stream,
+            "            %s => Self::%s,\n", value, variant);
+        free(variant);
+        if(ret < 0) return -1;
+    }
+    if(fputs(
+        "            _ => return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+        "                reason: \"unknown ENUMERATED value\",\n"
+        "            }),\n"
+        "        };\n"
+        "        Ok(::asn1c_runtime::Decoded {\n"
+        "            value,\n"
+        "            consumed_bits: decoded.consumed_bits,\n"
+        "            consumed_bytes: decoded.consumed_bytes,\n"
+        "        })\n    }\n", stream) == EOF) return -1;
     return 0;
 }
 
@@ -5137,7 +5323,8 @@ static int
 rust_write_manifest(asn1p_t *asn, const char *stage) {
     static const char *const fixed[] = {
         "Cargo.toml", "src/lib.rs", "runtime/Cargo.toml", "runtime/README.md",
-        "runtime/LICENSE", "runtime/src/lib.rs", "runtime/src/cbor.rs", "runtime/src/jer.rs", "runtime/src/xer.rs",
+        "runtime/LICENSE", "runtime/src/lib.rs", "runtime/src/ber.rs",
+        "runtime/src/cbor.rs", "runtime/src/jer.rs", "runtime/src/xer.rs",
         "runtime/src/aper.rs",
         "runtime/src/oer.rs", "runtime/src/uper_cursor.rs"
     };

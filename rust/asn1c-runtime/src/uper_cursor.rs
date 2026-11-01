@@ -75,6 +75,48 @@ impl BitStringValue {
         Ok(Self { bytes, bit_len })
     }
 
+    /// Copy a borrowed packed BIT STRING with fallible allocation.
+    ///
+    /// # Parameters and returns
+    /// `bytes` contains packed bits; `bit_len` is their exact meaningful width.
+    /// Returns an owned, validated BIT STRING value.
+    ///
+    /// # Errors
+    /// Returns `InvalidEncoding` for an inconsistent length or padding,
+    /// `SizeOverflow` for unrepresentable storage, or `AllocationFailed` if
+    /// storage cannot be reserved. It does not panic on malformed input.
+    ///
+    /// # Source, version, history, and example
+    /// Original source: the validated `BitStringValue::new` representation.
+    /// Version/date: 2026-10-31. Responsible party: asn1c maintainers.
+    /// History: added a fallible adapter for generated fixed-size BER codecs.
+    /// Example: `BitStringValue::from_bytes(&[0xa0], 3)?`.
+    pub fn from_bytes(bytes: &[u8], bit_len: usize) -> Result<Self, Error> {
+        if bytes.len() != bit_storage_len(bit_len)? {
+            return Err(Error::InvalidEncoding {
+                reason: "BIT STRING storage length does not match its bit length",
+            });
+        }
+        if let Some(unused_mask) = unused_low_bit_mask(bit_len) {
+            let last = bytes.last().copied().ok_or(Error::SizeOverflow)?;
+            if last & unused_mask != 0 {
+                return Err(Error::InvalidEncoding {
+                    reason: "BIT STRING has nonzero unused trailing bits",
+                });
+            }
+        }
+
+        // Validate the borrowed representation before requesting owned storage.
+        let mut owned = Vec::new();
+        owned
+            .try_reserve_exact(bytes.len())
+            .map_err(|_| Error::AllocationFailed {
+                requested_bytes: bytes.len(),
+            })?;
+        owned.extend_from_slice(bytes);
+        Self::new(owned, bit_len)
+    }
+
     /// Return the packed BIT STRING contents without copying.
     ///
     /// # Parameters and returns
@@ -1697,6 +1739,25 @@ pub fn read_open_primitive_uper(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Check the fallible borrowed BIT STRING adapter against valid and invalid storage.
+    ///
+    /// Inputs: packed octets and exact or inconsistent bit widths. Returns no
+    /// value; assertions check ownership and validation errors. Errors:
+    /// malformed values must return an error without a panic. Original source:
+    /// `BitStringValue` storage invariants. Version/date: 2026-10-31.
+    /// Responsible party: asn1c maintainers. History: generated BER adapter.
+    /// Example: three meaningful bits occupy one octet with zero padding.
+    #[test]
+    fn borrowed_bit_string_adapter_validates_before_copy() {
+        let original = [0xa0];
+        let value = BitStringValue::from_bytes(&original, 3).expect("valid bits");
+        assert_eq!(value.as_bytes(), original);
+        assert_eq!(value.bit_len(), 3);
+        assert!(BitStringValue::from_bytes(&original, 9).is_err());
+        assert!(BitStringValue::from_bytes(&[0xa1], 3).is_err());
+        assert!(BitStringValue::from_bytes(&[], usize::MAX).is_err());
+    }
 
     /// Verify that fields share octets and do not receive per-field padding.
     ///

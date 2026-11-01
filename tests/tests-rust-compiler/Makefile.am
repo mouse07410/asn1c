@@ -27,6 +27,7 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/OversizeOctets.asn1 \
     $(srcdir)/OversizeBits.asn1 \
     $(srcdir)/EnumSlice.asn1 \
+    $(srcdir)/BerCerSlice.asn1 \
     $(srcdir)/ExtensibleEnum.asn1 \
     $(srcdir)/VariableString.asn1 \
     $(srcdir)/VariableSequence.asn1 \
@@ -97,6 +98,7 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/variable_bit_string_conformance.rs \
     $(srcdir)/boundary_conformance.rs \
     $(srcdir)/enum_conformance.rs \
+    $(srcdir)/ber_cer_conformance.rs \
     $(srcdir)/enum_jer_conformance.rs \
     $(srcdir)/octet_jer_conformance.rs \
     $(srcdir)/bit_jer_conformance.rs \
@@ -109,5 +111,6 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/c_variable_string.c \
     $(srcdir)/c_variable_bit_string.c \
     $(srcdir)/c_enum.c \
+    $(srcdir)/c_ber_cer.c \
     $(srcdir)/coverage.json \
     $(srcdir)/README.md

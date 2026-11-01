@@ -124,12 +124,16 @@ universal OCTET STRING tags for the fragments; BIT STRING fragments use their
 universal BIT STRING tag. BER input also preserves legacy opaque `ANY`
 containers under the bounds described in that audit.
 
-In Rust output mode, the current CER encoder supports top-level BOOLEAN, NULL,
-and finite, nonextensible INTEGER values whose bounds fit signed 64-bit
-integers. Rust CER output is selected by default with UPER; `-no-gen-UPER`
-selects CER-only output. Generated Rust types also provide a strict
-`decode_cer()` that accepts only the canonical short-form CER TLV. See
-[Rust output usage and limits](docs/rust/implementation.md).
+In Rust output mode, CER supports top-level BOOLEAN, NULL, finite
+nonextensible INTEGER values whose bounds fit signed 64-bit integers, direct
+nonextensible ENUMERATED values fitting signed 64-bit integers, and direct
+fixed or bounded BIT STRING and OCTET STRING values with supported finite
+`SIZE` constraints. Long strings use CER fragmentation; `decode_cer()`
+re-encodes and compares the consumed prefix to reject noncanonical forms.
+Rust CER output is selected by default with UPER; `-no-gen-UPER` selects
+CER-only output. `-gen-BER` adds BER prefix decoding and DER encoding for
+these direct types. See [Rust output usage and limits](docs/rust/implementation.md)
+and the [parity design](docs/rust/ber-der-cer-design.md) for remaining gaps.
 The same primitive Rust subset also supports opt-in APER and OER encoding and
 decoding with `-gen-APER` and `-gen-OER`.
 

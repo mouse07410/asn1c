@@ -138,6 +138,26 @@
       "evidence": "conformance.rs; asn1c-runtime unit tests"
     },
     {
+      "asn1_type": "ENUMERATED, OCTET STRING, BIT STRING",
+      "feature": "direct nonextensible enum values and fixed/bounded finite SIZE constraints",
+      "codec": "BER decode / DER encode / CER decode and encode",
+      "variants": [
+        "negative and positive enum roots including i64::MIN and i64::MAX",
+        "unknown enum root values rejected",
+        "fixed and bounded octet strings validate decoded SIZE",
+        "fixed and bounded bit strings validate exact logical SIZE",
+        "BER prefix consumption and C encoder vectors"
+      ],
+      "directions": [
+        "BER decode",
+        "DER encode",
+        "CER decode",
+        "CER encode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "ber_cer_conformance.rs; c_ber_cer.c; asn1c-runtime/src/ber.rs tests"
+    },
+    {
       "asn1_type": "BOOLEAN, NULL, INTEGER",
       "feature": "direct primitive; INTEGER finite nonextensible signed i64 bounds",
       "codec": "APER",
@@ -391,8 +411,9 @@
       "fixed string SIZE(65536) at the fragmentation boundary",
       "extensible-size, size unions, and named-bit OCTET/BIT STRING forms",
       "bounded BIT STRING upper bound 65536",
-      "bounded BIT STRING with codecs other than UPER or JER",
-      "bounded OCTET STRING with extensible, disjoint, oversized, or unsupported codec constraints"
+      "bounded BIT STRING with codecs outside UPER, JER, BER, or CER",
+      "bounded OCTET STRING with extensible, disjoint, oversized, or unsupported codec constraints",
+      "named BIT STRING forms with BER or CER selection"
     ],
     "output_safety": [
       "unowned destination preservation",
@@ -406,7 +427,7 @@
     ]
   },
   "observed_counts": {
-    "generated_rust_test_functions": 57,
+    "generated_rust_test_functions": 60,
     "live_c_rust_vectors_each_direction": 8,
     "single_octet_mutation_inputs": 796,
     "JER_single_octet_mutation_inputs": 256,
@@ -418,6 +439,7 @@
     "live_C_bounded_octet_JER_encode_vectors": 1,
     "live_C_bounded_string_encode_vectors": 3,
     "live_C_bounded_bit_string_encode_vectors": 4,
+    "live_C_ber_der_cer_encode_vectors": 16,
     "bounded_BIT_single_bit_mutation_inputs": 8
   }
 }

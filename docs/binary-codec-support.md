@@ -134,12 +134,18 @@ output, scratch, or work limits returns `EOVERFLOW`. Unsupported forms return
 returns `ENOSPC`, and allocation or callback failures are reported as `ENOMEM`
 or `EIO`.
 
-The Rust backend currently emits CER encoding for top-level BOOLEAN, NULL, and
-finite nonextensible INTEGER ranges that fit in `i64`, plus a strict
-`decode_cer()` that accepts only the canonical short-form TLV.
+The Rust backend emits CER encoding and strict decoding for top-level BOOLEAN,
+NULL, finite nonextensible INTEGER ranges fitting `i64`, direct nonextensible
+ENUMERATED roots fitting `i64`, and direct fixed or bounded BIT STRING and
+OCTET STRING values with finite `SIZE` constraints. The string path includes
+the 1000-content-octet CER fragmentation rule; strict decoding re-encodes and
+compares the consumed prefix. With `-gen-BER`, these direct types also receive
+BER prefix decoding and DER encoding. BER accepts constructed BIT/OCTET STRING
+forms within bounded nesting; this does not add constructed record support.
 Rust codec defaults include UPER and CER; `-no-gen-UPER` selects CER-only
 generation. See [the Rust implementation matrix](rust/implementation.md#implemented-boundary)
-for the additional supported UPER, APER, OER, BER/DER, and JER slices.
+and [parity design](rust/ber-der-cer-design.md) for the remaining C-supported
+types and schema forms.
 
 CER is a constrained form of BER. The primary
 [X.690 (2015) text, sections 9.1, 9.2, 9.3, and 11.6][x690]

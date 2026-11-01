@@ -84,7 +84,7 @@ fresh directory after adding application code or running Cargo there.
 | Direct bounded OCTET STRING | Opt-in JER quoted uppercase-hex encode/decode with complete-input and size-range checks; JER alone or with UPER |
 | Direct fixed BIT STRING | Opt-in JER packed hexadecimal string; JER alone or with UPER |
 | Direct bounded BIT STRING | One nonextensible SIZE(l..u), 0 <= l < u < 65536; JER `value`/`length` object, JER alone or with UPER |
-| Direct ENUMERATED | Nonextensible root values fitting i64, up to 64 items; UPER or opt-in JER encode/decode |
+| Direct ENUMERATED | Nonextensible root values fitting i64, up to 64 items; UPER or opt-in JER encode/decode; BER/DER and CER when selected |
 | Primitive CONTAINING | UPER top-level and required/OPTIONAL SEQUENCE fields; unconstrained BIT/OCTET STRING containing a same-module direct BOOLEAN or non-singleton bounded INTEGER; validates inner range, length, and octet padding |
 | Top-level primitive CONTAINING under CBOR | Unconstrained BIT/OCTET STRING containing a same-module direct BOOLEAN or non-singleton bounded INTEGER; complete inner CBOR value, octet-aligned BIT contents, and C-compatible outer byte string |
 | Direct ANY and required/OPTIONAL ANY SEQUENCE fields | Opaque octets under UPER with C-compatible length framing and shared cursor budgets |
@@ -96,6 +96,8 @@ fresh directory after adding application code or running Cargo there.
 | IOC-selected OPEN TYPE under CBOR | Narrow existing two-field required SEQUENCE and local object-set rows; direct BOOLEAN or bounded INTEGER selected value in a text-key map; selector agreement and complete selected value checked; unique unknown keys skipped and duplicate keys rejected |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Strict CER decoding; canonical short-form TLV only |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in BER prefix decoding and DER encoding with `-gen-BER` |
+| Direct ENUMERATED | BER prefix decoding, DER encoding, CER encoding and strict CER decoding when selected |
+| Direct fixed/bounded OCTET STRING and BIT STRING | BER prefix decoding, DER encoding, CER encoding and strict CER decoding when selected; finite nonextensible SIZE below 65536 |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in APER and OER encode/decode; each call begins at an octet boundary |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in JER encode/decode of one complete JSON primitive with -gen-JER |
 | Direct fixed OCTET/BIT STRING | Opt-in JER uppercase-hex encoding, case-insensitive complete-input decoding, exact packed size and zero-padding checks, and resource limits |
@@ -103,7 +105,7 @@ fresh directory after adding application code or running Cargo there.
 | Direct ENUMERATED | Opt-in JER quoted-name encode/decode; complete input, JSON whitespace, unknown-name and resource-limit checks |
 | Flat SET and SEQUENCE | XER-only basic encoder for direct BOOLEAN, bounded INTEGER, unconstrained IA5String and REAL DEFAULT 0.5 fields; OPTIONAL and supported DEFAULT fields use `Option` |
 | XER and CBOR/JER outside the listed slices | Planned; unavailable in Rust mode |
-| SET outside the listed XER slice, collections, CHOICE outside the listed CBOR slice, extensible, unbounded, fragmented or disjoint strings, named-bit strings, extensible ENUMERATED, aliases, imports, top-level tagged types | Planned; rejected in this slice |
+| SET outside the listed XER slice, collections, CHOICE outside the listed CBOR slice, extensible, unbounded or disjoint string constraints, named-bit strings, extensible ENUMERATED, aliases, imports, top-level tagged types | Planned; rejected in this slice |
 | Encoding controls, other information-object forms, parameterized types | Planned; rejected in this slice |
 | IOC-selected OPEN TYPE | UPER, APER, OER, CBOR; one local nonextensible set, bounded INTEGER selector, BOOLEAN or bounded INTEGER rows, and a two-field required SEQUENCE; APER selector 0..255 and row spans <=255 |
 | Other CONTAINING and OPEN TYPE forms | Unsupported; rejected before output publication |
@@ -200,10 +202,11 @@ input or lookup work. Extension markers and named-number constraints are
 outside this ENUMERATED subset.
 
 CER and DER methods emit complete TLV byte strings. `Encoded.bit_len` is the encoded
-byte length multiplied by eight. `decode_cer` accepts only the exact universal
-tag, a short-form definite length, and canonical content; it rejects long-form
-or indefinite lengths, BOOLEAN content other than `00`/`FF`, non-empty NULL,
-and non-minimal or out-of-range INTEGER. Trailing bytes are left unconsumed.
+byte length multiplied by eight. Primitive BOOLEAN, NULL and bounded INTEGER
+`decode_cer` requires the exact universal tag, short-form definite length,
+and canonical content. Direct ENUMERATED and string CER decoding compares the
+BER-decoded value's CER re-encoding with the consumed prefix. CER string
+encoding fragments content over 1000 octets. Trailing bytes are left unconsumed.
 The C `ATS_CER` decoder is likewise strict. BER decoding accepts definite
 long-form lengths and any nonzero BOOLEAN content octet as true. The current
 Rust BER BOOLEAN decoder requires exactly one content octet; the C decoder

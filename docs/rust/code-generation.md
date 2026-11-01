@@ -72,10 +72,12 @@ with `cer_encode()`, and rejects input that is not byte-identical (`EBADF`).
 decoder stub then fails with `ENOENT`. `ATS_BER` and `ATS_DER` stay permissive.
 
 The Rust backend adds `encode_cer` and strict `decode_cer` methods for BOOLEAN,
-NULL, and finite nonextensible INTEGER ranges fitting `i64`. For those same
-types, `-gen-BER` adds `decode_ber` and `encode_der`. Its `--rust` defaults to
-UPER and CER. Other Rust schema forms and codec families remain outside the
-implemented slice.
+NULL, finite nonextensible INTEGER ranges fitting `i64`, direct nonextensible
+ENUMERATED roots fitting `i64`, and direct fixed or bounded BIT/OCTET STRING
+values with supported finite `SIZE` constraints. `-gen-BER` adds `decode_ber`
+and `encode_der` for those types. Its `--rust` defaults to UPER and CER.
+Constructed records and many other C-supported BER-family forms remain outside
+the implemented slice; see [the implementation matrix](implementation.md).
 
 The example converter's baseline inputs are BER, OER, PER/UPER, APER, XER,
 JER, and CBOR; outputs are DER, OER, PER/UPER, APER, XER, JER, CBOR, text,
@@ -241,22 +243,23 @@ integer-width heuristics.
 | Type reference | module-qualified reference | Use public newtypes for aliases that add constraints or API identity. |
 | ANY / open type | runtime `OpenType` or generated typed enum | Preserve unknowns; use IOC metadata when resolved. |
 
-The current generated Rust slice supports top-level BOOLEAN as a public
-newtype over `bool`, NULL as a public unit struct, and a bounded,
-nonextensible INTEGER as a public newtype over `i64`. These types have UPER
-encode/decode methods and CER encode and strict decode methods. INTEGER must have one
-effective finite PER range that fits `i64`; `new(value)` returns `Result` and
-checks that range. The BOOLEAN constructor is infallible. Reject aliases,
-imports, tags, constructed types outside the flat UPER-only SEQUENCE slice,
-and unsupported constraints before creating output. An explicit UPER-only
-selection adds direct nonextensible ENUMERATED and fixed-size OCTET STRING
-and BIT STRING, including string fields inside supported required or OPTIONAL
-SEQUENCE records.
+The generated Rust slice supports top-level BOOLEAN as a public newtype over
+`bool`, NULL as a public unit struct, and a bounded, nonextensible INTEGER as
+a public newtype over `i64`. These types have UPER encode/decode and CER
+encode/strict decode methods. INTEGER must have one effective finite PER
+range fitting `i64`; `new(value)` returns `Result` and checks that range.
+The BOOLEAN constructor is infallible. Direct nonextensible ENUMERATED and
+fixed or bounded BIT/OCTET STRING types also have BER/DER/CER methods when
+selected. Reject aliases, imports, tags, constructed types outside the
+documented UPER and CBOR slices, and unsupported constraints before creating
+output. UPER-only selection supports direct and SEQUENCE-member ENUMERATED
+and strings within the documented size bounds.
 Direct fixed-size OCTET STRING assignments also accept the JER codec alone or
 with UPER. Their generated methods call the runtime's fixed-size hexadecimal
 JER helpers. BIT STRING and OCTET STRING SEQUENCE fields remain UPER-only.
-Variable-size strings, named-bit lists, and extensible ENUMERATED remain
-future increments.
+Bounded variable-size strings are supported as direct assignments; unbounded
+or disjoint strings, named-bit lists, and extensible ENUMERATED remain future
+increments.
 
 Use a safe, `std`-only runtime crate at `rust/asn1c-runtime/`, package name
 `asn1c-runtime`, import name `asn1c_runtime`, and Cargo edition 2021. Make no
@@ -269,7 +272,10 @@ meaningful UPER bits; CER reports all encoded TLV octets as bits. The runtime
 also exposes `encode_boolean_cer`, `encode_null_cer`, and
 `encode_integer_cer`, plus strict `decode_boolean_cer`, `decode_null_cer`, and
 `decode_integer_cer`; these accept only the exact universal tag, a short-form
-length, and canonical content, and leave trailing bytes unconsumed. For NULL and any zero-width UPER complete encoding, return
+length, and canonical content. The direct ENUMERATED and BIT/OCTET STRING
+functions extend that API, including canonical CER string fragments over 1000
+content octets. All prefix decoders leave trailing bytes unconsumed. For NULL
+and any zero-width UPER complete encoding, return
 `bytes == [0]` and `bit_len == 0`.
 
 The primitive functions have these signatures:
@@ -366,17 +372,15 @@ C target and its defaults. Exact `--rust` parsing is extracted from the short
 option parser; the option is recognized only before `--`. It cannot be used as
 the operand of `-D` or `-S`. Existing `-gen-*` spellings remain unchanged.
 
-Rust defaults independently to its qualified codecs. In the current slice,
-`--rust` alone selects UPER and CER. `-gen-BER` opts into BER decoding and DER
-encoding; there is no separate `-gen-DER` flag. `-gen-APER` and `-gen-OER`
-select the corresponding primitive encode/decode pairs. `-gen-JER` selects
-compact JSON encoding and complete-input decoding for the same top-level
-primitive subset. `-no-gen-UPER` selects CER-only
-output unless BER was explicitly selected, while `-no-gen-CER` omits CER
-methods. Explicit requests for XER or CBOR fail before output
-is created. Disabling every supported codec or selecting an unsupported ASN.1
-form also fails before output is published. The CLI keeps the C defaults
-unchanged.
+Rust defaults independently to its qualified codecs. `--rust` alone selects
+UPER and CER. `-gen-BER` opts into BER decoding and DER encoding; there is no
+separate `-gen-DER` flag. `-gen-APER`, `-gen-OER`, `-gen-JER`, `-gen-CBOR`, and
+`-gen-XER` select their documented subsets. `-no-gen-UPER` selects CER-only
+output unless another codec was explicitly selected, while `-no-gen-CER`
+omits CER methods. Disabling every supported codec or selecting an unsupported
+ASN.1 form fails before output is published. The CLI keeps the C defaults
+unchanged. See [the implementation matrix](implementation.md) for each exact
+type/codec intersection.
 
 Validate all flags and the complete schema before creating output files. An
 unsupported CLI combination is an `EX_USAGE` diagnostic; an unsupported

@@ -1413,7 +1413,7 @@ if ! "$asn1c_bin" -S "$skeletons" -gen-UPER -gen-CER -gen-OER -gen-APER -no-gen-
     -no-gen-CBOR -no-gen-print \
     -no-gen-random-fill -fwide-types -pdu=all -fgen-only-pdu-deps \
     -no-gen-example -D "$c_out" "$test_srcdir/CParity.asn1" \
-    "$test_srcdir/OctetJER.asn1" \
+    "$test_srcdir/OctetJER.asn1" "$test_srcdir/BerCerSlice.asn1" \
     >"$test_tmp/c-generate.log" 2>&1; then
     cat "$test_tmp/c-generate.log"
     exit 1
@@ -1508,5 +1508,101 @@ cp "$test_srcdir/conformance.rs" "$rust_ber_out/tests/conformance.rs"
     cargo clippy --offline --all-targets --all-features -- \
     -W clippy::pedantic -W clippy::nursery -D warnings)
 "$test_tmp/c-reference" --decode-dir "$test_tmp/rust-vectors"
+
+# Exercise BER/DER/CER methods on direct enum and size-constrained strings.
+ber_cer_out="$test_tmp/ber-cer-rust"
+"$asn1c_bin" --rust -gen-BER -S "$skeletons" -D "$ber_cer_out" \
+    "$test_srcdir/BerCerSlice.asn1"
+mkdir -p "$ber_cer_out/tests"
+cp "$test_srcdir/ber_cer_conformance.rs" "$ber_cer_out/tests/"
+if ! cargo test --offline --manifest-path "$ber_cer_out/Cargo.toml" \
+    >"$test_tmp/ber-cer-rust-test.log" 2>&1; then
+    cat "$test_tmp/ber-cer-rust-test.log"
+    echo "FAIL: generated Rust BER/DER/CER primitive conformance failed"
+    exit 1
+fi
+if ! cargo clippy --offline --manifest-path "$ber_cer_out/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings \
+    >"$test_tmp/ber-cer-rust-clippy.log" 2>&1; then
+    cat "$test_tmp/ber-cer-rust-clippy.log"
+    echo "FAIL: generated Rust BER/DER/CER output failed strict Clippy"
+    exit 1
+fi
+grep -F 'pub fn encode_uper' "$ber_cer_out/src/ber_cer_slice.rs" >/dev/null
+grep -F 'pub fn encode_der' "$ber_cer_out/src/ber_cer_slice.rs" >/dev/null
+grep -F 'pub fn encode_cer' "$ber_cer_out/src/ber_cer_slice.rs" >/dev/null
+
+# Each BER and CER selector can generate its own dependency-clean crate.
+ber_only_strings="$test_tmp/ber-only-strings"
+"$asn1c_bin" --rust -gen-BER -no-gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$ber_only_strings" "$test_srcdir/BerCerSlice.asn1"
+if ! cargo check --offline --manifest-path "$ber_only_strings/Cargo.toml" \
+    >"$test_tmp/ber-only-strings-check.log" 2>&1; then
+    cat "$test_tmp/ber-only-strings-check.log"
+    echo "FAIL: BER-only constrained string crate did not compile"
+    exit 1
+fi
+grep -F 'pub fn decode_ber' "$ber_only_strings/src/ber_cer_slice.rs" >/dev/null
+if grep -E 'pub fn (encode|decode)_(uper|cer)' \
+    "$ber_only_strings/src/ber_cer_slice.rs" >/dev/null; then
+    echo "FAIL: BER-only constrained string output retained UPER or CER"
+    exit 1
+fi
+
+cer_only_strings="$test_tmp/cer-only-strings"
+"$asn1c_bin" --rust -gen-CER -no-gen-UPER -no-gen-BER -S "$skeletons" \
+    -D "$cer_only_strings" "$test_srcdir/BerCerSlice.asn1"
+if ! cargo check --offline --manifest-path "$cer_only_strings/Cargo.toml" \
+    >"$test_tmp/cer-only-strings-check.log" 2>&1; then
+    cat "$test_tmp/cer-only-strings-check.log"
+    echo "FAIL: CER-only constrained string crate did not compile"
+    exit 1
+fi
+grep -F 'pub fn decode_cer' "$cer_only_strings/src/ber_cer_slice.rs" >/dev/null
+if grep -E 'pub fn (encode|decode)_(uper|der|ber)' \
+    "$cer_only_strings/src/ber_cer_slice.rs" >/dev/null; then
+    echo "FAIL: CER-only constrained string output retained UPER or BER/DER"
+    exit 1
+fi
+
+# The C reference fixture independently encodes the same enum and string TLVs.
+if ! cc $asn1c_module_cflags -I"$c_out" "$c_out"/*.c \
+    "$test_srcdir/c_ber_cer.c" -lm -o "$test_tmp/c-ber-cer" \
+    >"$test_tmp/c-ber-cer-compile.log" 2>&1; then
+    cat "$test_tmp/c-ber-cer-compile.log"
+    echo "FAIL: generated C BER/DER/CER reference did not compile"
+    exit 1
+fi
+"$test_tmp/c-ber-cer"
+
+# Named BIT STRING roots require special trimming and remain outside this slice.
+if "$asn1c_bin" --rust -gen-BER -no-gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/rejected-named-bits-ber" "$test_srcdir/NamedBitString.asn1" \
+    >"$test_tmp/named-bits-ber.log" 2>&1; then
+    echo "FAIL: Rust backend accepted named BIT STRING BER methods"
+    exit 1
+fi
+test ! -e "$test_tmp/rejected-named-bits-ber"
+if "$asn1c_bin" --rust -gen-CER -no-gen-UPER -no-gen-BER -S "$skeletons" \
+    -D "$test_tmp/rejected-named-bits-cer" "$test_srcdir/NamedBitString.asn1" \
+    >"$test_tmp/named-bits-cer.log" 2>&1; then
+    echo "FAIL: Rust backend accepted named BIT STRING CER methods"
+    exit 1
+fi
+test ! -e "$test_tmp/rejected-named-bits-cer"
+if "$asn1c_bin" --rust -gen-BER -no-gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/rejected-extensible-enum-ber" "$test_srcdir/ExtensibleEnum.asn1" \
+    >"$test_tmp/extensible-enum-ber.log" 2>&1; then
+    echo "FAIL: Rust backend accepted extensible ENUMERATED BER methods"
+    exit 1
+fi
+test ! -e "$test_tmp/rejected-extensible-enum-ber"
+if "$asn1c_bin" --rust -gen-CER -no-gen-UPER -no-gen-BER -S "$skeletons" \
+    -D "$test_tmp/rejected-extensible-enum-cer" "$test_srcdir/ExtensibleEnum.asn1" \
+    >"$test_tmp/extensible-enum-cer.log" 2>&1; then
+    echo "FAIL: Rust backend accepted extensible ENUMERATED CER methods"
+    exit 1
+fi
+test ! -e "$test_tmp/rejected-extensible-enum-cer"
 
 echo "PASS: generated Rust UPER/CER/BER-DER primitive slice"
