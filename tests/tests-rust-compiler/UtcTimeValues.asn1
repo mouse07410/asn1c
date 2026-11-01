@@ -1,0 +1,3 @@
+UtcTimeValues DEFINITIONS ::= BEGIN
+UtcValue ::= UTCTime
+END

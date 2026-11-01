@@ -3151,4 +3151,107 @@ if ! "$test_tmp/c-restricted"; then
     exit 1
 fi
 
+# Direct UTCTime preserves BER/DER content and normalizes only for CER.
+for fixture in UtcTimeAlias UtcTimeConstrained UtcTimeField UtcTimeImport \
+    UtcTimeTagged UtcTimeGeneralizedUnsupported; do
+    rejected_out="$test_tmp/rejected-$fixture"
+    if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$rejected_out" "$test_srcdir/$fixture.asn1" \
+        >"$test_tmp/$fixture.log" 2>&1; then
+        echo "FAIL: Rust backend accepted unsupported UTCTime shape $fixture"
+        exit 1
+    fi
+    test ! -e "$rejected_out"
+done
+
+utc_mixed="$test_tmp/rejected-utc-mixed"
+if "$asn1c_bin" --rust -S "$skeletons" -D "$utc_mixed" \
+    "$test_srcdir/UtcTimeValues.asn1" >"$test_tmp/utc-mixed.log" 2>&1; then
+    echo "FAIL: mixed default codecs accepted direct UTCTime"
+    exit 1
+fi
+test ! -e "$utc_mixed"
+utc_uper="$test_tmp/rejected-utc-uper"
+if "$asn1c_bin" --rust -gen-UPER -no-gen-BER -no-gen-CER -S "$skeletons" \
+    -D "$utc_uper" "$test_srcdir/UtcTimeValues.asn1" \
+    >"$test_tmp/utc-uper.log" 2>&1; then
+    echo "FAIL: UPER-only selection accepted direct UTCTime"
+    exit 1
+fi
+test ! -e "$utc_uper"
+
+utc_rust="$test_tmp/utc-rust"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$utc_rust" "$test_srcdir/UtcTimeValues.asn1"
+mkdir "$utc_rust/tests"
+cp "$test_srcdir/utc_time_conformance.rs" "$utc_rust/tests/"
+utc_source="$utc_rust/src/utc_time_values.rs"
+for method in try_from_bytes as_bytes encode_der decode_ber encode_cer decode_cer; do
+    grep -F "pub fn $method" "$utc_source" >/dev/null
+done
+if grep -F '#[derive(Clone' "$utc_source" >/dev/null; then
+    echo "FAIL: UtcTime wrapper derives infallible Clone"
+    exit 1
+fi
+if ! (cd "$utc_rust" && \
+    CARGO_TARGET_DIR="$test_tmp/target-utc" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-utc" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/utc-rust.log" 2>&1; then
+    cat "$test_tmp/utc-rust.log"
+    echo "FAIL: UTCTime conformance or strict Clippy"
+    exit 1
+fi
+
+for codec in BER CER; do
+    if [ "$codec" = BER ]; then
+        utc_unwanted='encode_cer|decode_cer'
+        "$asn1c_bin" --rust -gen-BER -no-gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$test_tmp/utc-$codec-only" "$test_srcdir/UtcTimeValues.asn1"
+    else
+        utc_unwanted='encode_der|decode_ber'
+        "$asn1c_bin" --rust -gen-CER -no-gen-BER -no-gen-UPER -S "$skeletons" \
+            -D "$test_tmp/utc-$codec-only" "$test_srcdir/UtcTimeValues.asn1"
+    fi
+    utc_codec_out="$test_tmp/utc-$codec-only"
+    if (cargo check --offline --manifest-path "$utc_codec_out/Cargo.toml" && \
+        cargo clippy --offline --manifest-path "$utc_codec_out/Cargo.toml" \
+        --all-targets --all-features -- -W clippy::pedantic \
+        -W clippy::nursery -D warnings) >"$test_tmp/utc-$codec-only.log" 2>&1; then
+        :
+    else
+        cat "$test_tmp/utc-$codec-only.log"
+        echo "FAIL: UTCTime $codec-only strict Clippy"
+        exit 1
+    fi
+    if grep -E "pub fn ($utc_unwanted)" \
+        "$utc_codec_out/src/utc_time_values.rs" >/dev/null; then
+        echo "FAIL: UTCTime $codec-only output has unselected methods"
+        exit 1
+    fi
+done
+
+utc_c="$test_tmp/utc-c"
+mkdir "$utc_c"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$utc_c" "$test_srcdir/UtcTimeValues.asn1" \
+    >"$test_tmp/utc-c-generate.log" 2>&1
+utc_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' "$utc_c/Makefile.am.libasncodec")
+rm -f "$utc_c/converter-example.c" "$utc_c/pdu_collection.c"
+if ! cc $utc_cflags -I"$utc_c" "$utc_c"/*.c \
+    "$test_srcdir/c_utc_time.c" -lm -o "$test_tmp/c-utc" \
+    >"$test_tmp/utc-c-compile.log" 2>&1; then
+    cat "$test_tmp/utc-c-compile.log"
+    echo "FAIL: C UTCTime differential fixture did not compile"
+    exit 1
+fi
+if ! "$test_tmp/c-utc"; then
+    echo "FAIL: C UTCTime BER/DER/CER vectors failed"
+    exit 1
+fi
+
 echo "PASS: generated Rust UPER/CER/BER-DER primitive slice"

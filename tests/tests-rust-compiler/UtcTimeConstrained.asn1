@@ -1,0 +1,3 @@
+UtcTimeConstrained DEFINITIONS ::= BEGIN
+Value ::= UTCTime (SIZE(11..17))
+END

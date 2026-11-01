@@ -1,0 +1,8 @@
+UtcTimeImport DEFINITIONS ::= BEGIN
+IMPORTS Remote FROM UtcTimeRemote;
+Value ::= UTCTime
+END
+
+UtcTimeRemote DEFINITIONS ::= BEGIN
+Remote ::= BOOLEAN
+END

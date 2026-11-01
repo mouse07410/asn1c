@@ -1,0 +1,3 @@
+UtcTimeField DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { value UTCTime }
+END

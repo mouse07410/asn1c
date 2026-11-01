@@ -23,6 +23,7 @@ const TAG_NULL: u64 = 5;
 const TAG_SET: u64 = 17;
 const TAG_OBJECT_IDENTIFIER: u32 = 6;
 const TAG_RELATIVE_OID: u32 = 13;
+const UTC_WINDOW_MINUTES: i64 = 36_525 * 1_440;
 /// Maximum simultaneous retained and canonical character-string buffer capacity.
 const MAX_CHARACTER_STRING_SCRATCH_BYTES: usize = 128 * 1024 * 1024;
 /// Maximum simultaneous retained and canonical OID codec buffer capacity.
@@ -311,6 +312,55 @@ impl Ia5String {
     /// Source: C `IA5String` BER/DER codec timing. Version: 2026-11-01.
     /// Responsible: runtime maintainers. History: direct IA5 gate.
     /// Example: `value.as_bytes() == [0x41]`.
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+/// Raw octets for a direct ASN.1 `UTCTime` value.
+///
+/// BER decoding and DER encoding preserve bytes. CER validates and normalizes
+/// the time text. The value has no infallible `Clone` implementation.
+#[derive(Debug, Eq, PartialEq)]
+pub struct UtcTime {
+    /// Owned raw time-content octets; state variable.
+    bytes: Vec<u8>,
+}
+
+impl UtcTime {
+    /// Copy raw `UTCTime` content without applying the CER syntax check.
+    ///
+    /// # Parameters and returns
+    /// `bytes` is raw content; `limits` caps input, retained output, and copy
+    /// work. Returns an owned value without cloning.
+    ///
+    /// # Errors
+    /// Returns input/output/work/scratch limits, checked-size errors, or a
+    /// fallible allocation error.
+    ///
+    /// # Source, version, history, example
+    /// Source: C `UTCTime` BER/DER codec timing. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct `UTCTime` gate.
+    /// Example: `UtcTime::try_from_bytes(b"991231235959Z", limits)?`.
+    pub fn try_from_bytes(bytes: &[u8], limits: &Limits) -> Result<Self, Error> {
+        Ok(Self {
+            bytes: copy_character_string_bytes(bytes, limits)?,
+        })
+    }
+
+    /// Borrow the raw `UTCTime` content bytes.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns stored bytes without applying a syntax check.
+    ///
+    /// # Errors
+    /// This accessor cannot fail or panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: C `UTCTime` BER/DER codec timing. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct `UTCTime` gate.
+    /// Example: `value.as_bytes() == b"991231235959Z"`.
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes
@@ -4146,6 +4196,110 @@ pub fn decode_character_string_cer(
     })
 }
 
+/// Encode raw `UTCTime` content as DER without checking its syntax.
+///
+/// # Parameters and returns
+/// `value` holds raw time bytes; `limits` caps output, work, and simultaneous
+/// retained/output scratch. Returns a primitive universal tag 23 TLV.
+///
+/// # Errors
+/// Returns output/work/scratch limits, checked-size errors, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: C `UTCTime_encode_der`. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct `UTCTime` gate.
+/// Example: `encode_utc_time_der(&value, limits)?`.
+pub fn encode_utc_time_der(value: &UtcTime, limits: &Limits) -> Result<Encoded, Error> {
+    let mut work = 0;
+    let output_len = single_identifier_tlv_len(value.bytes.len())?;
+    charge_work(&mut work, output_len, limits)?;
+    encode_utc_time_der_bytes(&value.bytes, value.bytes.capacity(), limits)
+}
+
+/// Encode `UTCTime` as CER after validating and converting it to UTC.
+///
+/// # Parameters and returns
+/// `value` holds raw time bytes; `limits` caps output, work, and simultaneous
+/// retained/output scratch. Returns canonical `YYMMDDhhmmssZ` under tag 23.
+///
+/// # Errors
+/// Returns invalid syntax/calendar/zone, out-of-window normalization, resource,
+/// checked-size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: C CER `UTCTime` normalization, with checked Gregorian arithmetic.
+/// Version: 2026-11-01. Responsible: runtime maintainers.
+/// History: direct `UTCTime` gate. Example: `encode_utc_time_cer(&value, limits)?`.
+pub fn encode_utc_time_cer(value: &UtcTime, limits: &Limits) -> Result<Encoded, Error> {
+    let mut work = 0;
+    let canonical = normalize_utc_time_content(&value.bytes, limits, &mut work)?;
+    let output_len = single_identifier_tlv_len(canonical.len())?;
+    check(Resource::OutputBytes, output_len, limits.max_output_bytes)?;
+    check_character_string_scratch(
+        value
+            .bytes
+            .capacity()
+            .checked_add(output_len)
+            .ok_or(Error::SizeOverflow)?,
+    )?;
+    charge_work(&mut work, output_len, limits)?;
+    encode_utc_time_der_bytes(&canonical, value.bytes.capacity(), limits)
+}
+
+/// Decode one BER `UTCTime` prefix and preserve its raw content bytes.
+///
+/// # Parameters and returns
+/// `input` is the full available slice and may have a suffix; `limits` caps
+/// input, retained value, and work. Returns raw content and exact prefix use.
+/// Primitive and nested constructed tag-23 values with tag-4 fragments are
+/// accepted.
+///
+/// # Errors
+/// Returns malformed framing/fragment, tag, resource, size, or allocation errors.
+/// No time syntax check is applied.
+///
+/// # Source, version, history, example
+/// Source: C `UTCTime_decode_ber` via `OCTET_STRING_decode_ber`.
+/// Version: 2026-11-01. Responsible: runtime maintainers.
+/// History: direct `UTCTime` gate. Example: `decode_utc_time_ber(input, limits)?`.
+pub fn decode_utc_time_ber(input: &[u8], limits: &Limits) -> Result<Decoded<UtcTime>, Error> {
+    let mut work = 0;
+    let decoded = decode_utc_time_ber_bytes(input, limits, &mut work)?;
+    Ok(Decoded {
+        value: UtcTime {
+            bytes: decoded.value,
+        },
+        consumed_bits: decoded.consumed_bits,
+        consumed_bytes: decoded.consumed_bytes,
+    })
+}
+
+/// Strictly decode one canonical CER `UTCTime` prefix.
+///
+/// # Parameters and returns
+/// `input` is the full available slice and may have a suffix; `limits` caps
+/// input, retained/output scratch, and cumulative work. Returns canonical raw
+/// content and exact prefix consumption.
+///
+/// # Errors
+/// Returns BER framing, time syntax/calendar/zone, canonicality, resource,
+/// checked-size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: strict C CER re-encoding plus X.690 `UTCTime` rules.
+/// Version: 2026-11-01. Responsible: runtime maintainers.
+/// History: direct `UTCTime` gate. Example: `decode_utc_time_cer(input, limits)?`.
+pub fn decode_utc_time_cer(input: &[u8], limits: &Limits) -> Result<Decoded<UtcTime>, Error> {
+    let decoded = decode_utc_time_cer_bytes(input, limits)?;
+    Ok(Decoded {
+        value: UtcTime {
+            bytes: decoded.value,
+        },
+        consumed_bits: decoded.consumed_bits,
+        consumed_bytes: decoded.consumed_bytes,
+    })
+}
+
 /// Encode raw IA5 content as DER under its simultaneous value/output budget.
 ///
 /// # Parameters and returns
@@ -4448,6 +4602,431 @@ fn decode_character_string_ber_bytes(
     )?;
     check_character_string_scratch(decoded.value.capacity())?;
     Ok(decoded)
+}
+
+/// Parsed `UTCTime` fields and their numeric-zone adjustment.
+#[derive(Clone, Copy)]
+struct UtcTimeFields {
+    /// Full Gregorian year selected by the 50-year pivot; state variable.
+    year: u32,
+    /// One-based Gregorian month; state variable.
+    month: u32,
+    /// One-based day of month; state variable.
+    day: u32,
+    /// Hour from 0 through 23; state variable.
+    hour: u32,
+    /// Minute from 0 through 59; state variable.
+    minute: u32,
+    /// Second from 0 through 59, defaulting to zero; state variable.
+    second: u32,
+    /// Numeric offset sign, or zero for `Z`; state variable.
+    offset_sign: i64,
+    /// Absolute numeric-zone offset in minutes; state variable.
+    offset_minutes: i64,
+}
+
+/// Decode one BER `UTCTime` prefix using shared OCTET STRING framing.
+///
+/// # Parameters and returns
+/// `input` is the complete supplied slice; `limits` caps input and retained
+/// bytes; `work` shares parser and fragment-copy work. Returns raw content and
+/// exact prefix consumption.
+///
+/// # Errors
+/// Returns malformed BER, tag/fragment, output/work/scratch, size, or allocation
+/// errors. Time syntax is intentionally not checked here.
+///
+/// # Source, version, history, example
+/// Source: C `UTCTime_decode_ber` and shared OCTET STRING runtime.
+/// Version: 2026-11-01. Responsible: runtime maintainers.
+/// History: direct `UTCTime` gate. Example: called by `decode_utc_time_ber`.
+fn decode_utc_time_ber_bytes(
+    input: &[u8],
+    limits: &Limits,
+    work: &mut usize,
+) -> Result<Decoded<Vec<u8>>, Error> {
+    let decode_limits = character_string_decode_limits(limits);
+    let decoded =
+        decode_octet_ber_with_tag_work(input, Tag::universal(23), &decode_limits, work, None)?;
+    check_character_string_scratch(decoded.value.capacity())?;
+    Ok(decoded)
+}
+
+/// Re-encode a strict CER `UTCTime` prefix and compare only its consumed bytes.
+///
+/// # Parameters and returns
+/// `input` may have a suffix; `limits` caps all resources. Returns the decoded
+/// normalized bytes and exact prefix consumption.
+///
+/// # Errors
+/// Returns BER/time/canonicality, resource, checked-size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: strict CER prefix re-encoding. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct `UTCTime` gate.
+/// Example: called by `decode_utc_time_cer`.
+fn decode_utc_time_cer_bytes(input: &[u8], limits: &Limits) -> Result<Decoded<Vec<u8>>, Error> {
+    let mut work = 0;
+    let decoded = decode_utc_time_ber_bytes(input, limits, &mut work)?;
+    let canonical = normalize_utc_time_content(&decoded.value, limits, &mut work)?;
+    let output_len = single_identifier_tlv_len(canonical.len())?;
+    check(Resource::OutputBytes, output_len, limits.max_output_bytes)?;
+    check_character_string_scratch(
+        decoded
+            .value
+            .capacity()
+            .checked_add(output_len)
+            .ok_or(Error::SizeOverflow)?,
+    )?;
+
+    // Precharge full canonical output and comparison before allocating it.
+    let compare_len = decoded.consumed_bytes.max(output_len);
+    charge_work(
+        &mut work,
+        output_len
+            .checked_add(compare_len)
+            .ok_or(Error::SizeOverflow)?,
+        limits,
+    )?;
+    let canonical_tlv = encode_utc_time_der_bytes(&canonical, decoded.value.capacity(), limits)?;
+    if input.get(..decoded.consumed_bytes) != Some(canonical_tlv.bytes.as_slice()) {
+        return Err(invalid("CER UTCTime differs from canonical re-encoding"));
+    }
+    Ok(decoded)
+}
+
+/// Encode a primitive universal tag-23 TLV and include the retained value in scratch checks.
+///
+/// # Parameters and returns
+/// `bytes` is raw content; `retained_capacity` is live value capacity; `limits`
+/// caps output/work/scratch. Returns a complete DER TLV.
+///
+/// # Errors
+/// Returns output/work/scratch, size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: C `UTCTime_encode_der`. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct `UTCTime` gate.
+/// Example: called by DER and canonical CER encoders.
+fn encode_utc_time_der_bytes(
+    bytes: &[u8],
+    retained_capacity: usize,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    let encoded_len = single_identifier_tlv_len(bytes.len())?;
+    check(Resource::OutputBytes, encoded_len, limits.max_output_bytes)?;
+    check_character_string_scratch(
+        retained_capacity
+            .checked_add(encoded_len)
+            .ok_or(Error::SizeOverflow)?,
+    )?;
+    let encoded = write_primitive(23, bytes, limits)?;
+    check_character_string_scratch(
+        retained_capacity
+            .checked_add(encoded.bytes.capacity())
+            .ok_or(Error::SizeOverflow)?,
+    )?;
+    Ok(encoded)
+}
+
+/// Validate and normalize `UTCTime` bytes to `YYMMDDhhmmssZ`.
+///
+/// # Parameters and returns
+/// `bytes` is the entire content; `limits` caps parsing work; `work` is the
+/// cumulative operation counter. Returns exactly 13 canonical content octets.
+///
+/// # Errors
+/// Returns malformed syntax/calendar/zone, unsupported normalized year,
+/// work-limit, or checked-size errors.
+///
+/// # Source, version, history, example
+/// Source: C CER `UTCTime` adapter with checked Gregorian arithmetic.
+/// Version: 2026-11-01. Responsible: runtime maintainers.
+/// History: direct `UTCTime` gate. Example: normalizes `9912312359Z`.
+fn normalize_utc_time_content(
+    bytes: &[u8],
+    limits: &Limits,
+    work: &mut usize,
+) -> Result<[u8; 13], Error> {
+    charge_work(work, bytes.len(), limits)?;
+    let fields = parse_utc_time_fields(bytes)?;
+    validate_utc_time_fields(&fields)?;
+    let utc = normalize_utc_time_fields(fields)?;
+    render_utc_time(&utc)
+}
+
+/// Parse the supported `UTCTime` lengths, decimal fields, and zone suffix.
+///
+/// # Parameters and returns
+/// `bytes` is raw `UTCTime` content. Returns fields with the C 1950 pivot.
+///
+/// # Errors
+/// Returns `InvalidEncoding` for unsupported length, nondecimal fields, or
+/// malformed zone syntax.
+///
+/// # Source, version, history, example
+/// Source: C CER `UTCTime` parser. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct `UTCTime` gate.
+/// Example: called by `normalize_utc_time_content`.
+fn parse_utc_time_fields(bytes: &[u8]) -> Result<UtcTimeFields, Error> {
+    let (digit_len, has_seconds) = match bytes.len() {
+        11 | 15 => (10, false),
+        13 | 17 => (12, true),
+        _ => return Err(invalid("UTCTime content has an unsupported length")),
+    };
+
+    // Parse six fixed-width decimal components, defaulting absent seconds to zero.
+    let short_year = parse_utc_pair(bytes, 0)?;
+    let year = if short_year >= 50 {
+        1900 + short_year
+    } else {
+        2000 + short_year
+    };
+    let month = parse_utc_pair(bytes, 2)?;
+    let day = parse_utc_pair(bytes, 4)?;
+    let hour = parse_utc_pair(bytes, 6)?;
+    let minute = parse_utc_pair(bytes, 8)?;
+    let second = if has_seconds {
+        parse_utc_pair(bytes, 10)?
+    } else {
+        0
+    };
+
+    // Parse either the canonical Z suffix or a signed four-digit offset.
+    let (offset_sign, offset_minutes) = if digit_len < bytes.len() - 1 {
+        let sign = match bytes.get(digit_len) {
+            Some(b'+') => 1_i64,
+            Some(b'-') => -1_i64,
+            _ => return Err(invalid("UTCTime numeric zone has an invalid sign")),
+        };
+        let offset_hour = i64::from(parse_utc_pair(bytes, digit_len + 1)?);
+        let offset_minute = i64::from(parse_utc_pair(bytes, digit_len + 3)?);
+        if offset_hour > 23 || offset_minute > 59 {
+            return Err(invalid("UTCTime numeric zone is out of range"));
+        }
+        (sign, offset_hour * 60 + offset_minute)
+    } else if bytes.get(digit_len) == Some(&b'Z') {
+        (0, 0)
+    } else {
+        return Err(invalid("UTCTime Z suffix is missing"));
+    };
+
+    Ok(UtcTimeFields {
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        offset_sign,
+        offset_minutes,
+    })
+}
+
+/// Parse two bounded ASCII decimal digits as an unsigned value.
+///
+/// # Parameters and returns
+/// `bytes` is content and `offset` is the first digit index. Returns its value.
+///
+/// # Errors
+/// Returns `InvalidEncoding` when the pair is truncated or nondecimal.
+///
+/// # Source, version, history, example
+/// Source: C CER `UTCTime` decimal-field parser. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct `UTCTime` gate.
+/// Example: parses a month from bytes 2 and 3.
+fn parse_utc_pair(bytes: &[u8], offset: usize) -> Result<u32, Error> {
+    let end = offset.checked_add(2).ok_or(Error::SizeOverflow)?;
+    let pair = bytes
+        .get(offset..end)
+        .ok_or_else(|| invalid("UTCTime decimal field is truncated"))?;
+    let first = pair[0];
+    let second = pair[1];
+    if !first.is_ascii_digit() || !second.is_ascii_digit() {
+        return Err(invalid("UTCTime decimal field contains a non-digit"));
+    }
+    Ok(u32::from(first - b'0') * 10 + u32::from(second - b'0'))
+}
+
+/// Validate local `UTCTime` date and clock fields before zone adjustment.
+///
+/// # Parameters and returns
+/// `fields` contains parsed calendar values. Returns success for a valid date.
+///
+/// # Errors
+/// Returns `InvalidEncoding` for an invalid Gregorian date or clock component.
+///
+/// # Source, version, history, example
+/// Source: C CER `UTCTime` calendar checks. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct `UTCTime` gate.
+/// Example: called before numeric-zone conversion.
+fn validate_utc_time_fields(fields: &UtcTimeFields) -> Result<(), Error> {
+    if !(1..=12).contains(&fields.month)
+        || fields.hour > 23
+        || fields.minute > 59
+        || fields.second > 59
+    {
+        return Err(invalid(
+            "UTCTime calendar or clock component is out of range",
+        ));
+    }
+    let days = utc_month_days(fields.year, fields.month)?;
+    if fields.day == 0 || fields.day > days {
+        return Err(invalid("UTCTime day is invalid for its month"));
+    }
+    Ok(())
+}
+
+/// Return the day count for a validated month, including Gregorian leap day.
+///
+/// # Parameters and returns
+/// `year` and `month` select the Gregorian month. Returns its number of days.
+///
+/// # Errors
+/// Returns `InvalidEncoding` if the month is outside 1 through 12.
+///
+/// # Source, version, history, example
+/// Source: proleptic Gregorian calendar arithmetic. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct `UTCTime` gate.
+/// Example: February 2000 has 29 days.
+const fn utc_month_days(year: u32, month: u32) -> Result<u32, Error> {
+    let days = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if utc_is_leap_year(year) => 29,
+        2 => 28,
+        _ => return Err(invalid("UTCTime month is out of range")),
+    };
+    Ok(days)
+}
+
+/// Test the proleptic Gregorian leap-year rule.
+///
+/// # Parameters and returns
+/// `year` is a full Gregorian year. Returns whether February has 29 days.
+///
+/// # Errors
+/// This bounded arithmetic helper cannot fail.
+///
+/// # Source, version, history, example
+/// Source: Gregorian leap-year rule. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct `UTCTime` gate.
+/// Example: `utc_is_leap_year(2000)` is true.
+const fn utc_is_leap_year(year: u32) -> bool {
+    year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400))
+}
+
+/// Convert local `UTCTime` fields to a UTC date within the supported pivot window.
+///
+/// # Parameters and returns
+/// `fields` contains validated local date, clock, and numeric zone. Returns UTC
+/// fields with zero zone metadata.
+///
+/// # Errors
+/// Returns `InvalidEncoding` when conversion leaves years 1950 through 2049,
+/// or `SizeOverflow` if checked arithmetic fails.
+///
+/// # Source, version, history, example
+/// Source: C CER UTC conversion, using checked Gregorian arithmetic.
+/// Version: 2026-11-01. Responsible: runtime maintainers.
+/// History: direct `UTCTime` gate. Example: converts `+0100` by subtracting an hour.
+fn normalize_utc_time_fields(fields: UtcTimeFields) -> Result<UtcTimeFields, Error> {
+    let mut days = 0_i64;
+    let mut year = 1950_u32;
+    let mut month = 1_u32;
+
+    // Count full years and prior months from the fixed 1950 epoch.
+    while year < fields.year {
+        days = days
+            .checked_add(if utc_is_leap_year(year) { 366 } else { 365 })
+            .ok_or(Error::SizeOverflow)?;
+        year = year.checked_add(1).ok_or(Error::SizeOverflow)?;
+    }
+    while month < fields.month {
+        days = days
+            .checked_add(i64::from(utc_month_days(fields.year, month)?))
+            .ok_or(Error::SizeOverflow)?;
+        month = month.checked_add(1).ok_or(Error::SizeOverflow)?;
+    }
+    days = days
+        .checked_add(i64::from(fields.day - 1))
+        .ok_or(Error::SizeOverflow)?;
+
+    // Apply the signed numeric zone offset in minutes without time_t conversion.
+    let local_minutes = days
+        .checked_mul(1440)
+        .and_then(|n| n.checked_add(i64::from(fields.hour) * 60))
+        .and_then(|n| n.checked_add(i64::from(fields.minute)))
+        .ok_or(Error::SizeOverflow)?;
+    let offset = fields
+        .offset_sign
+        .checked_mul(fields.offset_minutes)
+        .ok_or(Error::SizeOverflow)?;
+    let utc_minutes = local_minutes
+        .checked_sub(offset)
+        .ok_or(Error::SizeOverflow)?;
+    if !(0..UTC_WINDOW_MINUTES).contains(&utc_minutes) {
+        return Err(invalid(
+            "UTCTime zone conversion leaves years 1950 through 2049",
+        ));
+    }
+
+    // Convert epoch minutes back into a date while preserving seconds.
+    let mut day_index = utc_minutes / 1440;
+    year = 1950;
+    while day_index >= i64::from(if utc_is_leap_year(year) { 366_u32 } else { 365 }) {
+        day_index -= i64::from(if utc_is_leap_year(year) { 366_u32 } else { 365 });
+        year = year.checked_add(1).ok_or(Error::SizeOverflow)?;
+    }
+    month = 1;
+    while day_index >= i64::from(utc_month_days(year, month)?) {
+        day_index -= i64::from(utc_month_days(year, month)?);
+        month = month.checked_add(1).ok_or(Error::SizeOverflow)?;
+    }
+    let minute_of_day = utc_minutes % 1440;
+    Ok(UtcTimeFields {
+        year,
+        month,
+        day: u32::try_from(day_index + 1).map_err(|_| Error::SizeOverflow)?,
+        hour: u32::try_from(minute_of_day / 60).map_err(|_| Error::SizeOverflow)?,
+        minute: u32::try_from(minute_of_day % 60).map_err(|_| Error::SizeOverflow)?,
+        second: fields.second,
+        offset_sign: 0,
+        offset_minutes: 0,
+    })
+}
+
+/// Render a normalized UTC date as thirteen ASCII content octets.
+///
+/// # Parameters and returns
+/// `fields` contains normalized year, month, day, and clock values. Returns
+/// `YYMMDDhhmmssZ`.
+///
+/// # Errors
+/// Returns `SizeOverflow` if a checked field conversion fails.
+///
+/// # Source, version, history, example
+/// Source: C CER `UTCTime` canonical renderer. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct `UTCTime` gate.
+/// Example: renders a date as a fixed 13-byte stack value.
+fn render_utc_time(fields: &UtcTimeFields) -> Result<[u8; 13], Error> {
+    let components = [
+        fields.year % 100,
+        fields.month,
+        fields.day,
+        fields.hour,
+        fields.minute,
+        fields.second,
+    ];
+    let mut output = [0_u8; 13];
+    for (index, component) in components.into_iter().enumerate() {
+        let tens = u8::try_from(component / 10).map_err(|_| Error::SizeOverflow)?;
+        let units = u8::try_from(component % 10).map_err(|_| Error::SizeOverflow)?;
+        output[index * 2] = b'0' + tens;
+        output[index * 2 + 1] = b'0' + units;
+    }
+    output[12] = b'Z';
+    Ok(output)
 }
 
 /// Check the full 7-bit IA5 repertoire and meter its byte scan.
@@ -12802,6 +13381,334 @@ mod tests {
                     let _ = decode_character_string_cer(&mutated, kind, &limits);
                 }
             }
+        }
+    }
+
+    /// Verify BER raw preservation, universal tag-4 fragments, and DER passthrough.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Exercises primitive aliases, constructed values, and suffix use.
+    ///
+    /// # Errors
+    /// Panics if valid BER is rejected or raw bytes change unexpectedly.
+    ///
+    /// # Source, version, history, example
+    /// Source: C `UTCTime` OCTET STRING adapter. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct `UTCTime` gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn utc_time_ber_and_der_preserve_raw_bytes_and_constructed_fragments() {
+        let limits = Limits::default();
+
+        // Raw invalid time bytes remain valid BER/DER content by C callback timing.
+        let raw = decode_utc_time_ber(&[0x17, 1, 0xff, 0x55], &limits).unwrap();
+        assert_eq!(raw.value.as_bytes(), [0xff]);
+        assert_eq!(raw.consumed_bytes, 3);
+        assert_eq!(
+            encode_utc_time_der(&raw.value, &limits).unwrap().bytes,
+            [0x17, 1, 0xff]
+        );
+
+        // Nested constructed tag-23 uses universal OCTET STRING tag-4 leaves.
+        let nested = [
+            0x37, 0x80, 0x24, 0x80, 0x04, 2, b'9', b'9', 0, 0, 0x04, 3, b'1', b'2', b'3', 0, 0,
+            0x55,
+        ];
+        let decoded = decode_utc_time_ber(&nested, &limits).unwrap();
+        assert_eq!(decoded.value.as_bytes(), b"99123");
+        assert_eq!(decoded.consumed_bytes, nested.len() - 1);
+        assert_eq!(decoded.consumed_bits, (nested.len() - 1) * 8);
+        assert_eq!(
+            encode_utc_time_der(&decoded.value, &limits).unwrap().bytes,
+            [0x17, 5, b'9', b'9', b'1', b'2', b'3']
+        );
+
+        // BER accepts empty constructed content and nonminimal high-tag aliases.
+        let empty = decode_utc_time_ber(&[0x37, 0x80, 0, 0], &limits).unwrap();
+        assert_eq!(empty.value.as_bytes(), []);
+        assert_eq!(
+            decode_utc_time_ber(&[0x1f, 0x17, 1, 0xff], &limits)
+                .unwrap()
+                .value
+                .as_bytes(),
+            [0xff]
+        );
+        let child_alias = [0x37, 0x80, 0x1f, 4, 1, b'A', 0, 0];
+        assert_eq!(
+            decode_utc_time_ber(&child_alias, &limits)
+                .unwrap()
+                .value
+                .as_bytes(),
+            b"A"
+        );
+    }
+
+    /// Cover UTC normalization, the 1950 pivot, zone arithmetic, and the epoch sentinel.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Encodes valid input forms and checks canonical CER content.
+    ///
+    /// # Errors
+    /// Panics if an accepted time fails or canonical bytes differ.
+    ///
+    /// # Source, version, history, example
+    /// Source: approved C CER `UTCTime` contract. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct `UTCTime` gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn utc_time_cer_normalizes_forms_and_epoch_boundary() {
+        let limits = Limits::default();
+        let cases: [(&[u8], &[u8]); 11] = [
+            (b"9912312359Z", b"991231235900Z"),
+            (b"5001010000Z", b"500101000000Z"),
+            (b"4912312359Z", b"491231235900Z"),
+            (b"0002291200Z", b"000229120000Z"),
+            (b"0001010000+0100", b"991231230000Z"),
+            (b"991231235959-0100", b"000101005959Z"),
+            (b"700101005959+0100", b"691231235959Z"),
+            (b"691231235959Z", b"691231235959Z"),
+            (b"991231235959+2359", b"991231000059Z"),
+            (b"4912312359+2359", b"491231000000Z"),
+            (b"5001010000-2359", b"500101235900Z"),
+        ];
+        for (input, expected) in cases {
+            let value = UtcTime::try_from_bytes(input, &limits).unwrap();
+            let encoded = encode_utc_time_cer(&value, &limits).unwrap();
+            assert_eq!(&encoded.bytes[..2], &[0x17, 13]);
+            assert_eq!(&encoded.bytes[2..], expected);
+            let decoded = decode_utc_time_cer(&encoded.bytes, &limits).unwrap();
+            assert_eq!(decoded.value.as_bytes(), expected);
+        }
+    }
+
+    /// Reject malformed `UTCTime` syntax, invalid dates, and unsupported UTC years.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Exercises all accepted lexical shapes and calendar edges.
+    ///
+    /// # Errors
+    /// Panics if malformed CER content is accepted.
+    ///
+    /// # Source, version, history, example
+    /// Source: C CER `UTCTime` parser. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct `UTCTime` gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn utc_time_cer_rejects_bad_fields_and_zone_window() {
+        let limits = Limits::default();
+        let invalid_values: [&[u8]; 15] = [
+            b"",
+            b"9912312359",
+            b"9912312359X",
+            b"9913312359Z",
+            b"9902291200Z",
+            b"9912312359Zjunk",
+            b"9912312359+0000Z",
+            b"9912312460Z",
+            b"991231235960Z",
+            b"9912312359+2400",
+            b"9912312359+0060",
+            b"9912312359-010",
+            b"9912312359+01000",
+            b"5001010000+0001",
+            b"4912312359-0001",
+        ];
+        for bytes in invalid_values {
+            let value = UtcTime::try_from_bytes(bytes, &limits).unwrap();
+            assert!(encode_utc_time_cer(&value, &limits).is_err(), "{bytes:?}");
+        }
+    }
+
+    /// Enforce strict canonical CER and exact prefix consumption.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Tests a canonical prefix, suffix, aliases, and constructed form.
+    ///
+    /// # Errors
+    /// Panics if noncanonical encodings are accepted or canonical input is rejected.
+    ///
+    /// # Source, version, history, example
+    /// Source: strict C CER re-encode comparison. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct `UTCTime` gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn utc_time_strict_cer_requires_canonical_prefix() {
+        let limits = Limits::default();
+        let canonical = [
+            0x17, 13, b'6', b'9', b'1', b'2', b'3', b'1', b'2', b'3', b'5', b'9', b'5', b'9', b'Z',
+        ];
+        let mut with_suffix = canonical.to_vec();
+        with_suffix.push(0x55);
+        let decoded = decode_utc_time_cer(&with_suffix, &limits).unwrap();
+        assert_eq!(decoded.value.as_bytes(), b"691231235959Z");
+        assert_eq!(decoded.consumed_bytes, canonical.len());
+        assert_eq!(decoded.consumed_bits, canonical.len() * 8);
+
+        let aliases: [&[u8]; 5] = [
+            &[
+                0x17, 11, b'6', b'9', b'1', b'2', b'3', b'1', b'2', b'3', b'5', b'9', b'Z',
+            ],
+            &[
+                0x17, 15, b'6', b'9', b'1', b'2', b'3', b'1', b'2', b'3', b'5', b'9', b'+', b'0',
+                b'0', b'0', b'0',
+            ],
+            &[
+                0x1f, 23, 13, b'6', b'9', b'1', b'2', b'3', b'1', b'2', b'3', b'5', b'9', b'5',
+                b'9', b'Z',
+            ],
+            &[
+                0x37, 0x80, 4, 13, b'6', b'9', b'1', b'2', b'3', b'1', b'2', b'3', b'5', b'9',
+                b'5', b'9', b'Z', 0, 0,
+            ],
+            &[0x37, 0x80, 0, 0],
+        ];
+        for input in aliases {
+            assert!(decode_utc_time_cer(input, &limits).is_err());
+        }
+    }
+
+    /// Check exact input, output, scratch, and cumulative work ceilings.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Tests constructor, DER, CER, BER, and strict CER boundaries.
+    ///
+    /// # Errors
+    /// Panics if an operation crosses its configured resource boundary.
+    ///
+    /// # Source, version, history, example
+    /// Source: shared scalar resource policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct `UTCTime` gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn utc_time_resource_limits_are_exact() {
+        let raw = b"691231235959Z";
+        let constructor_limits = Limits {
+            max_input_bytes: raw.len(),
+            max_output_bytes: raw.len(),
+            max_work_bits: raw.len() * 8,
+        };
+        let value = UtcTime::try_from_bytes(raw, &constructor_limits).unwrap();
+        assert!(UtcTime::try_from_bytes(
+            raw,
+            &Limits {
+                max_work_bits: raw.len() * 8 - 1,
+                ..constructor_limits
+            }
+        )
+        .is_err());
+
+        let der_limits = Limits {
+            max_input_bytes: raw.len(),
+            max_output_bytes: 15,
+            max_work_bits: 15 * 8,
+        };
+        assert!(encode_utc_time_der(&value, &der_limits).is_ok());
+        assert!(encode_utc_time_der(
+            &value,
+            &Limits {
+                max_work_bits: 15 * 8 - 1,
+                ..der_limits
+            }
+        )
+        .is_err());
+
+        let cer_limits = Limits {
+            max_input_bytes: raw.len(),
+            max_output_bytes: 15,
+            max_work_bits: (raw.len() + 15) * 8,
+        };
+        assert!(encode_utc_time_cer(&value, &cer_limits).is_ok());
+        assert!(encode_utc_time_cer(
+            &value,
+            &Limits {
+                max_work_bits: (raw.len() + 15) * 8 - 1,
+                ..cer_limits
+            }
+        )
+        .is_err());
+
+        let wire = [0x17, 1, 0xff];
+        let ber_limits = Limits {
+            max_input_bytes: wire.len(),
+            max_output_bytes: 1,
+            max_work_bits: 4 * 8,
+        };
+        assert!(decode_utc_time_ber(&wire, &ber_limits).is_ok());
+        assert!(decode_utc_time_ber(
+            &wire,
+            &Limits {
+                max_work_bits: 4 * 8 - 1,
+                ..ber_limits
+            }
+        )
+        .is_err());
+
+        let canonical = encode_utc_time_cer(&value, &Limits::default()).unwrap();
+        let strict_limits = Limits {
+            max_input_bytes: canonical.bytes.len(),
+            max_output_bytes: canonical.bytes.len(),
+            max_work_bits: 568,
+        };
+        assert!(decode_utc_time_cer(&canonical.bytes, &strict_limits).is_ok());
+        assert!(decode_utc_time_cer(
+            &canonical.bytes,
+            &Limits {
+                max_work_bits: 567,
+                ..strict_limits
+            }
+        )
+        .is_err());
+        assert!(encode_utc_time_der_bytes(
+            b"A",
+            MAX_CHARACTER_STRING_SCRATCH_BYTES - 3,
+            &Limits::default()
+        )
+        .is_ok());
+        assert!(encode_utc_time_der_bytes(
+            b"A",
+            MAX_CHARACTER_STRING_SCRATCH_BYTES - 2,
+            &Limits::default()
+        )
+        .is_err());
+    }
+
+    /// Mutate `UTCTime` BER headers and truncate valid DER without panicking.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Exercises every byte mutation and every strict prefix.
+    ///
+    /// # Errors
+    /// Panics only if a decoder unwinds on mutated untrusted input.
+    ///
+    /// # Source, version, history, example
+    /// Source: BER parser mutation hardening. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct `UTCTime` gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn utc_time_mutations_and_truncations_do_not_panic() {
+        let limits = Limits::default();
+        let value = UtcTime::try_from_bytes(b"991231235959Z", &limits).unwrap();
+        let wire = encode_utc_time_der(&value, &limits).unwrap().bytes;
+        for end in 0..wire.len() {
+            let prefix = &wire[..end];
+            let _ = decode_utc_time_ber(prefix, &limits);
+            let _ = decode_utc_time_cer(prefix, &limits);
+        }
+        for index in 0..wire.len() {
+            for byte in 0_u8..=u8::MAX {
+                let mut mutated = wire.clone();
+                mutated[index] = byte;
+                let _ = decode_utc_time_ber(&mutated, &limits);
+                let _ = decode_utc_time_cer(&mutated, &limits);
+            }
+        }
+        for malformed in [
+            &[0x37, 0x80, 0, 1, 0][..],
+            &[0x37, 0x80, 0x17, 0, 0, 0][..],
+            &[0x37, 0x80, 0x04, 1, b'A'][..],
+            &[0x17, 0x80][..],
+        ] {
+            assert!(decode_utc_time_ber(malformed, &limits).is_err());
         }
     }
 }

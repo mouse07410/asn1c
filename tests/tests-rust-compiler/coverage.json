@@ -150,6 +150,25 @@
       "evidence": "RestrictedStrings.asn1; restricted_strings_conformance.rs; c_restricted_strings.c"
     },
     {
+      "asn1_type": "UTCTime",
+      "feature": "direct untagged unconstrained root; raw BER/DER and canonical UTC CER",
+      "codec": "BER/DER and CER only",
+      "variants": [
+        "all four allowed source lengths, omitted seconds, year pivot, leap years, and numeric zones",
+        "checked Gregorian conversion accepts the 1969-12-31 23:59:59 time_t sentinel instant",
+        "constructed BER fragments; wire identifier aliases rejected by strict CER",
+        "raw malformed bytes retained by BER/DER; CER invalid syntax, bounds, and resource limits"
+      ],
+      "directions": [
+        "DER encode",
+        "BER prefix decode",
+        "CER normalize and encode",
+        "strict CER prefix decode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "UtcTimeValues.asn1; utc_time_conformance.rs; c_utc_time.c"
+    },
+    {
       "asn1_type": "BIT STRING, OCTET STRING",
       "feature": "direct untagged unconstrained root values",
       "codec": "BER/DER and CER only",
@@ -717,7 +736,8 @@
       "direct unbounded BIT/OCTET STRING with named bits, CONTAINING, explicit SIZE, tags, aliases, fields, imports, or non-BER/CER-only codec selection",
       "direct unbounded OBJECT IDENTIFIER and RELATIVE-OID with tags, constraints, aliases, fields, imports, or non-BER/CER-only codec selection",
       "direct unconstrained IA5String with tags, constraints, aliases, fields, imports, or non-BER/CER-only codec selection",
-      "direct restricted character strings with tags, constraints, aliases, fields, imports, CHARACTER STRING, or non-BER/CER-only codec selection"
+      "direct restricted character strings with tags, constraints, aliases, fields, imports, CHARACTER STRING, or non-BER/CER-only codec selection",
+      "direct UTCTime with tags, constraints, aliases, fields, imports, or non-BER/CER-only codec selection; GeneralizedTime"
     ],
     "output_safety": [
       "unowned destination preservation",
@@ -731,7 +751,7 @@
     ]
   },
   "observed_counts": {
-    "generated_rust_test_functions": 165,
+    "generated_rust_test_functions": 170,
     "live_c_rust_vectors_each_direction": 8,
     "single_octet_mutation_inputs": 796,
     "JER_single_octet_mutation_inputs": 256,
@@ -760,6 +780,8 @@
     "IA5_truncated_prefix_inputs": 1011,
     "live_C_restricted_string_vectors_each_direction": 78,
     "live_C_restricted_string_invalid_CER_vectors": 7,
-    "restricted_string_constructed_BER_types": 13
+    "restricted_string_constructed_BER_types": 13,
+    "live_C_UTCTime_vectors_each_direction": 9,
+    "live_C_UTCTime_invalid_CER_vectors": 5
   }
 }

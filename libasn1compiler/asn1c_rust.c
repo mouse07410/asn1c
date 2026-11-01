@@ -93,6 +93,7 @@ static int rust_check_oid_codecs(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_ia5_codecs(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_character_string(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static const char *rust_character_string_kind(asn1p_expr_t *);
+static int rust_check_utc_time(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static asn1p_expr_t *rust_contained_primitive(asn1p_module_t *, asn1p_expr_t *);
 static const asn1p_constraint_t *rust_containing_node(const asn1p_constraint_t *, unsigned);
 static int rust_write_containing(FILE *, const char *, asn1p_expr_t *, asn1p_expr_t *, uint64_t);
@@ -181,6 +182,8 @@ static int rust_write_ia5_string(FILE *, const char *, uint64_t);
 static int rust_write_ia5_string_ber_cer(FILE *, int);
 static int rust_write_character_string(FILE *, const char *, asn1p_expr_t *, uint64_t);
 static int rust_write_character_string_ber_cer(FILE *, const char *, int);
+static int rust_write_utc_time(FILE *, const char *, uint64_t);
+static int rust_write_utc_time_ber_cer(FILE *, int);
 static int rust_write_bounded_octets(FILE *, const char *, size_t, size_t,
                                     uint64_t);
 static int rust_write_bounded_octets_uper(FILE *, size_t, size_t);
@@ -938,6 +941,30 @@ rust_check_character_string(asn1p_module_t *module, asn1p_expr_t *expr,
     return -1;
 }
 
+/* Validate one direct untagged UTCTime assignment and codec selection.
+ * Inputs: module/expr identify the fixed parser-tree root; codecs is selected.
+ * Returns zero for a supported raw root or -1 with a source diagnostic.
+ * Errors: no exception. Source: approved UTCTime BER/CER gate.
+ * Version/date: 2026-11-01. Responsible: asn1c maintainers. History: direct
+ * universal tag 23 support. Example: BER plus CER is accepted.
+ */
+static int
+rust_check_utc_time(asn1p_module_t *module, asn1p_expr_t *expr,
+                    uint64_t codecs) {
+    const uint64_t ber_cer = RUST_CODEC_BER | RUST_CODEC_CER;
+    if(expr->constraints || expr->combined_constraints || expr->reference
+       || expr->rhs_pspecs || expr->marker.flags != EM_NOMARK
+       || expr->lhs_params || expr->ioc_table || expr->members.tq_head) {
+        rust_diagnostic(module, expr,
+                        "UTCTime requires a direct untagged unconstrained root");
+        return -1;
+    }
+    if(codecs && !(codecs & ~ber_cer)) return 0;
+    rust_diagnostic(module, expr,
+                    "UTCTime requires BER/CER-only codec selection");
+    return -1;
+}
+
 /*
  * Reject one unsupported type before output publication.
  * Parameters: module and expr identify the fixed assignment; codecs is the
@@ -1052,6 +1079,8 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
     }
     if(rust_character_string_kind(expr))
         return rust_check_character_string(module, expr, codecs);
+    if(expr->expr_type == ASN_BASIC_UTCTime)
+        return rust_check_utc_time(module, expr, codecs);
     if(expr->expr_type == ASN_BASIC_OCTET_STRING) {
         size_t lower, upper;
         if(!expr->constraints && !expr->combined_constraints)
@@ -3604,6 +3633,8 @@ rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
         ret = rust_write_ia5_string(stream, name, codecs);
     } else if(rust_character_string_kind(expr)) {
         ret = rust_write_character_string(stream, name, expr, codecs);
+    } else if(expr->expr_type == ASN_BASIC_UTCTime) {
+        ret = rust_write_utc_time(stream, name, codecs);
     } else {
         int64_t lower, upper;
         if(rust_integer_bounds(expr, &lower, &upper)) ret = -1;
@@ -7151,6 +7182,108 @@ rust_write_character_string_ber_cer(FILE *stream, const char *kind, int cer) {
         "            input, ::asn1c_runtime::CharacterStringKind::%s, limits\n"
         "        ).map(|decoded| decoded.map(Self))\n    }\n",
         suffix, suffix, kind) < 0)
+        return -1;
+    return 0;
+}
+
+/* Emit a private raw-byte wrapper for one fixed ASN.1 UTCTime root.
+ * Inputs: stream receives Rust; name is the generated assignment; codecs is
+ * a validated BER/CER selection. Returns zero or -1 on write failure.
+ * Errors: generated methods propagate validation and limit errors.
+ * Source: approved UtcTime runtime API. Version/date: 2026-11-01.
+ * Responsible: asn1c maintainers. History: direct tag 23 root.
+ * Example: rust_write_utc_time(stream, "Timestamp", RUST_CODEC_CER).
+ */
+static int
+rust_write_utc_time(FILE *stream, const char *name, uint64_t codecs) {
+    if(fprintf(stream,
+        "/// Direct ASN.1 `UTCTime` with private raw-byte storage.\n"
+        "#[derive(Debug, Eq, PartialEq)]\n"
+        "pub struct %s(\n"
+        "    /// Owned `UTCTime` content state variable.\n"
+        "    ::asn1c_runtime::UtcTime\n"
+        ");\n\nimpl %s {\n", name, name) < 0)
+        return -1;
+    if(rust_write_method_doc(stream, "Construct an owned `UTCTime` from raw bytes.",
+            "`bytes` is raw content; `limits` bounds input, storage, and work.",
+            "Returns privately owned content without validating time syntax.",
+            "Returns an error if input or allocation exceeds configured limits.",
+            "`let value = Type::try_from_bytes(b\"9912312359Z\", &limits)?;"))
+        return -1;
+    if(fputs("    pub fn try_from_bytes(\n"
+             "        bytes: &[u8], limits: &::asn1c_runtime::Limits\n"
+             "    ) -> ::core::result::Result<Self, ::asn1c_runtime::Error> {\n"
+             "        ::asn1c_runtime::UtcTime::try_from_bytes(bytes, limits)\n"
+             "            .map(Self)\n    }\n", stream) == EOF)
+        return -1;
+    if(rust_write_method_doc(stream, "Borrow the stored `UTCTime` content bytes.",
+            "`self` is the value to inspect.",
+            "Returns raw content without copying.", "This accessor cannot fail.",
+            "`let bytes = value.as_bytes();"))
+        return -1;
+    if(fputs("    #[must_use]\n"
+             "    pub fn as_bytes(&self) -> &[u8] { self.0.as_bytes() }\n",
+             stream) == EOF)
+        return -1;
+    if((codecs & RUST_CODEC_BER) && rust_write_utc_time_ber_cer(stream, 0)) return -1;
+    if((codecs & RUST_CODEC_CER) && rust_write_utc_time_ber_cer(stream, 1)) return -1;
+    return fputs("}\n\n", stream) == EOF ? -1 : 0;
+}
+
+/* Emit the selected DER/BER or canonical CER method pair for UTCTime.
+ * Inputs: stream receives Rust; cer selects CER instead of BER/DER.
+ * Returns zero or -1 on output failure. Runtime failures remain typed errors.
+ * Source: UtcTime runtime API. Version/date: 2026-11-01.
+ * Responsible: asn1c maintainers. History: codec-selective time output.
+ * Example: rust_write_utc_time_ber_cer(stream, 1) emits strict CER methods.
+ */
+static int
+rust_write_utc_time_ber_cer(FILE *stream, int cer) {
+    const char *suffix = cer ? "cer" : "ber";
+    const char *encode = cer ? "cer" : "der";
+    const char *description = cer
+        ? "Encode this value as normalized canonical CER `UTCTime`."
+        : "Encode this value as raw DER `UTCTime` without syntax validation.";
+    const char *decode_description = cer
+        ? "Strictly decode one canonical CER `UTCTime` TLV and report prefix use."
+        : "Decode one BER `UTCTime` TLV and report exact prefix consumption.";
+    const char *encode_result = cer
+        ? "Returns an error for invalid dates, zones, or limits."
+        : "Returns an error if output or work exceeds configured limits.";
+    const char *decode_result = cer
+        ? "Returns an error for invalid/noncanonical time text or exhausted limits."
+        : "Returns an error for malformed BER framing or exhausted limits.";
+    const char *decode_value = cer
+        ? "Returns normalized time content and exact consumed byte and bit counts."
+        : "Returns raw time content and exact consumed byte and bit counts.";
+    const char *encode_example = cer
+        ? "`let encoded = value.encode_cer(&Default::default())?;"
+        : "`let encoded = value.encode_der(&Default::default())?;";
+    const char *decode_example = cer
+        ? "`let decoded = Type::decode_cer(input, &Default::default())?;"
+        : "`let decoded = Type::decode_ber(input, &Default::default())?;";
+    if(rust_write_method_doc(stream, description,
+            "`self` is the time; `limits` bounds output and work.",
+            "Returns a complete universal tag 23 TLV.", encode_result, encode_example))
+        return -1;
+    if(fprintf(stream,
+        "    pub fn encode_%s(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, "
+        "::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::encode_utc_time_%s(&self.0, limits)\n"
+        "    }\n", encode, encode) < 0)
+        return -1;
+    if(rust_write_method_doc(stream, decode_description,
+            "`input` is a prefix; `limits` bounds input, retained bytes, and work.",
+            decode_value,
+            decode_result, decode_example)) return -1;
+    if(fprintf(stream,
+        "    pub fn decode_%s(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, "
+        "::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::decode_utc_time_%s(input, limits)\n"
+        "            .map(|decoded| decoded.map(Self))\n    }\n",
+        suffix, suffix) < 0)
         return -1;
     return 0;
 }

@@ -406,3 +406,14 @@ sequence split across a CER fragment, nested definite/indefinite BER, malformed
 children and EOCs, prefix consumption, repertoire failures, truncation, and
 limits. Aliases, tags, constraints, fields, imports, CHARACTER STRING, and
 mixed or non-BER/CER codec selection fail before output publication.
+
+`UtcTimeValues.asn1`, `utc_time_conformance.rs`, and `c_utc_time.c` compare raw
+BER/DER preservation and canonical CER normalization for the direct untagged
+`UTCTime` root. Coverage includes omitted seconds, all four allowed input
+lengths, positive and negative offsets, leap years, the 1950/2049 pivot,
+constructed BER tag-4 fragments, wire identifier aliases, malformed time text, exact prefix
+consumption, and resource limits. Rust uses checked Gregorian arithmetic and
+accepts `691231235959Z`; C's `time_t == -1` sentinel rejects that instant on
+this path, so the vector records an intentional compatibility divergence.
+ASN.1 aliases, fields, imports, tags, constraints, GeneralizedTime, and mixed or
+non-BER/CER codec selections fail before publication.

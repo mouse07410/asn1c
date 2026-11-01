@@ -1,4 +1,8 @@
 Changes since v1.5.3:
+	* Add direct untagged UTCTime Rust BER/DER/CER roots under BER/CER-only
+	  selection. Preserve raw BER/DER content, normalize valid CER values to
+	  seconds and Z using checked Gregorian arithmetic, reject noncanonical
+	  CER framing, and compare generated C/Rust vectors and invalid inputs.
 	* Extend direct Rust BER/DER/CER roots to the C-supported restricted
 	  character strings under BER/CER-only selection. Preserve raw BER/DER
 	  bytes, apply each C descriptor's CER repertoire or alignment rule,

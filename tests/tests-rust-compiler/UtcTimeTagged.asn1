@@ -1,0 +1,3 @@
+UtcTimeTagged DEFINITIONS ::= BEGIN
+Value ::= [0] IMPLICIT UTCTime
+END

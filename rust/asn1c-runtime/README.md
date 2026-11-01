@@ -193,6 +193,19 @@ then uses 1000-byte fragments. UTF8 validation runs after BER reassembly, so a
 sequence may cross a fragment boundary. Strict CER re-encoding and comparison
 share cumulative input, output, work, and scratch limits.
 
+`UtcTime` owns raw UTCTime content bytes. Its fallible constructor and
+`as_bytes` accessor do not apply time syntax checks. `decode_utc_time_ber` accepts
+primitive or nested constructed tag-23 values with universal tag-4 fragments,
+preserves the raw content, and reports exact prefix consumption;
+`encode_utc_time_der` preserves those bytes in primitive tag 23. CER encoding
+validates the permitted 11/13/15/17-byte forms, Gregorian date and clock,
+1950/2049 year pivot, and numeric zone, then converts to UTC and writes exactly
+`YYMMDDhhmmssZ`. Strict CER decoding re-encodes and compares only the consumed
+prefix. Calendar conversion uses checked Gregorian arithmetic, so the valid UTC
+instant 1969-12-31 23:59:59 is accepted even where the C `time_t == -1` sentinel
+rejects it. Input, output, retained capacity, scratch, and cumulative work limits
+apply to the UTCTime operations.
+
 `RecordContext`, `SequenceReader`, `SequenceWriter`, `SetReader`, and `SetWriter`
 compose flat SEQUENCE and SET values with direct BOOLEAN, NULL,
 ENUMERATED, bounded INTEGER, and bounded BIT/OCTET STRING fields under one

@@ -193,6 +193,16 @@ and may split a UTF8 sequence between tag-4 children; validation follows
 reassembly. The C compatibility target does not establish X.690 escape-state
 canonicality for the permissive legacy types. Tagged, constrained, aliased,
 imported, and member character strings remain outside the Rust slice.
+Direct untagged, unconstrained UTCTime roots support BER prefix decoding, DER
+encoding, CER encoding, and strict CER decoding under BER/CER-only selection.
+BER accepts raw and constructed tag-23 content with universal tag-4 children;
+DER preserves the raw bytes. CER accepts valid 1950 through 2049 Gregorian
+times in the C-supported seconds-optional, Z-or-numeric-zone syntax, converts
+the zone to UTC, and emits primitive `YYMMDDhhmmssZ`. Strict CER rejects
+noncanonical text or framing. Checked calendar arithmetic accepts the valid
+1969-12-31 23:59:59 UTC instant that C rejects through a `time_t == -1`
+sentinel. Tagged, constrained, aliased, imported, and member UTCTime forms
+and GeneralizedTime remain outside this Rust slice.
 Flat SET records with an untagged outer type and the same six direct field kinds are
 available when only BER and/or CER are selected. BER accepts members in any
 order; DER/CER emits them by ascending effective tag class and number, and strict CER rejects

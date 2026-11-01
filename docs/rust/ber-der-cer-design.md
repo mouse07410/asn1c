@@ -7,8 +7,8 @@ runtime currently supplies BER prefix decoding and DER and CER encoding, plus
 strict CER prefix decoding, for BOOLEAN, NULL, finite bounded `i64` INTEGER,
 unconstrained arbitrary-precision INTEGER, direct finite ENUMERATED, direct
 unconstrained OBJECT IDENTIFIER and RELATIVE-OID, and fixed, bounded, or direct
-unconstrained BIT/OCTET STRING values, and direct untagged restricted character
-strings. See
+unconstrained BIT/OCTET STRING values, direct untagged restricted character
+strings, and direct UTCTime. See
 `rust/asn1c-runtime/README.md` and
 `libasn1compiler/asn1c_rust.c`. The generator rejects many schemas supported by
 C, including imports, references, most root tags, and multi-tag stacks. These
@@ -466,6 +466,78 @@ values, 127/128 and 999/1000/1001 length transitions, nested definite and
 indefinite BER, high-tag aliases, wrong fragment tags and EOCs, suffixes,
 truncation at every boundary, mutations, exact limits, and live C vectors.
 All excluded schema shapes must fail before output publication.
+
+### Direct UTCTime (qualified initial gate)
+
+Support only direct, untagged, unconstrained top-level `UTCTime` with universal
+tag 23 under BER/CER-only selection. Keep `GeneralizedTime`, aliases, imports,
+fields, tags, constraints, and other codec combinations gated. The public
+`UtcTime` value owns private raw bytes through a fallible, limit-checked
+constructor and exposes a borrowed byte accessor. It has no infallible clone.
+BER prefix decoding returns exact consumption and accepts primitive or nested
+constructed tag-23 values with universal tag-4 primitive fragments, following
+the C OCTET STRING decoder. BER accepts raw content without checking the time
+syntax. DER emission preserves those bytes in primitive definite tag 23,
+matching the C DER callback, even when the contents are not a valid time.
+
+CER encoding validates and normalizes complete content as the C CER adapter
+does: `YYMMDDhhmm[ss]` followed by `Z` or a numeric `+/-hhmm` offset;
+Gregorian dates and clock components must be valid; the year pivot is 50
+(1950 through 2049); absent seconds become `00`; the zone converts to UTC;
+and the normalized year must remain in the 1950 through 2049 window. Encode
+the result as primitive definite tag 23 with exactly `YYMMDDhhmmssZ` content.
+Strict CER prefix decoding parses BER, normalizes, reencodes, and compares the
+exact consumed prefix. No CER fragmentation is needed because normalized
+content is always 13 bytes. Bound input, retained content, canonical output,
+temporary scratch, and cumulative work with the shared operation limits.
+Calendar conversion must use checked Gregorian arithmetic rather than a
+process-local timezone or machine `time_t`.
+
+The C time conversion routine uses `time_t == -1` as an error sentinel and
+therefore rejects the valid instant 1969-12-31 23:59:59 UTC in some paths.
+Rust accepts that instant under checked calendar arithmetic. Record this as
+an intentional standards-correct C divergence; do not propagate a sentinel
+bug into the Rust value model. The acceptance gate includes each allowed
+length, leap years and invalid dates, the 1950/2049 pivot and zone-crossing
+limits, positive and negative offsets, the epoch sentinel case, arbitrary
+BER bytes, constructed BER, malformed TLV/EOC/fragments, high-tag aliases,
+suffixes, truncation, mutations, exact resource limits, C differential
+vectors, strict Clippy, and fail-before-publication generator negatives.
+
+### Direct GeneralizedTime (qualified initial gate)
+
+Support only direct, untagged, unconstrained top-level `GeneralizedTime`
+with universal tag 24 under BER/CER-only selection. BER prefix decoding keeps
+arbitrary raw content bytes, including nested constructed tag-24 forms with
+universal tag-4 fragments. A private owned value has a fallible bounded
+constructor and borrowed byte accessor, without infallible clone.
+
+Unlike UTCTime, the C DER adapter canonicalizes GeneralizedTime. For this
+initial deterministic gate, DER and CER encoding require an explicit `Z`,
+`+hh`, `-hh`, `+hhmm`, or `-hhmm` zone. Accept a four-digit year from 0001
+through 9999, valid Gregorian date and clock, optional complete minute and
+second pairs, and a one-through-nine-digit fraction only after seconds.
+Accept `.` or `,` in source text. Normalize the zone with checked calendar
+arithmetic and emit primitive tag 24 with
+`YYYYMMDDhhmmss[.fraction]Z`, dropping an all-zero fraction and trailing
+fractional zeros. Reject conversion outside the four-digit year window.
+Strict CER prefix decoding compares the canonical encoding against exactly
+the consumed BER prefix under one input, retained value, output, scratch,
+and cumulative work budget. The canonical content is at most 25 octets, so
+CER string fragmentation does not apply.
+
+This is a qualified interoperability subset, not complete C DER behavior:
+the C adapter interprets zoneless text through the process timezone, may
+normalize invalid dates and clock fields, and may truncate fractions longer
+than nine digits. These behaviors depend on platform state or silently lose
+information; the initial Rust DER gate rejects them. C also rejects the
+valid instant 1969-12-31 23:59:59 UTC through its `time_t == -1` sentinel;
+Rust accepts it. The nine-digit limit is the C CER adapter's effective
+precision limit, not a general X.690 bound. Tests must separate C-compatible
+valid zoned vectors from these documented divergences and cover raw BER,
+constructed/tag aliases, optional fields, both zone signs and widths,
+fractions and trimming, leap/year edges, invalid text, malformed TLV,
+prefixes, limits, mutations, and negative generator shapes.
 
 ## Decisions still required
 

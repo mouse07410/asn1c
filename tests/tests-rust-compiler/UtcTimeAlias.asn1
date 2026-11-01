@@ -1,0 +1,4 @@
+UtcTimeAlias DEFINITIONS ::= BEGIN
+Base ::= UTCTime
+Alias ::= Base
+END
