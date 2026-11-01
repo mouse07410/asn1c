@@ -1,0 +1,35 @@
+NestedSetChildren DEFINITIONS ::= BEGIN
+
+SequenceNatural ::= SEQUENCE {
+    child SET { y [1] IMPLICIT BOOLEAN, x [0] IMPLICIT INTEGER (0..10) }
+}
+
+SequenceImplicit ::= SEQUENCE {
+    child [3] IMPLICIT SET { y [1] IMPLICIT BOOLEAN, x [0] IMPLICIT INTEGER (0..10) }
+}
+
+SequenceExplicit ::= SEQUENCE {
+    child [3] EXPLICIT SET { y [1] IMPLICIT BOOLEAN, x [0] IMPLICIT INTEGER (0..10) }
+}
+
+SetExplicit ::= SET {
+    after [4] IMPLICIT BOOLEAN,
+    child [3] EXPLICIT SET { y [1] IMPLICIT BOOLEAN, x [0] IMPLICIT INTEGER (0..10) }
+}
+
+SequenceOptional ::= SEQUENCE {
+    child [3] EXPLICIT SET { y [1] IMPLICIT BOOLEAN, x [0] IMPLICIT INTEGER (0..10) } OPTIONAL
+}
+
+SequenceLeaves ::= SEQUENCE {
+    child SET {
+        flag [0] IMPLICIT BOOLEAN,
+        number [1] IMPLICIT INTEGER (-2..5),
+        bits [2] IMPLICIT BIT STRING (SIZE(1..8)),
+        octets [3] IMPLICIT OCTET STRING (SIZE(1..3)),
+        nothing [4] IMPLICIT NULL,
+        state [5] IMPLICIT ENUMERATED { off(0), on(1) }
+    }
+}
+
+END

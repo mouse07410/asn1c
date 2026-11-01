@@ -157,6 +157,19 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/NestedBerCer.asn1 \
     $(srcdir)/NestedEmptyBerCer.asn1 \
     $(srcdir)/NestedSetBerCer.asn1 \
+    $(srcdir)/NestedSetChildren.asn1 \
+    $(srcdir)/NestedSetEmpty.asn1 \
+    $(srcdir)/NestedSetNested.asn1 \
+    $(srcdir)/NestedSetMultiple.asn1 \
+    $(srcdir)/NestedSetDefault.asn1 \
+    $(srcdir)/NestedSetExtension.asn1 \
+    $(srcdir)/NestedSetAlias.asn1 \
+    $(srcdir)/NestedSetLeafAlias.asn1 \
+    $(srcdir)/NestedSetImport.asn1 \
+    $(srcdir)/NestedSetImportSource.asn1 \
+    $(srcdir)/NestedSetTaggedRoot.asn1 \
+    $(srcdir)/nested_set_children_conformance.rs \
+    $(srcdir)/c_nested_set_child.c \
     $(srcdir)/SetBerCer.asn1 \
     $(srcdir)/SetBerCerC.asn1 \
     $(srcdir)/ExtensibleEnum.asn1 \

@@ -1,0 +1,4 @@
+NestedSetAlias DEFINITIONS ::= BEGIN
+Child ::= SET { value INTEGER }
+Root ::= SEQUENCE { child Child }
+END

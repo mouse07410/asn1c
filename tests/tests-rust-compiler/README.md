@@ -476,3 +476,23 @@ before an output crate is published.
 Root SIZE constraints, root or element tags, aliases, imports, fields, nested
 types, extensions, unsupported constraints, and mixed or non-BER/CER codecs
 fail before output publication.
+
+One nonempty inline SET child is supported inside an untagged top-level
+SEQUENCE or BER/CER SET root. Child SET output sorts by effective tag,
+independently of a containing SET's field order, while BER decoding accepts
+unordered child and parent members. Natural, context-specific IMPLICIT, and one
+EXPLICIT child wrappers are covered, including all six primitive leaf kinds
+and optional child absence. Nested SETs, multiple constructed children, empty
+SET children, DEFAULT/extension fields, aliases/imports, tagged roots, and mixed codec
+selection fail before output publication. A nested SET selects a shared nested
+record context even when an OPTIONAL child is absent.
+
+`NestedSetChildren.asn1`, `nested_set_children_conformance.rs`, and
+`c_nested_set_child.c` compare C and Rust DER/CER bytes and decoded values.
+They cover canonical child and parent tag order, BER acceptance and strict CER
+rejection of isolated order reversals, explicit-wrapper framing, prefixes,
+malformed boundaries, and resource limits. Rust BER accepts two validly framed
+mixed definite/indefinite EXPLICIT wrapper combinations that the C BER adapter
+rejects; the fixture records this implementation divergence separately from
+canonical wire parity. Empty inline SET children remain excluded because the
+current C generator produces invalid C output for that schema.

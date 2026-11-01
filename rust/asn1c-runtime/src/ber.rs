@@ -607,6 +607,8 @@ pub enum FieldKind {
     Enumerated,
     /// Inline constructed SEQUENCE record content.
     Sequence,
+    /// Inline constructed SET record content.
+    Set,
 }
 
 /// Wire tagging mode stored in a checked record descriptor.
@@ -640,6 +642,7 @@ impl FieldKind {
             Self::Null => TAG_NULL,
             Self::Enumerated => TAG_ENUMERATED,
             Self::Sequence => TAG_SEQUENCE,
+            Self::Set => TAG_SET,
         }
     }
 }
@@ -812,6 +815,7 @@ const fn field_kind_for_universal(tag: u64) -> Option<FieldKind> {
         TAG_NULL => Some(FieldKind::Null),
         TAG_ENUMERATED => Some(FieldKind::Enumerated),
         TAG_SEQUENCE => Some(FieldKind::Sequence),
+        TAG_SET => Some(FieldKind::Set),
         _ => None,
     }
 }
@@ -1176,7 +1180,7 @@ pub struct RecordContext {
     nested_accounting: bool,
 }
 
-/// One field header and content span in a flat SEQUENCE.
+/// One field header and content span in a flat SEQUENCE or SET.
 #[derive(Clone, Copy)]
 struct FieldSpan {
     /// Effective identifier of the current field.
@@ -1284,7 +1288,7 @@ impl RecordContext {
 
     /// Create one operation context with nested-record scratch accounting.
     ///
-    /// Generated types containing an inline SEQUENCE use this at the public
+    /// Generated types containing an inline record use this at the public
     /// operation boundary, even when the child is OPTIONAL and absent.
     ///
     /// # Parameters and returns
@@ -1296,7 +1300,7 @@ impl RecordContext {
     ///
     /// # Source, version, history, example
     /// Source: compatible nested record policy. Version: 2026-11-01.
-    /// Responsible: asn1c maintainers. History: inline SEQUENCE support.
+    /// Responsible: asn1c maintainers. History: inline nested-record support.
     /// Example: `let mut context = RecordContext::new_nested(&limits);`.
     #[must_use]
     pub const fn new_nested(limits: &Limits) -> Self {
@@ -1381,7 +1385,7 @@ impl RecordContext {
     /// Reserve one or more bounded nested record layers.
     ///
     /// # Parameters and returns
-    /// `layers` counts nested SEQUENCE and EXPLICIT wrapper levels. Returns
+    /// `layers` counts nested record and EXPLICIT wrapper levels. Returns
     /// success when the cumulative depth remains within `MAX_DEPTH`.
     ///
     /// # Errors
@@ -1602,15 +1606,16 @@ impl SequenceWriter<'_> {
     ///
     /// # Source, version, history, example
     /// Source: shared nested record operation context. Version: 2026-11-01.
-    /// Responsible: asn1c maintainers. History: inline SEQUENCE support.
-    /// Example: called only from `write_nested_sequence`.
+    /// Responsible: asn1c maintainers. History: nested-record support.
+    /// Example: called by nested SEQUENCE and SET writers.
     fn new_nested_writer(
         rule: RecordEncoding,
         context: &mut RecordContext,
         parent_capacity: usize,
+        kind: RecordKind,
     ) -> Result<SequenceWriter<'_>, Error> {
         check_combined_capacities(parent_capacity, 2, context.retained_capacity)?;
-        let mut writer = Self::new_with_kind(rule, context, RecordKind::Sequence)?;
+        let mut writer = Self::new_with_kind(rule, context, kind)?;
         writer.parent_capacity = Some(parent_capacity);
         writer.check_actual_nested_storage()?;
         Ok(writer)
@@ -1692,6 +1697,37 @@ impl SequenceWriter<'_> {
         result
     }
 
+    /// Encode one inline SET child using the parent operation context.
+    ///
+    /// # Parameters and returns
+    /// `field` selects the natural, IMPLICIT, or EXPLICIT child SET tag;
+    /// `encode` writes its fields through a tag-sorted child `SetWriter`.
+    /// Returns success after transactional parent commit.
+    ///
+    /// # Errors
+    /// Returns invalid field kind/tag, callback, ordering, resource, size, or
+    /// allocation errors. Parent bytes and field state remain unchanged on failure.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 inline SET writer. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: nested SET gate.
+    /// Example: `writer.write_nested_set(field, |child| child.write_boolean(true))?`.
+    pub fn write_nested_set<F>(&mut self, field: RecordField, encode: F) -> Result<(), Error>
+    where
+        F: FnOnce(&mut SetWriter<'_>) -> Result<(), Error>,
+    {
+        if field.kind != FieldKind::Set {
+            return Err(invalid("nested record descriptor must have SET kind"));
+        }
+        validate_field_mode(field.tag, field.kind, field.tagging)?;
+        let layers = 1 + usize::from(field.tagging == TaggingMode::Explicit);
+        self.context.enter_nested(layers)?;
+        let parent_capacity = self.bytes.capacity();
+        let result = self.write_nested_set_inner(field, encode, parent_capacity);
+        self.context.leave_nested(layers);
+        result
+    }
+
     /// Build a child value, apply its tag mode, then append it transactionally.
     ///
     /// # Parameters and returns
@@ -1715,9 +1751,70 @@ impl SequenceWriter<'_> {
     where
         F: FnOnce(&mut SequenceWriter<'_>) -> Result<(), Error>,
     {
-        let mut child = Self::new_nested_writer(self.rule, self.context, parent_capacity)?;
+        let mut child = Self::new_nested_writer(
+            self.rule,
+            self.context,
+            parent_capacity,
+            RecordKind::Sequence,
+        )?;
         encode(&mut child)?;
-        let mut encoded = child.finish()?;
+        let encoded = child.finish()?;
+        self.commit_nested_child(field, encoded, parent_capacity)
+    }
+
+    /// Build and commit a child SET while retaining the parent buffer.
+    ///
+    /// # Parameters and returns
+    /// `field` describes the child; `encode` writes through `SetWriter`;
+    /// `parent_capacity` is retained during child construction. Returns success.
+    ///
+    /// # Errors
+    /// Returns callback, tag/order, resource, size, or allocation errors.
+    /// Parent state changes only after the complete child passes all checks.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET child output. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: inline SET gate.
+    /// Example: called by `write_nested_set`.
+    fn write_nested_set_inner<F>(
+        &mut self,
+        field: RecordField,
+        encode: F,
+        parent_capacity: usize,
+    ) -> Result<(), Error>
+    where
+        F: FnOnce(&mut SetWriter<'_>) -> Result<(), Error>,
+    {
+        let child_writer =
+            Self::new_nested_writer(self.rule, self.context, parent_capacity, RecordKind::Set)?;
+        let mut child = SetWriter {
+            inner: child_writer,
+        };
+        encode(&mut child)?;
+        let encoded = child.finish()?;
+        self.commit_nested_child(field, encoded, parent_capacity)
+    }
+
+    /// Apply child tagging and append a completed nested record transactionally.
+    ///
+    /// # Parameters and returns
+    /// `field` describes effective tag/mode; `encoded` is a complete child;
+    /// `parent_capacity` remains live. Returns success after state commit.
+    ///
+    /// # Errors
+    /// Returns tagging, order, output/scratch, checked-size, or allocation errors.
+    /// No parent state is changed before all fallible capacity checks pass.
+    ///
+    /// # Source, version, history, example
+    /// Source: shared inline SEQUENCE/SET commit path. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: nested SET gate.
+    /// Example: called after a child callback and `finish` succeed.
+    fn commit_nested_child(
+        &mut self,
+        field: RecordField,
+        mut encoded: Encoded,
+        parent_capacity: usize,
+    ) -> Result<(), Error> {
         apply_nested_tagging(
             &mut encoded.bytes,
             field,
@@ -2556,6 +2653,27 @@ impl<'context> SetWriter<'context> {
         self.inner.write_nested_sequence(field, encode)
     }
 
+    /// Append an inline SET member with its declared effective tag.
+    ///
+    /// # Parameters and returns
+    /// `field` describes the child SET; `encode` fills a tag-sorted child writer.
+    /// Returns success after the complete child is appended in parent tag order.
+    ///
+    /// # Errors
+    /// Returns descriptor, callback, order, resource, size, or allocation errors.
+    /// Parent SET bytes and state remain unchanged on failure.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 nested SET component writer. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: nested SET gate.
+    /// Example: `writer.write_nested_set(field, |child| child.write_boolean(true))?`.
+    pub fn write_nested_set<F>(&mut self, field: RecordField, encode: F) -> Result<(), Error>
+    where
+        F: FnOnce(&mut SetWriter<'_>) -> Result<(), Error>,
+    {
+        self.inner.write_nested_set(field, encode)
+    }
+
     /// Append one BOOLEAN member in increasing universal-tag order.
     ///
     /// # Parameters and returns
@@ -3054,12 +3172,13 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
         )
     }
 
-    /// Construct a nested SEQUENCE reader with its caller's effective root tag.
+    /// Construct a nested record reader with its effective root tag and kind.
     ///
     /// # Parameters and returns
     /// `input` is exactly one bounded child TLV; `fields` lists its direct
-    /// members; `context` is shared with the parent; `outer_tag` is either the
-    /// natural universal tag or an IMPLICIT replacement. Returns a cursor.
+    /// members; `context` is shared with the parent; `kind` selects SEQUENCE
+    /// or SET and `outer_tag` is the natural or IMPLICIT root tag. Returns a
+    /// cursor.
     ///
     /// # Errors
     /// Returns the same bounded framing and descriptor errors as the public
@@ -3068,21 +3187,15 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
     /// # Source, version, history, example
     /// Source: X.690 nested record boundaries. Version: 2026-11-01.
     /// Responsible: asn1c maintainers. History: nested record support.
-    /// Example: called by `read_nested_sequence` with its checked field span.
+    /// Example: called by a nested reader with its checked field span.
     fn new_nested(
         input: &'input [u8],
         fields: &'tags [RecordField],
         context: &'context mut RecordContext,
+        kind: RecordKind,
         outer_tag: Tag,
     ) -> Result<Self, Error> {
-        Self::new_with_outer_tag(
-            input,
-            &[],
-            Some(fields),
-            context,
-            RecordKind::Sequence,
-            outer_tag,
-        )
+        Self::new_with_outer_tag(input, &[], Some(fields), context, kind, outer_tag)
     }
 
     /// Parse a record whose outer tag is supplied by a schema descriptor.
@@ -3340,16 +3453,97 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
             self.context.enter_nested(layers)?;
             let child_result = {
                 let context = &mut *self.context;
-                SequenceReader::new_nested(child_input, child_fields, context, root_tag).and_then(
-                    |mut child| {
-                        let value = decode(&mut child)?;
-                        let completed = child.finish()?;
-                        if completed.consumed_bytes != child_input.len() {
-                            return Err(invalid("nested SEQUENCE has trailing encoded data"));
-                        }
-                        Ok(value)
-                    },
+                SequenceReader::new_nested(
+                    child_input,
+                    child_fields,
+                    context,
+                    RecordKind::Sequence,
+                    root_tag,
                 )
+                .and_then(|mut child| {
+                    let value = decode(&mut child)?;
+                    let completed = child.finish()?;
+                    if completed.consumed_bytes != child_input.len() {
+                        return Err(invalid("nested SEQUENCE has trailing encoded data"));
+                    }
+                    Ok(value)
+                })
+            };
+            self.context.leave_nested(layers);
+            child_result
+        })();
+        match result {
+            Ok(value) => {
+                self.current = None;
+                self.current_index = None;
+                self.current_previous_index = None;
+                Ok(value)
+            }
+            Err(error) => {
+                if let Some(field) = pending {
+                    self.rollback_nested_field(field);
+                }
+                Err(error)
+            }
+        }
+    }
+
+    /// Decode the current inline SET with this operation's shared context.
+    ///
+    /// # Parameters
+    /// `child_fields` lists the child's direct descriptors; `decode` consumes
+    /// them through a bounded child reader and returns the child value.
+    ///
+    /// # Returns
+    /// The callback's value after exact child span and EOC verification.
+    ///
+    /// # Errors
+    /// Returns wrong kind, malformed/trailing child data, callback, resource,
+    /// depth, size, or work errors. Parent traversal rolls back on failure.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 nested SET decoding. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: inline SET gate.
+    /// Example: `reader.read_nested_set(&fields, |child| decode_child(child))?`.
+    pub fn read_nested_set<T, F>(
+        &mut self,
+        child_fields: &[RecordField],
+        decode: F,
+    ) -> Result<T, Error>
+    where
+        F: FnOnce(&mut SetReader<'_, '_, '_>) -> Result<T, Error>,
+    {
+        let pending = self.current;
+        let result = (|| {
+            let field = self.current_field(FieldKind::Set)?;
+            if !field.constructed {
+                return Err(invalid("nested SET field must use constructed form"));
+            }
+            let child_input = self
+                .input
+                .get(field.tlv_start..field.tlv_end)
+                .ok_or_else(|| invalid("nested SET span is outside parent input"))?;
+            let root_tag = field.tag;
+            let layers = 1 + usize::from(field.tagging == TaggingMode::Explicit);
+            self.context.enter_nested(layers)?;
+            let child_result = {
+                let context = &mut *self.context;
+                SequenceReader::new_nested(
+                    child_input,
+                    child_fields,
+                    context,
+                    RecordKind::Set,
+                    root_tag,
+                )
+                .and_then(|reader| {
+                    let mut child = SetReader { inner: reader };
+                    let value = decode(&mut child)?;
+                    let completed = child.finish()?;
+                    if completed.consumed_bytes != child_input.len() {
+                        return Err(invalid("nested SET has trailing encoded data"));
+                    }
+                    Ok(value)
+                })
             };
             self.context.leave_nested(layers);
             child_result
@@ -3808,6 +4002,32 @@ impl<'input, 'tags, 'context> SetReader<'input, 'tags, 'context> {
         F: FnOnce(&mut SequenceReader<'_, '_, '_>) -> Result<T, Error>,
     {
         self.inner.read_nested_sequence(child_fields, decode)
+    }
+
+    /// Decode the current inline SET member with arbitrary BER field ordering.
+    ///
+    /// # Parameters and returns
+    /// `child_fields` describes child members; `decode` consumes them through
+    /// a bounded SET reader sharing this parent's operation context. Returns
+    /// the callback value after exact child-span validation.
+    ///
+    /// # Errors
+    /// Returns field, callback, malformed child, resource, depth, size, or
+    /// work errors. Parent SET traversal rolls back on failure.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 nested SET decoding. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: inline SET gate.
+    /// Example: `reader.read_nested_set(&fields, |child| decode_child(child))?`.
+    pub fn read_nested_set<T, F>(
+        &mut self,
+        child_fields: &[RecordField],
+        decode: F,
+    ) -> Result<T, Error>
+    where
+        F: FnOnce(&mut SetReader<'_, '_, '_>) -> Result<T, Error>,
+    {
+        self.inner.read_nested_set(child_fields, decode)
     }
 
     /// Advance to the next SET member, returning its universal tag number.
@@ -7242,8 +7462,8 @@ fn field_span(
     tag: Tag,
     kind: FieldKind,
 ) -> Result<FieldSpan, Error> {
-    if kind == FieldKind::Sequence && !header.constructed {
-        return Err(invalid("BER SEQUENCE field must use constructed form"));
+    if matches!(kind, FieldKind::Sequence | FieldKind::Set) && !header.constructed {
+        return Err(invalid("BER record field must use constructed form"));
     }
     let content_end = match header.length {
         Some(length) => header
@@ -7314,12 +7534,12 @@ fn scan_explicit_member(
             "EXPLICIT wrapper child has the wrong universal tag",
         ));
     }
-    if kind == FieldKind::Sequence && !child.constructed {
-        return Err(invalid("EXPLICIT SEQUENCE child must use constructed form"));
+    if matches!(kind, FieldKind::Sequence | FieldKind::Set) && !child.constructed {
+        return Err(invalid("EXPLICIT record child must use constructed form"));
     }
     if !matches!(
         kind,
-        FieldKind::BitString | FieldKind::OctetString | FieldKind::Sequence
+        FieldKind::BitString | FieldKind::OctetString | FieldKind::Sequence | FieldKind::Set
     ) && child.constructed
     {
         return Err(invalid("EXPLICIT scalar child must use primitive form"));
@@ -7944,6 +8164,7 @@ const fn intrinsic_tag(kind: FieldKind) -> Tag {
         FieldKind::Null => Tag::universal(5),
         FieldKind::Enumerated => Tag::universal(10),
         FieldKind::Sequence => Tag::universal(16),
+        FieldKind::Set => Tag::universal(17),
     }
 }
 
@@ -7978,10 +8199,10 @@ fn explicit_wrapper_size(
     }
 }
 
-/// Apply a nested SEQUENCE field's natural, IMPLICIT, or EXPLICIT tag in place.
+/// Apply a nested record field's natural, IMPLICIT, or EXPLICIT tag in place.
 ///
 /// # Parameters and returns
-/// `bytes` is one complete canonical child SEQUENCE; `field` supplies its tag
+/// `bytes` is one complete canonical child record; `field` supplies its tag
 /// mode; `rule` selects DER/CER; `parent_capacity` remains live alongside it;
 /// `limits` supplies output bounds. Returns success after in-place wrapping.
 ///
@@ -7990,7 +8211,7 @@ fn explicit_wrapper_size(
 ///
 /// # Source, version, history, example
 /// Source: X.690 constructed tagging. Version: 2026-11-01.
-/// Responsible: asn1c maintainers. History: inline SEQUENCE support.
+/// Responsible: asn1c maintainers. History: inline record support.
 /// Example: called before a complete child is appended to its parent.
 fn apply_nested_tagging(
     bytes: &mut Vec<u8>,
@@ -8000,7 +8221,7 @@ fn apply_nested_tagging(
     retained_capacity: usize,
     limits: &Limits,
 ) -> Result<(), Error> {
-    validate_field_mode(field.tag, FieldKind::Sequence, field.tagging)?;
+    validate_field_mode(field.tag, field.kind, field.tagging)?;
     if field.tagging == TaggingMode::Implicit {
         retag_nested_record(bytes, field.tag, parent_capacity, retained_capacity, limits)?;
     } else {
@@ -8096,7 +8317,7 @@ fn retag_root_record(
     Ok(())
 }
 
-/// Replace a child's universal SEQUENCE identifier without reallocating scratch.
+/// Replace a child's universal record identifier with a checked canonical tag.
 ///
 /// # Parameters and returns
 /// `bytes` holds the complete child; `tag` is its effective IMPLICIT tag;
@@ -8108,7 +8329,7 @@ fn retag_root_record(
 ///
 /// # Source, version, history, example
 /// Source: X.690 IMPLICIT constructed tag replacement. Version: 2026-11-01.
-/// Responsible: asn1c maintainers. History: inline SEQUENCE support.
+/// Responsible: asn1c maintainers. History: inline record support.
 /// Example: called for natural and IMPLICIT child fields.
 fn retag_nested_record(
     bytes: &mut Vec<u8>,
@@ -8145,7 +8366,7 @@ fn retag_nested_record(
     Ok(())
 }
 
-/// Wrap one complete child SEQUENCE with a constructed EXPLICIT identifier.
+/// Wrap one complete child record with a constructed EXPLICIT identifier.
 ///
 /// # Parameters and returns
 /// `bytes` is the child TLV; `tag` is its wrapper; `rule` selects definite DER
@@ -8157,7 +8378,7 @@ fn retag_nested_record(
 ///
 /// # Source, version, history, example
 /// Source: X.690 EXPLICIT constructed tags. Version: 2026-11-01.
-/// Responsible: asn1c maintainers. History: inline SEQUENCE support.
+/// Responsible: asn1c maintainers. History: inline record support.
 /// Example: called for EXPLICIT child fields before parent append.
 fn wrap_nested_record(
     bytes: &mut Vec<u8>,
@@ -8290,7 +8511,7 @@ fn encode_length_bytes(
 ///
 /// # Source, version, history, example
 /// Source: nested operation scratch policy. Version: 2026-11-01.
-/// Responsible: asn1c maintainers. History: inline SEQUENCE support.
+/// Responsible: asn1c maintainers. History: inline record support.
 /// Example: called before and after every nested buffer reservation.
 fn check_combined_capacities(
     parent_capacity: usize,
@@ -17743,6 +17964,530 @@ mod tests {
             },
         )
         .is_err());
+    }
+
+    /// Match natural, IMPLICIT, and EXPLICIT inline SET DER/CER vectors.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Encodes and decodes each wrapper mode through its callbacks.
+    ///
+    /// # Errors
+    /// Panics on an encoding, framing, value, or expected-vector mismatch.
+    ///
+    /// # Source, version, history, example
+    /// Source: approved X.690 inline SET vectors. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: nested SET gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn nested_set_tag_modes_match_der_cer_vectors() {
+        let natural = RecordField::new(Tag::universal(17), FieldKind::Set).unwrap();
+        let implicit = RecordField::new(Tag::context_specific(3), FieldKind::Set).unwrap();
+        let explicit = RecordField::new_explicit(Tag::context_specific(3), FieldKind::Set).unwrap();
+        let modes = [
+            (
+                natural,
+                &[0x30, 8, 0x31, 6, 0x80, 1, 2, 0x81, 1, 0xff][..],
+                &[
+                    0x30, 0x80, 0x31, 0x80, 0x80, 1, 2, 0x81, 1, 0xff, 0, 0, 0, 0,
+                ][..],
+            ),
+            (
+                implicit,
+                &[0x30, 8, 0xa3, 6, 0x80, 1, 2, 0x81, 1, 0xff][..],
+                &[
+                    0x30, 0x80, 0xa3, 0x80, 0x80, 1, 2, 0x81, 1, 0xff, 0, 0, 0, 0,
+                ][..],
+            ),
+            (
+                explicit,
+                &[0x30, 0x0a, 0xa3, 8, 0x31, 6, 0x80, 1, 2, 0x81, 1, 0xff][..],
+                &[
+                    0x30, 0x80, 0xa3, 0x80, 0x31, 0x80, 0x80, 1, 2, 0x81, 1, 0xff, 0, 0, 0, 0, 0, 0,
+                ][..],
+            ),
+        ];
+        let integer_tag = Tag::context_specific(0);
+        let boolean_tag = Tag::context_specific(1);
+        let child_fields = [
+            RecordField::new(integer_tag, FieldKind::Integer).unwrap(),
+            RecordField::new(boolean_tag, FieldKind::Boolean).unwrap(),
+        ];
+        let limits = Limits::default();
+
+        for (field, der_expected, cer_expected) in modes {
+            for (rule, expected) in [
+                (RecordEncoding::Der, der_expected),
+                (RecordEncoding::Cer, cer_expected),
+            ] {
+                let mut context = RecordContext::new_nested(&limits);
+                let mut writer = SequenceWriter::new(rule, &mut context).unwrap();
+                writer
+                    .write_nested_set(field, |child| {
+                        child.write_integer_tagged(integer_tag, 2, 0, 3)?;
+                        child.write_boolean_tagged(boolean_tag, true)
+                    })
+                    .unwrap();
+                let encoded = writer.finish().unwrap();
+                assert_eq!(encoded.bytes, expected);
+
+                let mut suffixed = expected.to_vec();
+                suffixed.push(0x55);
+                let fields = [field];
+                let input_limits = Limits {
+                    max_input_bytes: suffixed.len(),
+                    ..limits
+                };
+                let mut context = RecordContext::new_nested(&input_limits);
+                let mut reader =
+                    SequenceReader::new_tagged(&suffixed, &fields, &mut context).unwrap();
+                assert_eq!(reader.next_tagged_field().unwrap(), Some(field.tag()));
+                assert_eq!(
+                    reader
+                        .read_nested_set(&child_fields, |child| {
+                            let mut pair = (None, None);
+                            while let Some(tag) = child.next_tagged_field()? {
+                                match tag {
+                                    tag if tag == integer_tag => {
+                                        pair.0 = Some(child.read_integer(0, 3)?);
+                                    }
+                                    tag if tag == boolean_tag => {
+                                        pair.1 = Some(child.read_boolean()?);
+                                    }
+                                    _ => return Err(invalid("unexpected nested SET tag")),
+                                }
+                            }
+                            Ok(pair)
+                        })
+                        .unwrap(),
+                    (Some(2), Some(true))
+                );
+                assert_eq!(reader.next_tagged_field().unwrap(), None);
+                assert_eq!(reader.finish().unwrap().consumed_bytes, expected.len());
+
+                let below_input = Limits {
+                    max_input_bytes: suffixed.len() - 1,
+                    ..limits
+                };
+                let mut context = RecordContext::new_nested(&below_input);
+                assert!(SequenceReader::new_tagged(&suffixed, &fields, &mut context).is_err());
+            }
+        }
+    }
+
+    /// Accept unordered BER child SET fields and reject their strict CER form.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Decodes reversed child order and compares canonical CER.
+    ///
+    /// # Errors
+    /// Panics if a valid BER order is rejected or strict CER accepts it.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET ordering vectors. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: nested SET gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn nested_set_accepts_reversed_ber_and_rejects_it_as_cer() {
+        let field = RecordField::new(Tag::universal(17), FieldKind::Set).unwrap();
+        let integer_tag = Tag::context_specific(0);
+        let boolean_tag = Tag::context_specific(1);
+        let child_fields = [
+            RecordField::new(integer_tag, FieldKind::Integer).unwrap(),
+            RecordField::new(boolean_tag, FieldKind::Boolean).unwrap(),
+        ];
+        let fields = [field];
+        let reversed = [0x30, 8, 0x31, 6, 0x81, 1, 0xff, 0x80, 1, 2];
+        let limits = Limits::default();
+        let mut context = RecordContext::new_nested(&limits);
+        let mut reader = SequenceReader::new_tagged(&reversed, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(field.tag()));
+        assert_eq!(
+            reader
+                .read_nested_set(&child_fields, |child| {
+                    assert_eq!(child.next_tagged_field()?, Some(boolean_tag));
+                    assert!(child.read_boolean()?);
+                    assert_eq!(child.next_tagged_field()?, Some(integer_tag));
+                    let value = child.read_integer(0, 3)?;
+                    assert_eq!(child.next_tagged_field()?, None);
+                    Ok(value)
+                })
+                .unwrap(),
+            2
+        );
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        let consumed = reader.finish().unwrap();
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer
+            .write_nested_set(field, |child| {
+                child.write_integer_tagged(integer_tag, 2, 0, 3)?;
+                child.write_boolean_tagged(boolean_tag, true)
+            })
+            .unwrap();
+        let canonical = writer.finish().unwrap();
+        assert!(context
+            .verify_canonical(&reversed, consumed.consumed_bytes, &canonical.bytes)
+            .is_err());
+    }
+
+    /// Pin nested SET shared work, output, and aggregate-capacity boundaries.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Measures the SET path once, then tests exact and one-less
+    /// work/output/scratch ceilings while checking parent transactionality.
+    ///
+    /// # Errors
+    /// Panics if a resource succeeds above its boundary or fails at its limit.
+    ///
+    /// # Source, version, history, example
+    /// Source: nested record cumulative resource policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: nested SET resource tests.
+    /// Example: run with cargo test.
+    #[test]
+    fn nested_set_checks_exact_shared_resource_boundaries() {
+        let child = RecordField::new(Tag::universal(17), FieldKind::Set).unwrap();
+        let integer_tag = Tag::context_specific(0);
+        let boolean_tag = Tag::context_specific(1);
+        let limits = Limits::default();
+        let mut child_capacity = 0;
+        let mut context = RecordContext::new_nested(&limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer
+            .write_nested_set(child, |nested| {
+                nested.write_integer_tagged(integer_tag, 2, 0, 3)?;
+                nested.write_boolean_tagged(boolean_tag, true)?;
+                child_capacity = nested.inner.bytes.capacity();
+                Ok(())
+            })
+            .unwrap();
+        let encoded = writer.finish().unwrap();
+        let required_work = context.work_used;
+        let parent_capacity = encoded.bytes.capacity();
+        assert_eq!(encoded.bytes, [0x30, 8, 0x31, 6, 0x80, 1, 2, 0x81, 1, 0xff]);
+
+        let exact_work = Limits {
+            max_work_bits: required_work,
+            max_output_bytes: encoded.bytes.len(),
+            ..Limits::default()
+        };
+        let mut exact_context = RecordContext::new_nested(&exact_work);
+        let mut exact_writer =
+            SequenceWriter::new(RecordEncoding::Der, &mut exact_context).unwrap();
+        exact_writer
+            .write_nested_set(child, |nested| {
+                nested.write_integer_tagged(integer_tag, 2, 0, 3)?;
+                nested.write_boolean_tagged(boolean_tag, true)
+            })
+            .unwrap();
+        assert_eq!(exact_writer.finish().unwrap().bytes, encoded.bytes);
+        assert_eq!(exact_context.work_used, required_work);
+
+        let below_work = Limits {
+            max_work_bits: required_work - 1,
+            ..exact_work
+        };
+        let mut below_context = RecordContext::new_nested(&below_work);
+        let mut below_writer =
+            SequenceWriter::new(RecordEncoding::Der, &mut below_context).unwrap();
+        let below_result = below_writer.write_nested_set(child, |nested| {
+            nested.write_integer_tagged(integer_tag, 2, 0, 3)?;
+            nested.write_boolean_tagged(boolean_tag, true)
+        });
+        if below_result.is_ok() {
+            assert!(below_writer.finish().is_err());
+        } else {
+            assert_eq!(below_writer.bytes, [0x30, 0]);
+        }
+
+        let retained = MAX_RECORD_SCRATCH_BYTES
+            .checked_sub(parent_capacity)
+            .and_then(|value| value.checked_sub(child_capacity))
+            .unwrap();
+        let scratch_exact = Limits {
+            max_output_bytes: encoded.bytes.len(),
+            ..Limits::default()
+        };
+        let mut exact_context = RecordContext::new_nested(&scratch_exact);
+        exact_context.retained_capacity = retained;
+        let mut exact_writer =
+            SequenceWriter::new(RecordEncoding::Der, &mut exact_context).unwrap();
+        exact_writer
+            .write_nested_set(child, |nested| {
+                nested.write_integer_tagged(integer_tag, 2, 0, 3)?;
+                nested.write_boolean_tagged(boolean_tag, true)
+            })
+            .unwrap();
+        assert_eq!(exact_writer.finish().unwrap().bytes, encoded.bytes);
+
+        let mut above_context = RecordContext::new_nested(&scratch_exact);
+        above_context.retained_capacity = retained + 1;
+        let mut above_writer =
+            SequenceWriter::new(RecordEncoding::Der, &mut above_context).unwrap();
+        assert!(above_writer
+            .write_nested_set(child, |nested| {
+                nested.write_integer_tagged(integer_tag, 2, 0, 3)?;
+                nested.write_boolean_tagged(boolean_tag, true)
+            })
+            .is_err());
+        assert_eq!(above_writer.bytes, [0x30, 0]);
+
+        let below_output = Limits {
+            max_output_bytes: encoded.bytes.len() - 1,
+            ..Limits::default()
+        };
+        let mut output_context = RecordContext::new_nested(&below_output);
+        let mut output_writer =
+            SequenceWriter::new(RecordEncoding::Der, &mut output_context).unwrap();
+        assert!(output_writer
+            .write_nested_set(child, |nested| {
+                nested.write_integer_tagged(integer_tag, 2, 0, 3)?;
+                nested.write_boolean_tagged(boolean_tag, true)
+            })
+            .is_err());
+        assert_eq!(output_writer.bytes, [0x30, 0]);
+    }
+
+    /// Check nested SET sorting inside a parent SET.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Encodes the C-derived parent effective-tag order vectors.
+    ///
+    /// # Errors
+    /// Panics if the DER or CER expected vector differs from the contract.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 inline SET framing and parent ordering vectors.
+    /// Version: 2026-11-01. Responsible: runtime maintainers.
+    /// History: nested SET gate. Example: run with cargo test.
+    #[test]
+    fn nested_set_parent_writer_sorts_by_effective_tag() {
+        let child = RecordField::new_explicit(Tag::context_specific(3), FieldKind::Set).unwrap();
+        let sibling = RecordField::new(Tag::context_specific(4), FieldKind::Boolean).unwrap();
+        let integer_tag = Tag::context_specific(0);
+        let boolean_tag = Tag::context_specific(1);
+        let limits = Limits::default();
+        let der_wire = [
+            0x31, 0x0d, 0xa3, 8, 0x31, 6, 0x80, 1, 2, 0x81, 1, 0xff, 0x84, 1, 0xff,
+        ];
+        let cer_wire = [
+            0x31, 0x80, 0xa3, 0x80, 0x31, 0x80, 0x80, 1, 2, 0x81, 1, 0xff, 0, 0, 0, 0, 0x84, 1,
+            0xff, 0, 0,
+        ];
+        for (rule, expected) in [
+            (RecordEncoding::Der, &der_wire[..]),
+            (RecordEncoding::Cer, &cer_wire[..]),
+        ] {
+            let mut context = RecordContext::new_nested(&limits);
+            let mut writer = SetWriter::new(rule, &mut context).unwrap();
+            writer
+                .write_nested_set(child, |nested| {
+                    nested.write_integer_tagged(integer_tag, 2, 0, 3)?;
+                    nested.write_boolean_tagged(boolean_tag, true)
+                })
+                .unwrap();
+            writer.write_boolean_tagged(sibling.tag(), true).unwrap();
+            assert_eq!(writer.finish().unwrap().bytes, expected);
+        }
+    }
+
+    /// Accept independently definite/indefinite nested SET BER wrappers.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Decodes one mixed EXPLICIT wrapper and checks strict CER.
+    ///
+    /// # Errors
+    /// Panics if valid BER is rejected or noncanonical CER is accepted.
+    ///
+    /// # Source, version, history, example
+    /// Source: approved mixed-form nested SET vector. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: inline SET gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn nested_set_accepts_mixed_wrapper_ber_and_rejects_cer() {
+        let child = RecordField::new_explicit(Tag::context_specific(3), FieldKind::Set).unwrap();
+        let integer_tag = Tag::context_specific(0);
+        let boolean_tag = Tag::context_specific(1);
+        let child_fields = [
+            RecordField::new(integer_tag, FieldKind::Integer).unwrap(),
+            RecordField::new(boolean_tag, FieldKind::Boolean).unwrap(),
+        ];
+        let mixed = [
+            0x31, 0x80, 0xa3, 0x0a, 0x31, 0x80, 0x80, 1, 2, 0x81, 1, 0xff, 0, 0, 0, 0,
+        ];
+        let limits = Limits::default();
+        let fields = [child];
+        let mut context = RecordContext::new_nested(&limits);
+        let mut reader = SetReader::new_tagged(&mixed, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(child.tag()));
+        assert_eq!(
+            reader
+                .read_nested_set(&child_fields, |nested| {
+                    assert_eq!(nested.next_tagged_field()?, Some(integer_tag));
+                    let value = nested.read_integer(0, 3)?;
+                    assert_eq!(nested.next_tagged_field()?, Some(boolean_tag));
+                    assert!(nested.read_boolean()?);
+                    assert_eq!(nested.next_tagged_field()?, None);
+                    Ok(value)
+                })
+                .unwrap(),
+            2
+        );
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        let consumed = reader.finish().unwrap();
+        let mut writer = SetWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer
+            .write_nested_set(child, |nested| {
+                nested.write_integer_tagged(integer_tag, 2, 0, 3)?;
+                nested.write_boolean_tagged(boolean_tag, true)
+            })
+            .unwrap();
+        let canonical = writer.finish().unwrap();
+        assert!(context
+            .verify_canonical(&mixed, consumed.consumed_bytes, &canonical.bytes)
+            .is_err());
+    }
+
+    /// Reject malformed nested SET spans and preserve parent rollback.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Tests callback rollback, extra children, missing EOCs,
+    /// and duplicate child tags.
+    ///
+    /// # Errors
+    /// Panics if malformed framing is accepted or parent traversal is not restored.
+    ///
+    /// # Source, version, history, example
+    /// Source: bounded nested SET reader contract. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: inline SET gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn nested_set_rejects_malformed_spans_and_rolls_back() {
+        let child = RecordField::new_explicit(Tag::context_specific(3), FieldKind::Set).unwrap();
+        let integer_tag = Tag::context_specific(0);
+        let boolean_tag = Tag::context_specific(1);
+        let child_fields = [
+            RecordField::new(integer_tag, FieldKind::Integer).unwrap(),
+            RecordField::new(boolean_tag, FieldKind::Boolean).unwrap(),
+        ];
+        let limits = Limits::default();
+        let valid = [0x31, 0x0a, 0xa3, 8, 0x31, 6, 0x80, 1, 2, 0x81, 1, 0xff];
+        let fields = [child];
+        let mut context = RecordContext::new_nested(&limits);
+        let mut reader = SetReader::new_tagged(&valid, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(child.tag()));
+        assert!(reader
+            .read_nested_set::<(), _>(&child_fields, |_| Err(invalid("retry")))
+            .is_err());
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(child.tag()));
+        assert!(reader
+            .read_nested_set(&child_fields, |nested| {
+                assert_eq!(nested.next_tagged_field()?, Some(integer_tag));
+                nested.read_integer(0, 3)
+            })
+            .is_err());
+
+        for malformed in [
+            &[0x31, 2, 0xa3, 0][..],
+            &[0x31, 0x80, 0x31, 0x80, 0x80, 1, 2, 0, 0][..],
+            &[0x31, 8, 0xa3, 8, 0x31, 6, 0x80, 1, 2, 0x81, 1][..],
+            &[0x31, 0x80, 0xa3, 8, 0x31, 6, 0x80, 1, 2, 0x81, 1, 0xff, 0][..],
+            &[
+                0x31, 0x0c, 0xa3, 0x0a, 0x31, 6, 0x80, 1, 2, 0x81, 1, 0xff, 5, 0,
+            ][..],
+        ] {
+            let mut context = RecordContext::new_nested(&limits);
+            let result =
+                SetReader::new_tagged(malformed, &fields, &mut context).and_then(|mut reader| {
+                    let _ = reader.next_tagged_field()?;
+                    reader.finish().map(|_| ())
+                });
+            assert!(result.is_err());
+        }
+
+        // A duplicate effective tag is a child SET error, even with valid framing.
+        let duplicate = [0x31, 0x0a, 0xa3, 8, 0x31, 6, 0x80, 1, 2, 0x80, 1, 3];
+        let mut context = RecordContext::new_nested(&limits);
+        let mut reader = SetReader::new_tagged(&duplicate, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(child.tag()));
+        assert!(reader
+            .read_nested_set(&child_fields, |nested| {
+                while let Some(tag) = nested.next_tagged_field()? {
+                    if tag == integer_tag {
+                        let _ = nested.read_integer(0, 3)?;
+                    } else if tag == boolean_tag {
+                        let _ = nested.read_boolean()?;
+                    }
+                }
+                Ok(())
+            })
+            .is_err());
+    }
+
+    /// Mutate and truncate nested SET encodings without allowing decoder panics.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks every prefix and each single-octet replacement.
+    ///
+    /// # Errors
+    /// Panics only if bounded nested BER/CER traversal unwinds on changed input.
+    ///
+    /// # Source, version, history, example
+    /// Source: nested SET parser hardening. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: inline SET gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn nested_set_mutations_and_truncations_do_not_panic() {
+        let child = RecordField::new(Tag::universal(17), FieldKind::Set).unwrap();
+        let fields = [child];
+        let child_fields = [
+            RecordField::new(Tag::context_specific(0), FieldKind::Integer).unwrap(),
+            RecordField::new(Tag::context_specific(1), FieldKind::Boolean).unwrap(),
+        ];
+        let wires: &[&[u8]] = &[
+            &[0x30, 8, 0x31, 6, 0x80, 1, 2, 0x81, 1, 0xff],
+            &[
+                0x30, 0x80, 0x31, 0x80, 0x80, 1, 2, 0x81, 1, 0xff, 0, 0, 0, 0,
+            ],
+        ];
+        let decode_without_panic = |input: &[u8]| {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let mut context = RecordContext::new_nested(&Limits::default());
+                let result = SequenceReader::new_tagged(input, &fields, &mut context).and_then(
+                    |mut reader| {
+                        if reader.next_tagged_field()?.is_some() {
+                            reader.read_nested_set(&child_fields, |nested| {
+                                while let Some(tag) = nested.next_tagged_field()? {
+                                    match tag.number {
+                                        0 => {
+                                            let _ = nested.read_integer(0, 3)?;
+                                        }
+                                        1 => {
+                                            let _ = nested.read_boolean()?;
+                                        }
+                                        _ => return Err(invalid("unexpected nested tag")),
+                                    }
+                                }
+                                Ok(())
+                            })?;
+                        }
+                        reader.finish().map(|_| ())
+                    },
+                );
+                let _ = result;
+            }))
+            .is_ok()
+        };
+        for wire in wires {
+            for end in 0..wire.len() {
+                assert!(decode_without_panic(&wire[..end]));
+            }
+            for offset in 0..wire.len() {
+                for byte in [0, 1, 0x30, 0x31, 0x80, 0xff] {
+                    let mut changed = wire.to_vec();
+                    changed[offset] = byte;
+                    assert!(decode_without_panic(&changed));
+                }
+            }
+        }
     }
 
     /// Mutate and truncate CHOICE inputs without allowing decoder panics.

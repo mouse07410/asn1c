@@ -594,6 +594,27 @@
       "evidence": "NestedSetBerCer.asn1; nested_set_ber_cer_conformance.rs; c_nested_ber_cer.c; check-rust-backend.sh"
     },
     {
+      "asn1_type": "SEQUENCE, SET",
+      "feature": "one nonempty SET child with six direct leaves and unique natural, IMPLICIT, or EXPLICIT tags",
+      "codec": "BER decode / DER encode + CER decode and encode; BER/CER-only selection",
+      "variants": [
+        "natural, context-specific IMPLICIT, and one EXPLICIT child tags",
+        "effective-tag sorting within child SET independent of parent SET order",
+        "unordered BER child/parent dispatch and strict CER reorder rejection",
+        "six-leaf mix, optional child absence, mixed explicit length wrappers",
+        "prefix consumption, malformed boundaries, shared limits, and C differential vectors",
+        "empty/nested/multiple child, DEFAULT, extension, alias/import, and tagged-root rejection"
+      ],
+      "directions": [
+        "BER decode",
+        "DER encode",
+        "CER decode",
+        "CER encode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "NestedSetChildren.asn1; Rust/C conformance fixtures; check-rust-backend.sh"
+    },
+    {
       "asn1_type": "OCTET STRING, BIT STRING",
       "feature": "direct fixed SIZE(N), bounded OCTET SIZE(l..u), and bounded BIT SIZE(l..u), all below 65536; standalone and required or OPTIONAL SEQUENCE field",
       "codec": "UPER",
@@ -810,7 +831,7 @@
     ]
   },
   "observed_counts": {
-    "generated_rust_test_functions": 186,
+    "generated_rust_test_functions": 190,
     "generated_choice_test_functions": 4,
     "live_C_choice_canonical_vectors_each_direction": 5,
     "live_C_choice_BER_alias_vectors": 9,

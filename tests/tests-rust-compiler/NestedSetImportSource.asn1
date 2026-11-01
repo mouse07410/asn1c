@@ -1,0 +1,3 @@
+NestedSetImportSource DEFINITIONS ::= BEGIN
+External ::= INTEGER (0..10)
+END

@@ -314,17 +314,19 @@ parsing, child decoding, and strict CER re-encoding to the same record context.
 Explicit BIT/OCTET STRING children use their regular universal primitive or
 fragmented CER form inside the wrapper.
 
-The record API supports one inline SEQUENCE child inside a flat SEQUENCE or SET.
-The child may use its natural tag, one IMPLICIT tag, or one context-specific
-EXPLICIT wrapper, and contains up to six direct supported primitive members.
-Generated required/OPTIONAL checks remain type-specific. `write_nested_sequence`
-and `read_nested_sequence` use callbacks so the child shares its parent's
-`RecordContext`; child decoding receives only the validated inner TLV span and
-must consume that span exactly, including its own EOC. A failed read callback
-rolls the parent cursor and field-seen state back to the nested field start.
-Work and decoded-allocation charges remain cumulative after failure, even if a
-decoded value is dropped; callback side effects and captured values are not
-rolled back.
+The record API supports one inline SEQUENCE or SET child inside a flat SEQUENCE
+or SET. The child may use its natural tag, one IMPLICIT tag, or one
+context-specific EXPLICIT wrapper, and contains up to six direct supported
+primitive members. Generated required/OPTIONAL checks remain type-specific.
+`write_nested_sequence`/`read_nested_sequence` and
+`write_nested_set`/`read_nested_set` use callbacks so each child shares its
+parent's `RecordContext`; child decoding receives only the validated inner TLV
+span and must consume that span exactly, including its own EOC. BER child SET
+members may arrive in any order; DER/CER child SET output uses effective-tag
+order. A failed read callback rolls the parent cursor and field-seen state back
+to the nested field start. Work and decoded-allocation charges remain
+cumulative after failure, even if a decoded value is dropped; callback side
+effects and captured values are not rolled back.
 BER accepts independently definite or indefinite parent, EXPLICIT-wrapper, and
 child lengths when each boundary and EOC is correctly matched. Strict CER
 rejects noncanonical mixed forms through canonical re-encoding comparison.

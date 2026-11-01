@@ -1,0 +1,3 @@
+NestedSetDefault DEFINITIONS ::= BEGIN
+Root ::= SEQUENCE { child SET { value INTEGER (0..3) DEFAULT 1 } }
+END

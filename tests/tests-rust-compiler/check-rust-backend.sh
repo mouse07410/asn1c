@@ -2316,6 +2316,106 @@ else
     fi
 fi
 
+# Verify one inline SET child under untagged SEQUENCE and SET roots.
+nested_set_child_out="$test_tmp/nested-set-child-rust"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$nested_set_child_out" "$test_srcdir/NestedSetChildren.asn1"
+mkdir "$nested_set_child_out/tests"
+cp "$test_srcdir/nested_set_children_conformance.rs" "$nested_set_child_out/tests/"
+if ! (cd "$nested_set_child_out" && \
+    CARGO_TARGET_DIR="$test_tmp/target-nested-set-child" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-nested-set-child" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/nested-set-child-check.log" 2>&1; then
+    cat "$test_tmp/nested-set-child-check.log"
+    echo "FAIL: nested SET child tests or strict Clippy"
+    exit 1
+fi
+grep -F "RecordContext::new_nested(limits)" \
+    "$nested_set_child_out/src/nested_set_children.rs" >/dev/null
+
+# Compile and execute independent C DER/CER vectors for the same nested SETs.
+nested_set_child_c_out="$test_tmp/nested-set-child-c"
+mkdir "$nested_set_child_c_out"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -fwide-types -pdu=all \
+    -fgen-only-pdu-deps -no-gen-example -D "$nested_set_child_c_out" \
+    "$test_srcdir/NestedSetChildren.asn1" \
+    >"$test_tmp/nested-set-child-c-generate.log" 2>&1
+nested_set_child_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$nested_set_child_c_out/Makefile.am.libasncodec")
+rm -f "$nested_set_child_c_out/converter-example.c" \
+    "$nested_set_child_c_out/pdu_collection.c"
+if ! cc $nested_set_child_cflags -I"$nested_set_child_c_out" \
+    "$nested_set_child_c_out"/*.c "$test_srcdir/c_nested_set_child.c" \
+    -lm -o "$test_tmp/c-nested-set-child" \
+    >"$test_tmp/c-nested-set-child-compile.log" 2>&1; then
+    cat "$test_tmp/c-nested-set-child-compile.log"
+    echo "FAIL: generated C nested SET child reference did not compile"
+    exit 1
+fi
+if ! "$test_tmp/c-nested-set-child"; then
+    echo "FAIL: C nested SET child DER/CER or decode vectors did not match"
+    exit 1
+fi
+
+# BER-only and CER-only nested SET selections also pass exact strict Clippy.
+for codec in ber cer; do
+    codec_out="$test_tmp/nested-set-child-$codec-only"
+    if [ "$codec" = ber ]; then
+        codec_flags="-gen-BER -no-gen-CER"
+    else
+        codec_flags="-gen-CER -no-gen-BER"
+    fi
+    # shellcheck disable=SC2086
+    "$asn1c_bin" --rust $codec_flags -no-gen-UPER -no-gen-CBOR -no-gen-XER \
+        -no-gen-JER -no-gen-APER -no-gen-OER -S "$skeletons" \
+        -D "$codec_out" "$test_srcdir/NestedSetChildren.asn1"
+    if ! (cd "$codec_out" && \
+        CARGO_TARGET_DIR="$test_tmp/target-nested-set-child-$codec" \
+        cargo clippy --offline --all-targets --all-features -- \
+        -W clippy::pedantic -W clippy::nursery -D warnings) \
+        >"$test_tmp/nested-set-child-$codec-only.log" 2>&1; then
+        cat "$test_tmp/nested-set-child-$codec-only.log"
+        echo "FAIL: nested SET child $codec-only strict Clippy"
+        exit 1
+    fi
+done
+
+# Excluded schemas and mixed selection must fail before output publication.
+for rejected_schema in NestedSetEmpty NestedSetNested NestedSetMultiple \
+    NestedSetDefault NestedSetExtension NestedSetAlias NestedSetLeafAlias \
+    NestedSetTaggedRoot; do
+    rejected_out="$test_tmp/rejected-$rejected_schema"
+    if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$rejected_out" "$test_srcdir/$rejected_schema.asn1" \
+        >"$test_tmp/$rejected_schema.log" 2>&1; then
+        echo "FAIL: unsupported nested SET schema $rejected_schema was accepted"
+        exit 1
+    fi
+    test ! -e "$rejected_out"
+done
+mixed_nested_set_out="$test_tmp/rejected-nested-set-mixed-codecs"
+if "$asn1c_bin" --rust -gen-BER -gen-CER -S "$skeletons" \
+    -D "$mixed_nested_set_out" "$test_srcdir/NestedSetChildren.asn1" \
+    >"$test_tmp/nested-set-mixed-codecs.log" 2>&1; then
+    echo "FAIL: nested SET mixed UPER/BER/CER selection was accepted"
+    exit 1
+fi
+test ! -e "$mixed_nested_set_out"
+nested_set_import_out="$test_tmp/rejected-nested-set-import"
+if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$nested_set_import_out" "$test_srcdir/NestedSetImportSource.asn1" \
+    "$test_srcdir/NestedSetImport.asn1" \
+    >"$test_tmp/nested-set-import.log" 2>&1; then
+    echo "FAIL: nested SET with an imported leaf was accepted"
+    exit 1
+fi
+test ! -e "$nested_set_import_out"
+
 # Fail closed on SET shapes and codec combinations outside the current slice.
 cat >"$test_tmp/SetApplication.asn1" <<'EOF'
 SetApplication DEFINITIONS ::= BEGIN

@@ -1,0 +1,4 @@
+NestedSetLeafAlias DEFINITIONS ::= BEGIN
+Small ::= INTEGER (0..10)
+Root ::= SEQUENCE { child SET { value Small } }
+END

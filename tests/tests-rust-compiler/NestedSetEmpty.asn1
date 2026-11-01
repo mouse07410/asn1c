@@ -1,0 +1,3 @@
+NestedSetEmpty DEFINITIONS ::= BEGIN
+Root ::= SEQUENCE { child SET {} }
+END

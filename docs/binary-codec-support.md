@@ -249,6 +249,12 @@ an untagged SEQUENCE or BER/CER-only SET, with up to six direct supported
 primitive leaves and required/OPTIONAL presence. Child record tags may be
 natural, resolved context-specific IMPLICIT, or one EXPLICIT wrapper. Parent
 and child share one record context and an opt-in fixed aggregate scratch cap.
+One nonrecursive inline SET child with the same direct leaves and tag modes is
+also supported under BER/CER-only selection in an untagged SEQUENCE or SET.
+Its BER fields may arrive in any order; DER/CER sorts the child fields by
+effective tag independently of any parent SET sort. Empty inline SET children
+remain gated because the unmodified C generator does not compile that schema.
+Both child kinds share the parent record budget and exact nested boundary checks.
 One resolved context-specific IMPLICIT tag on a direct flat SEQUENCE or SET
 root is also supported under BER/CER-only selection, with a tag number through
 `0x3fff_ffff`. BER accepts a C-compatible nonminimal high-tag alias; strict

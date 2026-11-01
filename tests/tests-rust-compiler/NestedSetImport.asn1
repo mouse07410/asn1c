@@ -1,0 +1,4 @@
+NestedSetImport DEFINITIONS ::= BEGIN
+IMPORTS External FROM NestedSetImportSource;
+Root ::= SEQUENCE { child SET { value External } }
+END

@@ -1,4 +1,10 @@
 Changes since v1.5.3:
+	* Extend Rust BER/DER/CER nested records with one inline SET child in an
+	  untagged SEQUENCE or SET under BER/CER-only selection. Share the parent
+	  operation context, sort child SET fields by effective tag for DER/CER,
+	  accept arbitrary BER child order, and qualify natural, IMPLICIT, and
+	  EXPLICIT child tags against C vectors. Reject empty inline SET schemas
+	  because the current unmodified C generator cannot compile them.
 	* Add direct untagged primitive CHOICE Rust BER/DER/CER support for
 	  unique BOOLEAN, NULL, and bounded INTEGER alternatives under BER/CER-only
 	  selection. Dispatch BER by the selected intrinsic tag, emit one selected

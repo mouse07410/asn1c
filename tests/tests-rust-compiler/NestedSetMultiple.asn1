@@ -1,0 +1,6 @@
+NestedSetMultiple DEFINITIONS ::= BEGIN
+Root ::= SEQUENCE {
+    first SET { value INTEGER },
+    second SET { flag BOOLEAN }
+}
+END

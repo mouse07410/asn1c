@@ -1,0 +1,3 @@
+NestedSetNested DEFINITIONS ::= BEGIN
+Root ::= SEQUENCE { child SET { inner SEQUENCE { value INTEGER } } }
+END

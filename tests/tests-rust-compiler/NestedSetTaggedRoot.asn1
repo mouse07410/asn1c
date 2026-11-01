@@ -1,0 +1,3 @@
+NestedSetTaggedRoot DEFINITIONS ::= BEGIN
+Root ::= [3] IMPLICIT SEQUENCE { child SET { value INTEGER } }
+END
