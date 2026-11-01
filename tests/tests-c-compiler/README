@@ -44,3 +44,10 @@ check-606 covers the one-entry CBOR CHOICE map, exact selected-child consumption
 UTF-8 text-key validation, unknown and malformed keys, truncated input,
 nested child failure, preallocated value preservation, malformed descriptors,
 and arbitrary-input decode cleanup through its fuzz entry.
+
+check-609 covers issue #595: two-level top-level aliases of UTCTime,
+GeneralizedTime, and NumericString retain their PER constraints for APER and
+UPER. It checks independent golden UPER vectors, compares APER alias encodings
+with the built-in descriptors, rejects invalid NumericString values and
+reserved alphabet codes, and includes a SIZE-constrained NumericString alias
+to verify inherited alphabet mappings.

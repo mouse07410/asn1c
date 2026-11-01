@@ -1,4 +1,8 @@
 Changes since v1.5.3:
+	* Preserve the built-in PER character alphabet when a C type assignment
+	  aliases UTCTime, GeneralizedTime, or NumericString (issue #595). Emit
+	  seven-bit time characters and NumericString's canonical digit/space
+	  maps for both UPER and APER, including alias chains.
 	* Add one same-module named SET child to flat Rust BER/DER/CER
 	  SEQUENCE and SET records. Preserve natural, IMPLICIT, and EXPLICIT
 	  member tags, independent child/parent SET ordering, required/OPTIONAL

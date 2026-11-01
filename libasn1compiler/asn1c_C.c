@@ -4107,7 +4107,53 @@ member_has_oer_constraints(asn1p_expr_t *expr, asn1p_expr_type_e etype) {
 static int
 member_has_per_constraints(asn1p_expr_t *expr, asn1p_expr_type_e etype) {
 	return member_has_oer_constraints(expr, etype)
-		|| (etype & ASN_STRING_KM_MASK);
+		|| (etype & ASN_STRING_KM_MASK)
+		|| etype == ASN_BASIC_UTCTime
+		|| etype == ASN_BASIC_GeneralizedTime;
+}
+
+/*
+ * Purpose: Emit the canonical NumericString PER character maps for a type
+ *          whose effective alphabet is the unconstrained built-in alphabet.
+ * Original source: ITU-T X.691 (02/2021), clauses 30.5.2 and 30.5.4.
+ * Version/date: 2026-11-01.
+ * Parameters: arg is the output context; expr names the type; suffix_index
+ *             makes the generated functions unique in their translation unit.
+ * Returns: Nothing; output errors follow the existing generator path.
+ * Exceptions: None; invalid characters and codes yield -1 at runtime.
+ * Responsible party: asn1c maintainers.
+ * History: Added for issue #595 so aliases retain NumericString's map.
+ * Example: Space maps to zero, while digit '0' maps to one.
+ */
+static void
+emit_builtin_numeric_per_map(arg_t *arg, asn1p_expr_t *expr,
+                             int suffix_index) {
+	OUT("/** Purpose: Map one NumericString character to its PER code.\n");
+	OUT(" * Original source: ITU-T X.691 (02/2021), clause 30.5.4.\n");
+	OUT(" * Version/date: 2026-11-01. Parameter: value is a character code.\n");
+	OUT(" * Returns: code, or -1 for invalid input. Exceptions: none.\n");
+	OUT(" * Author: asn1c maintainers. History: issue #595 alias map.\n");
+	OUT(" * Example: '0' maps to 1, while space maps to 0.\n");
+	OUT(" */\n");
+	OUT("static int asn_PER_NUM_%s_%d_v2c(unsigned int value) {\n",
+	    MKID(expr), suffix_index);
+	OUT("\tif(value == 0x20) return 0;\n");
+	OUT("\tif(value >= 0x30 && value <= 0x39) return (int)value - 0x2f;\n");
+	OUT("\treturn -1;\n");
+	OUT("}\n");
+	OUT("/** Purpose: Map one NumericString PER code to its character.\n");
+	OUT(" * Original source: ITU-T X.691 (02/2021), clause 30.5.4.\n");
+	OUT(" * Version/date: 2026-11-01. Parameter: code is a four-bit symbol.\n");
+	OUT(" * Returns: character, or -1 for invalid input. Exceptions: none.\n");
+	OUT(" * Author: asn1c maintainers. History: issue #595 alias map.\n");
+	OUT(" * Example: code 1 maps to '0', while code 0 maps to space.\n");
+	OUT(" */\n");
+	OUT("static int asn_PER_NUM_%s_%d_c2v(unsigned int code) {\n",
+	    MKID(expr), suffix_index);
+	OUT("\tif(code == 0) return 0x20;\n");
+	OUT("\tif(code <= 10) return (int)code + 0x2f;\n");
+	OUT("\treturn -1;\n");
+	OUT("}\n");
 }
 
 /*
@@ -4215,78 +4261,171 @@ emit_member_OER_constraints(arg_t *arg, asn1p_expr_t *expr, const char *pfx,
 }
 
 /*
- * Purpose: Generate member-specific PER constraint metadata.
- * Original source: asn1c C backend member-table emitter.
- * Version/date: 2026-10-23.
- * Parameters: arg is the generation context; expr is the member; pfx is its name prefix.
- * Returns: Zero on success; -1 if range generation fails.
- * Exceptions: None; errors use the existing generation return path.
+ * Purpose: Emit the effective PER size constraint for one generated member.
+ * Original source: asn1c C backend PER constraint emitter.
+ * Version/date: 2026-11-01.
+ * Parameters: arg is the output context; expr is the member; etype is its
+ *             resolved ASN.1 type.
+ * Returns: Zero on success, or -1 if constraint emission fails.
+ * Exceptions: None; failures use the compiler's return path.
  * Responsible party: asn1c maintainers.
- * History: Uses the shared PER table eligibility predicate.
- * Example: Generate a PER alphabet constraint for an IA5String member.
+ * History: Extracted during issue #595 to bound callable-unit size.
+ * Example: An unconstrained UTCTime alias retains semi-constrained size.
  */
 static int
-emit_member_PER_constraints(arg_t *arg, asn1p_expr_t *expr, const char *pfx,
-                            int suffix_index) {
-	int save_target = arg->target->target;
+emit_member_PER_size_constraints(arg_t *arg, asn1p_expr_t *expr,
+                                 asn1p_expr_type_e etype) {
 	asn1cnst_range_t *range;
-	asn1p_expr_type_e etype;
 
-	etype = expr_get_type(arg, expr);
+	range = asn1constraint_compute_PER_range(expr->Identifier, etype,
+			expr->combined_constraints, ACT_CT_SIZE, 0, 0,
+			CPR_ignore_extension_additions);
 
-	if((arg->flags & (A1C_GEN_UPER | A1C_GEN_APER))
-	&& member_has_per_constraints(expr, etype)) {
-		/* Fall through */
+	if(constraint_is_component_relation_only(expr->constraints)) {
+		asn1p_expr_t *terminal =
+			asn1f_find_terminal_type_ex(arg->asn, arg->ns, expr);
+		if(terminal && terminal != expr && terminal->combined_constraints) {
+			asn1cnst_range_t *type_range =
+				asn1constraint_compute_PER_range(
+					terminal->Identifier, expr_get_type(arg, terminal),
+					terminal->combined_constraints, ACT_CT_SIZE,
+					0, 0, CPR_ignore_extension_additions);
+			if(range && type_range) {
+				range->extensible |= type_range->extensible;
+			}
+			if(type_range) asn1constraint_range_free(type_range);
+		}
+	}
+
+	/*
+	 * UTF8String (SIZE(lb..ub, ...)) has no PER-visible alphabet
+	 * constraint, but its extensible size constraint is still PER-visible.
+	 * Some inputs are reduced to an unconstrained PER range here, which
+	 * makes the generated APER decoder miss the extension bit and fail to
+	 * decode otherwise valid messages.  Fall back to the generic constraint
+	 * range only when the PER range has lost the size constraint and there
+	 * is an explicit constraint to recover.
+	 */
+	if((etype & ASN_STRING_MASK)
+	&& expr->combined_constraints
+	&& asn1c_per_range_needs_generic_size_fallback(range)) {
+		asn1cnst_range_t *generic_range =
+			asn1constraint_compute_constraint_range(
+				expr->Identifier, etype, expr->combined_constraints,
+				ACT_CT_SIZE, 0, 0, 0);
+
+		if(generic_range
+		&& !generic_range->incompatible
+		&& !generic_range->empty_constraint
+		&& !(generic_range->left.type == ARE_MIN
+			&& generic_range->right.type == ARE_MAX)) {
+			/*
+			 * The generic constraint range is not produced by
+			 * asn1constraint_compute_PER_range(), so it can still carry
+			 * not_PER_visible even though SIZE(lb..ub, ...) is exactly
+			 * what PER needs for constrained length encoding.
+			 */
+			generic_range->not_PER_visible = 0;
+
+			if(range) asn1constraint_range_free(range);
+			range = generic_range;
+		} else {
+			if(generic_range) asn1constraint_range_free(generic_range);
+		}
+	}
+
+	if((etype == ASN_BASIC_UTCTime
+	    || etype == ASN_BASIC_GeneralizedTime)
+	   && !expr->combined_constraints) {
+		/* Match the built-in time descriptors' unrestricted size rule. */
+		OUT("{ APC_SEMI_CONSTRAINED, -1, -1, 0, 0 }");
+	} else if(emit_single_member_PER_constraint(arg, range, 0, "SIZE")) {
+		asn1constraint_range_free(range);
+		return -1;
+	}
+	asn1constraint_range_free(range);
+	OUT(",\n");
+	return 0;
+}
+
+/*
+ * Purpose: Emit PER character conversion callbacks for a generated member.
+ * Original source: asn1c C backend PER constraint emitter.
+ * Version/date: 2026-11-01.
+ * Parameters: arg is the output context; expr is the member; etype is its
+ *             resolved type; suffix_index selects unique callback names;
+ *             builtin_numeric_map selects the canonical NumericString map.
+ * Returns: Nothing; output errors use the existing generator path.
+ * Exceptions: None.
+ * Responsible party: asn1c maintainers.
+ * History: Extracted during issue #595 to bound callable-unit size.
+ * Example: A plain NumericString alias receives both map callbacks.
+ */
+static void
+emit_member_PER_map_callbacks(arg_t *arg, asn1p_expr_t *expr,
+                              asn1p_expr_type_e etype, int suffix_index,
+                              int builtin_numeric_map) {
+	if((etype & ASN_STRING_KM_MASK) && (expr->_mark & TM_PERFROMCT)) {
+		int old_target = arg->target->target;
+		REDIR(OT_CODE);
+
+		OUT("static int asn_PER_MAP_%s_%d_v2c(unsigned int value) {\n",
+			MKID(expr), suffix_index);
+		OUT("\tif(value >= sizeof(permitted_alphabet_table_%d)/"
+			"sizeof(permitted_alphabet_table_%d[0]))\n",
+			suffix_index,
+			suffix_index);
+		OUT("\t\treturn -1;\n");
+		OUT("\treturn permitted_alphabet_table_%d[value] - 1;\n",
+			suffix_index);
+		OUT("}\n");
+
+		OUT("static int asn_PER_MAP_%s_%d_c2v(unsigned int code) {\n",
+			MKID(expr), suffix_index);
+		OUT("\tif(code >= sizeof(permitted_alphabet_code2value_%d)/"
+			"sizeof(permitted_alphabet_code2value_%d[0]))\n",
+			suffix_index,
+			suffix_index);
+		OUT("\t\treturn -1;\n");
+		OUT("\treturn permitted_alphabet_code2value_%d[code];\n",
+			suffix_index);
+		OUT("}\n");
+
+		REDIR(old_target);
+
+		OUT("asn_PER_MAP_%s_%d_v2c,\t/* Value to PER code map */\n",
+			MKID(expr), suffix_index);
+		OUT("asn_PER_MAP_%s_%d_c2v\t/* PER code to value map */\n",
+			MKID(expr), suffix_index);
+	} else if(builtin_numeric_map) {
+		OUT("asn_PER_NUM_%s_%d_v2c,\t/* NumericString value map */\n",
+		    MKID(expr), suffix_index);
+		OUT("asn_PER_NUM_%s_%d_c2v\t/* NumericString code map */\n",
+		    MKID(expr), suffix_index);
+	} else if(etype & ASN_STRING_KM_MASK) {
+		DEBUG("No PER value map necessary for %s", MKID(expr));
+		OUT("0, 0\t/* No PER character map necessary */\n");
 	} else {
-		return 0;
+		OUT("0, 0\t/* No PER value map */\n");
 	}
+}
 
-	/* Generate extern declaration for potentially shared constraint functions */
-	const char *ident = MKID(expr);
-	int needs_extern_decl = expr->_type_referenced;
-	
-	/* Also generate extern declaration for generic type-based constraint names that could collide across files */
-	if (!needs_extern_decl && ident && pfx && 
-	    strcmp(pfx, "memb") == 0 && /* Only for member constraints */
-	    (strstr(ident, "OCTET_STRING_SIZE_") || strstr(ident, "BIT_STRING_SIZE_"))) {
-		needs_extern_decl = 1;
-	}
-	
-	if(needs_extern_decl) {
-		REDIR(OT_FUNC_DECLS);
-
-		OUT("extern asn_per_constraints_t "
-			"asn_PER_%s_%s_constr_%d;\n",
-			pfx, MKID(expr), suffix_index);
-	}
-
-	REDIR(OT_CTDEFS);
-
-    OUT_NOINDENT("#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)\n");
-	if(!(expr->_type_referenced)) {
-		/* 
-		 * Make constraint functions non-static if they use type-based names
-		 * that could be shared across multiple generated files to avoid
-		 * undefined reference errors in complex specs with circular dependencies.
-		 */
-		const char *ident = MKID(expr);
-		int make_non_static = 0;
-		
-		/* Check if this is a generic type-based constraint name that could collide (only for member constraints) */
-		if (ident && pfx && strcmp(pfx, "memb") == 0 && 
-		    (strstr(ident, "OCTET_STRING_SIZE_") || strstr(ident, "BIT_STRING_SIZE_"))) {
-			make_non_static = 1;
-		}
-		
-		if (!make_non_static) {
-			OUT("static ");
-		}
-	}
-	OUT("asn_per_constraints_t "
-		"asn_PER_%s_%s_constr_%d CC_NOTUSED = {\n",
-		pfx, MKID(expr), suffix_index);
-
-	INDENT(+1);
+/*
+ * Purpose: Emit the effective PER value or alphabet constraint.
+ * Original source: asn1c C backend PER constraint emitter.
+ * Version/date: 2026-11-01.
+ * Parameters: arg is the output context; expr is the member; etype is its
+ *             resolved ASN.1 type.
+ * Returns: Zero on success, or -1 if constraint emission fails.
+ * Exceptions: None; failures use the compiler's return path.
+ * Responsible party: asn1c maintainers.
+ * History: Extracted during issue #595 to bound complexity and unit size.
+ * Example: A UTCTime alias uses VisibleString's seven-bit alphabet.
+ */
+static int
+emit_member_PER_value_constraints(arg_t *arg, asn1p_expr_t *expr,
+                                  asn1p_expr_type_e etype) {
+	asn1cnst_range_t *range;
 
 	/*
 	 * ENUMERATED and CHOICE are special.
@@ -4318,6 +4457,11 @@ emit_member_PER_constraints(arg_t *arg, asn1p_expr_t *expr, const char *pfx,
 		tmprng.right.value = eidx < 0 ? 0 : eidx;
 		if(emit_single_member_PER_constraint(arg, &tmprng, 0, 0))
 			return -1;
+	} else if(etype == ASN_BASIC_UTCTime
+	          || etype == ASN_BASIC_GeneralizedTime) {
+		/* X.691 10.6.5 uses the VisibleString alphabet for time values. */
+		OUT("{ APC_CONSTRAINED, 7, 7, 32, 126 }"
+		    " /* VisibleString alphabet */");
 	} else if(etype & ASN_STRING_KM_MASK) {
 		range = asn1constraint_compute_PER_range(expr->Identifier, etype,
 				expr->combined_constraints, ACT_CT_FROM,
@@ -4378,109 +4522,95 @@ emit_member_PER_constraints(arg_t *arg, asn1p_expr_t *expr, const char *pfx,
 		asn1constraint_range_free(range);
 	}
 	OUT(",\n");
+	return 0;
+}
 
-	range = asn1constraint_compute_PER_range(expr->Identifier, etype,
-			expr->combined_constraints, ACT_CT_SIZE, 0, 0,
-			CPR_ignore_extension_additions);
+/*
+ * Purpose: Generate member-specific PER constraint metadata.
+ * Original source: asn1c C backend member-table emitter.
+ * Version/date: 2026-10-23.
+ * Parameters: arg is the generation context; expr is the member; pfx is its name prefix.
+ * Returns: Zero on success; -1 if range generation fails.
+ * Exceptions: None; errors use the existing generation return path.
+ * Responsible party: asn1c maintainers.
+ * History: Uses the shared PER table eligibility predicate.
+ * Example: Generate a PER alphabet constraint for an IA5String member.
+ */
+static int
+emit_member_PER_constraints(arg_t *arg, asn1p_expr_t *expr, const char *pfx,
+                            int suffix_index) {
+	int save_target = arg->target->target;
+	asn1p_expr_type_e etype;
+	int builtin_numeric_map;
 
-	if(constraint_is_component_relation_only(expr->constraints)) {
-		asn1p_expr_t *terminal =
-			asn1f_find_terminal_type_ex(arg->asn, arg->ns, expr);
-		if(terminal && terminal != expr && terminal->combined_constraints) {
-			asn1cnst_range_t *type_range =
-				asn1constraint_compute_PER_range(
-					terminal->Identifier, expr_get_type(arg, terminal),
-					terminal->combined_constraints, ACT_CT_SIZE,
-					0, 0, CPR_ignore_extension_additions);
-			if(range && type_range) {
-				range->extensible |= type_range->extensible;
-			}
-			if(type_range) asn1constraint_range_free(type_range);
-		}
-	}
+	etype = expr_get_type(arg, expr);
+	builtin_numeric_map = etype == ASN_STRING_NumericString
+		&& pfx && strcmp(pfx, "type") == 0
+		&& !(expr->_mark & TM_PERFROMCT);
 
-	/*
-	 * UTF8String (SIZE(lb..ub, ...)) has no PER-visible alphabet
-	 * constraint, but its extensible size constraint is still PER-visible.
-	 * Some inputs are reduced to an unconstrained PER range here, which
-	 * makes the generated APER decoder miss the extension bit and fail to
-	 * decode otherwise valid messages.  Fall back to the generic constraint
-	 * range only when the PER range has lost the size constraint and there
-	 * is an explicit constraint to recover.
-	 */
-	if((etype & ASN_STRING_MASK)
-	&& expr->combined_constraints
-	&& asn1c_per_range_needs_generic_size_fallback(range)) {
-		asn1cnst_range_t *generic_range =
-			asn1constraint_compute_constraint_range(
-				expr->Identifier, etype, expr->combined_constraints,
-				ACT_CT_SIZE, 0, 0, 0);
-
-		if(generic_range
-		&& !generic_range->incompatible
-		&& !generic_range->empty_constraint
-		&& !(generic_range->left.type == ARE_MIN
-			&& generic_range->right.type == ARE_MAX)) {
-			/*
-			 * The generic constraint range is not produced by
-			 * asn1constraint_compute_PER_range(), so it can still carry
-			 * not_PER_visible even though SIZE(lb..ub, ...) is exactly
-			 * what PER needs for constrained length encoding.
-			 */
-			generic_range->not_PER_visible = 0;
-
-			if(range) asn1constraint_range_free(range);
-			range = generic_range;
-		} else {
-			if(generic_range) asn1constraint_range_free(generic_range);
-		}
-	}
-
-	if(emit_single_member_PER_constraint(arg, range, 0, "SIZE")) {
-		asn1constraint_range_free(range);
-		return -1;
-	}
-	asn1constraint_range_free(range);
-	OUT(",\n");
-
-	if((etype & ASN_STRING_KM_MASK) && (expr->_mark & TM_PERFROMCT)) {
-		int old_target = arg->target->target;
-		REDIR(OT_CODE);
-
-		OUT("static int asn_PER_MAP_%s_%d_v2c(unsigned int value) {\n",
-			MKID(expr), suffix_index);
-		OUT("\tif(value >= sizeof(permitted_alphabet_table_%d)/"
-			"sizeof(permitted_alphabet_table_%d[0]))\n",
-			suffix_index,
-			suffix_index);
-		OUT("\t\treturn -1;\n");
-		OUT("\treturn permitted_alphabet_table_%d[value] - 1;\n",
-			suffix_index);
-		OUT("}\n");
-
-		OUT("static int asn_PER_MAP_%s_%d_c2v(unsigned int code) {\n",
-			MKID(expr), suffix_index);
-		OUT("\tif(code >= sizeof(permitted_alphabet_code2value_%d)/"
-			"sizeof(permitted_alphabet_code2value_%d[0]))\n",
-			suffix_index,
-			suffix_index);
-		OUT("\t\treturn -1;\n");
-		OUT("\treturn permitted_alphabet_code2value_%d[code];\n",
-			suffix_index);
-		OUT("}\n");
-
-		REDIR(old_target);
-
-		OUT("asn_PER_MAP_%s_%d_v2c,\t/* Value to PER code map */\n",
-			MKID(expr), suffix_index);
-		OUT("asn_PER_MAP_%s_%d_c2v\t/* PER code to value map */\n",
-			MKID(expr), suffix_index);
-	} else if(etype & ASN_STRING_KM_MASK) {
-		DEBUG("No PER value map necessary for %s", MKID(expr));
-		OUT("0, 0\t/* No PER character map necessary */\n");
+	if((arg->flags & (A1C_GEN_UPER | A1C_GEN_APER))
+	&& member_has_per_constraints(expr, etype)) {
+		/* Fall through */
 	} else {
-		OUT("0, 0\t/* No PER value map */\n");
+		return 0;
 	}
+
+	/* Generate extern declaration for potentially shared constraint functions */
+	const char *ident = MKID(expr);
+	int needs_extern_decl = expr->_type_referenced;
+
+	/* Also generate extern declaration for generic type-based constraint names that could collide across files */
+	if (!needs_extern_decl && ident && pfx &&
+	    strcmp(pfx, "memb") == 0 && /* Only for member constraints */
+	    (strstr(ident, "OCTET_STRING_SIZE_") || strstr(ident, "BIT_STRING_SIZE_"))) {
+		needs_extern_decl = 1;
+	}
+
+	if(needs_extern_decl) {
+		REDIR(OT_FUNC_DECLS);
+
+		OUT("extern asn_per_constraints_t "
+			"asn_PER_%s_%s_constr_%d;\n",
+			pfx, MKID(expr), suffix_index);
+	}
+
+	REDIR(OT_CTDEFS);
+
+    OUT_NOINDENT("#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)\n");
+	if(builtin_numeric_map) {
+		/* Plain aliases have no generated FROM map to rank NumericString. */
+		emit_builtin_numeric_per_map(arg, expr, suffix_index);
+	}
+	if(!(expr->_type_referenced)) {
+		/*
+		 * Make constraint functions non-static if they use type-based names
+		 * that could be shared across multiple generated files to avoid
+		 * undefined reference errors in complex specs with circular dependencies.
+		 */
+		const char *ident = MKID(expr);
+		int make_non_static = 0;
+
+		/* Check if this is a generic type-based constraint name that could collide (only for member constraints) */
+		if (ident && pfx && strcmp(pfx, "memb") == 0 &&
+		    (strstr(ident, "OCTET_STRING_SIZE_") || strstr(ident, "BIT_STRING_SIZE_"))) {
+			make_non_static = 1;
+		}
+
+		if (!make_non_static) {
+			OUT("static ");
+		}
+	}
+	OUT("asn_per_constraints_t "
+		"asn_PER_%s_%s_constr_%d CC_NOTUSED = {\n",
+		pfx, MKID(expr), suffix_index);
+
+	INDENT(+1);
+
+	if(emit_member_PER_value_constraints(arg, expr, etype)) return -1;
+
+	if(emit_member_PER_size_constraints(arg, expr, etype)) return -1;
+
+	emit_member_PER_map_callbacks(arg, expr, etype, suffix_index, builtin_numeric_map);
 
 	INDENT(-1);
 
@@ -5990,10 +6120,7 @@ emit_type_DEF(arg_t *arg, asn1p_expr_t *expr, enum tvm_compat tv_mode,
         OUT_NOINDENT("#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */\n");
         OUT_NOINDENT("#if !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT)\n");
 		if(arg->flags & (A1C_GEN_UPER | A1C_GEN_APER)) {
-            if(expr->combined_constraints
-               || terminal_etype == ASN_BASIC_ENUMERATED
-               || terminal_etype == ASN_CONSTR_CHOICE
-               || (terminal_etype & ASN_STRING_KM_MASK)) {
+            if(member_has_per_constraints(expr, terminal_etype)) {
                 OUT("&asn_PER_type_%s_constr_%d",
 					expr_id, expr->_type_unique_index);
 			} else {

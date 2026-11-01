@@ -1,0 +1,15 @@
+-- OK: Issue #595, built-in PER constraints survive top-level alias chains.
+
+ModuleIssue595AliasPER DEFINITIONS ::= BEGIN
+
+UTCA ::= UTCTime
+UTCA2 ::= UTCA
+
+GTA ::= GeneralizedTime
+GTA2 ::= GTA
+
+NSA ::= NumericString
+NSA2 ::= NSA
+NSSize ::= NSA (SIZE (2..5))
+
+END
