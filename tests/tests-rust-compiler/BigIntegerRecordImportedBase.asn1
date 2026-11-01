@@ -1,0 +1,3 @@
+BigIntegerRecordImportedBase DEFINITIONS ::= BEGIN
+Huge ::= INTEGER
+END

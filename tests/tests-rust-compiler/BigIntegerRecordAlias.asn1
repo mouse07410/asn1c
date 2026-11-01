@@ -1,0 +1,4 @@
+BigIntegerRecordAlias DEFINITIONS ::= BEGIN
+Huge ::= INTEGER
+Packet ::= SEQUENCE { value Huge }
+END

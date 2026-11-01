@@ -1,0 +1,3 @@
+BigIntegerRecordExtension DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { value INTEGER, ..., extra BOOLEAN }
+END

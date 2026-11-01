@@ -1,0 +1,4 @@
+BigIntegerRecordImported DEFINITIONS ::= BEGIN
+IMPORTS Huge FROM BigIntegerRecordImportedBase;
+Packet ::= SEQUENCE { value Huge }
+END

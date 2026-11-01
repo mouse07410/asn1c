@@ -1,0 +1,3 @@
+BigIntegerRecordMixedIa5 DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { value INTEGER, label IA5String }
+END

@@ -1,0 +1,3 @@
+BigIntegerRecordNested DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { child SEQUENCE { value INTEGER } }
+END

@@ -92,6 +92,26 @@
       "evidence": "big_integer_conformance.rs; c_big_integer.c; BigInteger.asn1"
     },
     {
+      "asn1_type": "unconstrained INTEGER record member",
+      "feature": "one direct natural required or OPTIONAL field in flat SEQUENCE/SET",
+      "codec": "BER/DER and CER only",
+      "variants": [
+        "wide signed boundaries and 127/128/129/1000/1001-octet contents",
+        "required and OPTIONAL fields beside BOOLEAN and OCTET STRING",
+        "OPTIONAL absence and presence for SEQUENCE and SET",
+        "SET full effective-tag ordering and reversed BER acceptance",
+        "BER aliases and redundant signs with strict CER rejection",
+        "malformed, truncated, mutated, prefix, and resource-limit inputs"
+      ],
+      "directions": [
+        "DER and CER encode",
+        "BER prefix decode",
+        "strict CER prefix decode"
+      ],
+      "status": "tested_with_live_wide_C_comparison",
+      "evidence": "BigIntegerRecord.asn1; big_integer_record_conformance.rs; c_big_integer_record.c"
+    },
+    {
       "asn1_type": "OBJECT IDENTIFIER, RELATIVE-OID",
       "feature": "direct untagged unconstrained root values with canonical base-128 content",
       "codec": "BER/DER and CER only",
@@ -882,7 +902,9 @@
     "rejected_before_output": [
       "aliases and imports",
       "top-level explicit tags and encoding controls",
-      "unconstrained INTEGER with non-BER/CER-only selection, explicit MIN..MAX/open/extended constraints, fields, and tags",
+      "unconstrained INTEGER with non-BER/CER-only selection, explicit MIN..MAX/open/extended constraints, and tags",
+      "unconstrained INTEGER record aliases/imports, constraints, DEFAULT, nesting, and multiplicity",
+      "unconstrained INTEGER record IA5/OID coexistence and mixed codecs",
       "unsupported DEFAULT forms, constructed DEFAULT, nested extensions, excessive nesting or aggregate field-work, generated nested-name collisions, extensible and otherwise unsupported constructed types",
       "duplicate --rust selectors and disabling all Rust codecs",
       "an incomplete runtime asset set beside explicit skeletons",
@@ -919,7 +941,7 @@
     ]
   },
   "observed_counts": {
-    "generated_rust_test_functions": 206,
+    "generated_rust_test_functions": 210,
     "generated_choice_test_functions": 4,
     "live_C_choice_canonical_vectors_each_direction": 5,
     "live_C_choice_BER_alias_vectors": 9,
@@ -940,6 +962,10 @@
     "live_C_wide_INTEGER_vectors_each_direction": 12,
     "BigInteger_mutated_octet_inputs": 6,
     "BigInteger_truncated_prefix_inputs": 6,
+    "generated_big_integer_record_test_functions": 4,
+    "live_C_wide_INTEGER_record_vectors_each_direction": 36,
+    "BigInteger_record_mutation_inputs": 15,
+    "BigInteger_record_truncated_prefix_inputs": 15,
     "live_C_unbounded_string_vectors_each_direction": 11,
     "unbounded_string_single_octet_mutation_inputs": 2023,
     "unbounded_string_truncated_prefix_inputs": 2037,

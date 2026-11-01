@@ -1,0 +1,26 @@
+BigIntegerRecord DEFINITIONS ::= BEGIN
+
+Sequence ::= SEQUENCE {
+    flag BOOLEAN,
+    value INTEGER OPTIONAL,
+    tail OCTET STRING (SIZE(0..4))
+}
+
+SequenceRequired ::= SEQUENCE {
+    value INTEGER,
+    flag BOOLEAN
+}
+
+SetRequired ::= SET {
+    tail OCTET STRING (SIZE(0..4)),
+    value INTEGER,
+    flag BOOLEAN
+}
+
+SetOptional ::= SET {
+    tail OCTET STRING (SIZE(0..4)),
+    value INTEGER OPTIONAL,
+    flag BOOLEAN
+}
+
+END

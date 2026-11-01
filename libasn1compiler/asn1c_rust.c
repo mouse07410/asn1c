@@ -139,6 +139,7 @@ static uint32_t rust_ber_cer_choice_arm_tag(asn1p_expr_t *);
 static int rust_ber_cer_has_tagged_members(asn1p_expr_t *);
 static int rust_ber_cer_has_nested_record(asn1p_expr_t *);
 static int rust_ber_cer_has_variable_content_member(asn1p_expr_t *);
+static int rust_ber_cer_has_big_integer_member(asn1p_expr_t *);
 static const char *rust_ber_cer_context_constructor(asn1p_expr_t *);
 static int rust_check_ber_cer_ia5_record(asn1p_module_t *, asn1p_expr_t *,
                                          uint64_t);
@@ -146,6 +147,13 @@ static int rust_check_ber_cer_ia5_member(asn1p_module_t *, asn1p_expr_t *);
 static int rust_check_ber_cer_oid_record(asn1p_module_t *, asn1p_expr_t *,
                                          uint64_t);
 static int rust_check_ber_cer_oid_member(asn1p_module_t *, asn1p_expr_t *);
+static int rust_check_ber_cer_big_integer_record(asn1p_module_t *, asn1p_expr_t *,
+                                                 uint64_t);
+static int rust_check_ber_cer_big_integer_member(asn1p_module_t *, asn1p_expr_t *);
+static int rust_ber_cer_is_unbounded_integer(const asn1p_expr_t *);
+static size_t rust_ber_cer_big_integer_member_count(asn1p_expr_t *, int *, int *);
+static int rust_check_ber_cer_big_integer_record_members(asn1p_module_t *,
+                                                        asn1p_expr_t *);
 static asn1p_expr_t *rust_ber_cer_choice_member(asn1p_expr_t *, size_t *);
 static int rust_ber_cer_has_empty_nested_record(asn1p_expr_t *);
 static int rust_ber_cer_tag_compare(const asn1p_expr_t *, const asn1p_expr_t *);
@@ -530,6 +538,128 @@ rust_check_ber_cer_oid_record(asn1p_module_t *module, asn1p_expr_t *expr,
         }
     }
     return 0;
+}
+
+/*
+ * Validate one unconstrained INTEGER record component.
+ * Inputs: module supplies diagnostics; member is the resolved component.
+ * Returns zero for a direct natural required/OPTIONAL field, otherwise -1.
+ * Errors: tags, constraints, indirection, DEFAULT, and metadata fail closed.
+ * Source: fixed ASN.1 AST and approved BigInteger record gate.
+ * Version/date: 2026-11-01. Responsible: asn1c maintainers.
+ * History: arbitrary-precision INTEGER records. Example: OPTIONAL INTEGER.
+ */
+static int
+rust_check_ber_cer_big_integer_member(asn1p_module_t *module,
+                                     asn1p_expr_t *member) {
+    int supported_presence;
+    if(!module || !member || member->expr_type != ASN_BASIC_INTEGER) return -1;
+    supported_presence = member->marker.flags == EM_NOMARK
+                      || member->marker.flags == EM_OPTIONAL;
+    if(rust_sequence_member_shape_valid(member)
+       && member->tag.tag_class == TC_NOCLASS
+       && member->tag.tag_mode == TM_DEFAULT
+       && !member->constraints && !member->combined_constraints
+       && !member->reference && !member->members.tq_head
+       && member->encoding_control.encoding_type == EC_NONE
+       && supported_presence) return 0;
+    rust_diagnostic(module, member,
+        "unconstrained INTEGER record fields must be direct, natural, and required or OPTIONAL");
+    return -1;
+}
+
+/*
+ * Identify an unconstrained direct INTEGER AST node.
+ * Input: expr is one fixed type/member node. Returns one for unbounded INTEGER.
+ * Errors: none. Source: ASN.1 fixed AST. Version/date: 2026-11-01.
+ * Responsible: asn1c maintainers. History: BigInteger record gate.
+ * Example: INTEGER (0..5) returns zero; INTEGER returns one.
+ */
+static int
+rust_ber_cer_is_unbounded_integer(const asn1p_expr_t *expr) {
+    return expr && expr->expr_type == ASN_BASIC_INTEGER
+        && !expr->constraints && !expr->combined_constraints;
+}
+
+/*
+ * Count unbounded INTEGER members and note excluded variable string families.
+ * Inputs: expr is the flat record; has_ia5/has_oid receive family flags.
+ * Returns the number of unconstrained INTEGER members. Errors: none.
+ * Source: fixed ASN.1 AST. Version/date: 2026-11-01.
+ * Responsible: asn1c maintainers. History: record eligibility scan.
+ * Example: an INTEGER plus IA5String returns one and sets has_ia5.
+ */
+static size_t
+rust_ber_cer_big_integer_member_count(asn1p_expr_t *expr, int *has_ia5,
+                                     int *has_oid) {
+    asn1p_expr_t *member;
+    size_t count = 0;
+    if(!expr || !has_ia5 || !has_oid) return 0;
+    *has_ia5 = 0;
+    *has_oid = 0;
+    TQ_FOR(member, &expr->members, next) {
+        if(rust_ber_cer_is_unbounded_integer(member)) count++;
+        if(member->expr_type == ASN_STRING_IA5String) *has_ia5 = 1;
+        if(member->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
+           || member->expr_type == ASN_BASIC_RELATIVE_OID) *has_oid = 1;
+    }
+    return count;
+}
+
+/*
+ * Validate all fields once a record has passed its root-level BigInteger gate.
+ * Inputs: module and expr identify the direct record AST.
+ * Returns zero for valid direct fields, otherwise -1. Errors: nested fields or
+ * malformed BigInteger members receive a source-located diagnostic.
+ * Source: approved BigInteger record design. Version/date: 2026-11-01.
+ * Responsible: asn1c maintainers. History: fail-closed member validation.
+ * Example: a bounded INTEGER sibling remains eligible.
+ */
+static int
+rust_check_ber_cer_big_integer_record_members(asn1p_module_t *module,
+                                             asn1p_expr_t *expr) {
+    asn1p_expr_t *member;
+    TQ_FOR(member, &expr->members, next) {
+        if(rust_ber_cer_is_unbounded_integer(member)
+           && rust_check_ber_cer_big_integer_member(module, member)) return -1;
+        if(member->expr_type == ASN_CONSTR_SEQUENCE || member->expr_type == ASN_CONSTR_SET
+           || member->expr_type == ASN_CONSTR_CHOICE) {
+            rust_diagnostic(module, member,
+                            "BigInteger records do not support nested record members");
+            return -1;
+        }
+    }
+    return 0;
+}
+
+/*
+ * Gate flat BER/CER records containing one unbounded signed INTEGER.
+ * Parameters: module/expr identify the fixed record; codecs is selected.
+ * Returns zero when absent or when the narrow record shape passes, else -1.
+ * Errors: tags, constraints, aliases, nesting, OID/IA5, and other codecs fail.
+ * Source: approved BigInteger record design. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: BigInteger record stage.
+ * Example: one OPTIONAL INTEGER alongside BOOLEAN and OCTET STRING.
+ */
+static int
+rust_check_ber_cer_big_integer_record(asn1p_module_t *module,
+                                      asn1p_expr_t *expr, uint64_t codecs) {
+    const uint64_t supported = RUST_CODEC_BER | RUST_CODEC_CER;
+    size_t count;
+    int has_ia5;
+    int has_oid;
+    if(!module || !expr) return -1;
+    count = rust_ber_cer_big_integer_member_count(expr, &has_ia5, &has_oid);
+    if(!count) return 0;
+    if(count > 1 || has_ia5 || has_oid || !(codecs & supported)
+       || (codecs & ~supported) || expr->tag.tag_class != TC_NOCLASS
+       || expr->tag.tag_mode != TM_DEFAULT) {
+        rust_diagnostic(module, expr,
+            "BigInteger records require one untagged field and BER/CER-only codecs; "
+            "IA5String and OID fields are excluded");
+        return -1;
+    }
+    return rust_check_ber_cer_big_integer_record_members(module, expr);
 }
 
 /*
@@ -1636,6 +1766,7 @@ rust_check_sequence(asn1p_module_t *module, asn1p_expr_t *expr,
         return -1;
     }
     if(rust_check_ber_cer_ia5_record(module, expr, codecs)) return -1;
+    if(rust_check_ber_cer_big_integer_record(module, expr, codecs)) return -1;
     if(rust_check_ber_cer_oid_record(module, expr, codecs)) return -1;
     if(rust_check_sequence_tree(module, expr, stack, 0, &nodes, &work, codecs)) return -1;
     if((codecs & RUST_CODEC_UPER)
@@ -1680,6 +1811,7 @@ rust_check_set_ber_cer(asn1p_module_t *module, asn1p_expr_t *expr,
         return -1;
     }
     if(rust_check_ber_cer_ia5_record(module, expr, codecs)) return -1;
+    if(rust_check_ber_cer_big_integer_record(module, expr, codecs)) return -1;
     if(rust_check_ber_cer_oid_record(module, expr, codecs)) return -1;
     TQ_FOR(member, &expr->members, next) {
         if(++count > RUST_BER_CER_FIELD_LIMIT || ++work > RUST_BER_CER_WORK_LIMIT) {
@@ -1832,6 +1964,17 @@ rust_check_ber_cer_member(asn1p_module_t *module, asn1p_expr_t *expr,
     if(member->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
        || member->expr_type == ASN_BASIC_RELATIVE_OID) {
         if(rust_check_ber_cer_oid_member(module, member)
+           || (set && rust_check_sequence_name(module, expr, member))) return -1;
+        if(rust_ber_cer_duplicate_tag(expr, member)) {
+            rust_diagnostic(module, member,
+                            "BER/CER record fields must have unique effective tags");
+            return -1;
+        }
+        return 0;
+    }
+    if(member->expr_type == ASN_BASIC_INTEGER && !member->constraints
+       && !member->combined_constraints) {
+        if(rust_check_ber_cer_big_integer_member(module, member)
            || (set && rust_check_sequence_name(module, expr, member))) return -1;
         if(rust_ber_cer_duplicate_tag(expr, member)) {
             rust_diagnostic(module, member,
@@ -2105,11 +2248,11 @@ rust_ber_cer_has_nested_record(asn1p_expr_t *expr) {
 }
 
 /*
- * Detect a variable-content member requiring aggregate runtime storage tracking.
+ * Detect a member requiring aggregate runtime storage tracking.
  * Input: expr owns one record's direct members. Returns one when present.
- * Errors: none. Source: approved IA5 and OID record accounting policies.
+ * Errors: none. Source: approved IA5, OID, and BigInteger record policies.
  * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
- * History: variable-content record gates. Example: absent OID still selects
+ * History: variable-content record gates. Example: absent BigInteger still selects
  * aggregate accounting for the record operation.
  */
 static int
@@ -2119,7 +2262,27 @@ rust_ber_cer_has_variable_content_member(asn1p_expr_t *expr) {
     TQ_FOR(member, &expr->members, next) {
         if(member->expr_type == ASN_STRING_IA5String
            || member->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
-           || member->expr_type == ASN_BASIC_RELATIVE_OID) return 1;
+           || member->expr_type == ASN_BASIC_RELATIVE_OID
+           || (member->expr_type == ASN_BASIC_INTEGER && !member->constraints
+               && !member->combined_constraints)) return 1;
+    }
+    return 0;
+}
+
+/*
+ * Detect an unbounded INTEGER requiring descriptor-based tag-2 dispatch.
+ * Input: expr owns validated direct fields. Returns one when present.
+ * Errors: none. Source: approved BigInteger record API. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: tag-2 field disambiguation.
+ * Example: one OPTIONAL unbounded INTEGER returns one.
+ */
+static int
+rust_ber_cer_has_big_integer_member(asn1p_expr_t *expr) {
+    asn1p_expr_t *member;
+    if(!expr) return 0;
+    TQ_FOR(member, &expr->members, next) {
+        if(member->expr_type == ASN_BASIC_INTEGER && !member->constraints
+           && !member->combined_constraints) return 1;
     }
     return 0;
 }
@@ -2237,6 +2400,9 @@ rust_ber_cer_duplicate_tag(asn1p_expr_t *expr, asn1p_expr_t *member) {
  */
 static const char *
 rust_ber_cer_field_kind(const asn1p_expr_t *member) {
+    if(!member) return NULL;
+    if(member->expr_type == ASN_BASIC_INTEGER && !member->constraints
+       && !member->combined_constraints) return "BigInteger";
     switch(member->expr_type) {
     case ASN_BASIC_BOOLEAN: return "Boolean";
     case ASN_BASIC_INTEGER: return "Integer";
@@ -3153,6 +3319,15 @@ rust_check_sequence_tree_member(asn1p_module_t *module, asn1p_expr_t *parent,
             return -1;
         }
         return rust_check_ber_cer_oid_member(module, member);
+    }
+    if(member->expr_type == ASN_BASIC_INTEGER && !member->constraints
+       && !member->combined_constraints) {
+        if(depth != 0) {
+            rust_diagnostic(module, member,
+                            "unconstrained INTEGER fields are supported only at the record root");
+            return -1;
+        }
+        return rust_check_ber_cer_big_integer_member(module, member);
     }
     return rust_check_sequence_member(module, member);
 }
@@ -5650,6 +5825,9 @@ rust_write_set_ber_cer_decode_helper(FILE *stream, const char *parent,
         ? rust_nested_type_name(parent, member) : NULL;
     const char *type = member->expr_type == ASN_BASIC_BOOLEAN ? "bool"
         : member->expr_type == ASN_BASIC_NULL ? "()"
+        : member->expr_type == ASN_BASIC_INTEGER
+          && !member->constraints && !member->combined_constraints
+          ? "::asn1c_runtime::BigInteger"
         : member->expr_type == ASN_BASIC_INTEGER ? "i64"
         : member->expr_type == ASN_BASIC_OCTET_STRING ? "::std::vec::Vec<u8>"
         : member->expr_type == ASN_BASIC_BIT_STRING
@@ -5975,6 +6153,7 @@ rust_write_set_ber_cer_decode_method(FILE *stream, const char *parent,
     int tagged_root = expr->tag.tag_class == TC_CONTEXT_SPECIFIC
                    && expr->tag.tag_mode == TM_IMPLICIT;
     int tagged = tagged_root || rust_ber_cer_has_tagged_members(expr)
+              || rust_ber_cer_has_big_integer_member(expr)
               || rust_ber_cer_choice_member(expr, NULL) != NULL;
     const char *context_constructor = rust_ber_cer_context_constructor(expr);
     if(rust_write_method_doc(stream, cer
@@ -6352,6 +6531,11 @@ rust_write_sequence_ber_cer_encode_value(FILE *stream, const char *parent,
     case ASN_BASIC_NULL:
         return rust_write_ber_cer_null(stream, tag_argument, tagged, explicit_tag);
     case ASN_BASIC_INTEGER:
+        if(!member->constraints && !member->combined_constraints) {
+            if(tagged || explicit_tag) return -1;
+            return fprintf(stream, "writer.write_big_integer(%s)?;\n", value) < 0
+                ? -1 : 0;
+        }
         return rust_write_ber_cer_integer(stream, member, value, tag_argument,
                                           tagged, explicit_tag);
     case ASN_BASIC_ENUMERATED:
@@ -6409,7 +6593,9 @@ rust_write_sequence_ber_cer_encode_optional(FILE *stream, const char *parent,
         strcpy(value, "value.as_slice()");
     else if(member->expr_type == ASN_STRING_IA5String
             || member->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
-            || member->expr_type == ASN_BASIC_RELATIVE_OID)
+            || member->expr_type == ASN_BASIC_RELATIVE_OID
+            || (member->expr_type == ASN_BASIC_INTEGER && !member->constraints
+                && !member->combined_constraints))
         strcpy(value, "value");
     else if(member->expr_type == ASN_BASIC_BIT_STRING)
         strcpy(value, "value");
@@ -6471,7 +6657,9 @@ rust_write_sequence_ber_cer_encode_required(FILE *stream, const char *parent,
         written = snprintf(value, sizeof(value), "&self.%s", name);
     else if(member->expr_type == ASN_STRING_IA5String
             || member->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
-            || member->expr_type == ASN_BASIC_RELATIVE_OID)
+            || member->expr_type == ASN_BASIC_RELATIVE_OID
+            || (member->expr_type == ASN_BASIC_INTEGER && !member->constraints
+                && !member->combined_constraints))
         written = snprintf(value, sizeof(value), "&self.%s", name);
     else if(member->expr_type == ASN_BASIC_NULL)
         written = snprintf(value, sizeof(value), "()");
@@ -6734,6 +6922,9 @@ rust_write_sequence_ber_cer_decode_value(FILE *stream, const char *parent,
     case ASN_BASIC_NULL:
         return fprintf(stream, "%sreader.read_null()?;\n", indent) < 0 ? -1 : 0;
     case ASN_BASIC_INTEGER:
+        if(!member->constraints && !member->combined_constraints)
+            return fprintf(stream, "%slet value = reader.read_big_integer()?;\n", indent) < 0
+                ? -1 : 0;
         return rust_write_ber_cer_decode_integer(stream, member, indent);
     case ASN_BASIC_ENUMERATED:
         if(fprintf(stream, "%slet value = ", indent) < 0
@@ -7701,6 +7892,9 @@ rust_write_sequence_field(FILE *stream, const char *parent,
                        : nested_type ? nested_type
                        : member->expr_type == ASN_BASIC_BOOLEAN ? "bool"
                        : member->expr_type == ASN_BASIC_NULL ? "()"
+                       : member->expr_type == ASN_BASIC_INTEGER
+                         && !member->constraints && !member->combined_constraints
+                         ? "::asn1c_runtime::BigInteger"
                        : member->expr_type == ASN_BASIC_INTEGER ? "i64"
                        : member->expr_type == ASN_BASIC_BIT_STRING
                          && rust_fixed_size(member, &(size_t){0}) == 0

@@ -1,0 +1,3 @@
+BigIntegerRecordDefault DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { value INTEGER DEFAULT 1 }
+END

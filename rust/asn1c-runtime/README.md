@@ -144,6 +144,19 @@ the C wide INTEGER BER decoder accepts an empty content octet sequence. The stri
 re-encoding using one cumulative input, retained-value, scratch, output, and
 work budget; it does not validate a suffix as part of the INTEGER value.
 
+Flat BER/CER-only SEQUENCE and SET records can use one direct unconstrained
+INTEGER through `FieldKind::BigInteger` with typed `write_big_integer` and
+`read_big_integer` methods. This descriptor shares universal tag 2 with the
+bounded `FieldKind::Integer`, while keeping their APIs and value constraints
+separate. Record operations require `RecordContext::new_with_aggregate_scratch`
+even when an optional `BigInteger` is absent. Record BER parsing and sign
+normalization, retained allocation, canonical writing, and strict CER comparison
+share the same context budget. Record encoding accounts output and runtime-owned
+temporary storage; it does not charge unused reserve capacity in the caller's
+borrowed `BigInteger` value. Record BER deliberately rejects empty and
+constructed INTEGER forms, a narrower policy than C BER; C accepts empty
+content.
+
 `ObjectIdentifier` and `RelativeOid` retain opaque canonical base-128 content
 octets, so subidentifiers are not limited to machine-sized integers. Their
 fallible `try_from_content` constructors remove redundant leading `80` groups

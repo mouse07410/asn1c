@@ -1,4 +1,9 @@
 Changes since v1.5.3:
+	* Add one natural unconstrained INTEGER field to Rust BER/DER/CER
+	  flat SEQUENCE and SET records under BER/CER-only selection. Use
+	  BigInteger without narrowing to i64, normalize BER sign padding
+	  within the shared record budget, preserve bounded INTEGER fields,
+	  and reject unsupported schemas before publication.
 	* Add natural OBJECT IDENTIFIER and RELATIVE-OID fields to Rust
 	  BER/DER/CER flat SEQUENCE and SET records under BER/CER-only
 	  selection. Normalize BER base-128 content in the shared record

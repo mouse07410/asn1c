@@ -275,6 +275,17 @@ BER retains malformed empty or unterminated OID content and redundant groups;
 Rust rejects the malformed forms and normalizes redundant groups, as its
 direct OID codec does. Tagged, constrained, nested, referenced, imported,
 mixed-IA5, and mixed-codec OID record forms remain gated.
+An untagged flat SEQUENCE or SET under BER/CER-only selection may contain one
+natural unconstrained INTEGER field represented by the existing owned
+`BigInteger` type. BER normalizes redundant sign octets under the shared
+record budget; DER/CER emit minimal primitive tag-2 content, and strict CER
+checks the consumed prefix. This field has a distinct runtime kind from
+bounded `i64` INTEGER so optional absence still selects aggregate scratch
+accounting. C `-fwide-types` is used for differential values outside `i64`;
+default C generation may use native `long`. C BER accepts empty INTEGER
+content that Rust rejects because `BigInteger` requires a nonempty value.
+Tagged, constrained, nested, referenced, imported, mixed semantic-field, and
+mixed-codec wide INTEGER record forms remain gated.
 One inline primitive CHOICE child with unique BOOLEAN, NULL, or bounded `i64`
 INTEGER alternatives is supported under BER/CER-only selection. An untagged
 SEQUENCE parent accepts a natural or one context-specific EXPLICIT CHOICE;

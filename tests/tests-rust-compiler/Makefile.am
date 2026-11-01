@@ -67,6 +67,22 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/BigIntegerField.asn1 \
     $(srcdir)/big_integer_conformance.rs \
     $(srcdir)/c_big_integer.c \
+    $(srcdir)/BigIntegerRecord.asn1 \
+    $(srcdir)/BigIntegerRecordAlias.asn1 \
+    $(srcdir)/BigIntegerRecordCollision.asn1 \
+    $(srcdir)/BigIntegerRecordConstrained.asn1 \
+    $(srcdir)/BigIntegerRecordDefault.asn1 \
+    $(srcdir)/BigIntegerRecordExtension.asn1 \
+    $(srcdir)/BigIntegerRecordImported.asn1 \
+    $(srcdir)/BigIntegerRecordImportedBase.asn1 \
+    $(srcdir)/BigIntegerRecordMixedIa5.asn1 \
+    $(srcdir)/BigIntegerRecordMixedOid.asn1 \
+    $(srcdir)/BigIntegerRecordMultiple.asn1 \
+    $(srcdir)/BigIntegerRecordNested.asn1 \
+    $(srcdir)/BigIntegerRecordTagged.asn1 \
+    $(srcdir)/BigIntegerRecordTaggedRoot.asn1 \
+    $(srcdir)/big_integer_record_conformance.rs \
+    $(srcdir)/c_big_integer_record.c \
     $(srcdir)/UnconstrainedStrings.asn1 \
     $(srcdir)/UnconstrainedStringsAlias.asn1 \
     $(srcdir)/UnconstrainedStringsContaining.asn1 \

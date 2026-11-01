@@ -1,0 +1,3 @@
+BigIntegerRecordMultiple DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { first INTEGER, second INTEGER }
+END

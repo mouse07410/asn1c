@@ -1,0 +1,3 @@
+BigIntegerRecordConstrained DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { value INTEGER (0..MAX) }
+END

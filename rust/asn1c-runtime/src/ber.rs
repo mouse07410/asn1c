@@ -4,6 +4,7 @@
 //! Version/date: first expansion, 2026-10-31. Responsible party: asn1c
 //! maintainers. Example: `decode_octet_string_ber(input, &Limits::default())?`.
 
+use crate::big_integer::{copy_signed_bytes, normalized_start, BigInteger};
 use crate::{validate_integer, BitStringValue, Decoded, Encoded, Error, Limits, Resource};
 
 /// Maximum constructed-TLV nesting accepted by this parser.
@@ -598,6 +599,8 @@ pub enum FieldKind {
     Boolean,
     /// Signed bounded INTEGER field content.
     Integer,
+    /// Unconstrained arbitrary-precision signed INTEGER field content.
+    BigInteger,
     /// Packed BIT STRING field content.
     BitString,
     /// OCTET STRING field content.
@@ -643,7 +646,7 @@ impl FieldKind {
     const fn universal_tag(self) -> u64 {
         match self {
             Self::Boolean => TAG_BOOLEAN,
-            Self::Integer => TAG_INTEGER,
+            Self::Integer | Self::BigInteger => TAG_INTEGER,
             Self::BitString => TAG_BIT_STRING,
             Self::OctetString => TAG_OCTET_STRING,
             Self::Ia5String => TAG_IA5_STRING,
@@ -770,11 +773,14 @@ fn validate_field_descriptor(tag: Tag, kind: FieldKind) -> Result<(), Error> {
     tag.validate()?;
     if matches!(
         kind,
-        FieldKind::Ia5String | FieldKind::ObjectIdentifier | FieldKind::RelativeOid
+        FieldKind::Ia5String
+            | FieldKind::ObjectIdentifier
+            | FieldKind::RelativeOid
+            | FieldKind::BigInteger
     ) && (tag.class != TagClass::Universal || u64::from(tag.number) != kind.universal_tag())
     {
         return Err(invalid(
-            "record variable-length fields require their natural universal tag",
+            "record IA5/OID and unconstrained INTEGER fields require their natural universal tag",
         ));
     }
     if tag.class == TagClass::Universal && u64::from(tag.number) != kind.universal_tag() {
@@ -807,10 +813,13 @@ fn validate_field_mode(tag: Tag, kind: FieldKind, mode: TaggingMode) -> Result<(
             tag.validate()?;
             if matches!(
                 kind,
-                FieldKind::Ia5String | FieldKind::ObjectIdentifier | FieldKind::RelativeOid
+                FieldKind::Ia5String
+                    | FieldKind::ObjectIdentifier
+                    | FieldKind::RelativeOid
+                    | FieldKind::BigInteger
             ) {
                 return Err(invalid(
-                    "record variable-length fields do not support EXPLICIT tagging",
+                    "record variable-length and unconstrained INTEGER fields do not support EXPLICIT tagging",
                 ));
             }
             if tag.class != TagClass::ContextSpecific {
@@ -1300,7 +1309,7 @@ impl RecordKind {
 ///
 /// A context is created once for an encode or decode operation and may be
 /// reused for strict CER re-encoding and comparison. On decode, `max_output_bytes`
-/// also caps cumulative OCTET/BIT/IA5/OID payload allocation charges. Nested
+/// also caps cumulative OCTET/BIT/IA5/OID/BigInteger payload allocation charges. Nested
 /// callback failures roll back traversal but keep work and allocation charges.
 pub struct RecordContext {
     /// Copied caller ceilings for this complete operation.
@@ -1456,9 +1465,9 @@ impl RecordContext {
 
     /// Create an operation context with aggregate record scratch accounting.
     ///
-    /// Generated records containing variable-length string storage use this
-    /// constructor even when the optional string is absent. Nested record
-    /// callbacks remain disabled.
+    /// Generated records containing variable-length string storage or
+    /// unconstrained INTEGER fields use this constructor even when an optional
+    /// field is absent. Nested record callbacks remain disabled.
     ///
     /// # Parameters and returns
     /// `limits` supplies whole-input, output, and cumulative-work ceilings.
@@ -1681,7 +1690,7 @@ impl RecordContext {
     const fn require_aggregate_scratch(&self) -> Result<(), Error> {
         if !self.aggregate_scratch {
             return Err(invalid(
-                "record variable-length fields require aggregate scratch accounting",
+                "record IA5/OID and unconstrained INTEGER fields require aggregate scratch accounting",
             ));
         }
         Ok(())
@@ -2511,7 +2520,7 @@ impl SequenceWriter<'_> {
     /// Source: X.690 8.19. Version: 2026-11-01. Responsible: runtime maintainers.
     /// History: flat record OID gate. Example: `writer.write_object_identifier(&oid)?`.
     pub fn write_object_identifier(&mut self, value: &ObjectIdentifier) -> Result<(), Error> {
-        self.write_oid_field(FieldKind::ObjectIdentifier, value.as_content())
+        self.write_variable_primitive_field(FieldKind::ObjectIdentifier, value.as_content())
     }
 
     /// Append one natural universal RELATIVE-OID field.
@@ -2528,7 +2537,25 @@ impl SequenceWriter<'_> {
     /// Source: X.690 8.20. Version: 2026-11-01. Responsible: runtime maintainers.
     /// History: flat record OID gate. Example: `writer.write_relative_oid(&oid)?`.
     pub fn write_relative_oid(&mut self, value: &RelativeOid) -> Result<(), Error> {
-        self.write_oid_field(FieldKind::RelativeOid, value.as_content())
+        self.write_variable_primitive_field(FieldKind::RelativeOid, value.as_content())
+    }
+
+    /// Append one natural universal unconstrained INTEGER field.
+    ///
+    /// # Parameters and returns
+    /// `value` holds minimal signed two's-complement bytes. Returns success
+    /// after a primitive definite tag-2 TLV is committed in record order.
+    ///
+    /// # Errors
+    /// Returns missing aggregate mode, duplicate/order, work/output/scratch,
+    /// checked-size, or allocation errors. Failed writes roll back.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 INTEGER and `BigInteger`. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat record wide INTEGER gate.
+    /// Example: `writer.write_big_integer(&value)?`.
+    pub fn write_big_integer(&mut self, value: &BigInteger) -> Result<(), Error> {
+        self.write_variable_primitive_field(FieldKind::BigInteger, value.as_signed_bytes())
     }
 
     /// Append one bounded OCTET STRING using the selected record rule.
@@ -2986,21 +3013,25 @@ impl SequenceWriter<'_> {
         Ok(())
     }
 
-    /// Append canonical OID content with transactional aggregate accounting.
+    /// Append canonical variable primitive content with aggregate accounting.
     ///
     /// # Parameters and returns
-    /// `kind` selects OBJECT IDENTIFIER or RELATIVE-OID; `content` is its
-    /// private canonical value. Returns success after the TLV is committed.
+    /// `kind` selects an OID or unconstrained INTEGER; `content` is its private
+    /// canonical value. Returns success after the TLV is committed.
     ///
     /// # Errors
     /// Returns aggregate-mode, ordering, output/work/scratch, size, or
     /// allocation errors. Buffer and field state roll back on failure.
     ///
     /// # Source, version, history, example
-    /// Source: X.690 OID field encoding. Version: 2026-11-01.
-    /// Responsible: runtime maintainers. History: flat record OID gate.
-    /// Example: called by both public OID writer methods.
-    fn write_oid_field(&mut self, kind: FieldKind, content: &[u8]) -> Result<(), Error> {
+    /// Source: X.690 primitive record fields. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: variable record field gates.
+    /// Example: called by OID and unconstrained INTEGER writer methods.
+    fn write_variable_primitive_field(
+        &mut self,
+        kind: FieldKind,
+        content: &[u8],
+    ) -> Result<(), Error> {
         self.context.require_aggregate_scratch()?;
         let tag = intrinsic_tag(kind);
         validate_field_descriptor(tag, kind)?;
@@ -3399,6 +3430,24 @@ impl<'context> SetWriter<'context> {
     /// Example: `writer.write_relative_oid(&oid)?`.
     pub fn write_relative_oid(&mut self, value: &RelativeOid) -> Result<(), Error> {
         self.inner.write_relative_oid(value)
+    }
+
+    /// Append one natural unconstrained INTEGER member in SET tag order.
+    ///
+    /// # Parameters and returns
+    /// `value` holds minimal signed bytes. Returns success after a primitive
+    /// definite tag-2 TLV is committed under the shared aggregate context.
+    ///
+    /// # Errors
+    /// Returns aggregate-mode, duplicate/order, work/output/scratch, size, or
+    /// allocation errors. Failed writes roll back.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 INTEGER and SET ordering. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat record wide INTEGER gate.
+    /// Example: `writer.write_big_integer(&value)?`.
+    pub fn write_big_integer(&mut self, value: &BigInteger) -> Result<(), Error> {
+        self.inner.write_big_integer(value)
     }
 
     /// Append one bounded OCTET STRING member in increasing tag order.
@@ -3931,7 +3980,7 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
             if fields.iter().any(|field| {
                 matches!(
                     field.kind,
-                    FieldKind::ObjectIdentifier | FieldKind::RelativeOid
+                    FieldKind::ObjectIdentifier | FieldKind::RelativeOid | FieldKind::BigInteger
                 )
             }) {
                 context.require_aggregate_scratch()?;
@@ -4566,6 +4615,25 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
         })
     }
 
+    /// Decode and normalize one natural universal unconstrained INTEGER field.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns the canonical arbitrary-precision signed value,
+    /// transferring the normalized allocation without another copy.
+    ///
+    /// # Errors
+    /// Returns missing aggregate mode, constructed/empty BER, retained/output/
+    /// work/scratch, checked-size, or allocation errors. The field remains
+    /// pending after failure.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 INTEGER and `BigInteger`. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat record wide INTEGER gate.
+    /// Example: `let value = reader.read_big_integer()?`.
+    pub fn read_big_integer(&mut self) -> Result<BigInteger, Error> {
+        self.read_big_integer_value()
+    }
+
     /// Decode and flatten the current bounded BER BIT STRING field.
     ///
     /// # Parameters
@@ -4697,6 +4765,54 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
             .retain_decoded(normalized.len(), normalized.capacity())?;
         self.current = None;
         Ok(normalized)
+    }
+
+    /// Normalize a pending wide INTEGER using this record's shared budget.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns an invariant-checked wrapper containing one
+    /// fallibly allocated minimal byte vector.
+    ///
+    /// # Errors
+    /// Returns aggregate-mode, field/form/content, resource, size, or
+    /// allocation errors. The pending field is consumed only on success.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 signed INTEGER content. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat record wide INTEGER gate.
+    /// Example: called by `read_big_integer` after field dispatch.
+    fn read_big_integer_value(&mut self) -> Result<BigInteger, Error> {
+        self.context.require_aggregate_scratch()?;
+        let field = self.current_field(FieldKind::BigInteger)?;
+        if field.constructed {
+            return Err(invalid(
+                "BER unconstrained INTEGER fields must use primitive form",
+            ));
+        }
+        let content = self
+            .input
+            .get(field.content_start..field.content_end)
+            .ok_or_else(|| invalid("BER INTEGER content span is outside record input"))?;
+        if content.is_empty() {
+            return Err(invalid("BER INTEGER content must not be empty"));
+        }
+        let limits = self.context.remaining_decode_limits()?;
+        self.context.charge(content.len())?;
+        let start = normalized_start(content);
+        let retained_len = content
+            .len()
+            .checked_sub(start)
+            .ok_or(Error::SizeOverflow)?;
+        check(Resource::OutputBytes, retained_len, limits.max_output_bytes)?;
+        self.context.charge(retained_len)?;
+        self.context.charge(retained_len.min(2))?;
+        let normalized =
+            copy_signed_bytes(&content[start..], &limits, self.context.retained_capacity)?;
+        self.context
+            .retain_decoded(normalized.len(), normalized.capacity())?;
+        let value = BigInteger::from_normalized_signed_bytes(normalized)?;
+        self.current = None;
+        Ok(value)
     }
 
     /// Resolve one effective wire tag against the bounded field descriptor list.
@@ -5152,6 +5268,23 @@ impl<'input, 'tags, 'context> SetReader<'input, 'tags, 'context> {
     /// Example: `let value = reader.read_relative_oid()?`.
     pub fn read_relative_oid(&mut self) -> Result<RelativeOid, Error> {
         self.inner.read_relative_oid()
+    }
+
+    /// Decode and normalize one unconstrained INTEGER SET member.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns the canonical arbitrary-precision value.
+    ///
+    /// # Errors
+    /// Returns aggregate-mode, malformed BER, retained/output/work/scratch,
+    /// checked-size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 INTEGER and BER SET. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat record wide INTEGER gate.
+    /// Example: `let value = reader.read_big_integer()?`.
+    pub fn read_big_integer(&mut self) -> Result<BigInteger, Error> {
+        self.inner.read_big_integer()
     }
 
     /// Decode and flatten the current bounded BIT STRING SET member.
@@ -9169,7 +9302,7 @@ fn tagged_primitive_field_size(tag: Tag, content_len: usize) -> Result<usize, Er
 const fn intrinsic_tag(kind: FieldKind) -> Tag {
     match kind {
         FieldKind::Boolean => Tag::universal(1),
-        FieldKind::Integer => Tag::universal(2),
+        FieldKind::Integer | FieldKind::BigInteger => Tag::universal(2),
         FieldKind::BitString => Tag::universal(3),
         FieldKind::OctetString => Tag::universal(4),
         FieldKind::Ia5String => Tag::universal(22),
@@ -16632,6 +16765,583 @@ mod tests {
         assert_eq!(writer.bytes, [0x30, 0]);
     }
 
+    /// Decode one natural `BigInteger` field and preserve exact record-prefix use.
+    ///
+    /// # Parameters and returns
+    /// `input` is the complete available slice and `context` owns this operation's
+    /// counters. Returns the value and exact consumed prefix.
+    ///
+    /// # Errors
+    /// Returns malformed framing, a missing field, resource, content, or finish
+    /// errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: flat unconstrained INTEGER record gate. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: `BigInteger` record tests.
+    /// Example: called by strict CER and BER regression cases.
+    fn read_record_big_integer(
+        input: &[u8],
+        context: &mut RecordContext,
+    ) -> Result<Decoded<BigInteger>, Error> {
+        let field = RecordField::new(Tag::universal(2), FieldKind::BigInteger)?;
+        let fields = [field];
+        let mut reader = SequenceReader::new_tagged(input, &fields, context)?;
+        if reader.next_tagged_field()? != Some(field.tag()) {
+            return Err(invalid("BigInteger record field is absent"));
+        }
+        let value = reader.read_big_integer()?;
+        if reader.next_tagged_field()?.is_some() {
+            return Err(invalid("BigInteger record has an extra field"));
+        }
+        let span = reader.finish()?;
+        Ok(Decoded {
+            value,
+            consumed_bits: span.consumed_bits,
+            consumed_bytes: span.consumed_bytes,
+        })
+    }
+
+    /// Strictly decode one `BigInteger` CER record with a shared operation budget.
+    ///
+    /// # Parameters and returns
+    /// `input` is the full available slice; `limits` bounds parsing, retained
+    /// bytes, output, and work. Returns a canonical decoded prefix.
+    ///
+    /// # Errors
+    /// Returns parse, resource, allocation, or canonicality errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 CER decode/re-encode comparison. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: `BigInteger` record tests.
+    /// Example: used to pin shared strict-CER work accounting.
+    fn strict_record_big_integer(
+        input: &[u8],
+        limits: &Limits,
+    ) -> Result<Decoded<BigInteger>, Error> {
+        let mut context = RecordContext::new_with_aggregate_scratch(limits);
+        let decoded = read_record_big_integer(input, &mut context)?;
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context)?;
+        writer.write_big_integer(&decoded.value)?;
+        let canonical = writer.finish()?;
+        context.verify_canonical(input, decoded.consumed_bytes, &canonical.bytes)?;
+        Ok(decoded)
+    }
+
+    /// Match C wide INTEGER sequence DER/CER vectors and suffix consumption.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Verifies positive and negative 64-bit boundary encodings.
+    ///
+    /// # Errors
+    /// Panics on an incorrect vector, value, or consumed prefix.
+    ///
+    /// # Source, version, history, example
+    /// Source: C `-fwide-types` INTEGER record vectors. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: `BigInteger` record regression.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn big_integer_record_sequence_matches_wide_integer_vectors() {
+        let limits = Limits::default();
+        let cases: &[(&[u8], &[u8], &[u8])] = &[
+            (
+                &[0, 0x80, 0, 0, 0, 0, 0, 0, 0],
+                &[0x30, 0x0b, 2, 9, 0, 0x80, 0, 0, 0, 0, 0, 0, 0],
+                &[0x30, 0x80, 2, 9, 0, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            ),
+            (
+                &[0x80, 0, 0, 0, 0, 0, 0, 0],
+                &[0x30, 0x0a, 2, 8, 0x80, 0, 0, 0, 0, 0, 0, 0],
+                &[0x30, 0x80, 2, 8, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            ),
+        ];
+        for (signed, der_expected, cer_expected) in cases {
+            let value = BigInteger::try_from_signed_bytes(signed, &limits).unwrap();
+            for (rule, expected) in [
+                (RecordEncoding::Der, *der_expected),
+                (RecordEncoding::Cer, *cer_expected),
+            ] {
+                let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+                let mut writer = SequenceWriter::new(rule, &mut context).unwrap();
+                writer.write_big_integer(&value).unwrap();
+                let encoded = writer.finish().unwrap();
+                assert_eq!(encoded.bytes, expected);
+
+                let mut suffixed = encoded.bytes.clone();
+                suffixed.push(0xff);
+                let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+                let decoded = read_record_big_integer(&suffixed, &mut context).unwrap();
+                assert_eq!(decoded.value.as_signed_bytes(), value.as_signed_bytes());
+                assert_eq!(decoded.consumed_bytes, expected.len());
+            }
+        }
+    }
+
+    /// Keep wide INTEGER fields primitive through short and long lengths.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks content lengths 127, 128, and 1001 in DER and CER.
+    ///
+    /// # Errors
+    /// Panics on a nonminimal length, constructed child, or decoded-value mismatch.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 INTEGER length forms. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: `BigInteger` record regression.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn big_integer_record_lengths_remain_primitive() {
+        let limits = Limits::default();
+        let field = RecordField::new(Tag::universal(2), FieldKind::BigInteger).unwrap();
+        let fields = [field];
+        for (content_len, header) in [
+            (127, &[0x7f][..]),
+            (128, &[0x81, 0x80][..]),
+            (1001, &[0x82, 0x03, 0xe9][..]),
+        ] {
+            let bytes = vec![1; content_len];
+            let value = BigInteger::try_from_signed_bytes(&bytes, &limits).unwrap();
+            for rule in [RecordEncoding::Der, RecordEncoding::Cer] {
+                let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+                let mut writer = SequenceWriter::new(rule, &mut context).unwrap();
+                writer.write_big_integer(&value).unwrap();
+                let encoded = writer.finish().unwrap();
+                let child_start = if rule == RecordEncoding::Der {
+                    1 + length_size(encoded.bytes.len() - 2)
+                } else {
+                    2
+                };
+                assert_eq!(encoded.bytes[child_start], 2);
+                assert_eq!(
+                    &encoded.bytes[child_start + 1..child_start + 1 + header.len()],
+                    header
+                );
+                let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+                let mut reader =
+                    SequenceReader::new_tagged(&encoded.bytes, &fields, &mut context).unwrap();
+                assert_eq!(reader.next_tagged_field().unwrap(), Some(field.tag()));
+                assert_eq!(reader.read_big_integer().unwrap().as_signed_bytes(), bytes);
+                assert_eq!(reader.next_tagged_field().unwrap(), None);
+            }
+        }
+    }
+
+    /// Preserve SET BER order while writing canonical BOOLEAN/`BigInteger` order.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks C DER/CER vectors, reversed BER input, and duplicates.
+    ///
+    /// # Errors
+    /// Panics on a vector mismatch or acceptance of a duplicate field.
+    ///
+    /// # Source, version, history, example
+    /// Source: C wide INTEGER SET vectors and X.690 SET ordering.
+    /// Version: 2026-11-01. Responsible: runtime maintainers.
+    /// History: `BigInteger` record regression. Example: run with `cargo test`.
+    #[test]
+    fn big_integer_record_set_sorts_and_reads_unordered_ber() {
+        let limits = Limits::default();
+        let bytes = [0, 0x80, 0, 0, 0, 0, 0, 0, 0];
+        let value = BigInteger::try_from_signed_bytes(&bytes, &limits).unwrap();
+        let fields = [
+            RecordField::new(Tag::universal(1), FieldKind::Boolean).unwrap(),
+            RecordField::new(Tag::universal(2), FieldKind::BigInteger).unwrap(),
+        ];
+        let vectors: &[(RecordEncoding, &[u8])] = &[
+            (
+                RecordEncoding::Der,
+                &[0x31, 0x0e, 1, 1, 0xff, 2, 9, 0, 0x80, 0, 0, 0, 0, 0, 0, 0],
+            ),
+            (
+                RecordEncoding::Cer,
+                &[
+                    0x31, 0x80, 1, 1, 0xff, 2, 9, 0, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                ],
+            ),
+        ];
+        for (rule, expected) in vectors {
+            let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+            let mut writer = SetWriter::new(*rule, &mut context).unwrap();
+            writer.write_boolean(true).unwrap();
+            writer.write_big_integer(&value).unwrap();
+            assert_eq!(writer.finish().unwrap().bytes, *expected);
+        }
+
+        let reversed = [0x31, 0x0e, 2, 9, 0, 0x80, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0xff];
+        let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut reader = SetReader::new_tagged(&reversed, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(fields[1].tag()));
+        assert_eq!(reader.read_big_integer().unwrap().as_signed_bytes(), bytes);
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(fields[0].tag()));
+        assert!(reader.read_boolean().unwrap());
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        let consumed = reader.finish().unwrap().consumed_bytes;
+        let mut writer = SetWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer.write_boolean(true).unwrap();
+        writer.write_big_integer(&value).unwrap();
+        let canonical = writer.finish().unwrap();
+        assert!(context
+            .verify_canonical(&reversed, consumed, &canonical.bytes)
+            .is_err());
+
+        let duplicate = [0x31, 6, 2, 1, 1, 2, 1, 2];
+        let one_field = [fields[1]];
+        let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut reader = SetReader::new_tagged(&duplicate, &one_field, &mut context).unwrap();
+        reader.next_tagged_field().unwrap();
+        assert_eq!(reader.read_big_integer().unwrap().as_signed_bytes(), [1]);
+        assert!(reader.next_tagged_field().is_err());
+    }
+
+    /// Normalize BER sign aliases and reject empty or constructed record INTEGERs.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks strict CER aliases, prefix consumption, and errors.
+    ///
+    /// # Errors
+    /// Panics if malformed values are accepted or a canonical prefix is rejected.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 signed INTEGER content and BER aliases. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: `BigInteger` record regression.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn big_integer_record_ber_normalizes_aliases_and_rejects_bad_forms() {
+        let limits = Limits::default();
+        let alias = [0x30, 0x80, 0x1f, 0x80, 2, 0x81, 1, 1, 0, 0];
+        let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+        let decoded = read_record_big_integer(&alias, &mut context).unwrap();
+        assert_eq!(decoded.value.as_signed_bytes(), [1]);
+        assert_eq!(decoded.consumed_bytes, alias.len());
+        assert!(strict_record_big_integer(&alias, &limits).is_err());
+
+        let padded = [0x30, 4, 2, 2, 0, 1];
+        let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+        assert_eq!(
+            read_record_big_integer(&padded, &mut context)
+                .unwrap()
+                .value
+                .as_signed_bytes(),
+            [1]
+        );
+        let negative_padding = [0x30, 5, 2, 3, 0xff, 0xff, 0x80];
+        let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+        assert_eq!(
+            read_record_big_integer(&negative_padding, &mut context)
+                .unwrap()
+                .value
+                .as_signed_bytes(),
+            [0x80]
+        );
+        let cer_padding = [0x30, 0x80, 2, 2, 0, 1, 0, 0];
+        assert!(strict_record_big_integer(&cer_padding, &limits).is_err());
+
+        let field = RecordField::new(Tag::universal(2), FieldKind::BigInteger).unwrap();
+        let fields = [field];
+        for (malformed, scan_fails) in [
+            (&[0x30, 2, 2, 0][..], false),
+            (&[0x30, 0x80, 0x22, 0x80, 2, 1, 1, 0, 0, 0, 0][..], false),
+            (&[0x30, 3, 2, 2, 1][..], true),
+            (&[0x30, 2, 0, 0][..], true),
+        ] {
+            let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+            let mut reader = SequenceReader::new_tagged(malformed, &fields, &mut context).unwrap();
+            if scan_fails {
+                assert!(reader.next_tagged_field().is_err());
+                continue;
+            }
+            assert_eq!(reader.next_tagged_field().unwrap(), Some(Tag::universal(2)));
+            assert!(reader.read_big_integer().is_err());
+            assert!(reader.next_tagged_field().is_err());
+        }
+    }
+
+    /// Enforce descriptor aggregate mode and reject bounded/unbounded tag collisions.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks OPTIONAL absence, natural tag restrictions, and rollback.
+    ///
+    /// # Errors
+    /// Panics when invalid descriptors or default contexts are accepted.
+    ///
+    /// # Source, version, history, example
+    /// Source: flat record descriptor and `BigInteger` resource policy.
+    /// Version: 2026-11-01. Responsible: runtime maintainers.
+    /// History: `BigInteger` record regression. Example: run with `cargo test`.
+    #[test]
+    fn big_integer_record_requires_aggregate_context_and_unique_tag() {
+        let limits = Limits::default();
+        let field = RecordField::new(Tag::universal(2), FieldKind::BigInteger).unwrap();
+        let fields = [field];
+        let empty = [0x30, 0];
+        let mut flat_context = RecordContext::new(&limits);
+        assert!(matches!(
+            SequenceReader::new_tagged(&empty, &fields, &mut flat_context),
+            Err(Error::InvalidEncoding {
+                reason: "record IA5/OID and unconstrained INTEGER fields require aggregate scratch accounting"
+            })
+        ));
+        let empty_set = [0x31, 0];
+        let mut flat_context = RecordContext::new(&limits);
+        assert!(SetReader::new_tagged(&empty_set, &fields, &mut flat_context).is_err());
+        let mut aggregate = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut absent = SequenceReader::new_tagged(&empty, &fields, &mut aggregate).unwrap();
+        assert_eq!(absent.next_tagged_field().unwrap(), None);
+        assert_eq!(absent.finish().unwrap().consumed_bytes, empty.len());
+
+        assert!(RecordField::new(Tag::context_specific(2), FieldKind::BigInteger).is_err());
+        assert!(
+            RecordField::new_explicit(Tag::context_specific(2), FieldKind::BigInteger).is_err()
+        );
+        let collision = [
+            RecordField::new(Tag::universal(2), FieldKind::Integer).unwrap(),
+            field,
+        ];
+        let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+        assert!(matches!(
+            SequenceReader::new_tagged(&[], &collision, &mut context),
+            Err(Error::InvalidEncoding {
+                reason: "record descriptor tags must be unique"
+            })
+        ));
+
+        let value = BigInteger::try_from_signed_bytes(&[1], &limits).unwrap();
+        let mut context = RecordContext::new(&limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        assert!(writer.write_big_integer(&value).is_err());
+        assert_eq!(writer.bytes, [0x30, 0]);
+    }
+
+    /// Check exact input, retained output, encoded output, and shared CER work.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Pins the independently counted 224-bit strict CER operation.
+    ///
+    /// # Errors
+    /// Panics if an exact limit is rejected or a one-below limit is accepted.
+    ///
+    /// # Source, version, history, example
+    /// Source: record resource policy and X.690 CER comparison. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: `BigInteger` record regression.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn big_integer_record_limits_and_strict_cer_work_are_exact() {
+        let defaults = Limits::default();
+        let canonical = [0x30, 0x80, 2, 1, 1, 0, 0];
+        let exact_input = Limits {
+            max_input_bytes: canonical.len(),
+            ..defaults
+        };
+        assert!(strict_record_big_integer(&canonical, &exact_input).is_ok());
+        let below_input = Limits {
+            max_input_bytes: canonical.len() - 1,
+            ..defaults
+        };
+        assert!(strict_record_big_integer(&canonical, &below_input).is_err());
+        let mut suffixed = canonical.to_vec();
+        suffixed.push(0xff);
+        assert!(strict_record_big_integer(&suffixed, &exact_input).is_err());
+
+        let exact_payload = Limits {
+            max_output_bytes: 1,
+            ..defaults
+        };
+        let decoded = [0x30, 3, 2, 1, 1];
+        let mut context = RecordContext::new_with_aggregate_scratch(&exact_payload);
+        assert_eq!(
+            read_record_big_integer(&decoded, &mut context)
+                .unwrap()
+                .value
+                .as_signed_bytes(),
+            [1]
+        );
+        let below_payload = Limits {
+            max_output_bytes: 0,
+            ..defaults
+        };
+        let mut context = RecordContext::new_with_aggregate_scratch(&below_payload);
+        assert!(read_record_big_integer(&decoded, &mut context).is_err());
+
+        let value = BigInteger::try_from_signed_bytes(&[1], &defaults).unwrap();
+        let der = [0x30, 3, 2, 1, 1];
+        let exact_output = Limits {
+            max_output_bytes: der.len(),
+            ..defaults
+        };
+        let mut context = RecordContext::new_with_aggregate_scratch(&exact_output);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer.write_big_integer(&value).unwrap();
+        assert_eq!(writer.finish().unwrap().bytes, der);
+        let below_output = Limits {
+            max_output_bytes: der.len() - 1,
+            ..defaults
+        };
+        let mut context = RecordContext::new_with_aggregate_scratch(&below_output);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        assert!(writer.write_big_integer(&value).is_err());
+        assert_eq!(writer.bytes, [0x30, 0]);
+
+        let exact_cer_output = Limits {
+            max_output_bytes: canonical.len(),
+            ..defaults
+        };
+        assert!(strict_record_big_integer(&canonical, &exact_cer_output).is_ok());
+        let below_cer_output = Limits {
+            max_output_bytes: canonical.len() - 1,
+            ..defaults
+        };
+        assert!(strict_record_big_integer(&canonical, &below_cer_output).is_err());
+
+        assert!(strict_record_big_integer(
+            &canonical,
+            &Limits {
+                max_work_bits: 224,
+                ..defaults
+            }
+        )
+        .is_ok());
+        assert!(strict_record_big_integer(
+            &canonical,
+            &Limits {
+                max_work_bits: 223,
+                ..defaults
+            }
+        )
+        .is_err());
+    }
+
+    /// Count prior retained bytes with the `BigInteger` and CER output capacities.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks exact and one-over synthetic aggregate capacities.
+    ///
+    /// # Errors
+    /// Panics if retained, decoded, and canonical output buffers escape the cap.
+    ///
+    /// # Source, version, history, example
+    /// Source: shared `RecordContext` scratch policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: `BigInteger` record resource test.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn big_integer_record_scratch_covers_decode_and_cer_reencode() {
+        let limits = Limits::default();
+        let input = [0x30, 0x80, 2, 1, 1, 0, 0];
+        let value = BigInteger::try_from_signed_bytes(&[1], &limits).unwrap();
+        let value_capacity = copy_signed_bytes(&[1], &limits, 0).unwrap().capacity();
+        let mut probe_context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut probe = SequenceWriter::new(RecordEncoding::Cer, &mut probe_context).unwrap();
+        probe.write_big_integer(&value).unwrap();
+        let output_capacity = probe.finish().unwrap().bytes.capacity();
+        let occupied = value_capacity
+            .checked_add(output_capacity)
+            .expect("small test capacities fit usize");
+        let prior_capacity = MAX_RECORD_SCRATCH_BYTES - occupied;
+
+        for (extra, should_pass) in [(0, true), (1, false)] {
+            let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+            context.retained_capacity = prior_capacity + extra;
+            let decoded = read_record_big_integer(&input, &mut context).unwrap();
+            let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+            let write_result = writer.write_big_integer(&decoded.value);
+            assert_eq!(write_result.is_ok(), should_pass);
+            if should_pass {
+                let canonical = writer.finish().unwrap();
+                context
+                    .verify_canonical(&input, decoded.consumed_bytes, &canonical.bytes)
+                    .unwrap();
+            } else {
+                assert_eq!(writer.bytes, [0x30, 0x80]);
+            }
+        }
+
+        let fields = [
+            RecordField::new(Tag::universal(2), FieldKind::BigInteger).unwrap(),
+            RecordField::new(Tag::universal(4), FieldKind::OctetString).unwrap(),
+        ];
+        let sibling_only = [0x30, 3, 4, 1, 0xaa];
+        let mut flat = RecordContext::new(&limits);
+        assert!(SequenceReader::new_tagged(&sibling_only, &fields, &mut flat).is_err());
+        let mut aggregate = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut reader =
+            SequenceReader::new_tagged(&sibling_only, &fields, &mut aggregate).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(fields[1].tag()));
+        assert_eq!(reader.read_octet_string(0, 1).unwrap(), [0xaa]);
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        reader.finish().unwrap();
+    }
+
+    /// Charge every original octet in a long redundant sign prefix before copying.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Pins a long BER prefix at 1096 work bits and rejects less.
+    ///
+    /// # Errors
+    /// Panics if normalization scans redundant bytes without work charges.
+    ///
+    /// # Source, version, history, example
+    /// Source: signed INTEGER BER normalization and record work budget.
+    /// Version: 2026-11-01. Responsible: runtime maintainers.
+    /// History: `BigInteger` record resource test. Example: run with `cargo test`.
+    #[test]
+    fn big_integer_record_charges_long_sign_padding_scan() {
+        let defaults = Limits::default();
+        let mut signed_content = vec![0; 63];
+        signed_content.push(1);
+        let mut input = vec![0x30, 66, 2, 64];
+        input.extend_from_slice(&signed_content);
+        for work_bits in [1095, 1096] {
+            let limits = Limits {
+                max_work_bits: work_bits,
+                ..defaults
+            };
+            let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+            let result = read_record_big_integer(&input, &mut context);
+            assert_eq!(result.is_ok(), work_bits == 1096);
+        }
+    }
+
+    /// Exercise wide INTEGER BER decoding over every truncation and byte mutation.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Asserts that malformed record mutations never unwind.
+    ///
+    /// # Errors
+    /// Panics only if untrusted input causes a decoder panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: BER mutation hardening. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: `BigInteger` record mutation test.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn big_integer_record_mutations_and_truncations_do_not_panic() {
+        let limits = Limits::default();
+        let vectors: &[&[u8]] = &[
+            &[0x30, 3, 2, 1, 1],
+            &[0x30, 0x80, 0x1f, 0x80, 2, 0x81, 1, 0, 0, 0],
+            &[0x30, 2, 2, 0],
+            &[0x30, 6, 0x22, 0x80, 2, 1, 1, 0, 0],
+        ];
+        for wire in vectors {
+            for end in 0..wire.len() {
+                assert!(std::panic::catch_unwind(|| {
+                    let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+                    read_record_big_integer(&wire[..end], &mut context).map(|_| ())
+                })
+                .is_ok());
+            }
+            for index in 0..wire.len() {
+                for replacement in 0_u8..=u8::MAX {
+                    let mut mutated = wire.to_vec();
+                    mutated[index] = replacement;
+                    assert!(std::panic::catch_unwind(|| {
+                        let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+                        read_record_big_integer(&mutated, &mut context).map(|_| ())
+                    })
+                    .is_ok());
+                }
+            }
+        }
+    }
+
     /// Meter inspection of malformed trailing base-128 groups before rejection.
     ///
     /// # Parameters and returns
@@ -17321,7 +18031,7 @@ mod tests {
         assert!(matches!(
             flat_writer.write_ia5_string(&value),
             Err(Error::InvalidEncoding {
-                reason: "record variable-length fields require aggregate scratch accounting"
+                reason: "record IA5/OID and unconstrained INTEGER fields require aggregate scratch accounting"
             })
         ));
         let field = RecordField::new(Tag::universal(22), FieldKind::Ia5String).unwrap();

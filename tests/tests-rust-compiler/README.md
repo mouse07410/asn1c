@@ -327,6 +327,23 @@ truncated input, prefix consumption, input mutation, and resource limits.
 Wide C BER accepts empty INTEGER content, while Rust deliberately
 rejects empty content; this is a documented implementation divergence.
 
+One natural unconstrained INTEGER field is also supported in an untagged flat
+SEQUENCE or SET under BER/CER-only selection. It may be required or OPTIONAL
+beside the supported scalar siblings. Generated fields own the non-Clone
+`BigInteger` value, and every record operation selects aggregate-scratch
+accounting even when the OPTIONAL INTEGER is absent. Tags, aliases, imports,
+constraints, DEFAULT, extensions, nesting, multiple unbounded INTEGER fields,
+IA5/OID coexistence, and mixed codecs fail before output publication.
+
+`BigIntegerRecord.asn1`, `big_integer_record_conformance.rs`, and
+`c_big_integer_record.c` compare DER/CER and BER/CER decoding for signed
+boundaries, `i64` limits, `2^64`, `-2^65`, and 127/128/129/1000/1001-octet
+contents. They also cover OPTIONAL omission/presence in both record kinds,
+required fields, SET
+tag order, prefix consumption, redundant signs, aliases, truncation, mutations,
+malformed content, and resource limits. The C reference uses `-fwide-types`;
+other INTEGER layouts are not part of the comparison.
+
 Direct untagged unconstrained BIT STRING and OCTET STRING roots are supported
 only when BER and/or CER are selected without other codecs. The generated
 wrappers take ownership of their buffers and expose borrowed views; they do

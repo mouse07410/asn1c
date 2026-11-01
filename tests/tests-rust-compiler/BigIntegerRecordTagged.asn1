@@ -1,0 +1,3 @@
+BigIntegerRecordTagged DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { value [0] IMPLICIT INTEGER }
+END

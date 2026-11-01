@@ -28,7 +28,8 @@ supported below; broader nested records and members remain in the parity
 matrix.
 BER/CER-only untagged flat records additionally qualify one natural IA5String
 member or up to one natural OBJECT IDENTIFIER and one natural RELATIVE-OID
-member, with the resource and schema gates described below.
+member, or one natural unconstrained `BigInteger` member, with the resource
+and schema gates described below.
 
 The flat SET slice uses the same six direct field kinds under BER/CER-only
 selection. Its BER reader accepts arbitrary member order;
@@ -776,6 +777,7 @@ tags, collisions with unselected arms, duplicate distinct arms, exact limits,
 transactional writer failures, suffixes, truncation, C vectors, and negative
 schema gates.
 
+
 ### IA5String fields in flat records (qualified slice)
 
 This record-field gate adds a direct, unconstrained IA5String member to
@@ -850,7 +852,7 @@ presence states, large arcs and length boundaries, malformed identifiers,
 duplicate and unknown fields, suffixes, all truncations, exact limits,
 canonical SET ordering, C vectors, and negative schema gates.
 
-### Unconstrained INTEGER fields in flat records (next qualified gate)
+### Unconstrained INTEGER fields in flat records (qualified slice)
 
 Add at most one natural, direct unconstrained INTEGER member to an untagged
 flat SEQUENCE or SET under BER/CER-only selection. The member may be required
@@ -864,7 +866,10 @@ outside `i64` must use `-fwide-types` because default C generation can select
 native `long` storage.
 
 Add natural `write_big_integer` and `read_big_integer` methods to record
-writers/readers while retaining universal `FieldKind::Integer` dispatch.
+writers/readers with a distinct `FieldKind::BigInteger` that shares universal
+tag 2 with the bounded `FieldKind::Integer`. The distinct descriptor lets
+reader constructors require aggregate scratch mode even when an OPTIONAL
+unconstrained member is absent; duplicate detection remains tag-based.
 DER/CER emit one primitive definite tag-2 TLV containing the wrapper's
 minimal signed bytes. BER rejects constructed and empty content and
 normalizes redundant leading `00` or `ff` sign octets. Share the record
@@ -889,6 +894,50 @@ large values and length boundaries, redundant sign normalization, optional
 SET presence and ordering, malformed/constructed fields, tag aliases,
 suffixes, every truncation, exact resource limits, C vectors, and negative
 schema gates.
+
+### Restricted character-string fields in flat records (next qualified gate)
+
+Extend BER/CER-only untagged, nonrecursive top-level SEQUENCE and SET records
+to one natural direct restricted character-string member, required or
+OPTIONAL, with existing scalar siblings and the six-field cap. Cover all
+direct `CharacterStringKind` values except IA5String, which retains its
+existing field API. Preserve built-in Teletex/T61 and Visible/ISO646 names
+despite their shared wire tags. Reject two string members with the same
+effective tag, multiple semantic string fields, IA5/OID/BigInteger
+coexistence, tags, aliases/references/imports, constraints, DEFAULT,
+extensions, nested records, CHOICE, and other codec selections before
+publishing output. `CHARACTER STRING` tag 29 and time types remain separate.
+
+Represent the field with `FieldKind::CharacterString(CharacterStringKind)`;
+generated descriptors retain the schema kind, since wire tag alone cannot
+distinguish the built-in aliases. Add typed `write_character_string` and
+`read_character_string` methods taking an expected kind. The writer rejects
+a value whose kind differs from the descriptor before committing bytes.
+BER and DER preserve arbitrary raw bytes, accepting primitive or constructed
+BER strings with universal tag-4 fragments under the declared outer tag.
+CER validates the full content with the C-compatible kind-specific validator
+and uses primitive output through 1000 octets or canonical tag-4 fragments
+above that point. Reuse the current character-string validator and fragment
+walker with the record's shared work, output, retained-capacity, and
+aggregate scratch context. Move decoded content into the kind-preserving
+wrapper without another allocation. Generated methods use aggregate mode
+even when OPTIONAL is absent; strict CER re-encodes in that same context and
+compares only the consumed prefix. Preserve transactional rollback and the
+record policy excluding caller-owned spare input capacity.
+
+Live C vectors for one string member per record: SEQUENCE with UTF8String
+`A` and BOOLEAN TRUE is DER `30 06 0c 01 41 01 01 ff` and CER
+`30 80 0c 01 41 01 01 ff 00 00`; SET with OPTIONAL PrintableString
+`A` and BOOLEAN TRUE is DER `31 06 01 01 ff 13 01 41` and CER
+`31 80 01 01 ff 13 01 41 00 00`. The absent SET member yields DER
+`31 03 01 01 ff` and CER `31 80 01 01 ff 00 00`. UTF8String byte `ff`
+survives C DER but fails C CER. The C CER UTF8 validator also accepts
+minimal legacy five- and six-byte sequences, so Rust must not substitute
+`str` validation. Acceptance includes each kind and alias, repertoire and
+alignment edges, 999/1000/1001/2001 content boundaries, cross-fragment
+multibyte content, constructed BER and malformed fragments, SET reordering,
+duplicates, suffixes, all truncations, exact resource limits, C differential
+vectors, and no-publication schema gates.
 
 ## Decisions still required
 

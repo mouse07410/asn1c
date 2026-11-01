@@ -29,6 +29,35 @@ pub struct BigInteger {
 }
 
 impl BigInteger {
+    /// Transfer validated canonical bytes into the private invariant-bearing wrapper.
+    ///
+    /// # Parameters and returns
+    /// `signed_bytes` is a nonempty, minimal two's-complement Vec allocated by
+    /// a caller that already charged its normalization, copy, and invariant
+    /// checks. Returns a wrapper without copying or allocating.
+    ///
+    /// # Errors
+    /// Returns `InvalidEncoding` for empty bytes or redundant sign padding.
+    /// No panic or allocation occurs.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 INTEGER content invariant. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: shared record normalization.
+    /// Example: called after `copy_signed_bytes` in a record reader.
+    pub(crate) fn from_normalized_signed_bytes(signed_bytes: Vec<u8>) -> Result<Self, Error> {
+        if signed_bytes.is_empty() {
+            return Err(invalid("signed INTEGER bytes must not be empty"));
+        }
+        let redundant_prefix = signed_bytes.get(1).is_some_and(|next| {
+            (signed_bytes[0] == 0 && next & 0x80 == 0)
+                || (signed_bytes[0] == 0xff && next & 0x80 != 0)
+        });
+        if redundant_prefix {
+            return Err(invalid("signed INTEGER bytes must be minimally encoded"));
+        }
+        Ok(Self { signed_bytes })
+    }
+
     /// Create a value from signed big-endian bytes, trimming redundant sign padding.
     ///
     /// # Parameters and returns
@@ -642,7 +671,11 @@ fn reserve_bytes(size: usize, limits: &Limits, scratch: usize) -> Result<Vec<u8>
 /// Source: `BigInteger` value storage. Version: 2026-11-01.
 /// Responsible: asn1c maintainers. History: arbitrary-precision support.
 /// Example: called only after redundant sign padding is removed.
-fn copy_signed_bytes(bytes: &[u8], limits: &Limits, scratch: usize) -> Result<Vec<u8>, Error> {
+pub(crate) fn copy_signed_bytes(
+    bytes: &[u8],
+    limits: &Limits,
+    scratch: usize,
+) -> Result<Vec<u8>, Error> {
     if bytes.is_empty() {
         return Err(invalid("signed INTEGER bytes must not be empty"));
     }
@@ -664,7 +697,7 @@ fn copy_signed_bytes(bytes: &[u8], limits: &Limits, scratch: usize) -> Result<Ve
 /// Source: X.690 minimal signed INTEGER content. Version: 2026-11-01.
 /// Responsible: asn1c maintainers. History: arbitrary-precision support.
 /// Example: `[0, 0, 0x80]` returns index 1.
-const fn normalized_start(bytes: &[u8]) -> usize {
+pub(crate) const fn normalized_start(bytes: &[u8]) -> usize {
     if bytes.len() <= 1 {
         return 0;
     }

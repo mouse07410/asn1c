@@ -1290,7 +1290,7 @@ if "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" -D "$test_tmp/rejected-sequen
     echo "FAIL: Rust backend accepted an unsupported SEQUENCE"
     exit 1
 fi
-grep -F 'SEQUENCE field needs a supported direct UPER primitive' \
+grep -F 'BigInteger records require one untagged field and BER/CER-only codecs' \
     "$test_tmp/rejected-sequence.log" >/dev/null
 if [ -e "$test_tmp/rejected-sequence" ]; then
     echo "FAIL: unsupported SEQUENCE created output before rejection"
@@ -2730,7 +2730,7 @@ for fixture in SequenceBerCerApplication \
     SequenceBerCerTaggedAny SequenceBerCerExplicitAlias \
     SequenceBerCerExplicitClass SequenceBerCerExplicitRoot \
     SequenceBerCerDuplicate SequenceBerCerNested \
-    SequenceBerCerUnbounded SequenceBerCerNullDefault \
+    SequenceBerCerNullDefault \
     SequenceBerCerEnumDefault SequenceBerCerOctetDefault \
     SequenceBerCerBitDefault SequenceBerCerUnboundedString \
     SequenceBerCerExtensibleString SequenceBerCerContaining \
@@ -2802,7 +2802,7 @@ if "$asn1c_bin" --rust -gen-BER -gen-UPER -no-gen-CER -S "$skeletons" \
 fi
 test ! -e "$big_integer_mixed"
 
-for fixture in BigIntegerMinMax BigIntegerTagged BigIntegerField; do
+for fixture in BigIntegerMinMax BigIntegerTagged; do
     rejected_out="$test_tmp/rejected-$fixture"
     if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
         -D "$rejected_out" "$test_srcdir/$fixture.asn1" \
@@ -2887,6 +2887,142 @@ if ! cc $big_integer_cflags -I"$big_integer_c" "$big_integer_c"/*.c \
 fi
 if ! "$test_tmp/c-big-integer"; then
     echo "FAIL: C wide INTEGER DER/CER vectors or decode probes did not match"
+    exit 1
+fi
+
+big_integer_field_out="$test_tmp/big-integer-single-field"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$big_integer_field_out" "$test_srcdir/BigIntegerField.asn1"
+if ! (cd "$big_integer_field_out" && \
+    cargo check --offline --manifest-path Cargo.toml && \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/big-integer-single-field.log" 2>&1; then
+    cat "$test_tmp/big-integer-single-field.log"
+    echo "FAIL: one-field BigInteger record strict Clippy"
+    exit 1
+fi
+
+# Flat records may include one optional or required unbounded INTEGER field.
+for fixture in BigIntegerRecordAlias BigIntegerRecordCollision BigIntegerRecordConstrained \
+    BigIntegerRecordDefault BigIntegerRecordExtension BigIntegerRecordMixedIa5 \
+    BigIntegerRecordMixedOid BigIntegerRecordMultiple BigIntegerRecordNested \
+    BigIntegerRecordTagged BigIntegerRecordTaggedRoot; do
+    rejected_out="$test_tmp/rejected-$fixture"
+    if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$rejected_out" "$test_srcdir/$fixture.asn1" \
+        >"$test_tmp/$fixture.log" 2>&1; then
+        echo "FAIL: Rust backend accepted unsupported BigInteger record $fixture"
+        exit 1
+    fi
+    test ! -e "$rejected_out"
+done
+big_integer_import="$test_tmp/rejected-BigIntegerRecordImported"
+if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$big_integer_import" "$test_srcdir/BigIntegerRecordImported.asn1" \
+    "$test_srcdir/BigIntegerRecordImportedBase.asn1" \
+    >"$test_tmp/BigIntegerRecordImported.log" 2>&1; then
+    echo "FAIL: Rust backend accepted an imported BigInteger record field"
+    exit 1
+fi
+test ! -e "$big_integer_import"
+for selection in mixed uper; do
+    rejected_out="$test_tmp/rejected-big-integer-record-$selection"
+    if [ "$selection" = mixed ]; then
+        if "$asn1c_bin" --rust -S "$skeletons" -D "$rejected_out" \
+            "$test_srcdir/BigIntegerRecord.asn1" \
+            >"$test_tmp/big-integer-record-$selection.log" 2>&1; then
+            echo "FAIL: mixed codecs accepted unbounded INTEGER record fields"
+            exit 1
+        fi
+    elif "$asn1c_bin" --rust -gen-UPER -no-gen-BER -no-gen-CER -S "$skeletons" \
+        -D "$rejected_out" "$test_srcdir/BigIntegerRecord.asn1" \
+        >"$test_tmp/big-integer-record-$selection.log" 2>&1; then
+        echo "FAIL: UPER-only selection accepted unbounded INTEGER record fields"
+        exit 1
+    fi
+    test ! -e "$rejected_out"
+done
+
+big_integer_record_out="$test_tmp/big-integer-record-rust"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$big_integer_record_out" "$test_srcdir/BigIntegerRecord.asn1"
+mkdir "$big_integer_record_out/tests"
+cp "$test_srcdir/big_integer_record_conformance.rs" \
+    "$big_integer_record_out/tests/"
+big_integer_record_source="$big_integer_record_out/src/big_integer_record.rs"
+test "$(grep -c 'new_with_aggregate_scratch' "$big_integer_record_source")" -ge 16
+test "$(grep -c 'writer.write_big_integer' "$big_integer_record_source")" -eq 4
+test "$(grep -c 'reader.read_big_integer' "$big_integer_record_source")" -eq 4
+if grep -F '#[derive(Clone' "$big_integer_record_source" >/dev/null; then
+    echo "FAIL: BigInteger record derives infallible Clone"
+    exit 1
+fi
+if ! (cd "$big_integer_record_out" && \
+    CARGO_TARGET_DIR="$test_tmp/target-big-integer-record" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-big-integer-record" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/big-integer-record-rust.log" 2>&1; then
+    cat "$test_tmp/big-integer-record-rust.log"
+    echo "FAIL: BigInteger record conformance or strict Clippy"
+    exit 1
+fi
+
+for codec in BER CER; do
+    if [ "$codec" = BER ]; then
+        unwanted='encode_cer|decode_cer'
+        codec_out="$test_tmp/big-integer-record-BER-only"
+        "$asn1c_bin" --rust -gen-BER -no-gen-CER -no-gen-UPER \
+            -S "$skeletons" -D "$codec_out" "$test_srcdir/BigIntegerRecord.asn1"
+    else
+        unwanted='encode_der|decode_ber'
+        codec_out="$test_tmp/big-integer-record-CER-only"
+        "$asn1c_bin" --rust -gen-CER -no-gen-BER -no-gen-UPER \
+            -S "$skeletons" -D "$codec_out" "$test_srcdir/BigIntegerRecord.asn1"
+    fi
+    if (cargo check --offline --manifest-path "$codec_out/Cargo.toml" && \
+        cargo clippy --offline --manifest-path "$codec_out/Cargo.toml" \
+        --all-targets --all-features -- -W clippy::pedantic \
+        -W clippy::nursery -D warnings) \
+        >"$test_tmp/big-integer-record-$codec-only.log" 2>&1; then
+        :
+    else
+        cat "$test_tmp/big-integer-record-$codec-only.log"
+        echo "FAIL: BigInteger record $codec-only strict Clippy"
+        exit 1
+    fi
+    if grep -E "pub fn ($unwanted)" \
+        "$codec_out/src/big_integer_record.rs" >/dev/null; then
+        echo "FAIL: BigInteger record $codec-only output has an unselected method"
+        exit 1
+    fi
+done
+
+# Wide C uses byte-array INTEGER storage for this arbitrary-precision comparison.
+big_integer_record_c="$test_tmp/big-integer-record-c"
+mkdir "$big_integer_record_c"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -fwide-types -pdu=all \
+    -fgen-only-pdu-deps -no-gen-example -D "$big_integer_record_c" \
+    "$test_srcdir/BigIntegerRecord.asn1" \
+    >"$test_tmp/big-integer-record-c-generate.log" 2>&1
+big_integer_record_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$big_integer_record_c/Makefile.am.libasncodec")
+rm -f "$big_integer_record_c/converter-example.c" \
+    "$big_integer_record_c/pdu_collection.c"
+if ! cc $big_integer_record_cflags -I"$big_integer_record_c" \
+    "$big_integer_record_c"/*.c "$test_srcdir/c_big_integer_record.c" \
+    -lm -o "$test_tmp/c-big-integer-record" \
+    >"$test_tmp/big-integer-record-c-compile.log" 2>&1; then
+    cat "$test_tmp/big-integer-record-c-compile.log"
+    echo "FAIL: C wide INTEGER record reference did not compile"
+    exit 1
+fi
+if ! "$test_tmp/c-big-integer-record"; then
+    echo "FAIL: C wide INTEGER record DER/CER vectors or decode probes failed"
     exit 1
 fi
 

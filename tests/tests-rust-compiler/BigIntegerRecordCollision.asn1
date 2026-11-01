@@ -1,0 +1,3 @@
+BigIntegerRecordCollision DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { wide INTEGER, small INTEGER (0..5) }
+END
