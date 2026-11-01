@@ -1,4 +1,14 @@
 Changes since v1.5.3:
+	* Support transparent same-module bounded INTEGER aliases in Rust
+	  BER/DER/CER, including forward declarations and named record fields.
+	  Preserve base type identity, checked constructors, wire bounds, and the
+	  parent's shared resource budget. Reject unsupported alias graphs and
+	  metadata before publication, including unused aliases and mixed codecs.
+	  Add signed/singleton/default C/Rust vectors and exact strict Clippy checks.
+	* Normalize C BOOLEAN DEFAULT comparisons by truth value. Values such as
+	  0xff and 7 now compare equal to TRUE, preserving canonical DER/CER omission
+	  and strict CER rejection of explicitly encoded defaults. Retain numeric
+	  DEFAULT storage selection and string/bit-string callback behavior.
 	* Compose direct imported SEQUENCE/SET children in Rust BER/DER/CER flat
 	  records using qualified types and shared crate-visible field callbacks.
 	  Validate unused imported targets and discover SET callbacks across modules.

@@ -1,0 +1,7 @@
+-- Unsupported alias composition; reject before creating Rust output.
+-- Source: approved alias gate; 2026-11-01; responsible: asn1c maintainers.
+AliasIntegerNegativeParameterizedAlias DEFINITIONS EXPLICIT TAGS ::= BEGIN
+Base ::= INTEGER (0..5)
+Small { T } ::= Base
+Packet ::= SEQUENCE { value Small { BOOLEAN } }
+END

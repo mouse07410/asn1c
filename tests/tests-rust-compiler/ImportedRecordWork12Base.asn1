@@ -1,0 +1,10 @@
+ImportedRecordWork12Base DEFINITIONS ::= BEGIN
+EXPORTS RemoteFive;
+RemoteFive ::= SEQUENCE {
+    one [0] IMPLICIT INTEGER (0..5),
+    two [1] IMPLICIT INTEGER (0..5),
+    three [2] IMPLICIT INTEGER (0..5),
+    four [3] IMPLICIT INTEGER (0..5),
+    five [4] IMPLICIT INTEGER (0..5)
+}
+END

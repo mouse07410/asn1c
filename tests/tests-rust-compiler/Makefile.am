@@ -1,4 +1,4 @@
-dist_check_SCRIPTS = check-rust-backend.sh
+dist_check_SCRIPTS = check-rust-backend.sh check-rust-aliases.sh
 TESTS = $(dist_check_SCRIPTS)
 TESTS_ENVIRONMENT = top_srcdir=$(top_srcdir) top_builddir=$(top_builddir)
 
@@ -8,7 +8,7 @@ $(ASN1C):
 	$(MAKE) -C $(top_builddir)/asn1c asn1c
 
 # Depend on the compiler through the log list. Naming the individual log target
-# here would override Automake's generated driver recipe for this single test.
+# here would override Automake's generated driver recipes for these tests.
 $(TEST_LOGS): $(ASN1C)
 
 EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
@@ -37,6 +37,32 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/c_inline_choice.c \
     $(srcdir)/natural_choice_set_conformance.rs \
     $(srcdir)/c_natural_choice_set.c \
+    $(srcdir)/AliasIntegerIdentity.asn1 \
+    $(srcdir)/AliasIntegerNegativeBoolean.asn1 \
+    $(srcdir)/AliasIntegerNegativeChain.asn1 \
+    $(srcdir)/AliasIntegerNegativeConstraint.asn1 \
+    $(srcdir)/AliasIntegerNegativeCycle.asn1 \
+    $(srcdir)/AliasIntegerNegativeDefault.asn1 \
+    $(srcdir)/AliasIntegerNegativeExtension.asn1 \
+    $(srcdir)/AliasIntegerNegativeImportedAlias.asn1 \
+    $(srcdir)/AliasIntegerNegativeImportedTarget.asn1 \
+    $(srcdir)/AliasIntegerNegativeMemberConstraint.asn1 \
+    $(srcdir)/AliasIntegerNegativeMultiple.asn1 \
+    $(srcdir)/AliasIntegerNegativeNameCollision.asn1 \
+    $(srcdir)/AliasIntegerNegativeNested.asn1 \
+    $(srcdir)/AliasIntegerNegativeOutOfI64.asn1 \
+    $(srcdir)/AliasIntegerNegativeParameterizedAlias.asn1 \
+    $(srcdir)/AliasIntegerNegativeParameterizedBase.asn1 \
+    $(srcdir)/AliasIntegerNegativeQualified.asn1 \
+    $(srcdir)/AliasIntegerNegativeTagged.asn1 \
+    $(srcdir)/AliasIntegerNegativeTaggedBase.asn1 \
+    $(srcdir)/AliasIntegerNegativeUnbounded.asn1 \
+    $(srcdir)/AliasIntegerNegativeUnion.asn1 \
+    $(srcdir)/AliasIntegerNegativeUnusedBoolean.asn1 \
+    $(srcdir)/AliasIntegerRecord.asn1 \
+    $(srcdir)/AliasIntegerStandalone.asn1 \
+    $(srcdir)/alias_integer_identity_conformance.rs \
+    $(srcdir)/c_alias_integer_identity.c \
     $(srcdir)/NamedIntegerRecord.asn1 \
     $(srcdir)/NamedIntegerAlias.asn1 \
     $(srcdir)/NamedIntegerCollision.asn1 \
@@ -189,8 +215,12 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/ImportedRecordSetPair.asn1 \
     $(srcdir)/ImportedRecordUnusedClient.asn1 \
     $(srcdir)/ImportedRecordUnusedSource.asn1 \
+    $(srcdir)/ImportedRecordWork12Base.asn1 \
+    $(srcdir)/ImportedRecordWork12Client.asn1 \
+    $(srcdir)/ImportedRecordNegativeWork13.asn1 \
     $(srcdir)/imported_record_conformance.rs \
     $(srcdir)/imported_record_legacy_conformance.rs \
+    $(srcdir)/imported_record_work12_conformance.rs \
     $(srcdir)/imported_record_composition.c \
     $(srcdir)/imported_record_owned_defaults.c \
     $(srcdir)/imported_record_legacy.c \

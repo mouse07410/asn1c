@@ -131,6 +131,25 @@
       "evidence": "NamedIntegerRecord.asn1; named_integer_record_conformance.rs; c_named_integer_record.c"
     },
     {
+      "asn1_type": "transparent same-module bounded INTEGER alias",
+      "feature": "one unconstrained alias hop to a direct finite contiguous i64 INTEGER, standalone or one named record field",
+      "codec": "BER/DER and CER only",
+      "variants": [
+        "forward declarations, shared Rust identity, checked constructors and selected public methods",
+        "natural, IMPLICIT, EXPLICIT and OPTIONAL record fields with shared parent context",
+        "signed and singleton bounds, scalar DEFAULT siblings and canonical SET ordering",
+        "prefixes, malformed inputs, explicit DEFAULT CER rejection and exact resource thresholds",
+        "unused metadata validation, unsupported codec selections and no output publication"
+      ],
+      "directions": [
+        "DER and CER encode",
+        "BER prefix decode",
+        "strict CER prefix decode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "AliasInteger*.asn1; alias_integer_identity_conformance.rs; reused named_integer_record_conformance.rs; c_alias_integer_identity.c; reused c_named_integer_record.c; check-rust-aliases.sh"
+    },
+    {
       "asn1_type": "same-module named SEQUENCE child",
       "feature": "one required or OPTIONAL same-module untagged SEQUENCE target in flat SEQUENCE/SET",
       "codec": "BER/DER and CER only",
@@ -218,7 +237,8 @@
         "independent parent/child SET ordering and strict CER canonical comparison",
         "qualified paths, source orders, same-spelled targets, and unused SET callback reachability",
         "local/imported exact budget equivalence, malformed second children, truncations, and mutations",
-        "full unused-target validation and no-publication rejection"
+        "full unused-target validation and no-publication rejection",
+        "exact twelve-field local/imported aggregate acceptance and parse-valid thirteen-field rejection"
       ],
       "directions": [
         "DER and CER encode",
@@ -226,7 +246,7 @@
         "strict CER prefix decode"
       ],
       "status": "tested_with_live_C_comparison",
-      "evidence": "ImportedRecord*.asn1; imported_record*.rs; imported_record*.c"
+      "evidence": "ImportedRecord*.asn1; imported_record*.rs; imported_record*.c; imported_record_work12_conformance.rs; ImportedRecordWork12*.asn1; ImportedRecordNegativeWork13.asn1"
     },
     {
       "asn1_type": "OBJECT IDENTIFIER, RELATIVE-OID",
@@ -1004,7 +1024,7 @@
     {
       "family": "BER/DER shapes outside the qualified direct CHOICE and tagged record slices",
       "status": "not_implemented",
-      "note": "Deeper nesting, extensions, aliases, unsupported tags, and other primitives remain unqualified."
+      "note": "Deeper nesting, extensions, aliases outside the qualified transparent bounded INTEGER slice, unsupported tags, and other primitives remain unqualified."
     },
     {
       "family": "APER/OER outside the primitive slice",
@@ -1035,7 +1055,8 @@
   "comparison_policy": {
     "C_role": "Current C implementation is a comparison implementation, not a protocol oracle.",
     "independent_checks": "Rust fixed vectors, malformed-input checks, budgets, and round trips",
-    "canonicality": "CER claims cover listed vectors only. Bit counts cover full TLVs. IA5 BER preserves bytes; CER enforces its 7-bit alphabet. Collection SET OF order compares complete child encodings."
+    "canonicality": "CER claims cover listed vectors only. Bit counts cover full TLVs. IA5 BER preserves bytes; CER enforces its 7-bit alphabet. Collection SET OF order compares complete child encodings.",
+    "test_function_count": "Unique #[test] functions in the standalone .rs fixtures referenced by the compiler test drivers; codec/source-order reruns and alias test reuse do not add unique functions."
   },
   "compiler_boundary_checks": {
     "rejected_before_output": [
@@ -1044,7 +1065,7 @@
       "unconstrained INTEGER with non-BER/CER-only selection, explicit MIN..MAX/open/extended constraints, and tags",
       "unconstrained INTEGER record aliases/imports, constraints, DEFAULT, nesting, and multiplicity",
       "unconstrained INTEGER record IA5/OID coexistence and mixed codecs",
-      "named INTEGER record aliases, unsupported imports, unbounded/union/extended or out-of-i64 targets, extra constraints, tagged targets/roots, DEFAULT, nesting, multiplicity, collisions, and mixed codecs",
+      "named INTEGER record alias graphs outside the one-hop transparent local slice, unsupported imports, unbounded/union/extended or out-of-i64 targets, extra constraints, tagged targets/roots, DEFAULT, nesting, multiplicity, collisions, and mixed codecs",
       "unsupported DEFAULT forms, constructed DEFAULT, nested extensions, excessive nesting or aggregate field-work, generated nested-name collisions, extensible and otherwise unsupported constructed types",
       "duplicate --rust selectors and disabling all Rust codecs",
       "an incomplete runtime asset set beside explicit skeletons",
@@ -1069,7 +1090,8 @@
       "inline CHOICE with unsupported tagging/arms, collisions, or codecs",
       "natural top-level SET CHOICE with any sibling tag colliding with one of its arms",
       "imported INTEGER aliases/reexports, unsupported or unused imports, exports, undeclared lookup fallback, module identities/options, parameters, constraints, and mixed codecs",
-      "imported record aliases/reexports, invalid target leaves even when unused, export/ownership metadata, extra depth/fields/work, effective-tag collisions, and mixed codecs"
+      "imported record aliases/reexports, invalid target leaves even when unused, export/ownership metadata, extra depth/fields/work, effective-tag collisions, and mixed codecs",
+      "transparent INTEGER alias chains/cycles, declared constraints, tags, parameters, foreign targets, unsupported base types, normalized collisions, and unsupported codecs even when unused"
     ],
     "output_safety": [
       "unowned destination preservation",
@@ -1084,7 +1106,7 @@
     ]
   },
   "observed_counts": {
-    "generated_rust_test_functions": 245,
+    "generated_rust_test_functions": 277,
     "generated_choice_test_functions": 4,
     "live_C_choice_canonical_vectors_each_direction": 5,
     "live_C_choice_BER_alias_vectors": 9,
@@ -1110,7 +1132,7 @@
     "BigInteger_record_mutation_inputs": 15,
     "BigInteger_record_truncated_prefix_inputs": 15,
     "generated_named_integer_record_test_functions": 8,
-    "named_integer_record_negative_schema_fixtures": 16,
+    "named_integer_record_negative_schema_fixtures": 15,
     "live_C_named_integer_record_canonical_vectors_each_direction": 13,
     "live_C_named_integer_record_alias_forms": 2,
     "live_C_unbounded_string_vectors_each_direction": 11,
@@ -1189,14 +1211,23 @@
     "imported_integer_negative_schema_fixtures": 20,
     "imported_integer_truncated_decoder_inputs": 28,
     "imported_integer_single_bit_mutation_inputs": 80,
-    "generated_imported_record_test_functions": 7,
-    "live_C_imported_record_canonical_vectors_each_direction": 32,
+    "generated_imported_record_test_functions": 8,
+    "live_C_imported_record_canonical_vectors_each_direction": 34,
     "live_C_imported_record_reversed_order_inputs": 2,
     "live_C_imported_record_explicit_DEFAULT_rejections": 2,
-    "imported_record_negative_schema_fixtures": 22,
+    "imported_record_negative_schema_fixtures": 23,
     "imported_record_truncated_decoder_inputs": 112,
     "imported_record_single_bit_mutation_inputs": 256,
     "generated_type_name_test_functions": 2,
-    "type_name_collision_schema_fixtures": 3
+    "type_name_collision_schema_fixtures": 3,
+    "generated_integer_alias_identity_test_functions": 4,
+    "reused_integer_alias_record_test_functions": 8,
+    "integer_alias_negative_schema_fixtures": 21,
+    "integer_alias_unsupported_codec_selections": 12,
+    "live_C_integer_alias_DER_CER_value_pairs": 24,
+    "live_C_integer_alias_canonical_encodings_each_direction": 48,
+    "live_C_integer_alias_noncanonical_TRUE_encode_checks": 8,
+    "imported_record_exact_schema_field_limit": 12,
+    "imported_record_first_rejected_schema_field_count": 13
   }
 }

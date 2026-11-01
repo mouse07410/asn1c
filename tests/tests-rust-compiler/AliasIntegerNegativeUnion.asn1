@@ -1,0 +1,6 @@
+-- Unsupported alias composition; reject before creating Rust output.
+-- Source: approved alias gate; 2026-11-01; responsible: asn1c maintainers.
+AliasIntegerNegativeUnion DEFINITIONS EXPLICIT TAGS ::= BEGIN
+Base ::= INTEGER (0..2 | 4..5)
+Small ::= Base
+END

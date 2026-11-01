@@ -1,0 +1,7 @@
+-- Unused forward aliases still require the alias-specific codec gate.
+-- Source: approved alias API; 2026-11-01; responsible: asn1c maintainers.
+AliasIntegerStandalone DEFINITIONS ::= BEGIN
+Forward-Alias ::= Base
+Other-Alias ::= Base
+Base ::= INTEGER (0..5)
+END

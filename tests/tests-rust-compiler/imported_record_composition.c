@@ -12,6 +12,7 @@
 #include "RepeatedPair.h"
 #include "SeqPair.h"
 #include "SetPair.h"
+#include "Work12Packet.h"
 #include "ber_decoder.h"
 #include "cer_decoder.h"
 #include "cer_encoder.h"
@@ -27,6 +28,49 @@ static int check_encoding(asn_TYPE_descriptor_t *, const void *, const uint8_t *
                           size_t, int);
 static int check_decoding(asn_TYPE_descriptor_t *, const void *, const uint8_t *,
                           size_t, int);
+
+/*
+ * Exercise exactly twelve aggregate schema fields across an imported/local pair.
+ * Inputs: none; fixed values and independent DER/CER vectors define the case.
+ * Returns zero on encoding/decoding/prefix equality, one on any mismatch.
+ * Errors: descriptor and codec failures propagate from the checked helpers.
+ * Original source: ImportedRecordWork12Base/Client and X.690 framing/tag order.
+ * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
+ * History: exact imported-record schema boundary, paired with the negative thirteen.
+ * Example: two five-leaf children plus two parent fields total twelve.
+ */
+static int
+check_twelve_field_boundary(void) {
+    static const uint8_t der[] = {
+        0x30, 0x22, 0x30, 0x0f,
+        0x80, 1, 1, 0x81, 1, 2, 0x82, 1, 3, 0x83, 1, 4, 0x84, 1, 5,
+        0x31, 0x0f,
+        0x85, 1, 5, 0x86, 1, 4, 0x87, 1, 3, 0x88, 1, 2, 0x89, 1, 1
+    };
+    static const uint8_t cer[] = {
+        0x30, 0x80, 0x30, 0x80,
+        0x80, 1, 1, 0x81, 1, 2, 0x82, 1, 3, 0x83, 1, 4, 0x84, 1, 5, 0, 0,
+        0x31, 0x80,
+        0x85, 1, 5, 0x86, 1, 4, 0x87, 1, 3, 0x88, 1, 2, 0x89, 1, 1, 0, 0,
+        0, 0
+    };
+    RemoteFive_t remote = {.one = 1, .two = 2, .three = 3, .four = 4, .five = 5};
+    LocalFive_t local = {.one = 5, .two = 4, .three = 3, .four = 2, .five = 1};
+    Work12Packet_t value = {.remote = &remote, .local = &local};
+
+    /* Mark every local SET leaf present before comparing semantic decodes. */
+    ASN_SET_MKPRESENT(local._presence_map, LocalFive_PR_one);
+    ASN_SET_MKPRESENT(local._presence_map, LocalFive_PR_two);
+    ASN_SET_MKPRESENT(local._presence_map, LocalFive_PR_three);
+    ASN_SET_MKPRESENT(local._presence_map, LocalFive_PR_four);
+    ASN_SET_MKPRESENT(local._presence_map, LocalFive_PR_five);
+    return check_encoding(&asn_DEF_Work12Packet, &value, der, sizeof(der), 0)
+        || check_encoding(&asn_DEF_Work12Packet, &value, cer, sizeof(cer), 1)
+        || check_decoding(&asn_DEF_Work12Packet, &value, der, sizeof(der), 0)
+        || check_decoding(&asn_DEF_Work12Packet, &value, cer, sizeof(cer), 1)
+        || check_prefix(&asn_DEF_Work12Packet, der, sizeof(der), 0)
+        || check_prefix(&asn_DEF_Work12Packet, cer, sizeof(cer), 1);
+}
 
 /* Validate callbacks required by the generic vector helpers.
  * Parameters: td is the generated C descriptor. Returns one when compare/free
@@ -357,6 +401,7 @@ main(void) {
                             child_set_cer, sizeof(child_set_cer));
     failed |= check_reversed_set_order();
     failed |= check_optional_absence();
+    failed |= check_twelve_field_boundary();
     if(failed) fputs("imported record C vectors failed\n", stderr);
     return failed;
 }

@@ -124,7 +124,8 @@ fresh directory after adding application code or running Cargo there.
 | One natural non-IA5 restricted character-string field in a flat untagged SEQUENCE or SET | Required/OPTIONAL field with existing scalar siblings, including finite bounded BIT/OCTET STRING members; exact `CharacterStringKind` retained for Teletex/T61 and Visible/ISO646 aliases; BER/DER preserve bytes; CER validates the C-compatible repertoire or alignment after reassembly and fragments with tag 4; aggregate scratch is selected even when absent; BER/CER-only |
 | Natural OBJECT IDENTIFIER and RELATIVE-OID fields in a flat untagged SEQUENCE or SET | BER prefix decoding normalizes base-128 content with one shared work and aggregate scratch budget; DER/CER emit primitive tag-6/tag-13 child TLVs; at most one of each kind with required/OPTIONAL presence, scalar siblings, strict CER comparison, and BER/CER-only selection |
 | One natural unconstrained INTEGER field in a flat untagged SEQUENCE or SET | `BigInteger` owned value without i64 narrowing; BER sign normalization, primitive DER/CER tag-2 output, strict CER comparison, one aggregate record budget, required/OPTIONAL presence, scalar siblings, and BER/CER-only selection |
-| One same-module named bounded INTEGER field in a flat untagged SEQUENCE or SET | Checked generated newtype with one finite contiguous `i64` range; natural, resolved context IMPLICIT, or one EXPLICIT tag; required/OPTIONAL; supported scalar siblings including finite bounded BIT/OCTET; shared record context and BER/CER-only selection |
+| Transparent local bounded INTEGER alias | One hop to a direct untagged same-module INTEGER with one finite contiguous `i64` range; `pub type Alias = Base` retains checked construction and selected public codecs; forward declarations allowed; no extra constraints/tags/parameters; BER/CER-only selection |
+| One same-module named bounded INTEGER field in a flat untagged SEQUENCE or SET | Checked generated newtype or qualified transparent alias with one finite contiguous `i64` range; natural, resolved context IMPLICIT, or one EXPLICIT tag; required/OPTIONAL; supported scalar siblings including finite bounded BIT/OCTET; shared record context and BER/CER-only selection |
 | One directly imported bounded INTEGER field in a flat untagged SEQUENCE or SET | Required/OPTIONAL, natural/IMPLICIT/one EXPLICIT member tag, and supported scalar/default siblings; one explicitly named import from a distinct supplied module with no imports; direct finite contiguous `i64` target; module ownership, exports, paths, and all declared imports are validated; shared parent context; BER/CER-only selection |
 | One or two local or directly imported named SEQUENCE/SET children in a flat untagged SEQUENCE or SET | Required/OPTIONAL nonrecursive untagged targets with existing direct-leaf restrictions; natural, context-specific IMPLICIT, or one EXPLICIT member tag; distinct effective tags permit a repeated target; up to six parent fields and twelve total parent/target members; parent scalar DEFAULT behavior retained; one declared import group/symbol from a distinct supplied source without imports, qualified paths and validated exports/ownership/leaves, including unused targets; independently sorted SET levels, shared nested context, strict CER comparison; BER/CER-only selection |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in APER and OER encode/decode; each call begins at an octet boundary |
@@ -134,7 +135,7 @@ fresh directory after adding application code or running Cargo there.
 | Direct ENUMERATED | Opt-in JER quoted-name encode/decode; complete input, JSON whitespace, unknown-name and resource-limit checks |
 | Flat SET and SEQUENCE | XER-only basic encoder for direct BOOLEAN, bounded INTEGER, unconstrained IA5String and REAL DEFAULT 0.5 fields; OPTIONAL and supported DEFAULT fields use `Option` |
 | XER and CBOR/JER outside the listed slices | Planned; unavailable in Rust mode |
-| SET, collections, or CHOICE outside the listed slices; extensible, other unbounded SIZE forms, or disjoint string constraints; named-bit strings, extensible ENUMERATED, aliases, imports outside the listed direct INTEGER/named-record slices, other top-level tagged types, and multi-tag member stacks | Planned; rejected in this slice |
+| SET, collections, or CHOICE outside the listed slices; extensible, other unbounded SIZE forms, or disjoint string constraints; named-bit strings, extensible ENUMERATED, aliases outside the transparent local bounded-INTEGER slice, imports outside the listed direct INTEGER/named-record slices, other top-level tagged types, and multi-tag member stacks | Planned; rejected in this slice |
 | Encoding controls, other information-object forms, parameterized types | Planned; rejected in this slice |
 | IOC-selected OPEN TYPE | UPER, APER, OER, CBOR; one local nonextensible set, bounded INTEGER selector, BOOLEAN or bounded INTEGER rows, and a two-field required SEQUENCE; APER selector 0..255 and row spans <=255 |
 | Other CONTAINING and OPEN TYPE forms | Unsupported; rejected before output publication |
@@ -163,6 +164,18 @@ DER/CER bytes and values across SEQUENCE/SET parents, OPTIONAL states, tags,
 defaults, limits, malformed values, suffixes, source orders, same-spelled
 target names, export rules, and no-publication negatives. Imports outside the
 qualified direct INTEGER/named-record slices remain unsupported.
+
+A transparent local alias such as `Small ::= Base` with
+`Base ::= INTEGER (0..5)` emits `pub type Small = Base` under BER/CER-only
+selection. Both names have the same checked Rust type, constructor, accessor,
+and public codec methods. An alias may precede its base and may serve as the
+existing one named INTEGER field of a flat record. The field and decoder
+constructor retain the alias spelling, while tags and bounds come from the
+direct base; parent resource accounting is unchanged. All aliases, including
+unused ones, must resolve by exact module ownership and raw name to a direct
+untagged finite-range INTEGER. Alias chains, imported aliases, added alias or
+member constraints, tags on aliases/bases, parameters, and other codec
+selections fail before publishing output.
 
 For CBOR SEQUENCE, an omitted literal DEFAULT decodes to the default value.
 The Rust record does not retain whether that field appeared on the wire, so

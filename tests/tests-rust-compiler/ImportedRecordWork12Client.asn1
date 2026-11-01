@@ -1,0 +1,11 @@
+ImportedRecordWork12Client DEFINITIONS ::= BEGIN
+IMPORTS RemoteFive FROM ImportedRecordWork12Base;
+LocalFive ::= SET {
+    one [5] IMPLICIT INTEGER (0..5),
+    two [6] IMPLICIT INTEGER (0..5),
+    three [7] IMPLICIT INTEGER (0..5),
+    four [8] IMPLICIT INTEGER (0..5),
+    five [9] IMPLICIT INTEGER (0..5)
+}
+Work12Packet ::= SEQUENCE { remote RemoteFive, local LocalFive }
+END

@@ -292,11 +292,15 @@ one finite contiguous range fitting `i64`; generated Rust exposes a checked
 newtype and uses the parent's shared BER/CER record context for reads and
 writes. Natural, context-specific IMPLICIT, and one EXPLICIT member tags are
 supported beside the existing scalar fields, including finite bounded
-BIT/OCTET STRING siblings, within the six-field cap. Aliases and imports outside
-the qualified direct INTEGER/named-record slices,
-parameters, target extensions/unions, member constraints, DEFAULT, nested
-forms, duplicate effective tags, and non-BER/CER codec selections fail before
-output publication.
+BIT/OCTET STRING siblings, within the six-field cap. Transparent same-module
+one-hop aliases to a direct bounded INTEGER also qualify: `pub type Alias = Base`
+preserves the checked type and codecs, while fields retain the alias spelling
+and use the direct base for range checks under the same parent budget.
+Alias chains, imported aliases, added alias constraints or tags, parameters,
+target extensions/unions, constraints or DEFAULT on the reference field,
+nested forms, duplicate effective tags, and non-BER/CER codec selections fail
+before output publication. Imports outside the qualified direct
+INTEGER/named-record slices remain unsupported.
 One directly imported bounded INTEGER assignment may also supply a required
 or OPTIONAL field in a flat untagged SEQUENCE or SET. The one explicitly named
 symbol comes from a distinct supplied module with no imports and resolves to a

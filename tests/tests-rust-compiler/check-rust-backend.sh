@@ -4492,7 +4492,7 @@ for codec in BER CER; do
     fi
 done
 
-for fixture in NamedIntegerAlias NamedIntegerUnbounded NamedIntegerUnion \
+for fixture in NamedIntegerUnbounded NamedIntegerUnion \
     NamedIntegerExtension NamedIntegerOutOfI64 NamedIntegerTaggedTarget \
     NamedIntegerMemberConstraint NamedIntegerMinMax NamedIntegerMultiple \
     NamedIntegerCollision \
@@ -5330,11 +5330,11 @@ fi
 
 # Put all sources before all clients, then reverse those groups, without path splitting.
 record_sources='ImportedRecordBase ImportedRecordAlphaSource ImportedRecordBetaSource
-ImportedRecordUnusedSource ImportedRecordLegacyBase'
+ImportedRecordUnusedSource ImportedRecordLegacyBase ImportedRecordWork12Base'
 record_clients='ImportedRecordAlphaClient ImportedRecordBetaClient ImportedRecordDefault
 ImportedRecordEmpty ImportedRecordEquivalent ImportedRecordLegacyClients ImportedRecordNonemptySet
 ImportedRecordOptionalOrder ImportedRecordOwned ImportedRecordRepeated ImportedRecordSeqPair
-ImportedRecordSetPair ImportedRecordUnusedClient'
+ImportedRecordSetPair ImportedRecordUnusedClient ImportedRecordWork12Client'
 for order in source-first client-first; do
     if [ "$order" = source-first ]; then
         groups='source client'
@@ -5357,7 +5357,8 @@ for order in source-first client-first; do
         -D "$record_rust" "$@"
     mkdir "$record_rust/tests"
     cp "$test_srcdir/imported_record_conformance.rs" \
-        "$test_srcdir/imported_record_legacy_conformance.rs" "$record_rust/tests/"
+        "$test_srcdir/imported_record_legacy_conformance.rs" \
+        "$test_srcdir/imported_record_work12_conformance.rs" "$record_rust/tests/"
     if ! (cd "$record_rust" && cargo test --offline --manifest-path Cargo.toml && \
         cargo clippy --offline --all-targets --all-features -- \
         -W clippy::pedantic -W clippy::nursery -D warnings) \
@@ -5408,9 +5409,11 @@ for schema in "$test_srcdir"/ImportedRecordNegative*.asn1; do
         echo "FAIL: imported record negative $fixture has invalid syntax"
         exit 1
     fi
-    if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
-        -D "$rejected" "$schema" >"$test_tmp/rejected-$fixture.log" 2>&1; then
-        echo "FAIL: imported record accepted unsupported $fixture"
+    status=0 # Compiler result state variable; crashes cannot satisfy rejection.
+    "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$rejected" "$schema" >"$test_tmp/rejected-$fixture.log" 2>&1 || status=$?
+    if [ "$status" -eq 0 ] || [ "$status" -ge 128 ]; then
+        echo "FAIL: imported record $fixture succeeded or crashed (status $status)"
         exit 1
     fi
     if [ -e "$rejected" ]; then

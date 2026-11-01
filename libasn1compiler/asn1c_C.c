@@ -663,7 +663,8 @@ asn1c_lang_C_type_SEQUENCE_def(arg_t *arg, asn1c_ioc_table_and_objset_t *opt_ioc
 		});
 		OUT("};\n");
 
-		if((roms_count + aoms_count) && (arg->flags & (A1C_GEN_OER | A1C_GEN_UPER | A1C_GEN_APER | A1C_GEN_JER))) {
+		if((roms_count + aoms_count)
+		&& (arg->flags & (A1C_GEN_OER | A1C_GEN_UPER | A1C_GEN_APER | A1C_GEN_JER))) {
 			int elm = 0;
 			int comma = 0;
 			comp_mode = 0;
@@ -4590,7 +4591,7 @@ emit_member_PER_constraints(arg_t *arg, asn1p_expr_t *expr, const char *pfx,
 		const char *ident = MKID(expr);
 		int make_non_static = 0;
 
-		/* Check if this is a generic type-based constraint name that could collide (only for member constraints) */
+		/* Check generic type-based names for collisions in member constraints. */
 		if (ident && pfx && strcmp(pfx, "memb") == 0 &&
 		    (strstr(ident, "OCTET_STRING_SIZE_") || strstr(ident, "BIT_STRING_SIZE_"))) {
 			make_non_static = 1;
@@ -4904,156 +4905,187 @@ try_inline_real_default(arg_t *arg, asn1p_expr_t *expr, int out) {
 }
 
 /*
- * Purpose: Emit inline DEFAULT callbacks for primitive ASN.1 members.
- * Original source: The asn1c C code generator; storage selection follows
- *                  asn1c_select_integer_storage().
- * Version/date: 1.1, 2026-10-26.
- * Parameters: arg is the generator context; expr is the member expression;
- *             out selects descriptor references instead of definitions.
- * Returns: One when a DEFAULT callback was emitted, zero when unsupported.
- * Exceptions: None; generator output and allocation failures are handled by
- *             the surrounding generator infrastructure.
- * Responsible party: asn1c maintainers.
- * History: Use the selected INTEGER storage for issue #591 DEFAULT callbacks.
- * Example: INTEGER DEFAULT 1 with -finteger-native-type=uint64.
+ * Emit the scalar DEFAULT comparison callback body.
+ * Inputs: arg/expr identify storage; etype and fits_long select comparison mode;
+ * default_name is the safe callback suffix.
+ * Returns no value; generated code is written to the redirected output target.
+ * Errors: the generator output layer records write failures.
+ * Source: ASN.1 DEFAULT callback contract. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: split from try_inline_default.
+ * Example: BOOLEAN DEFAULT TRUE compares nonzero values as true.
+ */
+static void
+emit_scalar_default_cmp(arg_t *arg, asn1p_expr_t *expr,
+                        asn1p_expr_type_e etype, int fits_long,
+                        const char *default_name) {
+	OUT("static int asn_DFL_%d_cmp_%s(const void *sptr) {\n",
+		expr->_type_unique_index, default_name);
+	INDENT(+1);
+	OUT("const %s *st = sptr;\n", asn1c_type_name(arg, expr, TNF_CTYPE));
+	OUT("\n");
+	OUT("if(!st) {\n");
+	OUT("\treturn -1; /* No value is not a default value */\n");
+	OUT("}\n");
+	OUT("\n");
+	OUT("/* Test default value %s */\n",
+		asn1p_itoa(expr->marker.default_value->value.v_integer));
+	if(etype == ASN_BASIC_BOOLEAN) {
+		OUT("return ((*st != 0) != %d);\n",
+			expr->marker.default_value->value.v_integer != 0);
+	} else if(fits_long) {
+		OUT("return (*st != %s);\n",
+			asn1p_itoa(expr->marker.default_value->value.v_integer));
+	} else {
+		OUT("long value;\n");
+		OUT("if(asn_INTEGER2long(st, &value))\n");
+		OUT("\treturn -1;\n");
+		OUT("return (value != %s);\n",
+			asn1p_itoa(expr->marker.default_value->value.v_integer));
+	}
+	INDENT(-1);
+	OUT("}\n");
+}
+
+/*
+ * Emit the scalar DEFAULT setter callback.
+ * Inputs: arg/expr identify storage; fits_long selects native or INTEGER_t;
+ * default_name is the safe callback suffix.
+ * Returns no value; generated code is written to the redirected output target.
+ * Errors: the generator output layer records write failures.
+ * Source: ASN.1 DEFAULT callback contract. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: split from try_inline_default.
+ * Example: bounded INTEGER DEFAULT 1 uses its selected C storage.
+ */
+static void
+emit_scalar_default_set(arg_t *arg, asn1p_expr_t *expr, int fits_long,
+                        const char *default_name) {
+	OUT("static int asn_DFL_%d_set_%s(void **sptr) {\n",
+		expr->_type_unique_index, default_name);
+	INDENT(+1);
+	OUT("%s *st = *sptr;\n", asn1c_type_name(arg, expr, TNF_CTYPE));
+	OUT("\n");
+	OUT("if(!st) {\n");
+	OUT("\tst = (*sptr = CALLOC(1, sizeof(*st)));\n");
+	OUT("\tif(!st) return -1;\n");
+	OUT("}\n");
+	OUT("\n");
+	OUT("/* Install default value %s */\n",
+		asn1p_itoa(expr->marker.default_value->value.v_integer));
+	if(fits_long) {
+		OUT("*st = ");
+		OINT(expr->marker.default_value->value.v_integer);
+		OUT(";\n");
+		OUT("return 0;\n");
+	} else {
+		OUT("return asn_long2INTEGER(st, ");
+		OINT(expr->marker.default_value->value.v_integer);
+		OUT(");\n");
+	}
+	INDENT(-1);
+	OUT("}\n");
+}
+
+/*
+ * Emit scalar DEFAULT callback references when writing a type descriptor.
+ * Inputs: arg is the generator context; expr owns the DEFAULT; default_name
+ * is its safe C suffix.
+ * Returns one after emitting both references. Errors: output errors are tracked.
+ * Source: generated descriptor callback fields. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: split scalar DEFAULT handling.
+ * Example: INTEGER DEFAULT 1 references its cmp_1 and set_1 callbacks.
  */
 static int
-try_inline_default(arg_t *arg, asn1p_expr_t *expr, int out) {
-	int save_target = arg->target->target;
-	asn1p_expr_type_e etype = expr_get_type(arg, expr);
-	int fits_long = 0;
+emit_scalar_default_refs(arg_t *arg, asn1p_expr_t *expr,
+                         const char *default_name) {
+	if(C99_MODE) OUT(".default_value_cmp = ");
+	OUT("&asn_DFL_%d_cmp_%s,", expr->_type_unique_index, default_name);
+	OUT("\t/* Compare DEFAULT %s */\n",
+		asn1p_itoa(expr->marker.default_value->value.v_integer));
+	if(C99_MODE) OUT(".default_value_set = ");
+	OUT("&asn_DFL_%d_set_%s,", expr->_type_unique_index, default_name);
+	OUT("\t/* Set DEFAULT %s */\n",
+		asn1p_itoa(expr->marker.default_value->value.v_integer));
+	return 1;
+}
+
+/*
+ * Emit compare/set callbacks for BOOLEAN, INTEGER, or ENUMERATED DEFAULT.
+ * Inputs: arg/expr identify the member; out is zero for descriptor references
+ * or nonzero for callback definitions; etype selects the scalar kind.
+ * Returns one when supported, zero otherwise. Errors: names that do not fit
+ * the local buffer are unsupported. Source: generated C DEFAULT callbacks.
+ * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
+ * History: storage-aware scalar callbacks. Example: BOOLEAN DEFAULT TRUE.
+ */
+static int
+try_inline_scalar_default(arg_t *arg, asn1p_expr_t *expr, int out,
+                          asn1p_expr_type_e etype) {
+	int fits_long = etype == ASN_BASIC_BOOLEAN; /* Scalar storage state variable. */
+	int save_target; /* Output redirection restoration state variable. */
 	char default_name[128];
+	if(!expr->marker.default_value
+	|| (expr->marker.default_value->type != ATV_INTEGER
+	    && expr->marker.default_value->type != ATV_TRUE
+	    && expr->marker.default_value->type != ATV_FALSE)) return 0;
+	if(asn1p_itoa_s(default_name, sizeof(default_name),
+	                expr->marker.default_value->value.v_integer) < 0) return 0;
+	if(default_name[0] == '-') default_name[0] = 'm';
+	if(etype == ASN_BASIC_INTEGER)
+		fits_long = asn1c_select_integer_storage(arg, expr) != AISK_INTEGER_T;
+	else if(!fits_long)
+		fits_long = asn1c_type_fits_long(arg, expr) != FL_NOTFIT;
+	if(fits_long && !expr->marker.default_value->value.v_integer)
+		expr->marker.flags &= ~EM_INDIRECT;
+	if(!out) return emit_scalar_default_refs(arg, expr, default_name);
+	save_target = arg->target->target;
+	REDIR(OT_STAT_DEFS);
+	emit_scalar_default_cmp(arg, expr, etype, fits_long, default_name);
+	emit_scalar_default_set(arg, expr, fits_long, default_name);
+	REDIR(save_target);
+	return 1;
+}
 
-	switch(etype) {
-	case ASN_BASIC_BOOLEAN:
-		fits_long = 1;
-        /* Fall through */
-	case ASN_BASIC_INTEGER:
-	case ASN_BASIC_ENUMERATED:
-		if(expr->marker.default_value == NULL
-		|| (expr->marker.default_value->type != ATV_INTEGER &&
-		    expr->marker.default_value->type != ATV_TRUE &&
-		    expr->marker.default_value->type != ATV_FALSE))
-			break;
-		/* Keep negative literals in C identifiers without negating INT_MIN. */
-		if(asn1p_itoa_s(default_name, sizeof(default_name),
-		                  expr->marker.default_value->value.v_integer) < 0)
-			return 0;
-		if(default_name[0] == '-') default_name[0] = 'm';
-		/* INTEGER storage may remain INTEGER_t even when its value fits long. */
-		if(etype == ASN_BASIC_INTEGER)
-			fits_long = asn1c_select_integer_storage(arg, expr) != AISK_INTEGER_T;
-		else if(!fits_long)
-			fits_long = asn1c_type_fits_long(arg, expr) != FL_NOTFIT;
-		if(fits_long && !expr->marker.default_value->value.v_integer)
-			expr->marker.flags &= ~EM_INDIRECT;
-		if(!out) {
-            if(C99_MODE) OUT(".default_value_cmp = ");
-			OUT("&asn_DFL_%d_cmp_%s,",
-				expr->_type_unique_index,
-				default_name);
-            OUT("\t/* Compare DEFAULT %s */\n",
-				asn1p_itoa(expr->marker.default_value->value.v_integer));
-            if(C99_MODE) OUT(".default_value_set = ");
-			OUT("&asn_DFL_%d_set_%s,",
-				expr->_type_unique_index,
-				default_name);
-            OUT("\t/* Set DEFAULT %s */\n",
-				asn1p_itoa(expr->marker.default_value->value.v_integer));
-			return 1;
-		}
-		REDIR(OT_STAT_DEFS);
-
-		OUT("static int asn_DFL_%d_cmp_%s(const void *sptr) {\n",
-			expr->_type_unique_index,
-			default_name);
-		INDENT(+1);
-		OUT("const %s *st = sptr;\n", asn1c_type_name(arg, expr, TNF_CTYPE));
-		OUT("\n");
-		OUT("if(!st) {\n");
-        OUT("\treturn -1; /* No value is not a default value */\n");
-		OUT("}\n");
-		OUT("\n");
-		OUT("/* Test default value %s */\n",
-			asn1p_itoa(expr->marker.default_value->value.v_integer));
-		if(fits_long) {
-			OUT("return (*st != %s);\n",
-				asn1p_itoa(expr->marker.default_value->value.v_integer));
-		} else {
-			OUT("long value;\n");
-			OUT("if(asn_INTEGER2long(st, &value))\n");
-			OUT("\treturn -1;\n");
-			OUT("return (value != %s);\n",
-				asn1p_itoa(expr->marker.default_value->value.v_integer));
-		}
-		INDENT(-1);
-		OUT("}\n");
-
-		OUT("static int asn_DFL_%d_set_%s(void **sptr) {\n",
-			expr->_type_unique_index,
-			default_name);
-		INDENT(+1);
-		OUT("%s *st = *sptr;\n", asn1c_type_name(arg, expr, TNF_CTYPE));
-		OUT("\n");
-		OUT("if(!st) {\n");
-		OUT("\tst = (*sptr = CALLOC(1, sizeof(*st)));\n");
-		OUT("\tif(!st) return -1;\n");
-		OUT("}\n");
-		OUT("\n");
-		OUT("/* Install default value %s */\n",
-			asn1p_itoa(expr->marker.default_value->value.v_integer));
-		if(fits_long) {
-			OUT("*st = ");
-			OINT(expr->marker.default_value->value.v_integer);
-			OUT(";\n");
-			OUT("return 0;\n");
-		} else {
-			OUT("return asn_long2INTEGER(st, ");
-			OINT(expr->marker.default_value->value.v_integer);
-			OUT(");\n");
-		}
-		INDENT(-1);
-		OUT("}\n");
-
-		REDIR(save_target);
+/*
+ * Emit DEFAULT callbacks for string and bit-string values.
+ * Inputs: arg/expr identify the member; out is zero for descriptor references
+ * or nonzero for callback definitions;
+ * etype contains its fixed-tree type. Returns one when supported, else zero.
+ * Errors: output failures are recorded by the generator. Source: C descriptors.
+ * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
+ * History: split the blob branch from try_inline_default.
+ * Example: OCTET STRING DEFAULT 'AB'H uses byte comparison callbacks.
+ */
+static int
+try_inline_blob_default(arg_t *arg, asn1p_expr_t *expr, int out,
+			asn1p_expr_type_e etype) {
+	int save_target = arg->target->target; /* Output redirection restoration state variable. */
+	if(!expr->marker.default_value
+	|| (!(etype & ASN_STRING_KM_MASK)
+	    && expr->marker.default_value->type != ATV_STRING
+	    && expr->marker.default_value->type != ATV_BITVECTOR)) return 0;
+	if(!out) {
+		if(C99_MODE) OUT(".default_value_cmp = ");
+		OUT("&asn_DFL_%d_cmp,\t/* Compare DEFAULT \"%s\" */\n",
+			expr->_type_unique_index, expr->marker.default_value->value.string.buf);
+		if(C99_MODE) OUT(".default_value_set = ");
+		OUT("&asn_DFL_%d_set,\t/* Set DEFAULT \"%s\" */\n",
+			expr->_type_unique_index, expr->marker.default_value->value.string.buf);
 		return 1;
-	case ASN_BASIC_REAL:
-		return try_inline_real_default(arg, expr, out);
-	case ASN_BASIC_NULL:
-		//expr->marker.flags &= ~EM_INDIRECT;
-		return 0;
-	default:
-	  if(expr->marker.default_value) {
-	    if(!(etype & ASN_STRING_KM_MASK) &&
-		(expr->marker.default_value->type != ATV_STRING) &&
-		(expr->marker.default_value->type != ATV_BITVECTOR))
-			break;
-		if(!out) {
-            if(C99_MODE) OUT(".default_value_cmp = ");
-			OUT("&asn_DFL_%d_cmp,\t/* Compare DEFAULT \"%s\" */\n",
-				expr->_type_unique_index,
-				expr->marker.default_value->value.string.buf);
-            if(C99_MODE) OUT(".default_value_set = ");
-			OUT("&asn_DFL_%d_set,\t/* Set DEFAULT \"%s\" */\n",
-				expr->_type_unique_index,
-				expr->marker.default_value->value.string.buf);
-			return 1;
-		}
-		REDIR(OT_STAT_DEFS);
-
-        OUT("static int asn_DFL_%d_cmp(const void *sptr) {\n",
-            expr->_type_unique_index);
-        INDENT(+1);
+	}
+	REDIR(OT_STAT_DEFS);
+	OUT("static int asn_DFL_%d_cmp(const void *sptr) {\n",
+		expr->_type_unique_index);
+	INDENT(+1);
 	if(expr->marker.default_value->type == ATV_STRING)
 		emit_default_string_value(arg, expr->marker.default_value);
 	else
 		emit_default_bitstring_value(arg, expr->marker.default_value);
-        OUT("const %s *st = sptr;\n", asn1c_type_name(arg, expr, TNF_CTYPE));
-        OUT("\n");
-        OUT("if(!st) {\n");
-        OUT("\treturn -1; /* No value is not a default value */\n");
-        OUT("}\n");
-		OUT("\n");
+	OUT("const %s *st = sptr;\n", asn1c_type_name(arg, expr, TNF_CTYPE));
+	OUT("\n");
+	OUT("if(!st) {\n");
+	OUT("\treturn -1; /* No value is not a default value */\n");
+	OUT("}\n");
+	OUT("\n");
 	if(expr->marker.default_value->type == ATV_STRING) {
 		OUT("if(st->size == (sizeof(defv) - 1)\n");
 		OUT("&& memcmp(st->buf, &defv, sizeof(defv) - 1) == 0)\n");
@@ -5061,49 +5093,65 @@ try_inline_default(arg_t *arg, asn1p_expr_t *expr, int out) {
 		OUT("if(st->size == (sizeof(defv))\n");
 		OUT("&& memcmp(st->buf, &defv, sizeof(defv)) == 0)\n");
 	}
-        OUT("\treturn 0;\n");
-        OUT("return 1;\n");
-		INDENT(-1);
-		OUT("}\n");
-
-        OUT("static int asn_DFL_%d_set(void **sptr) {\n",
-            expr->_type_unique_index);
-        INDENT(+1);
-        if(expr->marker.default_value->type == ATV_STRING)
-            emit_default_string_value(arg, expr->marker.default_value);
-        else
-            emit_default_bitstring_value(arg, expr->marker.default_value);
-		OUT("%s *st = *sptr;\n", asn1c_type_name(arg, expr, TNF_CTYPE));
-        OUT("uint8_t *nstr = MALLOC(sizeof(defv));\n");
-		OUT("\n");
-        OUT("if(!nstr) return -1;\n");
-        OUT("memcpy(nstr, defv, sizeof(defv));\n");
-        OUT("\n");
-		OUT("if(st) {\n");
-		OUT("\tFREEMEM(st->buf);\n");
-		OUT("} else {\n");
-		OUT("\tst = (*sptr = CALLOC(1, sizeof(*st)));\n");
-		OUT("\tif(!st) { FREEMEM(nstr); return -1; }\n");
-		OUT("}\n");
-		OUT("st->buf = nstr;\n");
-      if(expr->marker.default_value->type == ATV_STRING) {
-          OUT("st->size = sizeof(defv) - 1;\n");
-      } else {
-          OUT("st->size = sizeof(defv);\n");
-          if(etype == ASN_BASIC_BIT_STRING)
-              OUT("st->bits_unused = %d;\n", (8 - expr->marker.default_value->value.binary_vector.size_in_bits % 8) % 8);
-      }
-		OUT("\n");
-		OUT("return 0;\n");
-		INDENT(-1);
-		OUT("}\n");
-
-		REDIR(save_target);
-		return 1;
-	  }
-	  break;
+	OUT("\treturn 0;\n");
+	OUT("return 1;\n");
+	INDENT(-1);
+	OUT("}\n");
+	OUT("static int asn_DFL_%d_set(void **sptr) {\n", expr->_type_unique_index);
+	INDENT(+1);
+	if(expr->marker.default_value->type == ATV_STRING)
+		emit_default_string_value(arg, expr->marker.default_value);
+	else
+		emit_default_bitstring_value(arg, expr->marker.default_value);
+	OUT("%s *st = *sptr;\n", asn1c_type_name(arg, expr, TNF_CTYPE));
+	OUT("uint8_t *nstr = MALLOC(sizeof(defv));\n");
+	OUT("\n");
+	OUT("if(!nstr) return -1;\n");
+	OUT("memcpy(nstr, defv, sizeof(defv));\n");
+	OUT("\n");
+	OUT("if(st) {\n");
+	OUT("\tFREEMEM(st->buf);\n");
+	OUT("} else {\n");
+	OUT("\tst = (*sptr = CALLOC(1, sizeof(*st)));\n");
+	OUT("\tif(!st) { FREEMEM(nstr); return -1; }\n");
+	OUT("}\n");
+	OUT("st->buf = nstr;\n");
+	if(expr->marker.default_value->type == ATV_STRING) {
+		OUT("st->size = sizeof(defv) - 1;\n");
+	} else {
+		OUT("st->size = sizeof(defv);\n");
+		if(etype == ASN_BASIC_BIT_STRING)
+			OUT("st->bits_unused = %d;\n",
+				(8 - expr->marker.default_value->value.binary_vector.size_in_bits % 8) % 8);
 	}
-	return 0;
+	OUT("\n");
+	OUT("return 0;\n");
+	INDENT(-1);
+	OUT("}\n");
+	REDIR(save_target);
+	return 1;
+}
+
+/*
+ * Purpose: dispatch inline DEFAULT callbacks for primitive ASN.1 members.
+ * Inputs: arg is generator context; expr is a member; out is zero for descriptor
+ * references or nonzero for callback definitions.
+ * Returns one when emitted, zero for unsupported DEFAULTs. Errors: the output
+ * and allocation layers report failures; this helper raises no exceptions.
+ * Original source: asn1c C generator, split to keep each unit bounded.
+ * Version/date: 1.2, 2026-11-01. Responsible party: asn1c maintainers.
+ * History: storage-aware callbacks; BOOLEAN comparison now uses truth values.
+ * Example: BOOLEAN DEFAULT TRUE compares `0xff` as true.
+ */
+static int
+try_inline_default(arg_t *arg, asn1p_expr_t *expr, int out) {
+	asn1p_expr_type_e etype = expr_get_type(arg, expr);
+	if(etype == ASN_BASIC_BOOLEAN || etype == ASN_BASIC_INTEGER
+	|| etype == ASN_BASIC_ENUMERATED)
+		return try_inline_scalar_default(arg, expr, out, etype);
+	if(etype == ASN_BASIC_REAL) return try_inline_real_default(arg, expr, out);
+	if(etype == ASN_BASIC_NULL) return 0;
+	return try_inline_blob_default(arg, expr, out, etype);
 }
 
 static int
@@ -5349,8 +5397,10 @@ emit_member_type_selector(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_ob
     OUT("\n");
 
     OUT("for(row=0; row < itable->rows_count; row++) {\n");
-    OUT("    const asn_ioc_cell_t *constraining_cell = &itable->rows[row * itable->columns_count + constraining_column];\n");
-    OUT("    const asn_ioc_cell_t *type_cell = &itable->rows[row * itable->columns_count + for_column];\n");
+    OUT("    const asn_ioc_cell_t *constraining_cell = "
+        "&itable->rows[row * itable->columns_count + constraining_column];\n");
+    OUT("    const asn_ioc_cell_t *type_cell = "
+        "&itable->rows[row * itable->columns_count + for_column];\n");
     OUT("\n");
     OUT("    if(type_cell->cell_kind == aioc__undefined)\n");
     OUT("        continue;\n");
@@ -5363,7 +5413,9 @@ emit_member_type_selector(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_ob
     OUT("       || !constraining_cell->value_sptr\n");
     OUT("       || !type_cell->type_descriptor)\n");
     OUT("        continue;\n");
-    OUT("    if(constraining_cell->type_descriptor->op->compare_struct(constraining_cell->type_descriptor, constraining_value, constraining_cell->value_sptr) == 0) {\n");
+    OUT("    if(constraining_cell->type_descriptor->op->compare_struct("
+        "constraining_cell->type_descriptor, constraining_value, "
+        "constraining_cell->value_sptr) == 0) {\n");
     OUT("        result.type_descriptor = type_cell->type_descriptor;\n");
     OUT("        result.presence_index = presence_index;\n");
     OUT("        break;\n");
@@ -6433,9 +6485,10 @@ emit_include_dependencies(arg_t *arg) {
 			 * This fix is critical for specifications like F1AP that use parameterized
 			 * types with IOC fields.
 			 */
-			int is_ioc_field = (memb->reference 
+			int is_ioc_field = (memb->reference
 			                    && memb->reference->comp_count >= 2
-			                    && memb->reference->components[memb->reference->comp_count - 1].name[0] == '&');
+			                    && memb->reference->components[
+			                        memb->reference->comp_count - 1].name[0] == '&');
 			GEN_POS_INCLUDE_BASE((memb->marker.flags & EM_UNRECURSE) && !is_ioc_field ?
 					OT_POST_INCLUDE : OT_INCLUDES, memb);
 		}

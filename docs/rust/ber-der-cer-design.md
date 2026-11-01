@@ -1258,10 +1258,9 @@ generated public names such as `Foo_Bar`; callers using those names must use
 the corrected name after regeneration. Same-module, keyword-derived, and
 nested/top-level normalized collisions fail before output publication.
 
-### Transparent bounded INTEGER alias (approved next slice)
+### Transparent bounded INTEGER alias (qualified composition slice)
 
-This design is approved for isolated implementation; it is not enabled in the
-current checkpoint. Under BER/CER-only selection, allow a same-module alias
+Under BER/CER-only selection, allow a same-module alias
 such as `Small ::= Base` where `Base ::= INTEGER (0..5)` is a direct untagged
 assignment with one finite contiguous `i64` range. Both alias and base must be
 exact members of the owning module, and the fixed reference must match the
@@ -1291,6 +1290,53 @@ unused unsupported alias rejection, and exact shared limits. Combined,
 BER-only, and CER-only output must pass the required strict Clippy command.
 No-publication negatives must include chains, cycles, added constraints, tagged
 aliases/bases, imported aliases, parameters, and unsupported codec selections.
+
+The acceptance tests exposed a C comparison defect: BOOLEAN values use nonzero
+truth, while generated DEFAULT callbacks compared the stored integer to `1`.
+The BER decoder can store TRUE as `0xff`, so strict CER's canonical re-encoding
+could retain an explicitly encoded DEFAULT TRUE. Normalize both operands to
+truth values in the BOOLEAN comparator; preserve exact comparisons for INTEGER
+and ENUMERATED and the existing setter/storage rules. Fixed vectors cover TRUE
+representations `1`, `0xff`, and `7` in SEQUENCE and SET, omitted/default FALSE
+siblings, and rejection of an explicit default by strict CER. C remains a
+comparison implementation; independent canonical vectors determine acceptance.
+
+### BOOLEAN record storage (approved next implementation)
+
+The user selected bitsets with getters/setters on 2026-11-01 and explicitly
+required every lint to remain enabled. Records with more than three actual
+scalar BOOLEAN storage fields will pack those values into a private byte
+array. Required and DEFAULT BOOLEANs count for the shared record layout;
+OPTIONAL `Option<bool>` fields retain their public representation. XER's
+separate layout stores DEFAULT fields as `Option`, so only its required
+BOOLEAN fields count toward packing. Records below the threshold retain their
+public fields and struct-literal construction API.
+
+All BOOLEAN fields receive `get_<field>` and `set_<field>` methods, returning
+and accepting `bool` or `Option<bool>` according to the existing field's
+semantics. Method names prefix the normalized identifier after removing any
+raw-keyword marker. Packed records additionally receive
+`new(packed_values: [bool; N], nonpacked_fields: (T1, ...))`. Both arguments
+follow declaration order within their group; an empty nonpacked group uses
+`()`, and a singleton tuple retains its trailing comma. This avoids functions
+with excessive BOOLEAN parameters while preserving typed construction of all
+other members. The private flags expose no unchecked raw-bit interface, and
+unused bits remain zero through construction, cloning, and mutation.
+
+Encoder field helpers use the uniform accessors. Packed SEQUENCE decoders
+must decode locals in schema order before constructing their flags, preserving
+interleaved non-BOOLEAN fields and OPTIONAL/DEFAULT handling. SET and CBOR
+decoders already collect slots before construction. Named, imported, and inline
+children continue using their own methods under the parent's shared context;
+packing starts no new operation budget and changes no wire encoding.
+
+Qualification must cover threshold and multi-byte boundaries, setters in both
+directions, keyword field names, interleaved members, required/OPTIONAL/DEFAULT
+values, inline/named/imported children, individual and combined codec selections,
+and exact strict Clippy. Existing public-field fixtures remain regression tests.
+Constructor loops must stay bounded and avoid one emitted branch per schema
+BOOLEAN, since the larger UPER record limit would otherwise exceed the required
+complexity cap. No lint exception or blanket allowance is permitted.
 
 ## Decisions still required
 

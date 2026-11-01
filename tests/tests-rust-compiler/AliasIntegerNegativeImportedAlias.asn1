@@ -1,0 +1,11 @@
+-- Unsupported alias composition; reject before creating Rust output.
+-- Source: approved alias gate; 2026-11-01; responsible: asn1c maintainers.
+AliasIntegerAliasSource DEFINITIONS ::= BEGIN
+EXPORTS Small;
+Base ::= INTEGER (0..5)
+Small ::= Base
+END
+AliasIntegerAliasClient DEFINITIONS ::= BEGIN
+IMPORTS Small FROM AliasIntegerAliasSource;
+Packet ::= SEQUENCE { flag BOOLEAN }
+END

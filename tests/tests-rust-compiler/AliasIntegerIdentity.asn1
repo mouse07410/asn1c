@@ -1,0 +1,17 @@
+-- Public alias identity, signed endpoints, singleton range, and DEFAULT siblings.
+-- Source: approved alias API; 2026-11-01; responsible: asn1c maintainers.
+AliasIntegerIdentity DEFINITIONS EXPLICIT TAGS ::= BEGIN
+Signed-Alias ::= Signed-Base
+Other-Signed ::= Signed-Base
+Signed-Base ::= INTEGER (-2..5)
+Singleton ::= Single
+Single ::= INTEGER (2..2)
+DefaultSequence ::= SEQUENCE {
+    value Signed-Alias,
+    flag [4] IMPLICIT BOOLEAN DEFAULT TRUE
+}
+DefaultSet ::= SET {
+    flag [4] IMPLICIT BOOLEAN DEFAULT TRUE,
+    value Signed-Alias
+}
+END

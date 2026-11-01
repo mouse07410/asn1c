@@ -1,0 +1,22 @@
+ImportedRecordNegativeWork13Base DEFINITIONS ::= BEGIN
+EXPORTS RemoteSix;
+RemoteSix ::= SEQUENCE {
+    one [0] IMPLICIT INTEGER (0..5),
+    two [1] IMPLICIT INTEGER (0..5),
+    three [2] IMPLICIT INTEGER (0..5),
+    four [3] IMPLICIT INTEGER (0..5),
+    five [4] IMPLICIT INTEGER (0..5),
+    six [10] IMPLICIT INTEGER (0..5)
+}
+END
+ImportedRecordNegativeWork13Client DEFINITIONS ::= BEGIN
+IMPORTS RemoteSix FROM ImportedRecordNegativeWork13Base;
+LocalFive ::= SET {
+    one [5] IMPLICIT INTEGER (0..5),
+    two [6] IMPLICIT INTEGER (0..5),
+    three [7] IMPLICIT INTEGER (0..5),
+    four [8] IMPLICIT INTEGER (0..5),
+    five [9] IMPLICIT INTEGER (0..5)
+}
+Packet ::= SEQUENCE { remote RemoteSix, local LocalFive }
+END

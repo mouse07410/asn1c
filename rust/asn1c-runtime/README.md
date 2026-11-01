@@ -426,6 +426,11 @@ record readers and writers. Its source module supplies the checked newtype;
 its parent supplies the operation context. Crossing the module boundary does
 not start a new input, output, allocation, or work budget.
 
+A generated transparent local INTEGER alias uses its direct base's checked
+Rust type and public codecs. In a record, the declared alias name is retained
+for field storage and construction, while the same parent readers and writers
+enforce the base range. Alias resolution adds no runtime context or nesting.
+
 The opt-in nested context caps live parent/child record-buffer capacities plus
 cumulative decoded string-buffer capacity charges at 128 MiB. Charges are
 conservative and remain after a failed callback because its values may have

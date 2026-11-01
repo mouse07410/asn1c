@@ -622,8 +622,8 @@ six-field cap. BER/CER selection is required.
 `c_named_integer_record.c` compare required and OPTIONAL newtypes, natural,
 IMPLICIT, and EXPLICIT tags, BIT STRING siblings, SET sorting, BER alias
 handling, range checking, prefix consumption, and resource limits. C verifies
-out-of-range BER values separately through `asn_check_constraints`. Alias,
-import, unbounded/union/extended/MIN..MAX target, extra member constraint,
+out-of-range BER values separately through `asn_check_constraints`. References
+outside the later qualified alias/import slices, unbounded/union/extended/MIN..MAX targets, extra member constraints,
 tagged target/root, nested, multiple-reference, duplicate-tag, DEFAULT, and
 unsupported target schemas fail before output publication. BER-only,
 CER-only, mixed-codec, and UPER-only selector behavior is checked; generated
@@ -744,7 +744,7 @@ so syntax errors cannot accidentally satisfy the no-publication checks.
 
 `ImportedRecord*.asn1`, `imported_record_conformance.rs`, and
 `imported_record_legacy_conformance.rs` cover direct imported SEQUENCE and
-nonempty SET children. The seven Rust tests compare fixed C vectors for
+nonempty SET children. The eight Rust tests compare fixed C vectors for
 natural local/imported pairs, repeated IMPLICIT/EXPLICIT references, OPTIONAL
 states, empty SEQUENCE targets, owned OCTET/BIT STRING leaves, scalar DEFAULT
 siblings, independent SET ordering, prefix/truncation behavior, malformed
@@ -752,12 +752,17 @@ second children, and deterministic mutations. Local and imported equivalents
 must have identical exact encode/decode work thresholds; one-short input and
 output budgets fail. Both source orders and individual BER/CER selections pass
 exact strict Clippy. Unused imported SETs emit no unused child callbacks.
+`ImportedRecordWork12Base/Client.asn1` and
+`imported_record_work12_conformance.rs` accept exactly twelve aggregate fields
+across an imported SEQUENCE child and a local SET child, with pinned work and
+prefix checks. The combined `ImportedRecordNegativeWork13.asn1` is parse-valid
+and rejects the first excess field with both modules supplied.
 
 `imported_record_composition.c`, `imported_record_owned_defaults.c`, and
-`imported_record_legacy.c` check sixteen DER/CER value pairs through C encoders
+`imported_record_legacy.c` check seventeen DER/CER value pairs through C encoders
 and decoders, including correctly framed indefinite reversed SET order,
 defaults, independent target bounds, owned leaves, and exact prefixes. The
-harness runs all three normally and under ASan/UBSan. Twenty-two parse-valid
+harness runs all three normally and under ASan/UBSan. Twenty-three parse-valid
 negative schemas and unsupported codec selections must reject without an
 output path. Invalid unused imported targets are included. Former imported
 SEQUENCE/SET rejection fixtures now also receive positive compilation checks;
@@ -769,3 +774,29 @@ module/field/ENUMERATED naming. Three parse-valid normalized-name collisions
 must fail before publication. The naming correction emits `FooBar` instead
 of `Foo_Bar`, preserves existing interior capitals, and uses `Asn1Self` for
 reserved `Self`; it introduces no lint allowances or compatibility aliases.
+
+### Transparent local bounded INTEGER aliases
+
+`check-rust-aliases.sh` qualifies one same-module transparent hop such as
+`Small ::= Base` with `Base ::= INTEGER (0..5)`. The generated `pub type`
+preserves type identity, checked constructors, accessors, and selected codec
+methods. Forward declarations and multiple aliases of one base compile.
+Record fields and decoder constructors retain their declared alias names;
+tag/range decisions and shared operation budgets use the direct base.
+
+The driver reuses the eight named INTEGER record tests with the alias schema
+and adds four identity/range/default/resource tests. It checks signed and
+singleton bounds, natural/IMPLICIT/EXPLICIT fields, OPTIONAL presence, SET
+ordering, strict CER rejection, prefixes, malformed data, and exact shared
+limits. Combined, BER-only, and CER-only crates pass exact strict Clippy.
+Twenty-one parse-valid negative fixtures reject unsupported metadata, chains,
+cycles, imports, constraints, tags, parameters, and normalized collisions before
+publication. Twelve unsupported codec selections also reject unused aliases.
+
+`c_named_integer_record.c` and `c_alias_integer_identity.c` check 24 DER/CER
+value pairs with generated C encoding, BER decoding, and strict CER decoding.
+Both run normally and under ASan/UBSan when available. The identity fixture
+also verifies eight encodings of noncanonical C TRUE representations (`0xff`
+and `7`) with DEFAULT TRUE siblings. This caught the C DEFAULT comparison bug:
+BOOLEAN must compare truth values rather than its stored integer to `1`.
+Canonical omission and explicit DEFAULT rejection now agree with fixed vectors.

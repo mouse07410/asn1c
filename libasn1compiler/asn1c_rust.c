@@ -171,6 +171,15 @@ static int rust_check_ber_cer_big_integer_record_members(asn1p_module_t *,
 static int rust_integer_single_range_supported(const asn1p_constraint_t *,
                                                unsigned, int *);
 static asn1p_expr_t *rust_ber_cer_named_integer_target(const asn1p_expr_t *);
+static asn1p_expr_t *rust_ber_cer_named_integer_declared_target(const asn1p_expr_t *);
+static int rust_ber_cer_integer_alias_base(asn1p_module_t *, asn1p_expr_t *,
+                                           const char *, asn1p_expr_t **);
+static int rust_ber_cer_integer_alias_owner(asn1p_module_t *, asn1p_expr_t *,
+                                            const char *);
+static int rust_ber_cer_integer_alias_metadata(const asn1p_expr_t *);
+static int rust_check_ber_cer_integer_alias(asn1p_module_t *, asn1p_expr_t *,
+                                            uint64_t);
+static int rust_write_integer_alias(FILE *, asn1p_module_t *, asn1p_expr_t *);
 static int rust_ber_cer_import_shape(asn1p_module_t *, asn1p_xports_t **,
                                      asn1p_expr_t **);
 static int rust_ber_cer_imported_integer_target(asn1p_module_t *, const char *,
@@ -907,6 +916,88 @@ rust_ber_cer_named_target_is_local_assignment(asn1p_module_t *module,
 }
 
 /*
+ * Confirm that an alias is an exact local type assignment with the named spelling.
+ * Inputs: module owns alias; name is the alias name referenced by the field.
+ * Returns one on pointer/name ownership match, otherwise zero.
+ * Errors: malformed or foreign assignments fail closed.
+ * Source: fixed module assignment list. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: alias target ownership.
+ * Example: local assignment Small matches the reference spelling `Small`.
+ */
+static int
+rust_ber_cer_integer_alias_owner(asn1p_module_t *module, asn1p_expr_t *alias,
+                                 const char *name) {
+    return module && alias && name && *name && alias->module == module
+        && rust_ber_cer_named_target_is_local_assignment(module, alias)
+        && alias->Identifier && !strcmp(alias->Identifier, name);
+}
+
+/*
+ * Check alias-only metadata that cannot be inherited from the INTEGER base.
+ * Inputs: alias is a local AMT_TYPEREF assignment. Returns one for the narrow
+ * untagged, unconstrained, nonparameterized shape; otherwise zero.
+ * Errors: declared constraints, tags, defaults, and controls are unsupported.
+ * Source: fixed ASN.1 alias AST. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: transparent alias metadata.
+ * Example: a bare `Small ::= Base` has no alias-specific metadata.
+ */
+static int
+rust_ber_cer_integer_alias_metadata(const asn1p_expr_t *alias) {
+    return alias && rust_ber_cer_named_reference_shape(alias)
+        && !alias->constraints && alias->tag.tag_class == TC_NOCLASS
+        && alias->tag.tag_mode == TM_DEFAULT && alias->marker.flags == EM_NOMARK;
+}
+
+/*
+ * Resolve one transparent alias directly to its bounded INTEGER assignment.
+ * Inputs: module owns alias/base; name is alias spelling; base_out receives the
+ * validated direct INTEGER. Returns zero or -1. Errors: chains and foreign targets.
+ * Source: fixed reference AST. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: same-module one-hop aliases.
+ * Example: Small ::= Base resolves to Base.
+ */
+static int
+rust_ber_cer_integer_alias_base(asn1p_module_t *module, asn1p_expr_t *alias,
+                                const char *name, asn1p_expr_t **base_out) {
+    asn1p_expr_t *base;
+    const char *base_name;
+    if(!base_out) return -1;
+    *base_out = NULL;
+    if(!rust_ber_cer_integer_alias_owner(module, alias, name)
+       || !rust_ber_cer_integer_alias_metadata(alias)) return -1;
+    base = alias->reference->ref_expr;
+    base_name = alias->reference->components[0].name;
+    if(!base || !rust_ber_cer_named_target_is_local_assignment(module, base)) return -1;
+    if(!rust_ber_cer_named_integer_target_shape(module, base, base_name)
+       || !rust_ber_cer_named_integer_target_range(base)) return -1;
+    *base_out = base;
+    return 0;
+}
+
+/*
+ * Gate one unused or referenced alias before any output is published.
+ * Inputs: module owns alias; codecs selects the requested record codecs.
+ * Returns zero only for a same-module one-hop bounded INTEGER alias.
+ * Errors: all other alias forms and codec selections receive a diagnostic.
+ * Source: approved transparent INTEGER alias gate. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: first local alias gate.
+ * Example: Small ::= Base passes for BER/CER-only output.
+ */
+static int
+rust_check_ber_cer_integer_alias(asn1p_module_t *module, asn1p_expr_t *alias,
+                                 uint64_t codecs) {
+    asn1p_expr_t *base;
+    const uint64_t supported = RUST_CODEC_BER | RUST_CODEC_CER;
+    if(!module || !alias || !(codecs & supported) || (codecs & ~supported)
+       || rust_ber_cer_integer_alias_base(module, alias, alias->Identifier, &base)) {
+        rust_diagnostic(module, alias,
+            "type aliases require one direct local bounded INTEGER and BER/CER-only codecs");
+        return -1;
+    }
+    return 0;
+}
+
+/*
  * Validate the importer's single supported IMPORTS group and symbol.
  * Inputs: module owns the import list; group/symbol receive borrowed nodes.
  * Returns zero on success, otherwise -1. Errors: group metadata or arity fails.
@@ -1141,17 +1232,19 @@ rust_ber_cer_imported_integer_target(asn1p_module_t *module, const char *name,
 }
 
 /*
- * Resolve a fixed-tree field to a local or explicitly imported INTEGER type.
- * Inputs: member is a type-reference field with retrieval metadata populated.
- * Returns a direct bounded target or NULL. Errors: unsupported shapes fail closed.
+ * Resolve the assignment named by a field, preserving a supported alias name.
+ * Inputs: member is a fixed-tree type reference with resolved metadata.
+ * Returns a direct INTEGER or validated alias assignment, otherwise NULL.
+ * Errors: aliases outside the same-module one-hop gate fail closed.
  * Source: fixed-tree and IMPORTS metadata. Version/date: 2026-11-01.
- * Responsible party: asn1c maintainers. History: local and imported INTEGER fields.
- * Example: local or declared `Small ::= INTEGER (0..5)` resolves directly.
+ * Responsible party: asn1c maintainers. History: named integer aliases.
+ * Example: a field `value Small` resolves to the Small assignment.
  */
 static asn1p_expr_t *
-rust_ber_cer_named_integer_target(const asn1p_expr_t *member) {
+rust_ber_cer_named_integer_declared_target(const asn1p_expr_t *member) {
     asn1p_module_t *module;
     asn1p_expr_t *target;
+    asn1p_expr_t *base;
     const char *name;
     if(!rust_ber_cer_named_reference_shape(member)) return NULL;
     module = member->module;
@@ -1160,12 +1253,34 @@ rust_ber_cer_named_integer_target(const asn1p_expr_t *member) {
     name = member->reference->components[0].name;
     if(!target) return NULL;
     if(rust_ber_cer_named_target_is_local_assignment(module, target)) {
-        if(!rust_ber_cer_named_integer_target_shape(module, target, name)
-           || !rust_ber_cer_named_integer_target_range(target)) return NULL;
-        return target;
+        if(rust_ber_cer_named_integer_target_shape(module, target, name)
+           && rust_ber_cer_named_integer_target_range(target)) return target;
+        if(!rust_ber_cer_integer_alias_base(module, target, name, &base)) return target;
+        return NULL;
     }
     if(rust_ber_cer_imported_integer_target(module, name, target, &target)) return NULL;
     return target;
+}
+
+/*
+ * Resolve a field to the direct INTEGER assignment used for its range.
+ * Inputs: member is the validated fixed-tree field reference.
+ * Returns the bounded base assignment or NULL. Errors: unsupported references.
+ * Source: direct target resolver. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: preserve alias wire bounds.
+ * Example: `value Small` returns Base when Small ::= Base.
+ */
+static asn1p_expr_t *
+rust_ber_cer_named_integer_target(const asn1p_expr_t *member) {
+    asn1p_expr_t *declared = rust_ber_cer_named_integer_declared_target(member);
+    asn1p_expr_t *base;
+    if(!declared) return NULL;
+    if(declared->expr_type != A1TC_REFERENCE) return declared;
+    if(!member || !member->module || !member->reference
+       || !member->reference->comp_count) return NULL;
+    if(rust_ber_cer_integer_alias_base(member->module, declared,
+            member->reference->components[0].name, &base)) return NULL;
+    return base;
 }
 
 /*
@@ -1667,7 +1782,7 @@ rust_check_module_name(asn1p_t *asn, asn1p_module_t *module) {
 }
 
 /*
- * Validate assignment kinds and ensure each emitted type name is unique.
+ * Validate assignments and one-hop aliases before emission.
  * Parameters: module is one source module; emitted counts accepted types;
  * codecs is the requested mask.
  * Returns zero or -1. Original source: new Rust backend. Version/date: 0.1.0,
@@ -1704,6 +1819,12 @@ rust_check_module_types(asn1p_module_t *module, int *emitted, uint64_t codecs) {
     }
     if(rust_check_module_nested_names(module)) return -1;
     TQ_FOR(expr, &module->members, next) {
+        if(expr->meta_type == AMT_TYPEREF || expr->expr_type == A1TC_REFERENCE) {
+            if(rust_check_ber_cer_integer_alias(module, expr, codecs)
+               || rust_check_type_name(module, expr)) return -1;
+            (*emitted)++;
+            continue;
+        }
         if(expr->meta_type != AMT_TYPE) {
             rust_diagnostic(module, expr,
                             "only top-level type assignments are supported");
@@ -6112,79 +6233,168 @@ rust_write_collection_codec(FILE *stream, const char *root,
 }
 
 /*
- * Emit one supported primitive wrapper, collection, or flat SEQUENCE.
- * Parameters: stream receives Rust; module and expr identify the assignment;
- * codecs selects emitted methods.
- * Returns zero or -1. Original source: new Rust backend. Version/date: 0.1.0,
- * 2026-10-11. Responsible party: asn1c maintainers. History: initial wrapper
- * generator. Example: rust_write_type(stream, module, boolean_type, codecs).
+ * Emit a transparent Rust alias to one validated bounded INTEGER type.
+ * Inputs: stream receives Rust; module and alias are fixed assignments.
+ * Returns zero or -1. Errors: invalid names or write failures return -1.
+ * Source: approved one-hop alias representation. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: transparent INTEGER aliases.
+ * Example: `Small ::= Base` emits `pub type Small = Base;`.
+ */
+static int
+rust_write_integer_alias(FILE *stream, asn1p_module_t *module,
+                         asn1p_expr_t *alias) {
+    asn1p_expr_t *base;
+    char *alias_name;
+    char *base_name;
+    int result;
+    if(!stream || !alias || rust_ber_cer_integer_alias_base(
+            module, alias, alias->Identifier, &base)) return -1;
+    alias_name = rust_type_identifier(alias->Identifier);
+    base_name = rust_type_identifier(base->Identifier);
+    if(!alias_name || !base_name) {
+        free(alias_name);
+        free(base_name);
+        return -1;
+    }
+    result = fprintf(stream,
+        "/// Transparent alias for the bounded INTEGER type `%s`.\n"
+        "pub type %s = %s;\n\n", base_name, alias_name, base_name);
+    free(alias_name);
+    free(base_name);
+    return result < 0 ? -1 : 0;
+}
+
+/*
+ * Emit XER and constructed Rust assignments.
+ * Inputs: stream/name identify output; expr is the fixed-tree assignment;
+ * codecs selects methods. Returns 1 if handled, 0 if not, or -1 on error.
+ * Errors: child emitters report invalid shapes or writes. Source: Rust backend.
+ * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
+ * History: split from rust_write_type to bound dispatch complexity.
+ * Example: a SEQUENCE is handled by rust_write_all_sequences.
+ */
+static int
+rust_write_type_constructed(FILE *stream, const char *name, asn1p_expr_t *expr,
+                            uint64_t codecs) {
+    if(codecs == RUST_CODEC_XER)
+        return rust_write_xer_record(stream, name, expr) ? -1 : 1;
+    if(expr->expr_type == ASN_CONSTR_SEQUENCE_OF
+       || expr->expr_type == ASN_CONSTR_SET_OF)
+        return rust_write_collection(stream, name, expr, codecs) ? -1 : 1;
+    if(expr->expr_type == ASN_CONSTR_SET)
+        return rust_write_set(stream, name, expr, 1, codecs) ? -1 : 1;
+    if(expr->expr_type == ASN_CONSTR_SEQUENCE)
+        return rust_write_all_sequences(stream, name, expr, 1, codecs) ? -1 : 1;
+    if(expr->expr_type == ASN_CONSTR_CHOICE) {
+        int use_cbor = codecs == RUST_CODEC_CBOR; /* Choice-mode state variable. */
+        int result; /* Choice-emitter result state variable. */
+        if(use_cbor) result = rust_write_cbor_choice(stream, name, expr);
+        else result = rust_write_ber_cer_choice(stream, name, expr, codecs, 1);
+        return result ? -1 : 1;
+    }
+    return 0;
+}
+
+/*
+ * Emit OCTET STRING, BIT STRING, and character-string Rust assignments.
+ * Inputs: stream/name identify output; module and expr identify the type;
+ * codecs selects methods. Returns 1 if handled, 0 if not, or -1 on error.
+ * Errors: child emitters report unsupported constraints or writes. Source:
+ * Rust backend. Version/date: 2026-11-01. Responsible party: asn1c maintainers.
+ * History: split from rust_write_type to bound dispatch complexity.
+ * Example: an unconstrained OCTET STRING uses its streaming wrapper.
+ */
+static int
+rust_write_type_strings(FILE *stream, const char *name, asn1p_module_t *module,
+                        asn1p_expr_t *expr, uint64_t codecs) {
+    int is_octets = expr->expr_type == ASN_BASIC_OCTET_STRING; /* String-kind state variable. */
+    int is_bits = expr->expr_type == ASN_BASIC_BIT_STRING; /* String-kind state variable. */
+    if(is_octets || is_bits) {
+        if(rust_containing_node(expr->combined_constraints, 0))
+            return rust_write_containing(stream, name, expr,
+                rust_contained_primitive(module, expr), codecs) ? -1 : 1;
+        if(!expr->constraints && !expr->combined_constraints)
+            return rust_write_unconstrained_string(stream, name, is_octets, codecs)
+                ? -1 : 1;
+        return rust_write_string(stream, name, expr, codecs) ? -1 : 1;
+    }
+    if(expr->expr_type == ASN_STRING_IA5String)
+        return rust_write_ia5_string(stream, name, codecs) ? -1 : 1;
+    if(rust_character_string_kind(expr))
+        return rust_write_character_string(stream, name, expr, codecs) ? -1 : 1;
+    return 0;
+}
+
+/*
+ * Emit remaining primitive Rust assignments, including the INTEGER fallback.
+ * Inputs: stream/name identify output; expr identifies the type; codecs selects
+ * methods. Returns zero on success or -1 on error.
+ * Errors: unsupported bounds and child write failures return -1. Source:
+ * Rust backend. Version/date: 2026-11-01. Responsible party: asn1c maintainers.
+ * History: split from rust_write_type to bound dispatch complexity.
+ * Example: a bounded INTEGER uses rust_write_integer.
+ */
+static int
+rust_write_type_primitive(FILE *stream, const char *name, asn1p_expr_t *expr,
+                          uint64_t codecs) {
+    if(expr->expr_type == ASN_TYPE_ANY)
+        return rust_write_any(stream, name, codecs);
+    if(expr->expr_type == ASN_BASIC_BOOLEAN)
+        return rust_write_boolean(stream, name, codecs);
+    if(expr->expr_type == ASN_BASIC_NULL)
+        return rust_write_null(stream, name, codecs);
+    if(expr->expr_type == ASN_BASIC_ENUMERATED)
+        return rust_write_enumerated(stream, name, expr, codecs);
+    if(expr->expr_type == ASN_BASIC_INTEGER
+       && !expr->constraints && !expr->combined_constraints)
+        return rust_write_big_integer(stream, name, codecs);
+    if(expr->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
+       || expr->expr_type == ASN_BASIC_RELATIVE_OID)
+        return rust_write_oid(stream, name,
+            expr->expr_type == ASN_BASIC_RELATIVE_OID, codecs);
+    if(expr->expr_type == ASN_BASIC_UTCTime)
+        return rust_write_utc_time(stream, name, codecs);
+    if(expr->expr_type == ASN_BASIC_GeneralizedTime)
+        return rust_write_generalized_time(stream, name, codecs);
+    {
+        int64_t lower, upper;
+        if(rust_integer_bounds(expr, &lower, &upper)) return -1;
+        return rust_write_integer(stream, name, lower, upper, codecs);
+    }
+}
+
+/*
+ * Emit one supported primitive wrapper, collection, or flat record assignment.
+ * Inputs: stream receives Rust; module and expr identify the assignment;
+ * codecs selects emitted methods. Returns zero or -1.
+ * Errors: invalid inputs, names, bounds, and writes return -1. Source:
+ * Rust backend. Version/date: 2026-11-01. Responsible party: asn1c maintainers.
+ * History: initial wrapper generator; dispatch split for bounded complexity.
+ * Example: rust_write_type(stream, module, boolean_type, codecs).
  */
 static int
 rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
                 uint64_t codecs) {
-    char *name = rust_type_identifier(expr->Identifier);
-    int ret;
-    (void)module;
+    char *name;
+    int ret; /* Type-dispatch result state variable. */
+    if(!stream || !module || !expr) return -1;
+    if(expr->expr_type == A1TC_REFERENCE)
+        return rust_write_integer_alias(stream, module, expr);
+    name = rust_type_identifier(expr->Identifier);
     if(!name) return -1;
     if(expr->expr_type != ASN_CONSTR_SET
        && fputs("/// ASN.1 type generated from the fixed parser tree.\n", stream) == EOF) {
         free(name);
         return -1;
     }
-    if(codecs == RUST_CODEC_XER) {
-        ret = rust_write_xer_record(stream, name, expr);
-    } else if(expr->expr_type == ASN_CONSTR_SEQUENCE_OF
-              || expr->expr_type == ASN_CONSTR_SET_OF) {
-        ret = rust_write_collection(stream, name, expr, codecs);
-    } else if(expr->expr_type == ASN_CONSTR_SET) {
-        ret = rust_write_set(stream, name, expr, 1, codecs);
-    } else if(expr->expr_type == ASN_CONSTR_SEQUENCE) {
-        ret = rust_write_all_sequences(stream, name, expr, 1, codecs);
-    } else if(expr->expr_type == ASN_CONSTR_CHOICE) {
-        ret = codecs == RUST_CODEC_CBOR
-            ? rust_write_cbor_choice(stream, name, expr)
-            : rust_write_ber_cer_choice(stream, name, expr, codecs, 1);
-    } else if(expr->expr_type == ASN_TYPE_ANY) {
-        ret = rust_write_any(stream, name, codecs);
-    } else if(expr->expr_type == ASN_BASIC_BOOLEAN) {
-        ret = rust_write_boolean(stream, name, codecs);
-    } else if(expr->expr_type == ASN_BASIC_NULL) {
-        ret = rust_write_null(stream, name, codecs);
-    } else if((expr->expr_type == ASN_BASIC_OCTET_STRING || expr->expr_type == ASN_BASIC_BIT_STRING)
-              && rust_containing_node(expr->combined_constraints, 0)) {
-        ret = rust_write_containing(stream, name, expr, rust_contained_primitive(module, expr), codecs);
-    } else if((expr->expr_type == ASN_BASIC_OCTET_STRING
-               || expr->expr_type == ASN_BASIC_BIT_STRING)
-              && !expr->constraints && !expr->combined_constraints) {
-        ret = rust_write_unconstrained_string(stream, name,
-            expr->expr_type == ASN_BASIC_OCTET_STRING, codecs);
-    } else if(expr->expr_type == ASN_BASIC_OCTET_STRING
-              || expr->expr_type == ASN_BASIC_BIT_STRING) {
-        ret = rust_write_string(stream, name, expr, codecs);
-    } else if(expr->expr_type == ASN_BASIC_ENUMERATED) {
-        ret = rust_write_enumerated(stream, name, expr, codecs);
-    } else if(expr->expr_type == ASN_BASIC_INTEGER
-              && !expr->constraints && !expr->combined_constraints) {
-        ret = rust_write_big_integer(stream, name, codecs);
-    } else if(expr->expr_type == ASN_BASIC_OBJECT_IDENTIFIER
-              || expr->expr_type == ASN_BASIC_RELATIVE_OID) {
-        ret = rust_write_oid(stream, name,
-            expr->expr_type == ASN_BASIC_RELATIVE_OID, codecs);
-    } else if(expr->expr_type == ASN_STRING_IA5String) {
-        ret = rust_write_ia5_string(stream, name, codecs);
-    } else if(rust_character_string_kind(expr)) {
-        ret = rust_write_character_string(stream, name, expr, codecs);
-    } else if(expr->expr_type == ASN_BASIC_UTCTime) {
-        ret = rust_write_utc_time(stream, name, codecs);
-    } else if(expr->expr_type == ASN_BASIC_GeneralizedTime) {
-        ret = rust_write_generalized_time(stream, name, codecs);
-    } else {
-        int64_t lower, upper;
-        if(rust_integer_bounds(expr, &lower, &upper)) ret = -1;
-        else ret = rust_write_integer(stream, name, lower, upper, codecs);
+    ret = rust_write_type_constructed(stream, name, expr, codecs);
+    if(!ret) ret = rust_write_type_strings(stream, name, module, expr, codecs);
+    if(!ret) {
+        ret = rust_write_type_primitive(stream, name, expr, codecs);
+        if(!ret) ret = 1;
     }
     free(name);
-    return ret || ferror(stream) ? -1 : 0;
+    return ret != 1 || ferror(stream) ? -1 : 0;
 }
 
 /*
@@ -7211,7 +7421,7 @@ rust_ber_cer_named_type_path(const asn1p_expr_t *member,
 static const char *
 rust_ber_cer_record_field_type(const char *parent, asn1p_expr_t *member,
                                char **owned) {
-    asn1p_expr_t *target = rust_ber_cer_named_integer_target(member);
+    asn1p_expr_t *target = rust_ber_cer_named_integer_declared_target(member);
     asn1p_expr_t *named_record = rust_ber_cer_named_record_target(member);
     asn1p_expr_t *contained;
     if(!owned) return NULL;
@@ -8496,10 +8706,12 @@ static int
 rust_write_ber_cer_decode_named_integer(FILE *stream, asn1p_expr_t *member,
                                         const char *indent) {
     asn1p_expr_t *target = rust_ber_cer_named_integer_target(member);
+    asn1p_expr_t *declared = rust_ber_cer_named_integer_declared_target(member);
     char *named_type;
     int written;
-    if(!target || rust_write_ber_cer_decode_integer(stream, member, indent)) return -1;
-    named_type = rust_ber_cer_named_type_path(member, target);
+    if(!target || !declared
+       || rust_write_ber_cer_decode_integer(stream, member, indent)) return -1;
+    named_type = rust_ber_cer_named_type_path(member, declared);
     if(!named_type) return -1;
     written = fprintf(stream, "%slet value = %s::new(value)?;\n", indent, named_type);
     free(named_type);
