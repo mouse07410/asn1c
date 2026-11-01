@@ -252,7 +252,8 @@ SET_aper_test_default(void) {
  * Returns: None.
  * Errors: Assertion failure indicates truncation was not reported as RC_WMORE.
  * Author: asn1c maintainers.
- * History: Added for malformed and incomplete SET input coverage.
+ * History: Added for malformed and incomplete SET input coverage; free
+ * partially decoded pointer members on starvation.
  * Example: A 16-bit prefix without the final BOOLEAN reports RC_WMORE.
  */
 static void
@@ -263,13 +264,15 @@ SET_aper_test_truncation(void) {
 
     result = aper_decode(0, &test_descriptor, (void **)&decoded, input, 0, 0, 0);
     assert(result.code == RC_WMORE);
-    FREEMEM(decoded);
+    if(decoded) ASN_STRUCT_FREE(test_descriptor, decoded);
 
     decoded = 0;
     result = aper_decode(0, &test_descriptor, (void **)&decoded,
                          input, sizeof(input), 0, 0);
     assert(result.code == RC_WMORE);
-    FREEMEM(decoded);
+    /* BOOLEAN_decode_aper may allocate flag before discovering the missing bit. */
+    assert(decoded != 0 && decoded->flag != 0);
+    ASN_STRUCT_FREE(test_descriptor, decoded);
 }
 
 /*

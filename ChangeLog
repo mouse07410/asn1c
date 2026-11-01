@@ -1,4 +1,6 @@
 Changes since v1.5.3:
+	* Free partially decoded APER SET members in the truncation regression test,
+	  eliminating its LeakSanitizer failure in C/C++ CI and distcheck.
 	* Fix issue #594 C XER output: separate SET members with one newline,
 	  materialize absent DEFAULT members in basic as well as canonical XER,
 	  and generate REAL DEFAULT callbacks for native and wide C storage.
