@@ -1,0 +1,3 @@
+OfField DEFINITIONS ::= BEGIN
+Record ::= SEQUENCE { values SEQUENCE OF BOOLEAN }
+END

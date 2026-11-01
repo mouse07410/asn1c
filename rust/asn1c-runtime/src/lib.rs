@@ -42,19 +42,21 @@ pub use aper::{
 };
 pub use ber::{
     decode_bit_string_ber, decode_bit_string_cer, decode_character_string_ber,
-    decode_character_string_cer, decode_enumerated_ber, decode_enumerated_cer,
-    decode_generalized_time_ber, decode_generalized_time_cer, decode_ia5_string_ber,
-    decode_ia5_string_cer, decode_object_identifier_ber, decode_object_identifier_cer,
-    decode_octet_string_ber, decode_octet_string_cer, decode_relative_oid_ber,
-    decode_relative_oid_cer, decode_utc_time_ber, decode_utc_time_cer, encode_bit_string_cer,
-    encode_bit_string_der, encode_character_string_cer, encode_character_string_der,
+    decode_character_string_cer, decode_collection_ber, decode_collection_cer,
+    decode_enumerated_ber, decode_enumerated_cer, decode_generalized_time_ber,
+    decode_generalized_time_cer, decode_ia5_string_ber, decode_ia5_string_cer,
+    decode_object_identifier_ber, decode_object_identifier_cer, decode_octet_string_ber,
+    decode_octet_string_cer, decode_relative_oid_ber, decode_relative_oid_cer, decode_utc_time_ber,
+    decode_utc_time_cer, encode_bit_string_cer, encode_bit_string_der, encode_character_string_cer,
+    encode_character_string_der, encode_collection_cer, encode_collection_der,
     encode_enumerated_cer, encode_enumerated_der, encode_generalized_time_cer,
     encode_generalized_time_der, encode_ia5_string_cer, encode_ia5_string_der,
     encode_object_identifier_cer, encode_object_identifier_der, encode_octet_string_cer,
     encode_octet_string_der, encode_relative_oid_cer, encode_relative_oid_der, encode_utc_time_cer,
-    encode_utc_time_der, CharacterString, CharacterStringKind, FieldKind, GeneralizedTime,
-    Ia5String, ObjectIdentifier, RecordContext, RecordEncoding, RecordField, RelativeOid,
-    SequenceReader, SequenceWriter, SetReader, SetWriter, Tag, TagClass, UtcTime, MAX_TAG_NUMBER,
+    encode_utc_time_der, CharacterString, CharacterStringKind, CollectionElementKind,
+    CollectionInput, CollectionRootKind, CollectionValues, FieldKind, GeneralizedTime, Ia5String,
+    ObjectIdentifier, RecordContext, RecordEncoding, RecordField, RelativeOid, SequenceReader,
+    SequenceWriter, SetReader, SetWriter, Tag, TagClass, UtcTime, MAX_TAG_NUMBER,
 };
 pub use big_integer::{
     decode_big_integer_ber, decode_big_integer_cer, encode_big_integer_cer, encode_big_integer_der,
@@ -832,27 +834,22 @@ pub fn encode_integer_der(
 /// `limits` bounds the entire input slice and this TLV's wire-bit work.
 ///
 /// # Returns
-/// The boolean value and TLV prefix consumption. BER TRUE accepts any
-/// nonzero content octet; this API deliberately requires exactly one content
-/// octet for BOOLEAN.
+/// The boolean value and TLV prefix consumption. BER FALSE accepts empty or
+/// all-zero content; TRUE accepts any nonzero octet in content of any length.
 ///
 /// # Errors
 /// Returns truncation, malformed tag/length/content, resource-limit, or size
 /// errors. Primitive indefinite lengths are rejected. It raises no exception.
 ///
 /// # Source, version, history, and example
-/// Original source: X.690 BER BOOLEAN rules and the asn1c BER decoder.
+/// Original source: C BER BOOLEAN decoder behavior; zero/multi-octet content
+/// extends the X.690 one-octet rule.
 /// Version/date: Rust BER API, 2026-10-30. Responsible party: asn1c
 /// maintainers. History: initial BER primitive prefix decoder. Example:
 /// `decode_boolean_ber(&[1, 1, 1], &Limits::default())?` is TRUE.
 pub fn decode_boolean_ber(input: &[u8], limits: &Limits) -> Result<Decoded<bool>, Error> {
     let (contents, decoded) = decode_ber_tlv(0x01, input, limits)?;
-    if contents.len() != 1 {
-        return Err(Error::InvalidEncoding {
-            reason: "BER BOOLEAN content must be exactly one octet",
-        });
-    }
-    Ok(decoded.map(|()| contents[0] != 0))
+    Ok(decoded.map(|()| contents.iter().any(|octet| *octet != 0)))
 }
 
 /// Decode one BER NULL primitive TLV prefix.
@@ -1982,6 +1979,9 @@ mod tests {
             (true, 4, 32)
         );
         assert!(!decode_boolean_ber(&[1, 1, 0], &limits).unwrap().value);
+        assert!(!decode_boolean_ber(&[1, 0], &limits).unwrap().value);
+        assert!(!decode_boolean_ber(&[1, 2, 0, 0], &limits).unwrap().value);
+        assert!(decode_boolean_ber(&[1, 2, 0, 1], &limits).unwrap().value);
 
         let null = decode_null_ber(&[5, 0x81, 0, 0xaa], &limits).unwrap();
         assert_eq!((null.consumed_bytes, null.consumed_bits), (3, 24));
@@ -2023,13 +2023,7 @@ mod tests {
     #[test]
     fn ber_malformed_and_truncated_inputs_are_rejected() {
         let limits = Limits::default();
-        for malformed in [
-            &[1, 0x80, 0][..],
-            &[1, 0xff][..],
-            &[1, 0][..],
-            &[1, 2, 1, 1][..],
-            &[0x21, 1, 0xff][..],
-        ] {
+        for malformed in [&[1, 0x80, 0][..], &[1, 0xff][..], &[0x21, 1, 0xff][..]] {
             assert!(matches!(
                 decode_boolean_ber(malformed, &limits),
                 Err(Error::InvalidEncoding { .. })

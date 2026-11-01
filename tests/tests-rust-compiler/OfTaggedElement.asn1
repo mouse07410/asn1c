@@ -1,0 +1,3 @@
+OfTaggedElement DEFINITIONS ::= BEGIN
+SequenceBoolean ::= SEQUENCE OF [0] IMPLICIT BOOLEAN
+END

@@ -1,0 +1,3 @@
+OfConstrainedBoolean DEFINITIONS ::= BEGIN
+SequenceBoolean ::= SEQUENCE OF BOOLEAN (TRUE)
+END

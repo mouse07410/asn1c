@@ -77,6 +77,23 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/GeneralizedTimeTagged.asn1 \
     $(srcdir)/generalized_time_conformance.rs \
     $(srcdir)/c_generalized_time.c \
+    $(srcdir)/OfCollections.asn1 \
+    $(srcdir)/OfTaggedRoot.asn1 \
+    $(srcdir)/OfSizedRoot.asn1 \
+    $(srcdir)/OfTaggedElement.asn1 \
+    $(srcdir)/OfAlias.asn1 \
+    $(srcdir)/OfElementAlias.asn1 \
+    $(srcdir)/OfField.asn1 \
+    $(srcdir)/OfNested.asn1 \
+    $(srcdir)/OfConstrainedBoolean.asn1 \
+    $(srcdir)/OfUnboundedInteger.asn1 \
+    $(srcdir)/OfIntegerExtension.asn1 \
+    $(srcdir)/OfIntegerUnion.asn1 \
+    $(srcdir)/OfParameterized.asn1 \
+    $(srcdir)/OfImportBase.asn1 \
+    $(srcdir)/OfImport.asn1 \
+    $(srcdir)/of_collections_conformance.rs \
+    $(srcdir)/c_of_collections.c \
     $(srcdir)/FirstSlice.asn1 \
     $(srcdir)/SequenceSlice.asn1 \
     $(srcdir)/StringSlice.asn1 \

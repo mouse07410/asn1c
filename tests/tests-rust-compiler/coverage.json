@@ -1,6 +1,6 @@
 {
-  "suite": "generated Rust primitive codecs, structured BER/CER records, and packed encodings",
-  "scope": "Only the listed nonextensible primitive and constructed subsets are qualified.",
+  "suite": "generated Rust primitive codecs, collections, structured BER/CER records, and packed encodings",
+  "scope": "Only the listed nonextensible primitive, collection, and constructed subsets are qualified.",
   "cases": [
     {
       "asn1_type": "BOOLEAN",
@@ -188,6 +188,25 @@
       "evidence": "GeneralizedTimeValues.asn1; generalized_time_conformance.rs; c_generalized_time.c"
     },
     {
+      "asn1_type": "SEQUENCE OF, SET OF",
+      "feature": "direct untagged unconstrained roots with one BOOLEAN, NULL, or bounded i64 INTEGER element",
+      "codec": "BER/DER and CER only",
+      "variants": [
+        "empty, singleton, multiple, duplicate, and repeated NULL elements",
+        "SEQUENCE OF preserves order; SET OF sorts complete canonical child TLVs",
+        "definite and indefinite BER, scalar aliases, root aliases, and strict CER rejection",
+        "bounded INTEGER range checks, malformed children/EOCs, prefixes, and resource limits",
+        "BER accepts zero/multi-octet BOOLEAN content; DER normalizes it and strict CER rejects it"
+      ],
+      "directions": [
+        "DER and CER encode",
+        "BER prefix decode",
+        "strict CER prefix decode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "OfCollections.asn1; of_collections_conformance.rs; c_of_collections.c"
+    },
+    {
       "asn1_type": "BIT STRING, OCTET STRING",
       "feature": "direct untagged unconstrained root values",
       "codec": "BER/DER and CER only",
@@ -262,7 +281,7 @@
         "definite lengths",
         "canonical DER output",
         "BER prefix consumption",
-        "BOOLEAN content is exactly one octet"
+        "BER accepts empty/multi-octet content; DER emits one octet and strict CER requires canonical content"
       ],
       "directions": [
         "BER decode",
@@ -734,7 +753,7 @@
   "comparison_policy": {
     "C_role": "Current C implementation is a comparison implementation, not a protocol oracle.",
     "independent_checks": "Rust fixed vectors, malformed-input checks, budgets, and round trips",
-    "canonicality": "CER claims cover listed vectors only. Bit counts cover full TLVs. IA5 BER preserves bytes; CER enforces its 7-bit alphabet."
+    "canonicality": "CER claims cover listed vectors only. Bit counts cover full TLVs. IA5 BER preserves bytes; CER enforces its 7-bit alphabet. Collection SET OF order compares complete child encodings."
   },
   "compiler_boundary_checks": {
     "rejected_before_output": [
@@ -757,7 +776,8 @@
       "direct unconstrained IA5String with tags, constraints, aliases, fields, imports, or non-BER/CER-only codec selection",
       "direct restricted character strings with tags, constraints, aliases, fields, imports, CHARACTER STRING, or non-BER/CER-only codec selection",
       "direct UTCTime with tags, constraints, aliases, fields, imports, or non-BER/CER-only codec selection",
-      "direct GeneralizedTime with tags, constraints, aliases, fields, imports, or non-BER/CER-only codec selection"
+      "direct GeneralizedTime with tags, constraints, aliases, fields, imports, or non-BER/CER-only codec selection",
+      "direct SEQUENCE OF/SET OF with SIZE constraints, root/element tags, aliases, imports, fields, nesting, unsupported element types, disjoint or extended constraints, or non-BER/CER-only codec selection"
     ],
     "output_safety": [
       "unowned destination preservation",
@@ -771,7 +791,7 @@
     ]
   },
   "observed_counts": {
-    "generated_rust_test_functions": 175,
+    "generated_rust_test_functions": 182,
     "live_c_rust_vectors_each_direction": 8,
     "single_octet_mutation_inputs": 796,
     "JER_single_octet_mutation_inputs": 256,
@@ -804,6 +824,12 @@
     "live_C_UTCTime_vectors_each_direction": 9,
     "live_C_UTCTime_invalid_CER_vectors": 5,
     "live_C_GeneralizedTime_vectors_each_direction": 11,
-    "live_C_GeneralizedTime_adapter_divergence_checks": 4
+    "live_C_GeneralizedTime_adapter_divergence_checks": 4,
+    "generated_collection_test_functions": 7,
+    "live_C_collection_encode_vectors_each_direction": 22,
+    "live_C_collection_decode_vectors_each_direction": 18,
+    "live_C_collection_invalid_CER_vectors": 6,
+    "live_C_collection_invalid_BER_vectors": 2,
+    "collection_mutation_inputs": 30
   }
 }

@@ -135,13 +135,13 @@ fn mixed_tagged_fields_preserve_defaults_and_primitive_shapes() {
     ));
 }
 
-/// Reject truncated, unknown, duplicate, reordered, and nonminimal tagged children.
+/// Reject malformed tagged children and normalize permissive BER BOOLEAN values.
 ///
 /// Parameters: none. Returns: no value; every malformed prefix must fail closed.
-/// Errors: valid records are decoded; malformed records return typed errors.
+/// Errors: malformed records return typed errors; BER BOOLEAN aliases normalize.
 /// Original source: X.690 high-tag identifiers and ordered SEQUENCE components.
 /// Version/date: 2026-11-01. Author: asn1c maintainers. History: hostile-input tests.
-/// Example: BER accepts a nonminimal tag alias while strict CER rejects it.
+/// Example: BER accepts an empty BOOLEAN as FALSE; strict CER rejects it.
 #[test]
 fn malformed_and_truncated_high_tag_records_fail_closed() {
     let canonical = [
@@ -151,15 +151,12 @@ fn malformed_and_truncated_high_tag_records_fail_closed() {
     for end in 0..canonical.len() {
         assert!(TaggedRecord::decode_cer(&canonical[..end], &limits).is_err());
     }
-    let invalid: [&[u8]; 4] = [
+    let invalid: [&[u8]; 3] = [
         &[
             0x30, 0x80, 0x9f, 0x20, 0x00, 0x9f, 0x81, 0x00, 0x01, 0x03, 0x00, 0x00,
         ],
         &[
             0x30, 0x80, 0x9f, 0x1f, 0x01, 0xff, 0x9f, 0x81, 0x00, 0x01, 0x04, 0x00, 0x00,
-        ],
-        &[
-            0x30, 0x80, 0x9f, 0x1f, 0x00, 0x9f, 0x81, 0x00, 0x01, 0x03, 0x00, 0x00,
         ],
         &[
             0x30, 0x80, 0x9f, 0x1f, 0x01, 0xff, 0x9f, 0x81, 0x00, 0x01, 0x03, 0x00,
@@ -169,6 +166,18 @@ fn malformed_and_truncated_high_tag_records_fail_closed() {
         assert!(TaggedRecord::decode_ber(wire, &limits).is_err());
         assert!(TaggedRecord::decode_cer(wire, &limits).is_err());
     }
+    let empty_boolean_flag = [
+        0x30, 0x80, 0x9f, 0x1f, 0x00, 0x9f, 0x81, 0x00, 0x01, 0x03, 0x00, 0x00,
+    ];
+    let decoded = TaggedRecord::decode_ber(&empty_boolean_flag, &limits).unwrap();
+    assert_eq!(decoded.value, TaggedRecord { flag: false, count: 3 });
+    assert_eq!(decoded.consumed_bytes, empty_boolean_flag.len());
+    assert_eq!(decoded.consumed_bits, empty_boolean_flag.len() * 8);
+    assert_eq!(
+        decoded.value.encode_der(&limits).unwrap().bytes,
+        [0x30, 0x09, 0x9f, 0x1f, 0x01, 0x00, 0x9f, 0x81, 0x00, 0x01, 0x03]
+    );
+    assert!(TaggedRecord::decode_cer(&empty_boolean_flag, &limits).is_err());
     let nonminimal_flag = [
         0x30, 0x80, 0x9f, 0x80, 0x1f, 0x01, 0xff, 0x9f, 0x81, 0x00, 0x01, 0x03, 0, 0,
     ];

@@ -4,7 +4,7 @@
 //! Version/date: first expansion, 2026-10-31. Responsible party: asn1c
 //! maintainers. Example: `decode_octet_string_ber(input, &Limits::default())?`.
 
-use crate::{BitStringValue, Decoded, Encoded, Error, Limits, Resource};
+use crate::{validate_integer, BitStringValue, Decoded, Encoded, Error, Limits, Resource};
 
 /// Maximum constructed-TLV nesting accepted by this parser.
 /// Initial fixed cap aligned with the C codec's `ASN_STACK_OVERFLOW_LIMIT` (30).
@@ -29,6 +29,14 @@ const MAX_CHARACTER_STRING_SCRATCH_BYTES: usize = 128 * 1024 * 1024;
 /// Maximum simultaneous retained and canonical OID codec buffer capacity.
 const MAX_OID_SCRATCH_BYTES: usize = 128 * 1024 * 1024;
 const MAX_SEQUENCE_FIELDS: usize = 6;
+/// Maximum number of repeated primitive elements in one collection.
+const MAX_COLLECTION_ELEMENTS: usize = 1_000_000;
+/// Maximum simultaneous decoded, sorting, and output collection capacity.
+const MAX_COLLECTION_SCRATCH_BYTES: usize = 128 * 1024 * 1024;
+/// Maximum canonical child TLV width for a bounded i64 INTEGER collection.
+const MAX_COLLECTION_CHILD_TLV_BYTES: usize = 11;
+/// Fixed per-pass counter and offset tables used by collection radix sorting.
+const COLLECTION_RADIX_STACK_BYTES: usize = 2 * 256 * std::mem::size_of::<usize>();
 /// Largest BER tag number representable by the C runtime's packed tag value.
 pub const MAX_TAG_NUMBER: u32 = 0x3fff_ffff;
 
@@ -815,6 +823,163 @@ pub enum RecordEncoding {
     Der,
     /// Encode the outer SEQUENCE or SET with indefinite length and EOC.
     Cer,
+}
+
+/// Select the direct top-level constructed collection root.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CollectionRootKind {
+    /// Preserve element order under universal constructed tag 16.
+    SequenceOf,
+    /// Sort complete element encodings under universal constructed tag 17.
+    SetOf,
+}
+
+/// Describe the one supported direct element type in a collection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CollectionElementKind {
+    /// BOOLEAN primitive elements under universal tag 1.
+    Boolean,
+    /// NULL primitive elements under universal tag 5.
+    Null,
+    /// Bounded signed INTEGER elements under universal tag 2.
+    BoundedInteger {
+        /// Inclusive minimum accepted integer value.
+        lower: i64,
+        /// Inclusive maximum accepted integer value.
+        upper: i64,
+    },
+}
+
+/// Borrowed typed values supplied to a collection encoder.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CollectionInput<'values> {
+    /// A borrowed BOOLEAN sequence.
+    Boolean(&'values [bool]),
+    /// Count of NULL values; no zero-sized vector allocation is required.
+    Null(usize),
+    /// A borrowed bounded INTEGER sequence.
+    Integer(&'values [i64]),
+}
+
+/// Owned typed values returned by a collection decoder.
+#[derive(Debug, Eq, PartialEq)]
+pub enum CollectionValues {
+    /// Decoded BOOLEAN values in source or canonical order.
+    Boolean(Vec<bool>),
+    /// Number of decoded NULL values without a zero-sized vector allocation.
+    Null(usize),
+    /// Decoded bounded INTEGER values in source or canonical order.
+    Integer(Vec<i64>),
+}
+
+/// Encode one direct collection as DER, preserving SEQUENCE OF order or sorting SET OF.
+///
+/// # Parameters and returns
+/// `root` selects SEQUENCE OF or SET OF; `element` describes the primitive;
+/// `values` borrows matching typed values; `limits` bounds output and work.
+/// Returns one complete canonical DER TLV.
+///
+/// # Errors
+/// Returns descriptor/value, range, resource, size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 DER collection ordering. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: primitive OF gate.
+/// Example: `encode_collection_der(root, kind, CollectionInput::Boolean(&v), limits)?`.
+pub fn encode_collection_der(
+    root: CollectionRootKind,
+    element: CollectionElementKind,
+    values: CollectionInput<'_>,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    let mut work = 0;
+    encode_collection_with_rule(
+        root,
+        element,
+        values,
+        RecordEncoding::Der,
+        limits,
+        &mut work,
+        0,
+    )
+}
+
+/// Encode one direct collection as CER, preserving or sorting complete children.
+///
+/// # Parameters and returns
+/// `root` selects SEQUENCE OF or SET OF; `element` describes the primitive;
+/// `values` borrows matching typed values; `limits` bounds output and work.
+/// Returns one complete canonical CER TLV.
+///
+/// # Errors
+/// Returns descriptor/value, range, resource, size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 CER collection ordering. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: primitive OF gate.
+/// Example: `encode_collection_cer(root, kind, CollectionInput::Integer(&v), limits)?`.
+pub fn encode_collection_cer(
+    root: CollectionRootKind,
+    element: CollectionElementKind,
+    values: CollectionInput<'_>,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    let mut work = 0;
+    encode_collection_with_rule(
+        root,
+        element,
+        values,
+        RecordEncoding::Cer,
+        limits,
+        &mut work,
+        0,
+    )
+}
+
+/// Decode one BER collection prefix, preserving SEQUENCE order and BER SET OF order.
+///
+/// # Parameters and returns
+/// `input` is the complete available slice; `root` and `element` describe the
+/// expected schema; `limits` caps whole input, retained vector capacity and work.
+/// Returns typed values and exact prefix consumption.
+///
+/// # Errors
+/// Returns malformed framing/children, range, resource, size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 BER collections. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: primitive OF gate.
+/// Example: `decode_collection_ber(bytes, root, kind, limits)?`.
+pub fn decode_collection_ber(
+    input: &[u8],
+    root: CollectionRootKind,
+    element: CollectionElementKind,
+    limits: &Limits,
+) -> Result<Decoded<CollectionValues>, Error> {
+    decode_collection_with_rule(input, root, element, false, limits)
+}
+
+/// Strictly decode one CER collection prefix using one cumulative budget.
+///
+/// # Parameters and returns
+/// `input` may include a suffix; `root` and `element` describe the expected
+/// schema; `limits` bounds parse, retained values, re-encoding, sorting and
+/// comparison. Returns typed values and exact canonical prefix consumption.
+///
+/// # Errors
+/// Returns BER/value, range, canonicality, resource, size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 CER decode/re-encode comparison. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: primitive OF gate.
+/// Example: `decode_collection_cer(bytes, root, kind, limits)?`.
+pub fn decode_collection_cer(
+    input: &[u8],
+    root: CollectionRootKind,
+    element: CollectionElementKind,
+    limits: &Limits,
+) -> Result<Decoded<CollectionValues>, Error> {
+    decode_collection_with_rule(input, root, element, true, limits)
 }
 
 /// Component ordering and outer tag for one flat record container.
@@ -3113,8 +3278,8 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
     /// No parameters. Returns false for zero content and true for nonzero.
     ///
     /// # Errors
-    /// Returns `InvalidEncoding` for a wrong/constructed tag or non-one-octet
-    /// content, or a work-limit error. No panic.
+    /// Returns `InvalidEncoding` for a wrong/constructed tag or an impossible
+    /// span, or a work-limit error. No panic.
     ///
     /// # Source, version, history, example
     /// Source: X.690 BER BOOLEAN. Version: 2026-10-31.
@@ -3122,11 +3287,19 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
     /// Example: `let enabled = reader.read_boolean()?;`.
     pub fn read_boolean(&mut self) -> Result<bool, Error> {
         let field = self.current_field(FieldKind::Boolean)?;
-        if field.constructed || field.content_end - field.content_start != 1 {
-            return Err(invalid("BER BOOLEAN field must contain exactly one octet"));
+        if field.constructed {
+            return Err(invalid("BER BOOLEAN field must use primitive form"));
         }
-        self.context.charge(1)?;
-        let value = self.input[field.content_start] != 0;
+        let content_len = field
+            .content_end
+            .checked_sub(field.content_start)
+            .ok_or(Error::SizeOverflow)?;
+        let content = self
+            .input
+            .get(field.content_start..field.content_end)
+            .ok_or(Error::SizeOverflow)?;
+        self.context.charge(content_len.max(1))?;
+        let value = content.iter().any(|octet| *octet != 0);
         self.current = None;
         Ok(value)
     }
@@ -8586,6 +8759,1242 @@ fn finish(bytes: Vec<u8>, limits: &Limits) -> Result<Encoded, Error> {
         bytes,
         bit_len: bits,
     })
+}
+
+/// Bounded top-level content span and exact BER prefix end for one collection.
+#[derive(Clone, Copy)]
+struct CollectionSpan {
+    /// First byte after the root identifier and length.
+    content_start: usize,
+    /// First EOC byte for an indefinite root, or exclusive definite content end.
+    content_end: usize,
+    /// Exclusive end of the root TLV; state variable.
+    consumed_end: usize,
+}
+
+/// Fixed-width canonical child TLV retained while SET OF is sorted.
+#[derive(Clone, Copy)]
+struct CollectionTlv {
+    /// Complete canonical child encoding, zero-padded for padded-octet ordering.
+    bytes: [u8; MAX_COLLECTION_CHILD_TLV_BYTES],
+    /// Number of initialized encoding octets; state variable.
+    len: u8,
+}
+
+/// Fully checked output sizes and whether SET OF needs radix sorting.
+struct CollectionPlan {
+    /// Number of typed elements; state variable.
+    count: usize,
+    /// Encoded body size before outer framing.
+    content_len: usize,
+    /// Complete canonical output size.
+    output_len: usize,
+    /// Whether multiple SET OF elements require sorting.
+    sort_required: bool,
+}
+
+/// Simultaneously live collection output and temporary sort capacities.
+struct CollectionBuffers {
+    /// Complete output buffer; state variable.
+    output: Vec<u8>,
+    /// First fixed-width SET OF radix buffer; state variable.
+    first: Vec<CollectionTlv>,
+    /// Second fixed-width SET OF radix buffer; state variable.
+    second: Vec<CollectionTlv>,
+}
+
+/// Parsed scalar value for one validated collection child.
+#[derive(Clone, Copy)]
+enum CollectionItem {
+    /// BOOLEAN value; BER truth is any nonzero content octet.
+    Boolean(bool),
+    /// NULL carries no value.
+    Null,
+    /// Bounded signed INTEGER value.
+    Integer(i64),
+}
+
+impl CollectionTlv {
+    /// Create an empty zero-padded temporary element.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns a zeroed fixed-width encoding with length zero.
+    ///
+    /// # Errors
+    /// This constructor cannot fail.
+    ///
+    /// # Source, version, history, example
+    /// Source: bounded SET OF sorting metadata. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct OF gate.
+    /// Example: used to initialize the radix buffers.
+    const fn empty() -> Self {
+        Self {
+            bytes: [0; MAX_COLLECTION_CHILD_TLV_BYTES],
+            len: 0,
+        }
+    }
+}
+
+/// Return the universal root tag number for the selected collection kind.
+///
+/// # Parameters and returns
+/// `root` selects the ASN.1 collection. Returns tag 16 or 17.
+///
+/// # Errors
+/// This total mapping cannot fail.
+///
+/// # Source, version, history, example
+/// Source: X.690 universal collection tags. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OF gate.
+/// Example: `collection_root_tag(CollectionRootKind::SequenceOf) == 16`.
+const fn collection_root_tag(root: CollectionRootKind) -> u64 {
+    match root {
+        CollectionRootKind::SequenceOf => TAG_SEQUENCE,
+        CollectionRootKind::SetOf => TAG_SET,
+    }
+}
+
+/// Return the intrinsic universal primitive tag for one collection element.
+///
+/// # Parameters and returns
+/// `element` selects BOOLEAN, NULL, or bounded INTEGER. Returns its tag number.
+///
+/// # Errors
+/// This total mapping cannot fail.
+///
+/// # Source, version, history, example
+/// Source: X.690 scalar tags. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OF gate.
+/// Example: `collection_element_tag(CollectionElementKind::Boolean) == 1`.
+const fn collection_element_tag(element: CollectionElementKind) -> u64 {
+    match element {
+        CollectionElementKind::Boolean => TAG_BOOLEAN,
+        CollectionElementKind::Null => TAG_NULL,
+        CollectionElementKind::BoundedInteger { .. } => TAG_INTEGER,
+    }
+}
+
+/// Validate the element descriptor before parsing, looping, or allocating.
+///
+/// # Parameters and returns
+/// `element` selects the supported scalar and any INTEGER bounds. Returns success.
+///
+/// # Errors
+/// Returns `InvalidBounds` for a reversed bounded INTEGER range.
+///
+/// # Source, version, history, example
+/// Source: finite ASN.1 INTEGER constraints. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OF gate.
+/// Example: called before collection operations.
+const fn validate_collection_element(element: CollectionElementKind) -> Result<(), Error> {
+    if let CollectionElementKind::BoundedInteger { lower, upper } = element {
+        if lower > upper {
+            return Err(Error::InvalidBounds { lower, upper });
+        }
+    }
+    Ok(())
+}
+
+/// Determine and validate the typed input count before loops or reserves.
+///
+/// # Parameters and returns
+/// `element` is the descriptor and `values` is the borrowed input variant.
+/// Returns the checked count.
+///
+/// # Errors
+/// Returns a descriptor mismatch or the fixed collection element-cap error.
+///
+/// # Source, version, history, example
+/// Source: direct typed collection API. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: primitive OF gate.
+/// Example: called before any encoder allocation.
+const fn collection_input_count(
+    element: CollectionElementKind,
+    values: CollectionInput<'_>,
+) -> Result<usize, Error> {
+    let count = match (element, values) {
+        (CollectionElementKind::Boolean, CollectionInput::Boolean(values)) => values.len(),
+        (CollectionElementKind::Null, CollectionInput::Null(count)) => count,
+        (CollectionElementKind::BoundedInteger { .. }, CollectionInput::Integer(values)) => {
+            values.len()
+        }
+        _ => {
+            return Err(invalid(
+                "collection input variant does not match element kind",
+            ))
+        }
+    };
+    if count > MAX_COLLECTION_ELEMENTS {
+        return Err(invalid("collection exceeds the fixed element count limit"));
+    }
+    Ok(count)
+}
+
+/// Check collection storage against its fixed aggregate scratch ceiling.
+///
+/// # Parameters and returns
+/// `total` is the checked simultaneous capacity. Returns success at or below
+/// the 128 MiB fixed cap.
+///
+/// # Errors
+/// Returns an output-resource limit error if aggregate scratch exceeds the cap.
+///
+/// # Source, version, history, example
+/// Source: C CER scratch ceiling. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OF gate.
+/// Example: called before and after each collection reservation.
+const fn check_collection_scratch(total: usize) -> Result<(), Error> {
+    check_scratch_total(total, MAX_COLLECTION_SCRATCH_BYTES)
+}
+
+/// Preflight typed values, output, sort work, and requested scratch capacity.
+///
+/// # Parameters and returns
+/// `root`, `element`, and `values` define the operation; `rule` chooses DER/CER;
+/// `retained_capacity` remains live during strict re-encoding; `limits`/`work`
+/// are cumulative. Returns checked sizes before allocation.
+///
+/// # Errors
+/// Returns descriptor, bound, count, output/work/scratch, or overflow errors.
+///
+/// # Source, version, history, example
+/// Source: bounded collection writer preflight. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OF gate.
+/// Example: called before creating collection buffers.
+fn plan_collection_encoding(
+    root: CollectionRootKind,
+    element: CollectionElementKind,
+    values: CollectionInput<'_>,
+    rule: RecordEncoding,
+    retained_capacity: usize,
+    limits: &Limits,
+    work: &mut usize,
+) -> Result<CollectionPlan, Error> {
+    validate_collection_element(element)?;
+    let count = collection_input_count(element, values)?;
+    charge_work(work, count, limits)?;
+    let content_len = match values {
+        CollectionInput::Boolean(values) => {
+            values.len().checked_mul(3).ok_or(Error::SizeOverflow)?
+        }
+        CollectionInput::Null(count) => count.checked_mul(2).ok_or(Error::SizeOverflow)?,
+        CollectionInput::Integer(values) => {
+            let CollectionElementKind::BoundedInteger { lower, upper } = element else {
+                return Err(invalid("INTEGER collection descriptor is inconsistent"));
+            };
+            charge_work(work, count, limits)?;
+            let mut size = 0_usize;
+            for value in values {
+                validate_integer(*value, lower, upper)?;
+                size = size
+                    .checked_add(collection_integer_tlv_len(*value)?)
+                    .ok_or(Error::SizeOverflow)?;
+            }
+            size
+        }
+    };
+    let output_len = record_size(rule, content_len)?;
+    check(Resource::OutputBytes, output_len, limits.max_output_bytes)?;
+    charge_work(work, output_len, limits)?;
+    let sort_required = root == CollectionRootKind::SetOf && count > 1;
+    if sort_required {
+        let pass_visits = count.checked_mul(2).ok_or(Error::SizeOverflow)?;
+        let pass_work = pass_visits
+            .checked_add(256)
+            .and_then(|units| units.checked_mul(MAX_COLLECTION_CHILD_TLV_BYTES))
+            .ok_or(Error::SizeOverflow)?;
+        let buffer_init_work = count
+            .checked_mul(std::mem::size_of::<CollectionTlv>())
+            .and_then(|units| units.checked_mul(2))
+            .ok_or(Error::SizeOverflow)?;
+        let temporary_encode_work = content_len;
+        let sort_work = pass_work
+            .checked_add(buffer_init_work)
+            .and_then(|units| units.checked_add(temporary_encode_work))
+            .ok_or(Error::SizeOverflow)?;
+        charge_work(work, sort_work, limits)?;
+    }
+    let requested_scratch = collection_requested_scratch(count, output_len, sort_required)?;
+    check_collection_scratch(
+        retained_capacity
+            .checked_add(requested_scratch)
+            .ok_or(Error::SizeOverflow)?,
+    )?;
+    Ok(CollectionPlan {
+        count,
+        content_len,
+        output_len,
+        sort_required,
+    })
+}
+
+/// Compute the requested live collection capacity before any reservation.
+///
+/// # Parameters and returns
+/// `count`, `output_len`, and `sort_required` describe the preflighted plan.
+/// Returns output plus both sort buffers and fixed radix tables when required.
+///
+/// # Errors
+/// Returns `SizeOverflow` for unrepresentable capacity sums.
+///
+/// # Source, version, history, example
+/// Source: collection aggregate scratch policy. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OF gate.
+/// Example: used by `plan_collection_encoding`.
+fn collection_requested_scratch(
+    count: usize,
+    output_len: usize,
+    sort_required: bool,
+) -> Result<usize, Error> {
+    if !sort_required {
+        return Ok(output_len);
+    }
+    let one_buffer = count
+        .checked_mul(std::mem::size_of::<CollectionTlv>())
+        .ok_or(Error::SizeOverflow)?;
+    output_len
+        .checked_add(one_buffer)
+        .and_then(|size| size.checked_add(one_buffer))
+        .and_then(|size| size.checked_add(COLLECTION_RADIX_STACK_BYTES))
+        .ok_or(Error::SizeOverflow)
+}
+
+/// Encode one collection using a shared operation work counter.
+///
+/// # Parameters and returns
+/// `root`/`element` and `values` describe the typed collection; `rule` selects
+/// DER/CER; `limits` caps output; `work` shares parse/encode/sort work; retained
+/// capacity stays live for strict CER. Returns one complete TLV.
+///
+/// # Errors
+/// Returns descriptor, range, resource, size, scratch, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 collection output. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OF gate.
+/// Example: public DER/CER collection encoders.
+fn encode_collection_with_rule(
+    root: CollectionRootKind,
+    element: CollectionElementKind,
+    values: CollectionInput<'_>,
+    rule: RecordEncoding,
+    limits: &Limits,
+    work: &mut usize,
+    retained_capacity: usize,
+) -> Result<Encoded, Error> {
+    let plan =
+        plan_collection_encoding(root, element, values, rule, retained_capacity, limits, work)?;
+    let mut buffers = allocate_collection_buffers(&plan, retained_capacity, limits)?;
+    write_collection_root_header(&mut buffers.output, root, rule, plan.content_len)?;
+    for index in 0..plan.count {
+        let item = collection_input_item(values, index)?;
+        let encoded = encode_collection_item(element, item)?;
+        if plan.sort_required {
+            *buffers.first.get_mut(index).ok_or(Error::SizeOverflow)? = encoded;
+        } else {
+            append_collection_tlv(&mut buffers.output, &encoded)?;
+        }
+    }
+    if plan.sort_required {
+        radix_sort_collection(&mut buffers.first, &mut buffers.second)?;
+        for encoded in &buffers.first {
+            append_collection_tlv(&mut buffers.output, encoded)?;
+        }
+    }
+    if rule == RecordEncoding::Cer {
+        buffers.output.extend_from_slice(&[0, 0]);
+    }
+    if buffers.output.len() != plan.output_len {
+        return Err(invalid("collection encoder produced an inconsistent size"));
+    }
+    Ok(Encoded {
+        bytes: buffers.output,
+        bit_len: plan.output_len.checked_mul(8).ok_or(Error::SizeOverflow)?,
+    })
+}
+
+/// Allocate output and optional radix vectors with actual-capacity checks.
+///
+/// # Parameters and returns
+/// `plan` supplies validated counts/sizes; `retained_capacity` remains live;
+/// `limits` caps complete output. Returns reserved buffers before any copy.
+///
+/// # Errors
+/// Returns output/scratch, size, or fallible allocation errors.
+///
+/// # Source, version, history, example
+/// Source: aggregate collection scratch policy. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OF gate.
+/// Example: called after collection preflight.
+fn allocate_collection_buffers(
+    plan: &CollectionPlan,
+    retained_capacity: usize,
+    limits: &Limits,
+) -> Result<CollectionBuffers, Error> {
+    let mut output = Vec::new();
+    output
+        .try_reserve_exact(plan.output_len)
+        .map_err(|_| Error::AllocationFailed {
+            requested_bytes: plan.output_len,
+        })?;
+    check(
+        Resource::OutputBytes,
+        output.capacity(),
+        limits.max_output_bytes,
+    )?;
+    let mut first = Vec::new();
+    let mut second = Vec::new();
+    if plan.sort_required {
+        let bytes = plan
+            .count
+            .checked_mul(std::mem::size_of::<CollectionTlv>())
+            .ok_or(Error::SizeOverflow)?;
+        let future = output
+            .capacity()
+            .checked_add(bytes)
+            .and_then(|size| size.checked_add(bytes))
+            .and_then(|size| size.checked_add(COLLECTION_RADIX_STACK_BYTES))
+            .and_then(|size| size.checked_add(retained_capacity))
+            .ok_or(Error::SizeOverflow)?;
+        check_collection_scratch(future)?;
+        first
+            .try_reserve_exact(plan.count)
+            .map_err(|_| Error::AllocationFailed {
+                requested_bytes: bytes,
+            })?;
+        let first_bytes = first
+            .capacity()
+            .checked_mul(std::mem::size_of::<CollectionTlv>())
+            .ok_or(Error::SizeOverflow)?;
+        let future = output
+            .capacity()
+            .checked_add(first_bytes)
+            .and_then(|size| size.checked_add(bytes))
+            .and_then(|size| size.checked_add(COLLECTION_RADIX_STACK_BYTES))
+            .and_then(|size| size.checked_add(retained_capacity))
+            .ok_or(Error::SizeOverflow)?;
+        check_collection_scratch(future)?;
+        second
+            .try_reserve_exact(plan.count)
+            .map_err(|_| Error::AllocationFailed {
+                requested_bytes: bytes,
+            })?;
+        check_collection_live_scratch(
+            retained_capacity,
+            output.capacity(),
+            first.capacity(),
+            second.capacity(),
+            true,
+        )?;
+        first.resize(plan.count, CollectionTlv::empty());
+        second.resize(plan.count, CollectionTlv::empty());
+    }
+    check_collection_live_scratch(
+        retained_capacity,
+        output.capacity(),
+        first.capacity(),
+        second.capacity(),
+        plan.sort_required,
+    )?;
+    check(
+        Resource::OutputBytes,
+        output.capacity(),
+        limits.max_output_bytes,
+    )?;
+    Ok(CollectionBuffers {
+        output,
+        first,
+        second,
+    })
+}
+
+/// Check actual capacities of every simultaneously live collection buffer.
+///
+/// # Parameters and returns
+/// `retained_capacity`, output/sort capacities and `sort_required` describe
+/// live storage. Returns success when the aggregate fits its fixed cap.
+///
+/// # Errors
+/// Returns checked-size or scratch-limit errors.
+///
+/// # Source, version, history, example
+/// Source: fixed aggregate collection scratch policy. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OF gate.
+/// Example: called after each reservation and before copying.
+fn check_collection_live_scratch(
+    retained_capacity: usize,
+    output_capacity: usize,
+    first_capacity: usize,
+    second_capacity: usize,
+    sort_required: bool,
+) -> Result<(), Error> {
+    let first_bytes = first_capacity
+        .checked_mul(std::mem::size_of::<CollectionTlv>())
+        .ok_or(Error::SizeOverflow)?;
+    let second_bytes = second_capacity
+        .checked_mul(std::mem::size_of::<CollectionTlv>())
+        .ok_or(Error::SizeOverflow)?;
+    let stack_bytes = if sort_required {
+        COLLECTION_RADIX_STACK_BYTES
+    } else {
+        0
+    };
+    let total = retained_capacity
+        .checked_add(output_capacity)
+        .and_then(|size| size.checked_add(first_bytes))
+        .and_then(|size| size.checked_add(second_bytes))
+        .and_then(|size| size.checked_add(stack_bytes))
+        .ok_or(Error::SizeOverflow)?;
+    check_collection_scratch(total)
+}
+
+/// Write the universal collection root identifier and canonical length form.
+///
+/// # Parameters and returns
+/// `output` is pre-reserved complete output; `root`, `rule`, and `content_len`
+/// select root framing. Returns success after writing its header.
+///
+/// # Errors
+/// Returns size or internal-capacity errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 DER/CER constructed roots. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OF gate.
+/// Example: called before appending collection children.
+fn write_collection_root_header(
+    output: &mut Vec<u8>,
+    root: CollectionRootKind,
+    rule: RecordEncoding,
+    content_len: usize,
+) -> Result<(), Error> {
+    let identifier = if root == CollectionRootKind::SequenceOf {
+        0x30
+    } else {
+        0x31
+    };
+    output.push(identifier);
+    match rule {
+        RecordEncoding::Der => {
+            let mut length = [0_u8; std::mem::size_of::<usize>() + 1];
+            let length_len = encode_length_bytes(content_len, &mut length)?;
+            let end = length_len.checked_add(1).ok_or(Error::SizeOverflow)?;
+            if output.capacity() < end {
+                return Err(Error::SizeOverflow);
+            }
+            output.extend_from_slice(length.get(..length_len).ok_or(Error::SizeOverflow)?);
+        }
+        RecordEncoding::Cer => output.push(0x80),
+    }
+    Ok(())
+}
+
+/// Fetch a typed borrowed item by its checked collection index.
+///
+/// # Parameters and returns
+/// `values` is the matching typed input variant; `index` selects one item.
+/// Returns its scalar enum form.
+///
+/// # Errors
+/// Returns an internal inconsistency error if variant or index is invalid.
+///
+/// # Source, version, history, example
+/// Source: typed collection writer. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OF gate.
+/// Example: called after the count preflight.
+fn collection_input_item(
+    values: CollectionInput<'_>,
+    index: usize,
+) -> Result<CollectionItem, Error> {
+    match values {
+        CollectionInput::Boolean(values) => values
+            .get(index)
+            .copied()
+            .map(CollectionItem::Boolean)
+            .ok_or(Error::SizeOverflow),
+        CollectionInput::Null(count) if index < count => Ok(CollectionItem::Null),
+        CollectionInput::Integer(values) => values
+            .get(index)
+            .copied()
+            .map(CollectionItem::Integer)
+            .ok_or(Error::SizeOverflow),
+        CollectionInput::Null(_) => {
+            Err(invalid("collection input variant changed after preflight"))
+        }
+    }
+}
+
+/// Return canonical bounded INTEGER TLV size for one signed value.
+///
+/// # Parameters and returns
+/// `value` is an i64. Returns identifier, length, and minimal content octets.
+///
+/// # Errors
+/// Returns `SizeOverflow` only if checked size arithmetic fails.
+///
+/// # Source, version, history, example
+/// Source: X.690 minimal signed INTEGER contents. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: collection writer.
+/// Example: used during preflight before output allocation.
+fn collection_integer_tlv_len(value: i64) -> Result<usize, Error> {
+    let content_len = 8_usize
+        .checked_sub(minimal_signed_start(value.to_be_bytes()))
+        .ok_or(Error::SizeOverflow)?;
+    2_usize.checked_add(content_len).ok_or(Error::SizeOverflow)
+}
+
+/// Encode one scalar as a fixed-width canonical child TLV.
+///
+/// # Parameters and returns
+/// `element` defines the ASN.1 child type and `item` carries its value.
+/// Returns a zero-padded complete encoding.
+///
+/// # Errors
+/// Returns a descriptor/value mismatch or checked-size error.
+///
+/// # Source, version, history, example
+/// Source: X.690 canonical BOOLEAN/NULL/INTEGER. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OF gate.
+/// Example: called by collection encoders before concatenation/sorting.
+fn encode_collection_item(
+    element: CollectionElementKind,
+    item: CollectionItem,
+) -> Result<CollectionTlv, Error> {
+    let mut output = CollectionTlv::empty();
+    match (element, item) {
+        (CollectionElementKind::Boolean, CollectionItem::Boolean(value)) => {
+            output.bytes[0] = u8::try_from(TAG_BOOLEAN).map_err(|_| Error::SizeOverflow)?;
+            output.bytes[1] = 1;
+            output.bytes[2] = if value { 0xff } else { 0 };
+            output.len = 3;
+        }
+        (CollectionElementKind::Null, CollectionItem::Null) => {
+            output.bytes[0] = u8::try_from(TAG_NULL).map_err(|_| Error::SizeOverflow)?;
+            output.bytes[1] = 0;
+            output.len = 2;
+        }
+        (CollectionElementKind::BoundedInteger { .. }, CollectionItem::Integer(value)) => {
+            let bytes = value.to_be_bytes();
+            let first = minimal_signed_start(bytes);
+            let content_len = bytes.len().checked_sub(first).ok_or(Error::SizeOverflow)?;
+            let total_len = 2_usize
+                .checked_add(content_len)
+                .ok_or(Error::SizeOverflow)?;
+            if total_len > MAX_COLLECTION_CHILD_TLV_BYTES {
+                return Err(Error::SizeOverflow);
+            }
+            output.bytes[0] = u8::try_from(TAG_INTEGER).map_err(|_| Error::SizeOverflow)?;
+            output.bytes[1] = u8::try_from(content_len).map_err(|_| Error::SizeOverflow)?;
+            let end = 2_usize
+                .checked_add(content_len)
+                .ok_or(Error::SizeOverflow)?;
+            output.bytes[2..end].copy_from_slice(&bytes[first..]);
+            output.len = u8::try_from(total_len).map_err(|_| Error::SizeOverflow)?;
+        }
+        _ => return Err(invalid("collection item does not match its descriptor")),
+    }
+    Ok(output)
+}
+
+/// Append a complete fixed-width collection child without growing capacity.
+///
+/// # Parameters and returns
+/// `output` is pre-reserved output and `encoded` contains a checked child TLV.
+/// Returns success after appending its meaningful prefix.
+///
+/// # Errors
+/// Returns an internal-size error if the vector's preflight capacity is insufficient.
+///
+/// # Source, version, history, example
+/// Source: bounded collection output writer. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OF gate.
+/// Example: appends sequence children or sorted SET OF children.
+fn append_collection_tlv(output: &mut Vec<u8>, encoded: &CollectionTlv) -> Result<(), Error> {
+    let bytes = encoded
+        .bytes
+        .get(..usize::from(encoded.len))
+        .ok_or(Error::SizeOverflow)?;
+    let end = output
+        .len()
+        .checked_add(bytes.len())
+        .ok_or(Error::SizeOverflow)?;
+    if end > output.capacity() {
+        return Err(Error::SizeOverflow);
+    }
+    output.extend_from_slice(bytes);
+    Ok(())
+}
+
+/// Sort complete child encodings using eleven zero-padded LSD radix passes.
+///
+/// # Parameters and returns
+/// `items` and `scratch` are equally sized, preallocated fixed-width buffers.
+/// Returns success after padded-octet ordering.
+///
+/// # Errors
+/// Returns checked-size errors if internal count/index invariants fail.
+///
+/// # Source, version, history, example
+/// Source: X.690 SET OF padded-octet ordering. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OF gate.
+/// Example: called after work and both capacities are precharged.
+fn radix_sort_collection(
+    items: &mut Vec<CollectionTlv>,
+    scratch: &mut Vec<CollectionTlv>,
+) -> Result<(), Error> {
+    if items.len() != scratch.len() {
+        return Err(Error::SizeOverflow);
+    }
+    for octet_index in (0..MAX_COLLECTION_CHILD_TLV_BYTES).rev() {
+        radix_collection_pass(items, scratch, octet_index)?;
+        std::mem::swap(items, scratch);
+    }
+    Ok(())
+}
+
+/// Apply one stable counting pass to a fixed octet position.
+///
+/// # Parameters and returns
+/// `items` is source, `scratch` receives ordered items, and `octet_index`
+/// selects a padded byte. Returns success.
+///
+/// # Errors
+/// Returns checked-index or count overflow errors.
+///
+/// # Source, version, history, example
+/// Source: stable LSD radix sorting. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct SET OF gate.
+/// Example: called once per padded child-octet index.
+fn radix_collection_pass(
+    items: &[CollectionTlv],
+    scratch: &mut [CollectionTlv],
+    octet_index: usize,
+) -> Result<(), Error> {
+    let mut counts = [0_usize; 256];
+    for item in items {
+        let digit = usize::from(*item.bytes.get(octet_index).ok_or(Error::SizeOverflow)?);
+        let count = counts.get_mut(digit).ok_or(Error::SizeOverflow)?;
+        *count = count.checked_add(1).ok_or(Error::SizeOverflow)?;
+    }
+    let mut next = 0_usize;
+    for count in &mut counts {
+        let frequency = *count;
+        *count = next;
+        next = next.checked_add(frequency).ok_or(Error::SizeOverflow)?;
+    }
+    for item in items {
+        let digit = usize::from(*item.bytes.get(octet_index).ok_or(Error::SizeOverflow)?);
+        let index = *counts.get(digit).ok_or(Error::SizeOverflow)?;
+        *scratch.get_mut(index).ok_or(Error::SizeOverflow)? = *item;
+        let next_index = index.checked_add(1).ok_or(Error::SizeOverflow)?;
+        *counts.get_mut(digit).ok_or(Error::SizeOverflow)? = next_index;
+    }
+    Ok(())
+}
+
+/// Decode one collection and, for CER, verify its canonical re-encoding.
+///
+/// # Parameters and returns
+/// `input`, `root`, and `element` select the expected value; `rule` identifies
+/// strict CER checking; `limits` cap the full operation. Returns typed values
+/// and exact prefix consumption.
+///
+/// # Errors
+/// Returns framing, descriptor, child, range, resource, size, canonicality, or
+/// allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 BER/CER collection decode. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: primitive OF gate.
+/// Example: called by `decode_collection_ber` and `_cer`.
+fn decode_collection_with_rule(
+    input: &[u8],
+    root: CollectionRootKind,
+    element: CollectionElementKind,
+    strict_cer: bool,
+    limits: &Limits,
+) -> Result<Decoded<CollectionValues>, Error> {
+    validate_collection_element(element)?;
+    let mut work = 0;
+    let (span, count) = parse_collection_span(input, root, element, limits, &mut work)?;
+    let values = decode_collection_values(input, span, count, element, limits, &mut work)?;
+    if strict_cer {
+        let retained_capacity = collection_values_capacity(&values)?;
+        let borrowed = collection_values_input(&values);
+        let canonical = encode_collection_with_rule(
+            root,
+            element,
+            borrowed,
+            RecordEncoding::Cer,
+            limits,
+            &mut work,
+            retained_capacity,
+        )?;
+        ensure_canonical(
+            input,
+            span.consumed_end,
+            &canonical.bytes,
+            &mut work,
+            limits,
+        )?;
+    }
+    let consumed_bits = span
+        .consumed_end
+        .checked_mul(8)
+        .ok_or(Error::SizeOverflow)?;
+    Ok(Decoded {
+        value: values,
+        consumed_bits,
+        consumed_bytes: span.consumed_end,
+    })
+}
+
+/// Parse and validate one collection root and count its primitive children.
+///
+/// # Parameters and returns
+/// `input` is the complete slice; `root`/`element` define expected tags;
+/// `limits` and `work` share input and parse budgets. Returns content span/count.
+///
+/// # Errors
+/// Returns wrong root, malformed lengths/EOCs/children, integer bounds,
+/// element-limit, input/work, truncation, or size errors.
+///
+/// # Source, version, history, example
+/// Source: checked BER collection walker. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OF gate.
+/// Example: called before decoded vector reservation.
+fn parse_collection_span(
+    input: &[u8],
+    root: CollectionRootKind,
+    element: CollectionElementKind,
+    limits: &Limits,
+    work: &mut usize,
+) -> Result<(CollectionSpan, usize), Error> {
+    check(Resource::InputBytes, input.len(), limits.max_input_bytes)?;
+    let header = parse_collection_header(input, 0, input.len(), work, limits)?;
+    if header.class != 0 || header.tag != collection_root_tag(root) || !header.constructed {
+        return Err(invalid(
+            "BER collection root has the wrong tag or primitive form",
+        ));
+    }
+    let indefinite = header.length.is_none();
+    let bound = match header.length {
+        Some(length) => {
+            let end = header
+                .content
+                .checked_add(length)
+                .ok_or(Error::SizeOverflow)?;
+            require(input, header.content, length, input.len())?;
+            end
+        }
+        None => input.len(),
+    };
+    let mut cursor = header.content;
+    let mut count = 0_usize;
+    let (content_end, consumed_end) = loop {
+        if indefinite && is_eoc(input, cursor, bound) {
+            let end = cursor.checked_add(2).ok_or(Error::SizeOverflow)?;
+            charge_work(work, 2, limits)?;
+            break (cursor, end);
+        }
+        if !indefinite && cursor == bound {
+            break (bound, bound);
+        }
+        if count >= MAX_COLLECTION_ELEMENTS {
+            return Err(invalid("collection exceeds the fixed element count limit"));
+        }
+        let (_, next) = parse_collection_item(input, cursor, bound, element, limits, work)?;
+        count = count.checked_add(1).ok_or(Error::SizeOverflow)?;
+        cursor = next;
+    };
+    Ok((
+        CollectionSpan {
+            content_start: header.content,
+            content_end,
+            consumed_end,
+        },
+        count,
+    ))
+}
+
+/// Parse one primitive child, apply its scalar/range rule, and return its end.
+///
+/// # Parameters and returns
+/// `input`, `start`, and `bound` locate the child; `element` selects primitive
+/// semantics; `limits` and `work` carry the shared budget. Returns value/end.
+///
+/// # Errors
+/// Returns wrong tag/form, malformed content, range, truncation, work, or size errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 collection element parsing. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OF gate.
+/// Example: called in count and decode passes.
+fn parse_collection_item(
+    input: &[u8],
+    start: usize,
+    bound: usize,
+    element: CollectionElementKind,
+    limits: &Limits,
+    work: &mut usize,
+) -> Result<(CollectionItem, usize), Error> {
+    charge_work(work, 1, limits)?;
+    let header = parse_collection_header(input, start, bound, work, limits)?;
+    if header.class != 0 || header.tag != collection_element_tag(element) || header.constructed {
+        return Err(invalid(
+            "BER collection child has the wrong tag or primitive form",
+        ));
+    }
+    let length = header
+        .length
+        .ok_or_else(|| invalid("BER collection scalar child requires definite length"))?;
+    let end = header
+        .content
+        .checked_add(length)
+        .ok_or(Error::SizeOverflow)?;
+    require(input, header.content, length, bound)?;
+    charge_work(work, length, limits)?;
+    let content = input.get(header.content..end).ok_or(Error::SizeOverflow)?;
+    let item = match element {
+        CollectionElementKind::Boolean => {
+            if content.iter().any(|octet| *octet != 0) {
+                CollectionItem::Boolean(true)
+            } else {
+                CollectionItem::Boolean(false)
+            }
+        }
+        CollectionElementKind::Null => {
+            if !content.is_empty() {
+                return Err(invalid("BER collection NULL content must be empty"));
+            }
+            CollectionItem::Null
+        }
+        CollectionElementKind::BoundedInteger { lower, upper } => {
+            charge_work(work, 1, limits)?;
+            let value = signed_value(content)?;
+            validate_integer(value, lower, upper)?;
+            CollectionItem::Integer(value)
+        }
+    };
+    Ok((item, end))
+}
+
+/// Parse one collection identifier and precharge every identifier/length octet.
+///
+/// # Parameters and returns
+/// `input`, `start`, and `bound` locate the header; `work` and `limits` share
+/// cumulative work. Returns parsed metadata after charging before byte scans.
+///
+/// # Errors
+/// Returns truncation, malformed tag/length, overflow, or work-limit errors.
+///
+/// # Source, version, history, example
+/// Source: checked BER collection framing. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: precharged length parsing.
+/// Example: called for collection roots and children.
+fn parse_collection_header(
+    input: &[u8],
+    start: usize,
+    bound: usize,
+    work: &mut usize,
+    limits: &Limits,
+) -> Result<Header, Error> {
+    require(input, start, 1, bound)?;
+    charge_work(work, 1, limits)?;
+    let first = input[start];
+    let class = first >> 6;
+    let constructed = first & 0x20 != 0;
+    let short_tag = u64::from(first & 0x1f);
+    let mut cursor = start.checked_add(1).ok_or(Error::SizeOverflow)?;
+    let tag = if short_tag == 0x1f {
+        parse_collection_high_tag(input, &mut cursor, bound, work, limits)?
+    } else {
+        u32::try_from(short_tag).map_err(|_| Error::SizeOverflow)?
+    };
+    let identifier_len = cursor.checked_sub(start).ok_or(Error::SizeOverflow)?;
+    require(input, cursor, 1, bound)?;
+    charge_work(work, 1, limits)?;
+    let first_length = input[cursor];
+    cursor = cursor.checked_add(1).ok_or(Error::SizeOverflow)?;
+    let length = if first_length == 0x80 {
+        if !constructed {
+            return Err(invalid("primitive BER value has indefinite length"));
+        }
+        None
+    } else if first_length & 0x80 == 0 {
+        Some(usize::from(first_length))
+    } else {
+        if first_length == 0xff {
+            return Err(invalid("BER length FF is reserved"));
+        }
+        let count = usize::from(first_length & 0x7f);
+        require(input, cursor, count, bound)?;
+        charge_work(work, count, limits)?;
+        let end = cursor.checked_add(count).ok_or(Error::SizeOverflow)?;
+        let mut value = 0_usize;
+        for octet in input.get(cursor..end).ok_or(Error::SizeOverflow)? {
+            value = value
+                .checked_mul(256)
+                .and_then(|number| number.checked_add(usize::from(*octet)))
+                .ok_or(Error::SizeOverflow)?;
+        }
+        cursor = end;
+        Some(value)
+    };
+    Ok(Header {
+        class,
+        constructed,
+        tag: u64::from(tag),
+        identifier_len,
+        content: cursor,
+        length,
+    })
+}
+
+/// Parse a high-tag identifier with a charge before every octet read.
+///
+/// # Parameters and returns
+/// `input`, mutable `cursor`, `bound`, `work`, and `limits` describe the
+/// identifier and shared budget. Returns its checked tag number.
+///
+/// # Errors
+/// Returns truncation, tag overflow, or work-limit errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 high-tag identifiers. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: collection precharge.
+/// Example: called by `parse_collection_header`.
+fn parse_collection_high_tag(
+    input: &[u8],
+    cursor: &mut usize,
+    bound: usize,
+    work: &mut usize,
+    limits: &Limits,
+) -> Result<u32, Error> {
+    let mut value = 0_u32;
+    loop {
+        require(input, *cursor, 1, bound)?;
+        charge_work(work, 1, limits)?;
+        let octet = input[*cursor];
+        *cursor = (*cursor).checked_add(1).ok_or(Error::SizeOverflow)?;
+        value = value
+            .checked_mul(128)
+            .and_then(|number| number.checked_add(u32::from(octet & 0x7f)))
+            .ok_or(Error::SizeOverflow)?;
+        if octet & 0x80 == 0 {
+            break;
+        }
+        if value > MAX_TAG_NUMBER >> 7 {
+            return Err(Error::SizeOverflow);
+        }
+    }
+    if value > MAX_TAG_NUMBER {
+        return Err(Error::SizeOverflow);
+    }
+    Ok(value)
+}
+
+/// Allocate decoded typed values only after the validated count is known.
+///
+/// # Parameters and returns
+/// `input` and `span` bound the collection; `count` was checked before reserve;
+/// `element`, `limits`, and `work` select decoding and share resource budgets.
+/// Returns an owned typed value.
+///
+/// # Errors
+/// Returns scratch, resource, malformed child, value-range, size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: bounded collection value retention. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OF gate.
+/// Example: called after `parse_collection_span`.
+fn decode_collection_values(
+    input: &[u8],
+    span: CollectionSpan,
+    count: usize,
+    element: CollectionElementKind,
+    limits: &Limits,
+    work: &mut usize,
+) -> Result<CollectionValues, Error> {
+    match element {
+        CollectionElementKind::Boolean => Ok(CollectionValues::Boolean(
+            decode_collection_booleans(input, span, count, limits, work)?,
+        )),
+        CollectionElementKind::Null => Ok(CollectionValues::Null(count)),
+        CollectionElementKind::BoundedInteger { lower, upper } => Ok(CollectionValues::Integer(
+            decode_collection_integers(input, span, count, lower, upper, limits, work)?,
+        )),
+    }
+}
+
+/// Decode BOOLEAN children into a fallibly reserved vector.
+///
+/// # Parameters and returns
+/// `input`/`span` bound the validated prefix; `count` caps the reservation;
+/// `limits` and `work` share budgets. Returns BOOLEAN values in BER order.
+///
+/// # Errors
+/// Returns scratch, allocation, child, work, or size errors.
+///
+/// # Source, version, history, example
+/// Source: BER BOOLEAN collection decoder. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OF gate.
+/// Example: called by `decode_collection_values`.
+fn decode_collection_booleans(
+    input: &[u8],
+    span: CollectionSpan,
+    count: usize,
+    limits: &Limits,
+    work: &mut usize,
+) -> Result<Vec<bool>, Error> {
+    let mut values = Vec::new();
+    reserve_collection_values(&mut values, count, limits)?;
+    let mut cursor = span.content_start;
+    for _ in 0..count {
+        let (item, next) = parse_collection_item(
+            input,
+            cursor,
+            span.content_end,
+            CollectionElementKind::Boolean,
+            limits,
+            work,
+        )?;
+        let CollectionItem::Boolean(value) = item else {
+            return Err(invalid("collection child type changed after preflight"));
+        };
+        values.push(value);
+        cursor = next;
+    }
+    if cursor != span.content_end {
+        return Err(invalid(
+            "collection children do not fill their root content",
+        ));
+    }
+    Ok(values)
+}
+
+/// Decode bounded INTEGER children into a fallibly reserved vector.
+///
+/// # Parameters and returns
+/// `input`/`span` bound the validated prefix; `count` caps reservation; `lower`/
+/// `upper` are inclusive; `limits` and `work` share budgets. Returns values.
+///
+/// # Errors
+/// Returns scratch, allocation, child, value-range, work, or size errors.
+///
+/// # Source, version, history, example
+/// Source: BER bounded INTEGER collection decoder. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OF gate.
+/// Example: called by `decode_collection_values`.
+fn decode_collection_integers(
+    input: &[u8],
+    span: CollectionSpan,
+    count: usize,
+    lower: i64,
+    upper: i64,
+    limits: &Limits,
+    work: &mut usize,
+) -> Result<Vec<i64>, Error> {
+    let mut values = Vec::new();
+    reserve_collection_values(&mut values, count, limits)?;
+    let element = CollectionElementKind::BoundedInteger { lower, upper };
+    let mut cursor = span.content_start;
+    for _ in 0..count {
+        let (item, next) =
+            parse_collection_item(input, cursor, span.content_end, element, limits, work)?;
+        let CollectionItem::Integer(value) = item else {
+            return Err(invalid("collection child type changed after preflight"));
+        };
+        values.push(value);
+        cursor = next;
+    }
+    if cursor != span.content_end {
+        return Err(invalid(
+            "collection children do not fill their root content",
+        ));
+    }
+    Ok(values)
+}
+
+/// Reserve a decoded value vector and verify its actual capacity against scratch.
+///
+/// # Parameters and returns
+/// `values` is empty output storage; `count` is the validated number of items;
+/// `limits` caps requested retained bytes. Returns success after fallible reserve.
+///
+/// # Errors
+/// Returns size, scratch-limit, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: bounded collection output storage. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OF gate.
+/// Example: called before decoding each owned vector variant.
+fn reserve_collection_values<T>(
+    values: &mut Vec<T>,
+    count: usize,
+    limits: &Limits,
+) -> Result<(), Error> {
+    let requested = count
+        .checked_mul(std::mem::size_of::<T>())
+        .ok_or(Error::SizeOverflow)?;
+    check(Resource::OutputBytes, requested, limits.max_output_bytes)?;
+    check_collection_scratch(requested)?;
+    values
+        .try_reserve_exact(count)
+        .map_err(|_| Error::AllocationFailed {
+            requested_bytes: requested,
+        })?;
+    let actual = values
+        .capacity()
+        .checked_mul(std::mem::size_of::<T>())
+        .ok_or(Error::SizeOverflow)?;
+    check(Resource::OutputBytes, actual, limits.max_output_bytes)?;
+    check_collection_scratch(actual)
+}
+
+/// Return actual retained capacity for a decoded collection value.
+///
+/// # Parameters and returns
+/// `values` is the owned decoded representation. Returns capacity bytes.
+///
+/// # Errors
+/// Returns `SizeOverflow` if capacity multiplication cannot be represented.
+///
+/// # Source, version, history, example
+/// Source: aggregate collection scratch accounting. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: strict CER collection decode.
+/// Example: called before canonical re-encoding.
+fn collection_values_capacity(values: &CollectionValues) -> Result<usize, Error> {
+    match values {
+        CollectionValues::Boolean(bytes) => bytes
+            .capacity()
+            .checked_mul(std::mem::size_of::<bool>())
+            .ok_or(Error::SizeOverflow),
+        CollectionValues::Null(_) => Ok(0),
+        CollectionValues::Integer(values) => values
+            .capacity()
+            .checked_mul(std::mem::size_of::<i64>())
+            .ok_or(Error::SizeOverflow),
+    }
+}
+
+/// Borrow an owned decoded collection as the encoder's typed input view.
+///
+/// # Parameters and returns
+/// `values` is the decoded owned enum. Returns a non-owning matching variant.
+///
+/// # Errors
+/// This exhaustive mapping cannot fail.
+///
+/// # Source, version, history, example
+/// Source: strict CER canonical re-encoding. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct OF gate.
+/// Example: called by `decode_collection_with_rule`.
+fn collection_values_input(values: &CollectionValues) -> CollectionInput<'_> {
+    match values {
+        CollectionValues::Boolean(values) => CollectionInput::Boolean(values),
+        CollectionValues::Null(count) => CollectionInput::Null(*count),
+        CollectionValues::Integer(values) => CollectionInput::Integer(values),
+    }
 }
 
 /// Return shortest identifier length for a universal tag number.
@@ -14866,6 +16275,780 @@ mod tests {
             &[0x18, 0x80][..],
         ] {
             assert!(decode_generalized_time_ber(malformed, &limits).is_err());
+        }
+    }
+
+    /// Check C-compatible BER BOOLEAN extensions in direct records.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Tests both SEQUENCE and SET readers against BER values.
+    ///
+    /// # Errors
+    /// Panics if C-compatible empty or multi-octet BOOLEAN content is rejected.
+    ///
+    /// # Source, version, history, example
+    /// Source: C BOOLEAN BER decoder. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: C parity correction.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn record_boolean_ber_accepts_empty_and_multi_octet_content() {
+        let limits = Limits::default();
+        for (wire, expected) in [
+            (&[0x30, 2, 1, 0][..], false),
+            (&[0x30, 4, 1, 2, 0, 1], true),
+        ] {
+            let mut context = RecordContext::new(&limits);
+            let mut reader = SequenceReader::new(wire, &[TAG_BOOLEAN], &mut context).unwrap();
+            assert_eq!(reader.next_field().unwrap(), Some(TAG_BOOLEAN));
+            assert_eq!(reader.read_boolean().unwrap(), expected);
+            assert_eq!(reader.next_field().unwrap(), None);
+            assert_eq!(reader.finish().unwrap().consumed_bytes, wire.len());
+        }
+        let set = [0x31, 4, 1, 2, 0, 1];
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SetReader::new(&set, &[TAG_BOOLEAN], &mut context).unwrap();
+        assert_eq!(reader.next_field().unwrap(), Some(TAG_BOOLEAN));
+        assert!(reader.read_boolean().unwrap());
+        assert_eq!(reader.next_field().unwrap(), None);
+        assert_eq!(reader.finish().unwrap().consumed_bytes, set.len());
+    }
+
+    /// Check canonical SEQUENCE OF BOOLEAN DER/CER and decoding.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Verifies exact bytes and typed round trips.
+    ///
+    /// # Errors
+    /// Panics if a supported vector differs.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 collection encodings. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct OF gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn collection_sequence_boolean_vectors() {
+        let limits = Limits::default();
+        let values = [true, false];
+        let der = encode_collection_der(
+            CollectionRootKind::SequenceOf,
+            CollectionElementKind::Boolean,
+            CollectionInput::Boolean(&values),
+            &limits,
+        )
+        .unwrap();
+        assert_eq!(der.bytes, [0x30, 6, 1, 1, 0xff, 1, 1, 0]);
+        let cer = encode_collection_cer(
+            CollectionRootKind::SequenceOf,
+            CollectionElementKind::Boolean,
+            CollectionInput::Boolean(&values),
+            &limits,
+        )
+        .unwrap();
+        assert_eq!(cer.bytes, [0x30, 0x80, 1, 1, 0xff, 1, 1, 0, 0, 0]);
+        for (wire, strict) in [(&der.bytes, false), (&cer.bytes, true)] {
+            let decoded = if strict {
+                decode_collection_cer(
+                    wire,
+                    CollectionRootKind::SequenceOf,
+                    CollectionElementKind::Boolean,
+                    &limits,
+                )
+            } else {
+                decode_collection_ber(
+                    wire,
+                    CollectionRootKind::SequenceOf,
+                    CollectionElementKind::Boolean,
+                    &limits,
+                )
+            }
+            .unwrap();
+            assert_eq!(decoded.value, CollectionValues::Boolean(values.to_vec()));
+            assert_eq!(decoded.consumed_bytes, wire.len());
+        }
+    }
+
+    /// Check sorted SET OF BOOLEAN output and unordered BER input.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Verifies DER/CER ordering and strict CER rejection.
+    ///
+    /// # Errors
+    /// Panics if the SET OF order differs from canonical byte order.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET OF order. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct OF gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn collection_set_boolean_ordering() {
+        let limits = Limits::default();
+        let values = [true, false];
+        let der = encode_collection_der(
+            CollectionRootKind::SetOf,
+            CollectionElementKind::Boolean,
+            CollectionInput::Boolean(&values),
+            &limits,
+        )
+        .unwrap();
+        assert_eq!(der.bytes, [0x31, 6, 1, 1, 0, 1, 1, 0xff]);
+        let cer = encode_collection_cer(
+            CollectionRootKind::SetOf,
+            CollectionElementKind::Boolean,
+            CollectionInput::Boolean(&values),
+            &limits,
+        )
+        .unwrap();
+        assert_eq!(cer.bytes, [0x31, 0x80, 1, 1, 0, 1, 1, 0xff, 0, 0]);
+        assert_eq!(
+            decode_collection_cer(
+                &cer.bytes,
+                CollectionRootKind::SetOf,
+                CollectionElementKind::Boolean,
+                &limits,
+            )
+            .unwrap()
+            .value,
+            CollectionValues::Boolean(vec![false, true])
+        );
+        let reversed = [0x31, 6, 1, 1, 0xff, 1, 1, 0];
+        assert_eq!(
+            decode_collection_ber(
+                &reversed,
+                CollectionRootKind::SetOf,
+                CollectionElementKind::Boolean,
+                &limits,
+            )
+            .unwrap()
+            .value,
+            CollectionValues::Boolean(vec![true, false])
+        );
+        assert!(decode_collection_cer(
+            &[0x31, 0x80, 1, 1, 0xff, 1, 1, 0, 0, 0],
+            CollectionRootKind::SetOf,
+            CollectionElementKind::Boolean,
+            &limits,
+        )
+        .is_err());
+    }
+
+    /// Check SET OF INTEGER/NULL ordering, duplicates, and empty roots.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Verifies scalar canonical bytes and empty encodings.
+    ///
+    /// # Errors
+    /// Panics if a canonical collection vector differs.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 collection encodings. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct OF gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn collection_integer_null_and_empty_vectors() {
+        let limits = Limits::default();
+        let values = [0, -1, 128];
+        let integer_set = encode_collection_der(
+            CollectionRootKind::SetOf,
+            CollectionElementKind::BoundedInteger {
+                lower: i64::MIN,
+                upper: i64::MAX,
+            },
+            CollectionInput::Integer(&values),
+            &limits,
+        )
+        .unwrap();
+        assert_eq!(
+            integer_set.bytes,
+            [0x31, 10, 2, 1, 0, 2, 1, 0xff, 2, 2, 0, 0x80]
+        );
+        let nulls = encode_collection_der(
+            CollectionRootKind::SetOf,
+            CollectionElementKind::Null,
+            CollectionInput::Null(2),
+            &limits,
+        )
+        .unwrap();
+        assert_eq!(nulls.bytes, [0x31, 4, 5, 0, 5, 0]);
+        assert_eq!(
+            decode_collection_ber(
+                &nulls.bytes,
+                CollectionRootKind::SetOf,
+                CollectionElementKind::Null,
+                &limits,
+            )
+            .unwrap()
+            .value,
+            CollectionValues::Null(2)
+        );
+        for (root, der, cer) in [
+            (
+                CollectionRootKind::SequenceOf,
+                &[0x30, 0][..],
+                &[0x30, 0x80, 0, 0][..],
+            ),
+            (
+                CollectionRootKind::SetOf,
+                &[0x31, 0][..],
+                &[0x31, 0x80, 0, 0][..],
+            ),
+        ] {
+            assert_eq!(
+                encode_collection_der(
+                    root,
+                    CollectionElementKind::Null,
+                    CollectionInput::Null(0),
+                    &limits,
+                )
+                .unwrap()
+                .bytes,
+                der
+            );
+            assert_eq!(
+                encode_collection_cer(
+                    root,
+                    CollectionElementKind::Null,
+                    CollectionInput::Null(0),
+                    &limits,
+                )
+                .unwrap()
+                .bytes,
+                cer
+            );
+        }
+    }
+
+    /// Reject overflow in a collection root's long-form length.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Decodes an overflowing root length.
+    ///
+    /// # Errors
+    /// Panics unless checked arithmetic rejects the length.
+    ///
+    /// # Source, version, history, example
+    /// Source: checked BER collection framing. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct OF gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn collection_rejects_overflowing_root_length() {
+        assert!(matches!(
+            decode_collection_ber(
+                &[0x30, 0x88, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+                CollectionRootKind::SequenceOf,
+                CollectionElementKind::Null,
+                &Limits::default(),
+            ),
+            Err(Error::SizeOverflow)
+        ));
+    }
+
+    /// Check BER scalar aliases, canonical rejection, and prefix boundaries.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Exercises high-tag/length aliases and scalar BER forms.
+    ///
+    /// # Errors
+    /// Panics if supported BER aliases fail or strict CER accepts an alias.
+    ///
+    /// # Source, version, history, example
+    /// Source: C BER compatibility and X.690 CER canonicalization.
+    /// Version: 2026-11-01. Responsible: runtime maintainers.
+    /// History: direct OF gate. Example: run with `cargo test`.
+    #[test]
+    fn collection_ber_aliases_canonicalize_and_cer_rejects_them() {
+        let limits = Limits::default();
+        let aliased = [0x3f, 0x10, 0x81, 4, 0x1f, 1, 1, 1, 0xaa];
+        let decoded = decode_collection_ber(
+            &aliased,
+            CollectionRootKind::SequenceOf,
+            CollectionElementKind::Boolean,
+            &limits,
+        )
+        .unwrap();
+        assert_eq!(decoded.value, CollectionValues::Boolean(vec![true]));
+        assert_eq!(decoded.consumed_bytes, aliased.len() - 1);
+        assert!(decode_collection_cer(
+            &aliased,
+            CollectionRootKind::SequenceOf,
+            CollectionElementKind::Boolean,
+            &limits,
+        )
+        .is_err());
+
+        let empty_boolean = [0x30, 2, 1, 0];
+        let multi_boolean = [0x30, 5, 1, 3, 0, 1, 0];
+        assert_eq!(
+            decode_collection_ber(
+                &empty_boolean,
+                CollectionRootKind::SequenceOf,
+                CollectionElementKind::Boolean,
+                &limits,
+            )
+            .unwrap()
+            .value,
+            CollectionValues::Boolean(vec![false])
+        );
+        assert_eq!(
+            decode_collection_ber(
+                &multi_boolean,
+                CollectionRootKind::SequenceOf,
+                CollectionElementKind::Boolean,
+                &limits,
+            )
+            .unwrap()
+            .value,
+            CollectionValues::Boolean(vec![true])
+        );
+        let canonical_true = [0x30, 0x80, 1, 1, 0xff, 0, 0];
+        let noncanonical_true = [0x30, 0x80, 1, 1, 1, 0, 0];
+        assert!(decode_collection_cer(
+            &canonical_true,
+            CollectionRootKind::SequenceOf,
+            CollectionElementKind::Boolean,
+            &limits,
+        )
+        .is_ok());
+        assert!(decode_collection_cer(
+            &noncanonical_true,
+            CollectionRootKind::SequenceOf,
+            CollectionElementKind::Boolean,
+            &limits,
+        )
+        .is_err());
+
+        let redundant_integer = [0x30, 4, 2, 2, 0, 1, 0x66];
+        assert_eq!(
+            decode_collection_ber(
+                &redundant_integer,
+                CollectionRootKind::SequenceOf,
+                CollectionElementKind::BoundedInteger { lower: 0, upper: 2 },
+                &limits,
+            )
+            .unwrap()
+            .value,
+            CollectionValues::Integer(vec![1])
+        );
+        assert!(decode_collection_cer(
+            &[0x30, 0x80, 2, 2, 0, 1, 0, 0],
+            CollectionRootKind::SequenceOf,
+            CollectionElementKind::BoundedInteger { lower: 0, upper: 2 },
+            &limits,
+        )
+        .is_err());
+    }
+
+    /// Reject malformed collection roots, children, EOCs, and integer bounds.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Exercises invalid root and primitive child framing.
+    ///
+    /// # Errors
+    /// Panics if any malformed BER form is accepted or unwinds.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 collection framing. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct OF gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn collection_rejects_malformed_roots_children_and_ranges() {
+        let limits = Limits::default();
+        let malformed: &[&[u8]] = &[
+            &[0x10, 0],
+            &[0x30, 2, 0, 0],
+            &[0x30, 2, 5, 0],
+            &[0x30, 2, 0x21, 0],
+            &[0x30, 3, 1, 0x80, 0],
+            &[0x30, 2, 1, 2],
+            &[0x30, 0x80, 1, 1, 0xff],
+            &[0x30, 0x80, 1, 1, 0xff, 0],
+        ];
+        for bytes in malformed {
+            assert!(decode_collection_ber(
+                bytes,
+                CollectionRootKind::SequenceOf,
+                CollectionElementKind::Boolean,
+                &limits,
+            )
+            .is_err());
+        }
+        assert!(decode_collection_ber(
+            &[0x31, 0],
+            CollectionRootKind::SequenceOf,
+            CollectionElementKind::Boolean,
+            &limits,
+        )
+        .is_err());
+        assert!(decode_collection_ber(
+            &[0x30, 3, 2, 1, 4],
+            CollectionRootKind::SequenceOf,
+            CollectionElementKind::BoundedInteger { lower: 0, upper: 3 },
+            &limits,
+        )
+        .is_err());
+        assert!(encode_collection_der(
+            CollectionRootKind::SequenceOf,
+            CollectionElementKind::BoundedInteger { lower: 2, upper: 1 },
+            CollectionInput::Integer(&[]),
+            &limits,
+        )
+        .is_err());
+        assert!(encode_collection_der(
+            CollectionRootKind::SequenceOf,
+            CollectionElementKind::Null,
+            CollectionInput::Boolean(&[]),
+            &limits,
+        )
+        .is_err());
+    }
+
+    /// Precharge high-tag and long-length scans and reject their overflow/truncation.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Exercises low work budgets and malformed collection headers.
+    ///
+    /// # Errors
+    /// Panics if header scans evade work limits or malformed headers are accepted.
+    ///
+    /// # Source, version, history, example
+    /// Source: bounded BER collection framing. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: precharged collection parser.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn collection_headers_precharge_high_tags_and_long_lengths() {
+        let low_work = Limits {
+            max_work_bits: 8,
+            ..Limits::default()
+        };
+        assert!(matches!(
+            decode_collection_ber(
+                &[0x3f, 0x80, 0x80, 0x10, 0],
+                CollectionRootKind::SequenceOf,
+                CollectionElementKind::Null,
+                &low_work,
+            ),
+            Err(Error::LimitExceeded {
+                resource: Resource::WorkBits,
+                ..
+            })
+        ));
+        assert!(matches!(
+            decode_collection_ber(
+                &[0x30, 0x82, 0, 0],
+                CollectionRootKind::SequenceOf,
+                CollectionElementKind::Null,
+                &Limits {
+                    max_work_bits: 16,
+                    ..Limits::default()
+                },
+            ),
+            Err(Error::LimitExceeded {
+                resource: Resource::WorkBits,
+                ..
+            })
+        ));
+        assert!(matches!(
+            decode_collection_ber(
+                &[0x30, 0x82, 0],
+                CollectionRootKind::SequenceOf,
+                CollectionElementKind::Null,
+                &Limits::default(),
+            ),
+            Err(Error::NeedMoreBytes { .. })
+        ));
+        assert!(matches!(
+            decode_collection_ber(
+                &[0x3f, 0xff, 0xff, 0xff, 0xff, 0xff, 0],
+                CollectionRootKind::SequenceOf,
+                CollectionElementKind::Null,
+                &Limits::default(),
+            ),
+            Err(Error::SizeOverflow)
+        ));
+        assert!(matches!(
+            decode_collection_ber(
+                &[0x30, 0x88, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+                CollectionRootKind::SequenceOf,
+                CollectionElementKind::Null,
+                &Limits::default(),
+            ),
+            Err(Error::SizeOverflow)
+        ));
+    }
+
+    /// Verify exact DER collection output and encoder work ceilings.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Tests exact and one-below encoder resource budgets.
+    ///
+    /// # Errors
+    /// Panics if a boundary is accepted or rejected incorrectly.
+    ///
+    /// # Source, version, history, example
+    /// Source: collection resource policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct OF gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn collection_encode_limits_are_exact() {
+        let values = [true];
+        let exact = Limits {
+            max_output_bytes: 5,
+            max_work_bits: 48,
+            ..Limits::default()
+        };
+        let encode = |limits: &Limits| {
+            encode_collection_der(
+                CollectionRootKind::SequenceOf,
+                CollectionElementKind::Boolean,
+                CollectionInput::Boolean(&values),
+                limits,
+            )
+        };
+        assert!(encode(&exact).is_ok());
+        assert!(encode(&Limits {
+            max_work_bits: 47,
+            ..exact
+        })
+        .is_err());
+        assert!(encode(&Limits {
+            max_output_bytes: 4,
+            ..exact
+        })
+        .is_err());
+    }
+
+    /// Verify exact BER/CER decoder input, output, work, and retained limits.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Tests decoded BOOLEAN/INTEGER and strict CER budgets.
+    ///
+    /// # Errors
+    /// Panics if a boundary is accepted or rejected incorrectly.
+    ///
+    /// # Source, version, history, example
+    /// Source: collection resource policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct OF gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn collection_decode_limits_are_exact() {
+        let wire = [0x30, 3, 1, 1, 0xff];
+        let exact = Limits {
+            max_output_bytes: 1,
+            max_input_bytes: wire.len(),
+            max_work_bits: 80,
+        };
+        let decode = |limits: &Limits| {
+            decode_collection_ber(
+                &wire,
+                CollectionRootKind::SequenceOf,
+                CollectionElementKind::Boolean,
+                limits,
+            )
+        };
+        assert!(decode(&exact).is_ok());
+        assert!(decode(&Limits {
+            max_output_bytes: 0,
+            ..exact
+        })
+        .is_err());
+        assert!(decode(&Limits {
+            max_input_bytes: wire.len() - 1,
+            ..exact
+        })
+        .is_err());
+        assert!(decode(&Limits {
+            max_work_bits: 79,
+            ..exact
+        })
+        .is_err());
+
+        let integer_wire = [0x30, 3, 2, 1, 1];
+        let integer_kind = CollectionElementKind::BoundedInteger { lower: 0, upper: 2 };
+        let integer_limits = |max_output_bytes| Limits {
+            max_output_bytes,
+            ..Limits::default()
+        };
+        assert!(decode_collection_ber(
+            &integer_wire,
+            CollectionRootKind::SequenceOf,
+            integer_kind,
+            &integer_limits(8),
+        )
+        .is_ok());
+        assert!(decode_collection_ber(
+            &integer_wire,
+            CollectionRootKind::SequenceOf,
+            integer_kind,
+            &integer_limits(7),
+        )
+        .is_err());
+
+        let strict = [0x30, 0x80, 1, 1, 0xff, 0, 0];
+        let strict_limits = Limits {
+            max_input_bytes: strict.len(),
+            max_output_bytes: strict.len(),
+            max_work_bits: 216,
+        };
+        let decode_strict = |limits: &Limits| {
+            decode_collection_cer(
+                &strict,
+                CollectionRootKind::SequenceOf,
+                CollectionElementKind::Boolean,
+                limits,
+            )
+        };
+        assert!(decode_strict(&strict_limits).is_ok());
+        assert!(decode_strict(&Limits {
+            max_work_bits: 215,
+            ..strict_limits
+        })
+        .is_err());
+    }
+
+    /// Verify SET OF sort work, scratch, and hard element-count limits.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Pins exact sort work and the one-million element cap.
+    ///
+    /// # Errors
+    /// Panics if an exact budget is rejected or a one-below budget is accepted.
+    ///
+    /// # Source, version, history, example
+    /// Source: collection resource policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct OF gate.
+    /// Example: run with cargo test.
+    #[test]
+    fn collection_sort_scratch_and_count_limits_are_exact() {
+        let values = [true, false];
+        let sort_work = 8 * (2 + 8 + 11 * (4 + 256) + 2 * 2 * 12 + 6);
+        let exact_sort = Limits {
+            max_output_bytes: 8,
+            max_work_bits: sort_work,
+            ..Limits::default()
+        };
+        assert_eq!(sort_work, 23_392);
+        let encode = |limits: &Limits| {
+            encode_collection_der(
+                CollectionRootKind::SetOf,
+                CollectionElementKind::Boolean,
+                CollectionInput::Boolean(&values),
+                limits,
+            )
+        };
+        assert!(encode(&exact_sort).is_ok());
+        assert!(encode(&Limits {
+            max_work_bits: sort_work - 1,
+            ..exact_sort
+        })
+        .is_err());
+
+        assert!(
+            check_collection_live_scratch(MAX_COLLECTION_SCRATCH_BYTES - 2, 2, 0, 0, false,)
+                .is_ok()
+        );
+        assert!(
+            check_collection_live_scratch(MAX_COLLECTION_SCRATCH_BYTES - 1, 2, 0, 0, false,)
+                .is_err()
+        );
+        let unlimited = Limits {
+            max_input_bytes: usize::MAX,
+            max_output_bytes: usize::MAX,
+            max_work_bits: usize::MAX,
+        };
+        assert!(encode_collection_der(
+            CollectionRootKind::SequenceOf,
+            CollectionElementKind::Null,
+            CollectionInput::Null(MAX_COLLECTION_ELEMENTS + 1),
+            &unlimited,
+        )
+        .is_err());
+
+        let output_len = 2_000_005;
+        let work_bits = (MAX_COLLECTION_ELEMENTS + output_len) * 8;
+        let exact_count = Limits {
+            max_output_bytes: output_len,
+            max_work_bits: work_bits,
+            ..Limits::default()
+        };
+        let encoded = encode_collection_der(
+            CollectionRootKind::SequenceOf,
+            CollectionElementKind::Null,
+            CollectionInput::Null(MAX_COLLECTION_ELEMENTS),
+            &exact_count,
+        )
+        .unwrap();
+        assert_eq!(encoded.bytes.len(), output_len);
+        assert!(encode_collection_der(
+            CollectionRootKind::SequenceOf,
+            CollectionElementKind::Null,
+            CollectionInput::Null(MAX_COLLECTION_ELEMENTS),
+            &Limits {
+                max_work_bits: work_bits - 1,
+                ..exact_count
+            },
+        )
+        .is_err());
+    }
+
+    /// Mutate and truncate collection inputs without allowing panics.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Mutates canonical roots, child headers and EOCs.
+    ///
+    /// # Errors
+    /// Panics only if a bounded BER or CER decoder unwinds.
+    ///
+    /// # Source, version, history, example
+    /// Source: collection decoder mutation hardening. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct OF gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn collection_mutations_and_truncations_do_not_panic() {
+        let limits = Limits::default();
+        let wires: &[&[u8]] = &[&[0x30, 3, 1, 1, 0xff], &[0x31, 0x80, 2, 1, 1, 0, 0]];
+        for (index, wire) in wires.iter().enumerate() {
+            let root = if index == 0 {
+                CollectionRootKind::SequenceOf
+            } else {
+                CollectionRootKind::SetOf
+            };
+            for end in 0..wire.len() {
+                assert!(std::panic::catch_unwind(|| {
+                    let _ = decode_collection_ber(
+                        &wire[..end],
+                        root,
+                        CollectionElementKind::Boolean,
+                        &limits,
+                    );
+                    let _ = decode_collection_cer(
+                        &wire[..end],
+                        root,
+                        CollectionElementKind::Boolean,
+                        &limits,
+                    );
+                })
+                .is_ok());
+            }
+            for offset in 0..wire.len() {
+                for byte in 0_u8..=u8::MAX {
+                    let mut changed = wire.to_vec();
+                    changed[offset] = byte;
+                    assert!(std::panic::catch_unwind(|| {
+                        let _ = decode_collection_ber(
+                            &changed,
+                            root,
+                            CollectionElementKind::Boolean,
+                            &limits,
+                        );
+                        let _ = decode_collection_cer(
+                            &changed,
+                            root,
+                            CollectionElementKind::Boolean,
+                            &limits,
+                        );
+                    })
+                    .is_ok());
+                }
+            }
         }
     }
 }

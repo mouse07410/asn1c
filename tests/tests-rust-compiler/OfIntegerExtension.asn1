@@ -1,0 +1,3 @@
+OfIntegerExtension DEFINITIONS ::= BEGIN
+SequenceInteger ::= SEQUENCE OF INTEGER (0..3, ...)
+END

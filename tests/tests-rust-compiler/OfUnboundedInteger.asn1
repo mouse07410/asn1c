@@ -1,0 +1,3 @@
+OfUnboundedInteger DEFINITIONS ::= BEGIN
+SequenceInteger ::= SEQUENCE OF INTEGER
+END

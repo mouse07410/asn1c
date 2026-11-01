@@ -560,7 +560,8 @@ count that has no byte allocation; cap it at 1,000,000 before any loop or
 reserve. Charge each element visit, TLV parse/encode, validation, sorting,
 canonical re-encode, and comparison to one cumulative work budget. Count
 retained decoded vector, sort metadata, temporary sort buffers, and final output
-capacities against a fixed aggregate scratch cap, with checked arithmetic
+capacities against a fixed aggregate scratch cap; also cap retained decoded
+vector bytes by `max_output_bytes`. Use checked arithmetic
 and fallible allocation. A fixed 11-byte canonical child encoding suffices
 for the three approved element kinds. Sorting SET OF may use a bounded
 fixed-width radix pass over zero-padded complete child TLVs, so sort work
@@ -568,8 +569,10 @@ is linear and can be precharged before allocation; this ordering must not
 be replaced by numeric or field-tag order.
 
 BER accepts definite and indefinite constructed roots, repeated child tags,
-arbitrary SET OF order and duplicates, and C-compatible nonminimal scalar
-representations. Decode one prefix with exact consumption while enforcing
+arbitrary SET OF order and duplicates, zero-length or multi-octet BOOLEAN
+contents as C BER does, and redundant INTEGER sign octets. Strict CER still
+requires the canonical one-octet BOOLEAN form. Decode one
+prefix with exact consumption while enforcing
 child bounds and matching EOCs. DER SEQUENCE OF preserves element order and
 uses a definite tag-16 root; DER SET OF sorts complete canonical child TLVs
 under a definite tag-17 root. CER uses indefinite tag-16/tag-17 roots and EOC;
@@ -586,6 +589,43 @@ indefinite forms, nonminimal aliases, malformed children/EOCs, suffixes,
 truncation, mutations, and exact count/input/output/work/scratch boundaries.
 Compare canonical Rust/C output and both decode directions for supported
 values. Every excluded schema shape must fail before crate publication.
+
+### Direct CHOICE of primitive alternatives (qualified initial gate)
+
+Add one direct, untagged, nonextensible top-level CHOICE with one through
+three uniquely tagged alternatives selected from BOOLEAN, NULL, and finite
+nonextensible bounded `i64` INTEGER, under BER/CER-only selection. Reject
+root or member tags, duplicate intrinsic tags, aliases/imports, constraints
+outside the approved integer range, optional/default members, extensions,
+recursive or constructed alternatives, parameterization, and generated
+variant-name collisions before output publication. The generated Rust enum
+contains only selected arm values, so it has no invalid unselected state.
+
+An untagged CHOICE has no outer TLV: DER and CER emit exactly the selected
+primitive alternative TLV. BER reads one complete identifier with precharged
+work, dispatches by universal class and tag number 1, 5, or 2, then parses
+the selected primitive through the same operation context. Reuse the
+collection scalar parser rather than calling a public scalar decoder that
+would reset budgets. BER accepts C-compatible high-tag and long-length
+aliases, empty or multi-octet BOOLEAN content, and redundant INTEGER sign
+octets. NULL must have empty primitive content. Strict CER reencodes the
+selected value under the same work/output budget and compares exactly the
+consumed prefix; the trailing suffix is untouched. Bounded INTEGER range
+checks occur immediately in Rust, while C BER can defer subtype constraint
+checking, so this timing difference remains a qualified limitation.
+
+Use a public selected-value enum and an alternative descriptor slice with
+at most one instance of each universal tag. Validate descriptor count,
+uniqueness, and integer bounds before scanning input or allocating output.
+The primitive output is at most 11 octets; decoded values need no heap
+allocation. Apply whole-input, output, and cumulative work limits, including
+identifier/length parsing, selected content scanning, canonical encode, and
+strict comparison. Acceptance includes all three arms, no outer wrapper,
+high-tag aliases, noncanonical BOOLEAN and INTEGER BER, unknown/wrong-class
+or constructed tags, malformed lengths/content, suffixes, truncation at
+every byte, mutations, exact resource limits, live C vectors in both
+directions, and negative schema gates. IMPLICIT or EXPLICIT CHOICE tagging
+remains a separate design stage because it changes dispatch or adds a wrapper.
 
 ## Decisions still required
 

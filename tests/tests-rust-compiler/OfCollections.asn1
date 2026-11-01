@@ -1,0 +1,8 @@
+OfCollections DEFINITIONS ::= BEGIN
+SequenceBoolean ::= SEQUENCE OF BOOLEAN
+SetBoolean ::= SET OF BOOLEAN
+SequenceNull ::= SEQUENCE OF NULL
+SetNull ::= SET OF NULL
+SequenceInteger ::= SEQUENCE OF INTEGER (-2..3)
+SetInteger ::= SET OF INTEGER (-128..255)
+END

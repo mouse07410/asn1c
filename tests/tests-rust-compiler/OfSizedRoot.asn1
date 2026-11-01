@@ -1,0 +1,3 @@
+OfSizedRoot DEFINITIONS ::= BEGIN
+SequenceBoolean ::= SEQUENCE SIZE (0..3) OF BOOLEAN
+END

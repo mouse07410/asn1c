@@ -298,7 +298,24 @@ fn ber_der_primitive_vectors_and_prefixes() {
         .unwrap()
         .value
         .value());
-    assert!(Flag::decode_ber(&[0x01, 0x02, 0x00, 0xff], &limits).is_err());
+    let multi_octet_boolean = Flag::decode_ber(&[0x01, 0x02, 0x00, 0xff], &limits).unwrap();
+    assert!(multi_octet_boolean.value.value());
+    assert_eq!(multi_octet_boolean.consumed_bytes, 4);
+    assert_eq!(multi_octet_boolean.consumed_bits, 32);
+    assert_eq!(
+        multi_octet_boolean.value.encode_der(&limits).unwrap().bytes,
+        [0x01, 0x01, 0xff]
+    );
+    assert!(Flag::decode_cer(&[0x01, 0x02, 0x00, 0xff], &limits).is_err());
+    let empty_boolean = Flag::decode_ber(&[0x01, 0x00], &limits).unwrap();
+    assert!(!empty_boolean.value.value());
+    assert_eq!(empty_boolean.consumed_bytes, 2);
+    assert_eq!(empty_boolean.consumed_bits, 16);
+    assert_eq!(
+        empty_boolean.value.encode_der(&limits).unwrap().bytes,
+        [0x01, 0x01, 0x00]
+    );
+    assert!(Flag::decode_cer(&[0x01, 0x00], &limits).is_err());
     assert!(Flag::decode_ber(&[0x01, 0x01], &limits).is_err());
 
     let null_decoded = Empty::decode_ber(&read_c_vector("cer_null.bin"), &limits).unwrap();

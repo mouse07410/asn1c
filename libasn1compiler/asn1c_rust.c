@@ -89,6 +89,7 @@ static int rust_check_module_types(asn1p_module_t *, int *, uint64_t);
 static int rust_check_type_name(asn1p_module_t *, asn1p_expr_t *);
 static int rust_check_unconstrained_string_codecs(asn1p_module_t *,
                                                 asn1p_expr_t *, uint64_t);
+static int rust_check_collection(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_oid_codecs(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_ia5_codecs(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_character_string(asn1p_module_t *, asn1p_expr_t *, uint64_t);
@@ -187,6 +188,8 @@ static int rust_write_utc_time(FILE *, const char *, uint64_t);
 static int rust_write_utc_time_ber_cer(FILE *, int);
 static int rust_write_generalized_time(FILE *, const char *, uint64_t);
 static int rust_write_generalized_time_ber_cer(FILE *, int);
+static int rust_write_collection(FILE *, const char *, asn1p_expr_t *, uint64_t);
+static int rust_write_collection_codec(FILE *, const char *, const char *, const char *, int);
 static int rust_write_bounded_octets(FILE *, const char *, size_t, size_t,
                                     uint64_t);
 static int rust_write_bounded_octets_uper(FILE *, size_t, size_t);
@@ -992,6 +995,60 @@ rust_check_generalized_time(asn1p_module_t *module, asn1p_expr_t *expr,
     return -1;
 }
 
+/* Validate one direct, untagged BER/CER collection with a supported leaf.
+ * Inputs: module/expr identify the fixed root; codecs is the selected mask.
+ * Returns zero when supported, otherwise -1 with a located diagnostic.
+ * Errors: no exception. Source: approved collection BER/CER gate.
+ * Version/date: 2026-11-01. Responsible: asn1c maintainers. History: initial
+ * SEQUENCE OF/SET OF slice. Example: `SEQUENCE OF BOOLEAN` passes.
+ */
+static int
+rust_check_collection(asn1p_module_t *module, asn1p_expr_t *expr,
+                      uint64_t codecs) {
+    const uint64_t ber_cer = RUST_CODEC_BER | RUST_CODEC_CER;
+    asn1p_expr_t *element = TQ_FIRST(&expr->members);
+    int64_t lower, upper;
+
+    if(!codecs || (codecs & ~ber_cer)) goto unsupported_root;
+    if(expr->constraints || expr->combined_constraints || expr->reference
+       || expr->lhs_params || expr->rhs_pspecs || expr->ioc_table
+       || expr->with_syntax || expr->marker.flags != EM_NOMARK
+       || expr->marker.default_value || expr->unique
+       || expr->tag.tag_class != TC_NOCLASS || expr->tag.tag_mode != TM_DEFAULT
+       || !element
+       || TQ_NEXT(element, next)) goto unsupported_root;
+    if(element->reference || element->lhs_params || element->rhs_pspecs
+       || element->ioc_table || element->with_syntax
+       || element->marker.flags != EM_NOMARK || element->marker.default_value
+       || element->tag.tag_class != TC_NOCLASS
+       || element->tag.tag_mode != TM_DEFAULT || element->members.tq_head
+       || element->unique) {
+        rust_diagnostic(module, element,
+                        "collection elements must be direct untagged primitive types");
+        return -1;
+    }
+    if(element->expr_type == ASN_BASIC_BOOLEAN
+       || element->expr_type == ASN_BASIC_NULL) {
+        if(element->constraints || element->combined_constraints) {
+            rust_diagnostic(module, element,
+                            "BOOLEAN and NULL collection elements cannot have constraints");
+            return -1;
+        }
+        return 0;
+    }
+    if(element->expr_type == ASN_BASIC_INTEGER && element->combined_constraints
+       && rust_constraint_supported(element->combined_constraints, 0)
+       && !rust_integer_bounds(element, &lower, &upper)) return 0;
+    rust_diagnostic(module, element,
+                    "collection element must be BOOLEAN, NULL, or bounded i64 INTEGER");
+    return -1;
+
+unsupported_root:
+    rust_diagnostic(module, expr,
+        "SEQUENCE OF/SET OF requires one untagged, unconstrained direct element and BER/CER-only codecs");
+    return -1;
+}
+
 /*
  * Reject one unsupported type before output publication.
  * Parameters: module and expr identify the fixed assignment; codecs is the
@@ -1024,6 +1081,9 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
                         "type tags are supported only on BER/CER-only flat SEQUENCE/SET roots");
         return -1;
     }
+    if(expr->expr_type == ASN_CONSTR_SEQUENCE_OF
+       || expr->expr_type == ASN_CONSTR_SET_OF)
+        return rust_check_collection(module, expr, codecs);
     if(codecs & RUST_CODEC_XER) {
         if(codecs == RUST_CODEC_XER
            && (expr->expr_type == ASN_CONSTR_SEQUENCE || expr->expr_type == ASN_CONSTR_SET))
@@ -3604,8 +3664,152 @@ done:
     return ret;
 }
 
+/* Emit a typed owned wrapper for one validated direct collection root.
+ * Inputs: stream receives Rust, name is the assignment name, expr is the root,
+ * and codecs selects emitted methods. Returns zero or -1 on output failure.
+ * Errors: emitted methods return malformed-input and limit errors.
+ * Source: approved BER/CER collection runtime. Version/date: 2026-11-01.
+ * Responsible: asn1c maintainers. History: initial OF collection support.
+ * Example: rust_write_collection(out, "Flags", expr, RUST_CODEC_BER).
+ */
+static int
+rust_write_collection(FILE *stream, const char *name, asn1p_expr_t *expr,
+                      uint64_t codecs) {
+    asn1p_expr_t *element = TQ_FIRST(&expr->members);
+    const char *root = expr->expr_type == ASN_CONSTR_SET_OF ? "SetOf" : "SequenceOf";
+    const char *variant;
+    const char *rust_type;
+    char descriptor[160];
+    char lower[64], upper[64];
+    int written;
+
+    if(element->expr_type == ASN_BASIC_BOOLEAN) {
+        variant = "Boolean";
+        rust_type = "bool";
+        strcpy(descriptor, "::asn1c_runtime::CollectionElementKind::Boolean");
+    } else if(element->expr_type == ASN_BASIC_NULL) {
+        variant = "Null";
+        rust_type = "()";
+        strcpy(descriptor, "::asn1c_runtime::CollectionElementKind::Null");
+    } else {
+        int64_t low, high;
+        variant = "Integer";
+        rust_type = "i64";
+        if(rust_integer_bounds(element, &low, &high)
+           || rust_format_bound(lower, sizeof(lower), low)
+           || rust_format_bound(upper, sizeof(upper), high)) return -1;
+        written = snprintf(descriptor, sizeof(descriptor),
+            "::asn1c_runtime::CollectionElementKind::BoundedInteger { lower: %s, upper: %s }",
+            lower, upper);
+        if(written < 0 || (size_t)written >= sizeof(descriptor)) return -1;
+    }
+    if(fprintf(stream,
+        "/// Owned values of an ASN.1 SEQUENCE OF or SET OF type.\n"
+        "#[derive(Debug, Eq, PartialEq)]\n"
+        "pub struct %s(\n"
+        "    /// Owned element vector state variable.\n"
+        "    ::std::vec::Vec<%s>\n"
+        ");\n\nimpl %s {\n", name, rust_type, name) < 0) return -1;
+    if(rust_write_method_doc(stream, "Take ownership of the collection elements.",
+            "`values` contains typed element values.",
+            "Returns a wrapper that owns the supplied vector.",
+            "This constructor cannot fail; codec methods enforce ASN.1 bounds.",
+            "`let value = Type::new(vec![true, false]);")) return -1;
+    if(fputs("    #[must_use]\n"
+             "    pub const fn new(values: ::std::vec::Vec<", stream) == EOF
+       || fputs(rust_type, stream) == EOF
+       || fputs(">) -> Self { Self(values) }\n", stream) == EOF) return -1;
+    if(rust_write_method_doc(stream, "Borrow the collection elements.",
+            "`self` is the collection to inspect.",
+            "Returns the ordered values without copying.",
+            "This accessor cannot fail.", "`let values = value.as_slice();")) return -1;
+    if(fprintf(stream,
+        "    #[must_use]\n"
+        "    pub fn as_slice(&self) -> &[%s] { &self.0 }\n", rust_type) < 0)
+        return -1;
+    if((codecs & RUST_CODEC_BER)
+       && rust_write_collection_codec(stream, root, descriptor, variant, 0)) return -1;
+    if((codecs & RUST_CODEC_CER)
+       && rust_write_collection_codec(stream, root, descriptor, variant, 1)) return -1;
+    return fputs("}\n\n", stream) == EOF ? -1 : 0;
+}
+
+/* Emit one DER/BER or CER codec pair for an owned collection wrapper.
+ * Inputs: stream/name identify output; root/element describe runtime kinds;
+ * variant selects matching decoded values; cer selects CER versus DER/BER.
+ * Returns zero or -1. Emitted calls propagate runtime validation errors.
+ * Source: approved collection runtime API. Version/date: 2026-11-01.
+ * Responsible: asn1c maintainers. History: generated OF codec methods.
+ * Example: rust_write_collection_codec(out, "Flags", "SequenceOf", ...).
+ */
+static int
+rust_write_collection_codec(FILE *stream, const char *root,
+                            const char *descriptor, const char *variant, int cer) {
+    const char *encode = cer ? "cer" : "der";
+    const char *decode = cer ? "cer" : "ber";
+    const char *input = !strcmp(variant, "Null") ? "self.0.len()" : "&self.0";
+    const char *null_values = !strcmp(variant, "Null")
+        ? "        let values = ::std::vec![(); values];\n" : "";
+    const char *intro = cer ? "Strictly decode one CER collection prefix."
+                            : "Decode one BER collection prefix.";
+    const char *example = cer
+        ? "`let decoded = Type::decode_cer(input, &limits)?;"
+        : "`let decoded = Type::decode_ber(input, &limits)?;";
+    char method_example[112];
+    int written;
+
+    written = snprintf(method_example, sizeof(method_example),
+                       "`let encoded = value.encode_%s(&limits)?;", encode);
+    if(written < 0 || (size_t)written >= sizeof(method_example)) return -1;
+    if(rust_write_method_doc(stream, cer ? "Encode using canonical CER." :
+                             "Encode using canonical DER.",
+            "`self` supplies values; `limits` bounds output and cumulative work.",
+            "Returns the complete encoded collection TLV.",
+            "Returns an error for invalid values or exhausted limits.", method_example))
+        return -1;
+    if(fprintf(stream,
+        "    pub fn encode_%s(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, ::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::encode_collection_%s(\n"
+        "            ::asn1c_runtime::CollectionRootKind::%s,\n"
+        "            %s,\n"
+        "            ::asn1c_runtime::CollectionInput::%s(%s),\n"
+        "            limits,\n"
+        "        )\n    }\n", encode, encode, root, descriptor, variant, input) < 0)
+        return -1;
+    if(rust_write_method_doc(stream, intro,
+            "`input` is a complete or suffixed BER/CER byte slice; `limits` bounds work.",
+            "Returns decoded values and exact consumed prefix bits and bytes.",
+            cer ? "Returns an error for malformed, noncanonical, or over-limit input."
+                : "Returns an error for malformed or over-limit input.", example))
+        return -1;
+    if(fprintf(stream,
+        "    pub fn decode_%s(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, "
+        "::asn1c_runtime::Error> {\n"
+        "        let decoded = ::asn1c_runtime::decode_collection_%s(\n"
+        "            input,\n"
+        "            ::asn1c_runtime::CollectionRootKind::%s,\n"
+        "            %s,\n"
+        "            limits,\n"
+        "        )?;\n"
+        "        let ::asn1c_runtime::CollectionValues::%s(values) = decoded.value else {\n"
+        "            return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+        "                reason: \"collection runtime returned an incompatible element kind\",\n"
+        "            });\n"
+        "        };\n"
+        "%s"
+        "        Ok(::asn1c_runtime::Decoded {\n"
+        "            value: Self(values),\n"
+        "            consumed_bits: decoded.consumed_bits,\n"
+        "            consumed_bytes: decoded.consumed_bytes,\n"
+        "        })\n    }\n", decode, decode, root, descriptor, variant,
+        null_values) < 0) return -1;
+    return 0;
+}
+
 /*
- * Emit one supported primitive wrapper or flat SEQUENCE and its methods.
+ * Emit one supported primitive wrapper, collection, or flat SEQUENCE.
  * Parameters: stream receives Rust; module and expr identify the assignment;
  * codecs selects emitted methods.
  * Returns zero or -1. Original source: new Rust backend. Version/date: 0.1.0,
@@ -3626,6 +3830,9 @@ rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
     }
     if(codecs == RUST_CODEC_XER) {
         ret = rust_write_xer_record(stream, name, expr);
+    } else if(expr->expr_type == ASN_CONSTR_SEQUENCE_OF
+              || expr->expr_type == ASN_CONSTR_SET_OF) {
+        ret = rust_write_collection(stream, name, expr, codecs);
     } else if(expr->expr_type == ASN_CONSTR_SET) {
         ret = rust_write_set(stream, name, expr, codecs);
     } else if(expr->expr_type == ASN_CONSTR_SEQUENCE) {

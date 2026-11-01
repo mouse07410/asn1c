@@ -213,6 +213,19 @@ and longer fractions that the C DER adapter may interpret using the host
 timezone, normalize, or truncate. The C `time_t == -1` sentinel also rejects
 one valid epoch-edge instant that checked Rust arithmetic accepts. Tagged,
 constrained, aliased, imported, and member GeneralizedTime forms remain gated.
+Direct untagged, unconstrained SEQUENCE OF and SET OF roots with one direct
+BOOLEAN, NULL, or finite bounded `i64` INTEGER element also have BER prefix
+decoding, DER/CER encoding, and strict CER prefix decoding under BER/CER-only
+selection. BER accepts definite and indefinite roots, duplicates, and any
+SET OF order. DER uses a definite root; CER uses an indefinite root and EOC.
+SEQUENCE OF preserves member order, while SET OF sorts complete canonical
+child TLVs by padded octet order. The runtime caps element count, work,
+decoded storage, sorting scratch, and output. Bounded INTEGER element range
+checks occur during Rust decoding; C BER may defer the subtype constraint
+check. BER BOOLEAN elements accept C-compatible empty or multi-octet content;
+strict CER requires one canonical content octet. Root SIZE constraints,
+tags, aliases, imports, nested elements, and
+broader C collection forms remain outside this qualified slice.
 Flat SET records with an untagged outer type and the same six direct field kinds are
 available when only BER and/or CER are selected. BER accepts members in any
 order; DER/CER emits them by ascending effective tag class and number, and strict CER rejects

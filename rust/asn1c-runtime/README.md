@@ -99,8 +99,10 @@ primitive TLVs. Their bytes match CER for this subset. `decode_boolean_ber`,
 `decode_null_ber`, and `decode_integer_ber` read one definite-length universal
 primitive TLV and report prefix consumption. BER decoding accepts long-form
 lengths, including redundant leading length octets, and any nonzero BOOLEAN
-content octet as true. It requires a single BOOLEAN content octet and rejects
-indefinite primitive lengths. INTEGER decoding accepts redundant leading sign
+content octet as true; empty or all-zero content is false. This matches the C
+BER decoder's empty and multi-octet behavior, which extends X.690's one-octet
+BOOLEAN content rule. CER still requires one canonical BOOLEAN octet. Primitive
+indefinite lengths are rejected. INTEGER decoding accepts redundant leading sign
 octets when the value still fits `i64`; that acceptance follows the C decoder
 but extends the X.690 INTEGER wire rule. The generator exposes `encode_der` and
 `decode_ber` only when `-gen-BER` is selected.
@@ -222,6 +224,20 @@ interpret those using process timezone, normalize fields, or truncate precision.
 Rust also accepts the valid 1969-12-31 23:59:59 UTC instant that C can reject
 through its `time_t == -1` sentinel. GeneralizedTime operations use the shared
 input, output, retained-capacity, scratch, and cumulative work limits.
+
+`CollectionRootKind`, `CollectionElementKind`, `CollectionInput`, and
+`CollectionValues` support direct top-level SEQUENCE OF and SET OF BOOLEAN,
+NULL, or finite bounded `i64` INTEGER values. `encode_collection_der` and
+`encode_collection_cer` borrow typed values; `decode_collection_ber` and strict
+`decode_collection_cer` return owned typed values with exact prefix consumption.
+SEQUENCE OF preserves its order. SET OF sorts complete canonical child TLVs by
+zero-padded octet order; BER decode accepts any SET OF order and duplicates.
+CER uses indefinite constructed roots with EOC, and strict CER compares the
+canonical re-encoding against exactly the consumed prefix under one work
+budget. INTEGER bounds are checked during Rust BER decode, earlier than C's
+later constraint check. The runtime caps collections at 1,000,000 elements and
+accounts decoded vectors, radix buffers, and output against a fixed 128 MiB
+aggregate scratch ceiling without adding fields to `Limits`.
 
 `RecordContext`, `SequenceReader`, `SequenceWriter`, `SetReader`, and `SetWriter`
 compose flat SEQUENCE and SET values with direct BOOLEAN, NULL,

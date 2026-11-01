@@ -430,3 +430,30 @@ fractions beyond nine digits, and C rejects the valid epoch-minus-one instant
 through its `time_t == -1` sentinel. Tagged, constrained, aliased, imported,
 member, mixed-codec, and UPER-only GeneralizedTime schemas fail before output
 publication.
+
+The initial `SEQUENCE OF` and `SET OF` generator gate accepts only direct,
+untagged, unconstrained roots with one untagged BOOLEAN, NULL, or finite
+nonextensible bounded-`i64` INTEGER element under BER/CER-only selection.
+Generated wrappers own typed vectors and expose borrowed slices. NULL uses a
+count-backed runtime representation and a Rust `Vec<()>` view. Collection
+decoders preserve BER prefix consumption; strict CER re-encodes under the same
+limits context. SET OF DER/CER output sorts complete child TLVs, while
+SEQUENCE OF preserves declaration order. The runtime caps element count at
+1,000,000 and accounts for work and aggregate scratch.
+
+`OfCollections.asn1`, `of_collections_conformance.rs`, and
+`c_of_collections.c` compare empty, singleton, repeated, and multi-element
+BOOLEAN, NULL, and bounded INTEGER collections. Coverage includes definite and
+indefinite BER, canonical DER/CER bytes, SET OF ordering and duplicates,
+nonminimal scalar/root aliases, malformed EOCs and children, suffix prefixes,
+truncations, input mutations, and resource limits. C BER accepts zero-length
+and multi-octet BOOLEAN content in these collection fixtures. Generated Rust
+BER decodes them to Boolean values, while strict CER rejects the noncanonical
+forms in both implementations.
+The C BER decoder may leave bounded INTEGER range checking to a later
+constraint check; generated Rust rejects an out-of-range collection element
+during decode. This timing difference is tested separately from canonical
+wire parity.
+Root SIZE constraints, root or element tags, aliases, imports, fields, nested
+types, extensions, unsupported constraints, and mixed or non-BER/CER codecs
+fail before output publication.

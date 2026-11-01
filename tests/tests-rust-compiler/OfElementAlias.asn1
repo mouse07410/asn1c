@@ -1,0 +1,4 @@
+OfElementAlias DEFINITIONS ::= BEGIN
+Flag ::= BOOLEAN
+SequenceBoolean ::= SEQUENCE OF Flag
+END

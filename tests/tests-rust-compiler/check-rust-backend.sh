@@ -3360,4 +3360,117 @@ if ! "$test_tmp/c-generalized"; then
     exit 1
 fi
 
+# Direct OF collections share the repeated-member runtime and its count budget.
+of_rust="$test_tmp/of-collections-rust"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$of_rust" "$test_srcdir/OfCollections.asn1"
+mkdir "$of_rust/tests"
+cp "$test_srcdir/of_collections_conformance.rs" "$of_rust/tests/"
+grep -F 'pub const fn new' "$of_rust/src/of_collections.rs" >/dev/null
+for method in as_slice encode_der decode_ber encode_cer decode_cer; do
+    grep -F "pub fn $method" "$of_rust/src/of_collections.rs" >/dev/null
+done
+if grep -F '#[derive(Clone' "$of_rust/src/of_collections.rs" >/dev/null; then
+    echo "FAIL: collection wrappers derive infallible Clone"
+    exit 1
+fi
+if ! (cd "$of_rust" && CARGO_TARGET_DIR="$test_tmp/target-of-collections" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-of-collections" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/of-collections-rust.log" 2>&1; then
+    cat "$test_tmp/of-collections-rust.log"
+    echo "FAIL: collection vectors or strict Clippy"
+    exit 1
+fi
+
+for codec in BER CER; do
+    of_codec_out="$test_tmp/of-collections-$codec-only"
+    if [ "$codec" = BER ]; then
+        of_unwanted='encode_cer|decode_cer'
+        "$asn1c_bin" --rust -gen-BER -no-gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$of_codec_out" "$test_srcdir/OfCollections.asn1"
+    else
+        of_unwanted='encode_der|decode_ber'
+        "$asn1c_bin" --rust -gen-CER -no-gen-BER -no-gen-UPER -S "$skeletons" \
+            -D "$of_codec_out" "$test_srcdir/OfCollections.asn1"
+    fi
+    if ! (cd "$of_codec_out" && cargo check --offline --manifest-path Cargo.toml && \
+        cargo clippy --offline --all-targets --all-features -- \
+        -W clippy::pedantic -W clippy::nursery -D warnings) \
+        >"$test_tmp/of-collections-$codec-only.log" 2>&1; then
+        cat "$test_tmp/of-collections-$codec-only.log"
+        echo "FAIL: collection $codec-only strict Clippy"
+        exit 1
+    fi
+    if grep -E "pub fn ($of_unwanted)" \
+        "$of_codec_out/src/of_collections.rs" >/dev/null; then
+        echo "FAIL: collection $codec-only crate has unselected methods"
+        exit 1
+    fi
+done
+
+for fixture in OfTaggedRoot OfSizedRoot OfTaggedElement OfAlias OfElementAlias \
+    OfField OfNested OfConstrainedBoolean OfUnboundedInteger OfIntegerExtension \
+    OfIntegerUnion \
+    OfParameterized OfImport; do
+    of_rejected="$test_tmp/rejected-$fixture"
+    if [ "$fixture" = OfImport ]; then
+        if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$of_rejected" "$test_srcdir/OfImportBase.asn1" \
+            "$test_srcdir/OfImport.asn1" >"$test_tmp/rejected-$fixture.log" 2>&1; then
+            echo "FAIL: Rust collection gate accepted unsupported $fixture"
+            exit 1
+        fi
+    elif "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$of_rejected" "$test_srcdir/$fixture.asn1" \
+        >"$test_tmp/rejected-$fixture.log" 2>&1; then
+        echo "FAIL: Rust collection gate accepted unsupported $fixture"
+        exit 1
+    fi
+    test ! -e "$of_rejected"
+done
+
+for selection in mixed uper; do
+    of_rejected="$test_tmp/rejected-of-codecs-$selection"
+    if [ "$selection" = mixed ]; then
+        if "$asn1c_bin" --rust -gen-BER -gen-CER -gen-UPER -S "$skeletons" \
+            -D "$of_rejected" "$test_srcdir/OfCollections.asn1" \
+            >"$test_tmp/rejected-of-codecs-$selection.log" 2>&1; then
+            echo "FAIL: Rust collection gate accepted mixed codecs"
+            exit 1
+        fi
+    else
+        if "$asn1c_bin" --rust -gen-UPER -no-gen-BER -no-gen-CER -S "$skeletons" \
+            -D "$of_rejected" "$test_srcdir/OfCollections.asn1" \
+            >"$test_tmp/rejected-of-codecs-$selection.log" 2>&1; then
+            echo "FAIL: Rust collection gate accepted UPER-only selection"
+            exit 1
+        fi
+    fi
+    test ! -e "$of_rejected"
+done
+
+of_c="$test_tmp/of-collections-c"
+mkdir "$of_c"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$of_c" "$test_srcdir/OfCollections.asn1" \
+    >"$test_tmp/of-collections-c-generate.log" 2>&1
+of_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' "$of_c/Makefile.am.libasncodec")
+rm -f "$of_c/converter-example.c" "$of_c/pdu_collection.c"
+if ! cc $of_cflags -I"$of_c" "$of_c"/*.c \
+    "$test_srcdir/c_of_collections.c" -lm -o "$test_tmp/c-of-collections" \
+    >"$test_tmp/of-collections-c-compile.log" 2>&1; then
+    cat "$test_tmp/of-collections-c-compile.log"
+    echo "FAIL: C collection differential fixture did not compile"
+    exit 1
+fi
+if ! "$test_tmp/c-of-collections"; then
+    echo "FAIL: C collection BER/DER/CER vectors failed"
+    exit 1
+fi
+
 echo "PASS: generated Rust UPER/CER/BER-DER primitive slice"

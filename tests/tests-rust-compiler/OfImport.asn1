@@ -1,0 +1,4 @@
+OfImport DEFINITIONS ::= BEGIN
+IMPORTS SequenceBoolean FROM OfImportBase;
+Alias ::= SequenceBoolean
+END

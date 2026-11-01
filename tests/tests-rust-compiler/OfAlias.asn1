@@ -1,0 +1,4 @@
+OfAlias DEFINITIONS ::= BEGIN
+Base ::= SEQUENCE OF BOOLEAN
+Alias ::= Base
+END

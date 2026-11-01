@@ -1,0 +1,3 @@
+OfParameterized DEFINITIONS ::= BEGIN
+SequenceOf{T} ::= SEQUENCE OF T
+END

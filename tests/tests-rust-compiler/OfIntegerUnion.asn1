@@ -1,0 +1,3 @@
+OfIntegerUnion DEFINITIONS ::= BEGIN
+SequenceInteger ::= SEQUENCE OF INTEGER ((0..1) | (3..4))
+END

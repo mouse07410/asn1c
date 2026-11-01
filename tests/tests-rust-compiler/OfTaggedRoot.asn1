@@ -1,0 +1,3 @@
+OfTaggedRoot DEFINITIONS ::= BEGIN
+SequenceBoolean ::= [0] IMPLICIT SEQUENCE OF BOOLEAN
+END

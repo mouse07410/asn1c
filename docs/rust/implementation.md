@@ -102,6 +102,7 @@ fresh directory after adding application code or running Cargo there.
 | Other direct restricted character strings | Untagged, unconstrained BER/CER-only roots for ObjectDescriptor, UTF8String, NumericString, PrintableString, TeletexString/T61String, VideotexString, GraphicString, VisibleString/ISO646String, GeneralString, UniversalString, and BMPString; BER/DER preserve raw bytes, CER applies C-specific repertoire or alignment checks and canonical tag-4 fragmentation; private owned bytes and finite limits |
 | Direct UTCTime | Untagged, unconstrained BER/CER-only root; BER prefix decoding preserves raw primitive or constructed content, DER preserves raw bytes, CER normalizes valid calendar/zone forms to `YYMMDDhhmmssZ`, and strict CER compares the canonical tag-23 prefix; private owned bytes and finite limits |
 | Direct GeneralizedTime | Untagged, unconstrained BER/CER-only root; BER preserves raw primitive or constructed content, DER/CER normalize valid explicitly zoned time to `YYYYMMDDhhmmss[.fraction]Z` with up to nine fractional digits, and strict CER compares the tag-24 prefix; private owned bytes and finite limits; host-local and permissive C DER cases remain outside the qualified subset |
+| Direct SEQUENCE OF and SET OF primitive elements | Untagged, unconstrained BER/CER-only roots with one direct BOOLEAN, NULL, or finite bounded `i64` INTEGER element; BER prefix decoding accepts order and duplicates, DER/CER encode with SET OF full-child TLV ordering, strict CER compares the canonical prefix, and a hard count plus finite work/scratch/output budgets bound collection handling |
 | Direct ENUMERATED | BER prefix decoding, DER encoding, CER encoding and strict CER decoding when selected |
 | Direct fixed/bounded OCTET STRING and BIT STRING | BER prefix decoding, DER encoding, CER encoding and strict CER decoding when selected; finite nonextensible SIZE below 65536 |
 | Direct unconstrained OCTET STRING and BIT STRING | BER prefix decoding, DER encoding, CER encoding, and strict CER decoding under BER/CER-only selection; untagged roots, owned values, complete-input and work limits; BIT STRING stores validated packed bytes and exact bit length |
@@ -220,10 +221,10 @@ and canonical content. Direct ENUMERATED and string CER decoding compares the
 BER-decoded value's CER re-encoding with the consumed prefix. CER string
 encoding fragments content over 1000 octets. Trailing bytes are left unconsumed.
 The C `ATS_CER` decoder is likewise strict. BER decoding accepts definite
-long-form lengths and any nonzero BOOLEAN content octet as true. The current
-Rust BER BOOLEAN decoder requires exactly one content octet; the C decoder
-also accepts malformed longer forms. This is a documented parity gap, not a
-claim that those forms are valid BER. The Rust BER INTEGER decoder accepts
+long-form lengths and any nonzero BOOLEAN content octet as true. Rust and C
+also treat zero-length BOOLEAN content as false and multi-octet content as true
+when any octet is nonzero; these are C-compatible malformed-input extensions,
+not valid X.690 BOOLEAN encodings. The Rust BER INTEGER decoder accepts
 redundant sign-extension octets as a compatibility extension, while DER and
 CER output remain minimal. The wire-form distinctions follow
 [ITU-T X.690 (2021)](https://www.itu.int/rec/dologin_pub.asp?id=T-REC-X.690-202102-I%21%21PDF-E&lang=e&type=items),

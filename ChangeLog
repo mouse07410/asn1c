@@ -1,4 +1,10 @@
 Changes since v1.5.3:
+	* Add direct untagged SEQUENCE OF and SET OF Rust BER/DER/CER roots for
+	  BOOLEAN, NULL, and bounded INTEGER elements under BER/CER-only
+	  selection. Preserve SEQUENCE OF order, canonically sort full SET OF
+	  element encodings, bound element counts and scratch, and compare C/Rust
+	  vectors and malformed inputs. Align direct and record BER BOOLEAN decode
+	  with C for empty and multi-octet content while keeping CER canonical.
 	* Add direct untagged GeneralizedTime Rust BER/DER/CER roots for valid
 	  explicitly zoned values under BER/CER-only selection. BER preserves raw
 	  content; DER/CER normalize to UTC with bounded fractional precision and
