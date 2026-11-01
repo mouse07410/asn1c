@@ -151,11 +151,13 @@ Flat SET records with an untagged outer type and the same six direct field kinds
 available when only BER and/or CER are selected. BER accepts members in any
 order; DER/CER emits them by ascending effective tag class and number, and strict CER rejects
 a reordered input. The SET path uses the same bounded record context.
-Resolved context-specific IMPLICIT and AUTOMATIC member tags are supported
-through the C tag-number limit; high-tag BER aliases are accepted, while
-strict CER requires the shortest identifier. Tagged constructed strings use
-universal identifiers for their fragments. Root tags, EXPLICIT stacks,
-aliases, nested records, and broader C forms remain outside this slice.
+Resolved context-specific IMPLICIT and AUTOMATIC member tags and one
+context-specific EXPLICIT wrapper per direct field are supported through the
+C tag-number limit; high-tag BER aliases are accepted, while strict CER
+requires the shortest identifier. EXPLICIT wrappers contain one intrinsic
+universal child; tagged constructed strings use universal identifiers for
+their fragments. Root tags, multi-tag stacks, aliases, nested records, and
+broader C forms remain outside this slice.
 Rust codec defaults include UPER and CER; `-no-gen-UPER` selects CER-only
 generation. See [the Rust implementation matrix](rust/implementation.md#implemented-boundary)
 and [parity design](rust/ber-der-cer-design.md) for the remaining C-supported

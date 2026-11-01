@@ -5355,7 +5355,14 @@ emit_member_layout(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t 
 
 	OUT(",\n");
 	if(C99_MODE) OUT(".tag_mode = ");
-	if((!(expr->expr_type &  ASN_CONSTR_MASK)
+	if(expr->expr_type == ASN_BASIC_ENUMERATED
+	   && outmost_tag
+	   && outmost_tag->tag_class == TC_CONTEXT_SPECIFIC
+	   && expr->tag.tag_class == TC_CONTEXT_SPECIFIC
+	   && expr->tag.tag_mode == TM_EXPLICIT) {
+		/* The embedded ENUMERATED descriptor already emits its explicit tag. */
+		OUT("0,\t/* Explicit tag is carried by the embedded ENUMERATED descriptor */\n");
+	} else if((!(expr->expr_type &  ASN_CONSTR_MASK)
 	   || expr->expr_type == ASN_CONSTR_CHOICE)
 	&& expr->tag.tag_class) {
 		if(expr->tag.tag_mode == TM_IMPLICIT)

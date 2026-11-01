@@ -115,6 +115,20 @@ AUTOMATIC TAGS, mixed universal/context SET order, BER redundant-tag aliases,
 and CER-fragmented tagged OCTET/BIT STRING values. The C parity schema omits the
 empty SET because current C code generation produces an empty enum that fails
 strict C compilation; the empty SET case is checked through the Rust wrapper.
+
+The sixth BER/CER slice supports one resolved context-specific EXPLICIT wrapper
+on each supported direct SEQUENCE or SET field, alongside universal and
+IMPLICIT fields. Generated readers require the wrapper to contain exactly one
+matching universal child; generated CER decoders re-encode with the same shared
+budget and compare the consumed prefix. SET output sorts by the effective
+outer class and tag number; SEQUENCE output preserves declaration order.
+Coverage includes tags 0, 30, 31, 127, and 128; EXPLICIT and IMPLICIT module
+defaults; AUTOMATIC TAGS; DEFAULT omission; definite and indefinite BER
+wrappers; constructed BER/CER string children; truncation, malformed wrappers,
+resource limits, SET reordering, and strict selector-only Clippy builds. C
+fixtures compare DER/CER encoding and decoding for explicit scalar SEQUENCE/SET
+members, inline EXPLICIT ENUMERATED members, and fragmented OCTET/BIT STRING
+values.
 The fixed-size string fixture covers standalone OCTET STRING and BIT STRING,
 zero-sized values, bit packing inside a mixed SEQUENCE, malformed lengths and
 pad bits, truncation, and whole-operation budgets. It also checks that the

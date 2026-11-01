@@ -206,6 +206,15 @@ pub enum FieldKind {
     Enumerated,
 }
 
+/// Wire tagging mode stored in a checked record descriptor.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TaggingMode {
+    /// The effective identifier replaces the intrinsic universal identifier.
+    Implicit,
+    /// The effective constructed identifier wraps one intrinsic universal TLV.
+    Explicit,
+}
+
 impl FieldKind {
     /// Return the intrinsic universal tag number for this primitive kind.
     ///
@@ -234,10 +243,12 @@ impl FieldKind {
 /// Effective identifier and semantic type for one direct record member.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RecordField {
-    /// Effective BER identifier, including an IMPLICIT replacement tag.
+    /// Effective BER identifier used as an IMPLICIT replacement or EXPLICIT wrapper.
     tag: Tag,
     /// ASN.1 primitive kind whose content rules remain in effect.
     kind: FieldKind,
+    /// Whether `tag` replaces or wraps the intrinsic universal identifier.
+    tagging: TaggingMode,
 }
 
 impl RecordField {
@@ -256,8 +267,37 @@ impl RecordField {
     /// Responsible: asn1c maintainers. History: tagged record support.
     /// Example: `RecordField::new(Tag::context_specific(3), FieldKind::Boolean)?`.
     pub fn new(tag: Tag, kind: FieldKind) -> Result<Self, Error> {
-        validate_field_descriptor(tag, kind)?;
-        Ok(Self { tag, kind })
+        validate_field_mode(tag, kind, TaggingMode::Implicit)?;
+        Ok(Self {
+            tag,
+            kind,
+            tagging: TaggingMode::Implicit,
+        })
+    }
+
+    /// Construct a checked context-specific EXPLICIT field descriptor.
+    ///
+    /// The effective tag wraps exactly one TLV with the primitive kind's
+    /// intrinsic universal tag. Runtime readers validate the complete wrapper.
+    ///
+    /// # Parameters and returns
+    /// `tag` is the context-specific wrapper identifier; `kind` selects the
+    /// inner universal value. Returns a validated explicit descriptor.
+    ///
+    /// # Errors
+    /// Returns `InvalidEncoding` unless `tag` is a bounded context-specific tag.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 EXPLICIT tagging. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: explicit record support.
+    /// Example: `RecordField::new_explicit(Tag::context_specific(2), FieldKind::Boolean)?`.
+    pub fn new_explicit(tag: Tag, kind: FieldKind) -> Result<Self, Error> {
+        validate_field_mode(tag, kind, TaggingMode::Explicit)?;
+        Ok(Self {
+            tag,
+            kind,
+            tagging: TaggingMode::Explicit,
+        })
     }
 
     /// Return this member's effective BER identifier.
@@ -317,6 +357,34 @@ fn validate_field_descriptor(tag: Tag, kind: FieldKind) -> Result<(), Error> {
         ));
     }
     Ok(())
+}
+
+/// Validate one field descriptor's effective tag and tagging mode.
+///
+/// # Parameters and returns
+/// `tag` is the effective identifier, `kind` is its ASN.1 value kind, and
+/// `mode` says whether the tag replaces or wraps the intrinsic identifier.
+/// Returns success for a supported descriptor.
+///
+/// # Errors
+/// Returns `InvalidEncoding` for an out-of-range tag, a mismatched universal
+/// implicit tag, or an explicit tag outside the context-specific class.
+///
+/// # Source, version, history, example
+/// Source: X.690 implicit/explicit tagging. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: explicit record support.
+/// Example: called by both `RecordField` constructors and writers.
+fn validate_field_mode(tag: Tag, kind: FieldKind, mode: TaggingMode) -> Result<(), Error> {
+    match mode {
+        TaggingMode::Implicit => validate_field_descriptor(tag, kind),
+        TaggingMode::Explicit => {
+            tag.validate()?;
+            if tag.class != TagClass::ContextSpecific {
+                return Err(invalid("EXPLICIT record tags must be context-specific"));
+            }
+            Ok(())
+        }
+    }
 }
 
 /// Map one supported universal tag to its semantic primitive kind.
@@ -732,6 +800,24 @@ impl SequenceWriter<'_> {
         self.write_field(tag, FieldKind::Boolean, &content)
     }
 
+    /// Append BOOLEAN inside one context-specific EXPLICIT wrapper.
+    ///
+    /// # Parameters and returns
+    /// `tag` is the context-specific wrapper; `value` is the BOOLEAN value.
+    /// Returns success after the wrapper and intrinsic universal child are added.
+    ///
+    /// # Errors
+    /// Returns invalid tag, duplicate/order, resource, size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 EXPLICIT BOOLEAN. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: explicit record support.
+    /// Example: `writer.write_boolean_explicit(Tag::context_specific(2), true)?`.
+    pub fn write_boolean_explicit(&mut self, tag: Tag, value: bool) -> Result<(), Error> {
+        let content = [if value { 0xff } else { 0 }];
+        self.write_explicit_primitive(tag, FieldKind::Boolean, &content)
+    }
+
     /// Append one empty NULL field with its universal tag.
     ///
     /// # Parameters and returns
@@ -763,6 +849,23 @@ impl SequenceWriter<'_> {
     /// Example: `writer.write_null_tagged(Tag::context_specific(5))?`.
     pub fn write_null_tagged(&mut self, tag: Tag) -> Result<(), Error> {
         self.write_field(tag, FieldKind::Null, &[])
+    }
+
+    /// Append NULL inside one context-specific EXPLICIT wrapper.
+    ///
+    /// # Parameters and returns
+    /// `tag` is the context-specific wrapper. Returns success after the empty
+    /// universal NULL child and wrapper are added.
+    ///
+    /// # Errors
+    /// Returns invalid tag, duplicate/order, resource, size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 EXPLICIT NULL. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: explicit record support.
+    /// Example: `writer.write_null_explicit(Tag::context_specific(5))?`.
+    pub fn write_null_explicit(&mut self, tag: Tag) -> Result<(), Error> {
+        self.write_explicit_primitive(tag, FieldKind::Null, &[])
     }
 
     /// Append one minimally encoded bounded signed INTEGER field.
@@ -816,6 +919,36 @@ impl SequenceWriter<'_> {
         self.write_field(tag, FieldKind::Integer, &full[first..])
     }
 
+    /// Append bounded INTEGER inside one context-specific EXPLICIT wrapper.
+    ///
+    /// # Parameters
+    /// `tag` is the wrapper; `value` is signed; `lower` and `upper` are
+    /// inclusive schema bounds.
+    ///
+    /// # Returns
+    /// `Ok(())` after the minimal universal INTEGER and wrapper are appended.
+    ///
+    /// # Errors
+    /// Returns invalid bounds/value/tag, duplicate/order, resource, or allocation
+    /// errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 EXPLICIT INTEGER. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: explicit record support.
+    /// Example: `writer.write_integer_explicit(tag, 3, 0, 8)?`.
+    pub fn write_integer_explicit(
+        &mut self,
+        tag: Tag,
+        value: i64,
+        lower: i64,
+        upper: i64,
+    ) -> Result<(), Error> {
+        crate::validate_integer(value, lower, upper)?;
+        let full = value.to_be_bytes();
+        let first = minimal_signed_start(full);
+        self.write_explicit_primitive(tag, FieldKind::Integer, &full[first..])
+    }
+
     /// Append one minimally encoded numeric ENUMERATED field.
     ///
     /// # Parameters and returns
@@ -851,6 +984,25 @@ impl SequenceWriter<'_> {
         let full = value.to_be_bytes();
         let first = minimal_signed_start(full);
         self.write_field(tag, FieldKind::Enumerated, &full[first..])
+    }
+
+    /// Append ENUMERATED inside one context-specific EXPLICIT wrapper.
+    ///
+    /// # Parameters and returns
+    /// `tag` is the wrapper; `value` is the generated variant's signed number.
+    /// Returns success after the universal child and wrapper are added.
+    ///
+    /// # Errors
+    /// Returns invalid tag, duplicate/order, resource, size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 EXPLICIT ENUMERATED. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: explicit record support.
+    /// Example: `writer.write_enumerated_explicit(tag, 1)?`.
+    pub fn write_enumerated_explicit(&mut self, tag: Tag, value: i64) -> Result<(), Error> {
+        let full = value.to_be_bytes();
+        let first = minimal_signed_start(full);
+        self.write_explicit_primitive(tag, FieldKind::Enumerated, &full[first..])
     }
 
     /// Append one bounded OCTET STRING using the selected record rule.
@@ -926,6 +1078,39 @@ impl SequenceWriter<'_> {
         self.remember_tag(tag)?;
         self.last_tag = Some(tag);
         Ok(())
+    }
+
+    /// Append OCTET STRING inside one context-specific EXPLICIT wrapper.
+    ///
+    /// # Parameters
+    /// `tag` is the wrapper; `value` is payload; `lower` and `upper` are
+    /// inclusive SIZE bounds.
+    ///
+    /// # Returns
+    /// `Ok(())` after the wrapper contains one canonical universal OCTET STRING.
+    ///
+    /// # Errors
+    /// Returns invalid SIZE/tag, duplicate/order, resource, size, or allocation
+    /// errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 EXPLICIT OCTET STRING. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: explicit record support.
+    /// Example: `writer.write_octet_string_explicit(tag, b"x", 1, 8)?`.
+    pub fn write_octet_string_explicit(
+        &mut self,
+        tag: Tag,
+        value: &[u8],
+        lower: usize,
+        upper: usize,
+    ) -> Result<(), Error> {
+        validate_size(value.len(), lower, upper)?;
+        validate_field_mode(tag, FieldKind::OctetString, TaggingMode::Explicit)?;
+        let inner_size = octet_field_size(value.len(), self.rule, Tag::universal(4))?;
+        self.prepare_explicit_field(tag, inner_size)?;
+        self.push_explicit_header(tag, inner_size)?;
+        append_octet_value(&mut self.bytes, self.rule, value, &self.context.limits)?;
+        self.finish_explicit_field(tag)
     }
 
     /// Append one bounded BIT STRING using the selected record rule.
@@ -1008,6 +1193,140 @@ impl SequenceWriter<'_> {
             push(&mut self.bytes, &[0, 0], &self.context.limits)?;
         } else {
             push_bit_fragment_tagged(&mut self.bytes, tag, bytes, unused, &self.context.limits)?;
+        }
+        self.remember_tag(tag)?;
+        self.last_tag = Some(tag);
+        Ok(())
+    }
+
+    /// Append BIT STRING inside one context-specific EXPLICIT wrapper.
+    ///
+    /// # Parameters
+    /// `tag` is the wrapper; `bytes` are packed bits; `bit_len` is exact width;
+    /// `lower_bits` and `upper_bits` are inclusive SIZE bounds.
+    ///
+    /// # Returns
+    /// `Ok(())` after one canonical universal BIT STRING is wrapped.
+    ///
+    /// # Errors
+    /// Returns malformed bits, invalid SIZE/tag, duplicate/order, resource, or
+    /// allocation errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 EXPLICIT BIT STRING. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: explicit record support.
+    /// Example: `writer.write_bit_string_explicit(tag, &[0x80], 1, 1, 8)?`.
+    pub fn write_bit_string_explicit(
+        &mut self,
+        tag: Tag,
+        bytes: &[u8],
+        bit_len: usize,
+        lower_bits: usize,
+        upper_bits: usize,
+    ) -> Result<(), Error> {
+        validate_packed_bits(bytes, bit_len)?;
+        validate_size(bit_len, lower_bits, upper_bits)?;
+        validate_field_mode(tag, FieldKind::BitString, TaggingMode::Explicit)?;
+        let inner_size = bit_field_size(bytes.len(), self.rule, Tag::universal(3))?;
+        self.prepare_explicit_field(tag, inner_size)?;
+        self.push_explicit_header(tag, inner_size)?;
+        append_bit_value(
+            &mut self.bytes,
+            self.rule,
+            bytes,
+            unused_bits(bit_len),
+            &self.context.limits,
+        )?;
+        self.finish_explicit_field(tag)
+    }
+
+    /// Append one scalar universal TLV inside an EXPLICIT record wrapper.
+    ///
+    /// # Parameters and returns
+    /// `tag` is the context-specific wrapper, `kind` defines the intrinsic
+    /// universal child, and `content` is its primitive payload. Returns success.
+    ///
+    /// # Errors
+    /// Returns tag, duplicate/order, output/work, size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 EXPLICIT primitive encoding. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: explicit record support.
+    /// Example: used by BOOLEAN, NULL, INTEGER, and ENUMERATED writers.
+    fn write_explicit_primitive(
+        &mut self,
+        tag: Tag,
+        kind: FieldKind,
+        content: &[u8],
+    ) -> Result<(), Error> {
+        validate_field_mode(tag, kind, TaggingMode::Explicit)?;
+        let inner_tag = intrinsic_tag(kind);
+        let inner_size = tagged_primitive_field_size(inner_tag, content.len())?;
+        self.prepare_explicit_field(tag, inner_size)?;
+        self.push_explicit_header(tag, inner_size)?;
+        push_primitive_tagged(&mut self.bytes, inner_tag, content, &self.context.limits)?;
+        self.finish_explicit_field(tag)
+    }
+
+    /// Check field uniqueness and complete explicit-wrapper resource bounds.
+    ///
+    /// # Parameters and returns
+    /// `tag` is the effective wrapper; `inner_size` is its complete child TLV.
+    /// Returns success after checking and charging the complete field.
+    ///
+    /// # Errors
+    /// Returns duplicate/order, size, output-limit, work-limit, or tag errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: bounded explicit record writing. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: explicit record support.
+    /// Example: called before each explicit field append.
+    fn prepare_explicit_field(&mut self, tag: Tag, inner_size: usize) -> Result<(), Error> {
+        validate_field_mode(tag, FieldKind::Null, TaggingMode::Explicit)?;
+        let field_size = explicit_wrapper_size(self.rule, tag, inner_size)?;
+        self.prepare_field(tag, field_size)
+    }
+
+    /// Append the explicit constructed wrapper header for the active rule.
+    ///
+    /// # Parameters and returns
+    /// `tag` is the effective identifier; `inner_size` is the single child's
+    /// complete encoded size. Returns success after the header is appended.
+    ///
+    /// # Errors
+    /// Returns size, output-limit, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: DER/CER explicit wrappers. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: explicit record support.
+    /// Example: called after `prepare_explicit_field`.
+    fn push_explicit_header(&mut self, tag: Tag, inner_size: usize) -> Result<(), Error> {
+        match self.rule {
+            RecordEncoding::Der => {
+                push_identifier_tagged(&mut self.bytes, true, tag, &self.context.limits)?;
+                push_length(&mut self.bytes, inner_size, &self.context.limits)
+            }
+            RecordEncoding::Cer => {
+                push_indefinite_header(&mut self.bytes, tag, &self.context.limits)
+            }
+        }
+    }
+
+    /// Append the CER terminator and record one completed explicit field.
+    ///
+    /// # Parameters and returns
+    /// `tag` identifies the field just emitted. Returns success after recording it.
+    ///
+    /// # Errors
+    /// Returns output-limit, allocation, or field-cap errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: CER EOC and record writer state. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: explicit record support.
+    /// Example: called after the child TLV has been appended.
+    fn finish_explicit_field(&mut self, tag: Tag) -> Result<(), Error> {
+        if self.rule == RecordEncoding::Cer {
+            push(&mut self.bytes, &[0, 0], &self.context.limits)?;
         }
         self.remember_tag(tag)?;
         self.last_tag = Some(tag);
@@ -1407,6 +1726,109 @@ impl<'context> SetWriter<'context> {
             .write_bit_string_tagged(tag, bytes, bit_len, lower_bits, upper_bits)
     }
 
+    /// Append BOOLEAN inside a context-specific EXPLICIT SET member.
+    ///
+    /// # Parameters and returns
+    /// `tag` is the wrapper; `value` is BOOLEAN. Returns success after the child.
+    /// # Errors
+    /// Returns invalid tag, duplicate/order, resource, size, or allocation errors.
+    /// # Source, version, history, example
+    /// Source: X.690 EXPLICIT SET member. Version: 2026-11-01.
+    /// Responsible: maintainers. History: explicit SET API. Example: tagged BOOLEAN.
+    pub fn write_boolean_explicit(&mut self, tag: Tag, value: bool) -> Result<(), Error> {
+        self.inner.write_boolean_explicit(tag, value)
+    }
+
+    /// Append NULL inside a context-specific EXPLICIT SET member.
+    ///
+    /// # Parameters and returns
+    /// `tag` is the wrapper. Returns success after the empty child.
+    /// # Errors
+    /// Returns invalid tag, duplicate/order, resource, size, or allocation errors.
+    /// # Source, version, history, example
+    /// Source: X.690 EXPLICIT SET member. Version: 2026-11-01.
+    /// Responsible: maintainers. History: explicit SET API. Example: tagged NULL.
+    pub fn write_null_explicit(&mut self, tag: Tag) -> Result<(), Error> {
+        self.inner.write_null_explicit(tag)
+    }
+
+    /// Append bounded INTEGER inside a context-specific EXPLICIT SET member.
+    ///
+    /// # Parameters and returns
+    /// `tag` is the wrapper; `value` is signed; `lower` and `upper` are bounds.
+    /// Returns success after the minimal INTEGER child.
+    /// # Errors
+    /// Returns invalid bounds/value/tag, duplicate/order, resource, or allocation.
+    /// # Source, version, history, example
+    /// Source: X.690 EXPLICIT SET member. Version: 2026-11-01.
+    /// Responsible: maintainers. History: explicit SET API. Example: tagged INTEGER.
+    pub fn write_integer_explicit(
+        &mut self,
+        tag: Tag,
+        value: i64,
+        lower: i64,
+        upper: i64,
+    ) -> Result<(), Error> {
+        self.inner.write_integer_explicit(tag, value, lower, upper)
+    }
+
+    /// Append ENUMERATED inside a context-specific EXPLICIT SET member.
+    ///
+    /// # Parameters and returns
+    /// `tag` is the wrapper; `value` is the signed variant number. Returns success.
+    /// # Errors
+    /// Returns invalid tag, duplicate/order, resource, size, or allocation errors.
+    /// # Source, version, history, example
+    /// Source: X.690 EXPLICIT SET member. Version: 2026-11-01.
+    /// Responsible: maintainers. History: explicit SET API. Example: tagged enum.
+    pub fn write_enumerated_explicit(&mut self, tag: Tag, value: i64) -> Result<(), Error> {
+        self.inner.write_enumerated_explicit(tag, value)
+    }
+
+    /// Append OCTET STRING inside a context-specific EXPLICIT SET member.
+    ///
+    /// # Parameters and returns
+    /// `tag` is the wrapper; `value` is payload; `lower` and `upper` are SIZE.
+    /// Returns success after canonical DER/CER child encoding.
+    /// # Errors
+    /// Returns invalid SIZE/tag, duplicate/order, resource, size, or allocation.
+    /// # Source, version, history, example
+    /// Source: X.690 EXPLICIT SET member. Version: 2026-11-01.
+    /// Responsible: maintainers. History: explicit SET API. Example: tagged octets.
+    pub fn write_octet_string_explicit(
+        &mut self,
+        tag: Tag,
+        value: &[u8],
+        lower: usize,
+        upper: usize,
+    ) -> Result<(), Error> {
+        self.inner
+            .write_octet_string_explicit(tag, value, lower, upper)
+    }
+
+    /// Append BIT STRING inside a context-specific EXPLICIT SET member.
+    ///
+    /// # Parameters and returns
+    /// `tag` is wrapper; `bytes` and `bit_len` describe packed bits; SIZE bounds
+    /// are inclusive. Returns success after canonical child encoding.
+    /// # Errors
+    /// Returns malformed bits, invalid SIZE/tag, duplicate/order, resource, or
+    /// allocation errors.
+    /// # Source, version, history, example
+    /// Source: X.690 EXPLICIT SET member. Version: 2026-11-01.
+    /// Responsible: maintainers. History: explicit SET API. Example: tagged bits.
+    pub fn write_bit_string_explicit(
+        &mut self,
+        tag: Tag,
+        bytes: &[u8],
+        bit_len: usize,
+        lower_bits: usize,
+        upper_bits: usize,
+    ) -> Result<(), Error> {
+        self.inner
+            .write_bit_string_explicit(tag, bytes, bit_len, lower_bits, upper_bits)
+    }
+
     /// Finalize the SET and release its shared context borrow.
     ///
     /// # Parameters and returns
@@ -1510,7 +1932,7 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
         if let Some(fields) = tagged_fields {
             for (index, field) in fields.iter().enumerate() {
                 context.charge(1)?;
-                validate_field_descriptor(field.tag, field.kind)?;
+                validate_field_mode(field.tag, field.kind, field.tagging)?;
                 for previous in &fields[..index] {
                     context.charge(1)?;
                     if previous.tag == field.tag {
@@ -1638,33 +2060,7 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
             class: TagClass::from_bits(header.class),
             number: u32::try_from(header.tag).map_err(|_| Error::SizeOverflow)?,
         };
-        let mut matching_index = None;
-        let mut field_kind = None;
-        if let Some(fields) = self.tagged_fields {
-            for (index, field) in fields.iter().enumerate() {
-                self.context.charge(1)?;
-                if field.tag == effective_tag {
-                    matching_index = Some(index);
-                    field_kind = Some(field.kind);
-                    break;
-                }
-            }
-        } else {
-            if effective_tag.class != TagClass::Universal {
-                return Err(invalid("record contains an unknown effective tag"));
-            }
-            for (index, tag) in self.expected_tags.iter().enumerate() {
-                self.context.charge(1)?;
-                if *tag == u64::from(effective_tag.number) {
-                    matching_index = Some(index);
-                    field_kind = field_kind_for_universal(*tag);
-                    break;
-                }
-            }
-        }
-        let Some(index) = matching_index else {
-            return Err(invalid("record contains an unknown field tag"));
-        };
+        let (index, kind, field_tagging) = self.field_descriptor(effective_tag)?;
         let field_mask = 1_u8 << index;
         if self.seen_mask & field_mask != 0 {
             return Err(invalid("record contains a duplicate field tag"));
@@ -1678,28 +2074,30 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
         }
         self.context.charge(1)?;
         let start = self.cursor;
-        let end = scan(
-            self.input,
-            start,
-            self.content_bound,
-            1,
-            &mut self.context.work_used,
-            false,
-            &self.context.limits,
-        )?;
-        let content_end = header
-            .length
-            .and_then(|length| header.content.checked_add(length))
-            .unwrap_or_else(|| end.saturating_sub(2));
-        self.current = Some(FieldSpan {
-            tag: effective_tag,
-            kind: field_kind.ok_or_else(|| invalid("record descriptor has no field kind"))?,
-            tlv_start: start,
-            tlv_end: end,
-            constructed: header.constructed,
-            content_start: header.content,
-            content_end,
-        });
+        let (field, end) = match field_tagging {
+            TaggingMode::Implicit => {
+                let end = scan(
+                    self.input,
+                    start,
+                    self.content_bound,
+                    1,
+                    &mut self.context.work_used,
+                    false,
+                    &self.context.limits,
+                )?;
+                (field_span(header, start, end, effective_tag, kind)?, end)
+            }
+            TaggingMode::Explicit => scan_explicit_member(
+                self.input,
+                start,
+                self.content_bound,
+                header,
+                kind,
+                &mut self.context.work_used,
+                &self.context.limits,
+            )?,
+        };
+        self.current = Some(field);
         self.last_tag_index = Some(index);
         self.seen_mask |= field_mask;
         self.cursor = end;
@@ -1938,6 +2336,43 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
             None => Err(invalid("SEQUENCE has no current field")),
         }
     }
+
+    /// Resolve one effective wire tag against the bounded field descriptor list.
+    ///
+    /// # Parameters and returns
+    /// `tag` is the parsed class and number. Returns its schema index, primitive
+    /// kind, and implicit/explicit mode after charging each descriptor check.
+    ///
+    /// # Errors
+    /// Returns unknown-tag or cumulative-work errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: bounded BER record dispatch. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: explicit field mode.
+    /// Example: called by `next_tagged_field`.
+    fn field_descriptor(&mut self, tag: Tag) -> Result<(usize, FieldKind, TaggingMode), Error> {
+        if let Some(fields) = self.tagged_fields {
+            for (index, field) in fields.iter().enumerate() {
+                self.context.charge(1)?;
+                if field.tag == tag {
+                    return Ok((index, field.kind, field.tagging));
+                }
+            }
+        } else {
+            if tag.class != TagClass::Universal {
+                return Err(invalid("record contains an unknown effective tag"));
+            }
+            for (index, expected) in self.expected_tags.iter().enumerate() {
+                self.context.charge(1)?;
+                if *expected == u64::from(tag.number) {
+                    let kind = field_kind_for_universal(*expected)
+                        .ok_or_else(|| invalid("record descriptor has no field kind"))?;
+                    return Ok((index, kind, TaggingMode::Implicit));
+                }
+            }
+        }
+        Err(invalid("record contains an unknown field tag"))
+    }
 }
 
 impl<'input, 'tags, 'context> SetReader<'input, 'tags, 'context> {
@@ -2174,6 +2609,7 @@ impl<'input, 'tags, 'context> SetReader<'input, 'tags, 'context> {
 }
 
 /// Parsed BER identifier and length metadata.
+#[derive(Clone, Copy)]
 struct Header {
     /// Identifier class, with zero for universal.
     class: u8,
@@ -2839,6 +3275,114 @@ fn parse_root_tag_with_work(
     Ok((header, end, bits))
 }
 
+/// Build the typed span of one already scanned primitive or constructed TLV.
+///
+/// # Parameters and returns
+/// `header` describes the root, `start` and `end` bound its full TLV, `tag` is
+/// its effective identifier, and `kind` selects content semantics. Returns a
+/// span with exact content boundaries.
+///
+/// # Errors
+/// Returns `SizeOverflow` for an impossible end calculation or malformed
+/// indefinite span.
+///
+/// # Source, version, history, example
+/// Source: shared record field spans. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: explicit record support.
+/// Example: used for direct and wrapped fields.
+fn field_span(
+    header: Header,
+    start: usize,
+    end: usize,
+    tag: Tag,
+    kind: FieldKind,
+) -> Result<FieldSpan, Error> {
+    let content_end = match header.length {
+        Some(length) => header
+            .content
+            .checked_add(length)
+            .ok_or(Error::SizeOverflow)?,
+        None => end.checked_sub(2).ok_or(Error::SizeOverflow)?,
+    };
+    Ok(FieldSpan {
+        tag,
+        kind,
+        tlv_start: start,
+        tlv_end: end,
+        constructed: header.constructed,
+        content_start: header.content,
+        content_end,
+    })
+}
+
+/// Scan one EXPLICIT wrapper and require exactly one intrinsic child TLV.
+///
+/// # Parameters and returns
+/// `input`, `start`, and `bound` identify the containing bytes; `outer` is the
+/// already parsed wrapper; `kind` specifies its universal child; `work` and
+/// `limits` are the shared operation budget. Returns the child span and wrapper
+/// end offset.
+///
+/// # Errors
+/// Returns malformed wrapper form, child tag, EOC, parent-boundary, depth,
+/// work, or size errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 EXPLICIT BER values. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: explicit record support.
+/// Example: called by tagged SEQUENCE and SET field traversal.
+fn scan_explicit_member(
+    input: &[u8],
+    start: usize,
+    bound: usize,
+    outer: Header,
+    kind: FieldKind,
+    work: &mut usize,
+    limits: &Limits,
+) -> Result<(FieldSpan, usize), Error> {
+    if !outer.constructed {
+        return Err(invalid("EXPLICIT record wrapper must be constructed"));
+    }
+    let length_octets = outer.content - start - outer.identifier_len;
+    charge_work(work, length_octets, limits)?;
+    let definite_end = if let Some(length) = outer.length {
+        let end = outer
+            .content
+            .checked_add(length)
+            .ok_or(Error::SizeOverflow)?;
+        require(input, outer.content, length, bound)?;
+        Some(end)
+    } else {
+        None
+    };
+    let child_bound = definite_end.unwrap_or(bound);
+    let child_start = outer.content;
+    let child = parse_header(input, child_start, child_bound, work, true, limits)?;
+    let expected_tag = intrinsic_tag(kind);
+    if child.class != TagClass::Universal as u8 || child.tag != u64::from(expected_tag.number) {
+        return Err(invalid(
+            "EXPLICIT wrapper child has the wrong universal tag",
+        ));
+    }
+    if !matches!(kind, FieldKind::BitString | FieldKind::OctetString) && child.constructed {
+        return Err(invalid("EXPLICIT scalar child must use primitive form"));
+    }
+    let child_end = scan(input, child_start, child_bound, 2, work, false, limits)?;
+    let wrapper_end = match definite_end {
+        Some(end) if child_end == end => end,
+        Some(_) => return Err(invalid("EXPLICIT wrapper must contain exactly one child")),
+        None => {
+            if !is_eoc(input, child_end, bound) {
+                return Err(invalid("EXPLICIT wrapper must contain one child and EOC"));
+            }
+            charge_work(work, 2, limits)?;
+            child_end.checked_add(2).ok_or(Error::SizeOverflow)?
+        }
+    };
+    let field = field_span(child, child_start, child_end, expected_tag, kind)?;
+    Ok((field, wrapper_end))
+}
+
 /// Parse identifier and length while respecting the parent boundary.
 ///
 /// # Parameters and returns
@@ -3420,6 +3964,129 @@ fn tagged_primitive_field_size(tag: Tag, content_len: usize) -> Result<usize, Er
         .checked_add(length_size(content_len))
         .and_then(|n| n.checked_add(content_len))
         .ok_or(Error::SizeOverflow)
+}
+
+/// Return the intrinsic universal identifier for a record field kind.
+///
+/// # Parameters and returns
+/// `kind` selects the ASN.1 primitive. Returns its universal identifier.
+///
+/// # Errors
+/// This total mapping cannot fail.
+///
+/// # Source, version, history, example
+/// Source: X.690 primitive tag assignments. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: explicit record support.
+/// Example: `intrinsic_tag(FieldKind::Boolean) == Tag::universal(1)`.
+const fn intrinsic_tag(kind: FieldKind) -> Tag {
+    match kind {
+        FieldKind::Boolean => Tag::universal(1),
+        FieldKind::Integer => Tag::universal(2),
+        FieldKind::BitString => Tag::universal(3),
+        FieldKind::OctetString => Tag::universal(4),
+        FieldKind::Null => Tag::universal(5),
+        FieldKind::Enumerated => Tag::universal(10),
+    }
+}
+
+/// Compute one complete DER or CER explicit wrapper size in constant time.
+///
+/// # Parameters and returns
+/// `rule` selects definite DER or indefinite CER; `tag` is the wrapper;
+/// `inner_size` is its sole encoded child. Returns the wrapper TLV byte count.
+///
+/// # Errors
+/// Returns `SizeOverflow` when checked size arithmetic fails.
+///
+/// # Source, version, history, example
+/// Source: X.690 explicit constructed wrappers. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: explicit record support.
+/// Example: `explicit_wrapper_size(RecordEncoding::Der, tag, child_len)?`.
+fn explicit_wrapper_size(
+    rule: RecordEncoding,
+    tag: Tag,
+    inner_size: usize,
+) -> Result<usize, Error> {
+    let identifier_len = tag_identifier_size(tag)?;
+    match rule {
+        RecordEncoding::Der => identifier_len
+            .checked_add(length_size(inner_size))
+            .and_then(|n| n.checked_add(inner_size))
+            .ok_or(Error::SizeOverflow),
+        RecordEncoding::Cer => identifier_len
+            .checked_add(3)
+            .and_then(|n| n.checked_add(inner_size))
+            .ok_or(Error::SizeOverflow),
+    }
+}
+
+/// Append one canonical OCTET STRING child under its intrinsic universal tag.
+///
+/// # Parameters and returns
+/// `out` is the shared record buffer; `rule` selects DER/CER; `value` is the
+/// payload; `limits` caps buffer growth. Returns success after one child TLV.
+///
+/// # Errors
+/// Returns output-limit, size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 OCTET STRING DER/CER forms. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: explicit inner strings.
+/// Example: called by the explicit OCTET STRING writer.
+fn append_octet_value(
+    out: &mut Vec<u8>,
+    rule: RecordEncoding,
+    value: &[u8],
+    limits: &Limits,
+) -> Result<(), Error> {
+    if rule == RecordEncoding::Cer && value.len() > CER_FRAGMENT_MAX {
+        push_indefinite_header(out, Tag::universal(4), limits)?;
+        for fragment in value.chunks(CER_FRAGMENT_MAX) {
+            push_primitive_tagged(out, Tag::universal(4), fragment, limits)?;
+        }
+        push(out, &[0, 0], limits)
+    } else {
+        push_primitive_tagged(out, Tag::universal(4), value, limits)
+    }
+}
+
+/// Append one canonical BIT STRING child under its intrinsic universal tag.
+///
+/// # Parameters and returns
+/// `out` is the shared record buffer; `rule` selects DER/CER; `bytes` is the
+/// packed payload; `unused` is its trailing padding count; `limits` caps growth.
+/// Returns success after one child TLV.
+///
+/// # Errors
+/// Returns invalid padding, output-limit, size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 BIT STRING DER/CER forms. Version: 2026-11-01.
+/// Responsible: asn1c maintainers. History: explicit inner strings.
+/// Example: called by the explicit BIT STRING writer.
+fn append_bit_value(
+    out: &mut Vec<u8>,
+    rule: RecordEncoding,
+    bytes: &[u8],
+    unused: u8,
+    limits: &Limits,
+) -> Result<(), Error> {
+    let content_len = bytes.len().checked_add(1).ok_or(Error::SizeOverflow)?;
+    if rule == RecordEncoding::Cer && content_len > CER_FRAGMENT_MAX {
+        push_indefinite_header(out, Tag::universal(3), limits)?;
+        let fragment_count = bytes.len().div_ceil(CER_FRAGMENT_MAX - 1);
+        for (index, fragment) in bytes.chunks(CER_FRAGMENT_MAX - 1).enumerate() {
+            let fragment_unused = if index + 1 == fragment_count {
+                unused
+            } else {
+                0
+            };
+            push_bit_fragment(out, fragment, fragment_unused, limits)?;
+        }
+        push(out, &[0, 0], limits)
+    } else {
+        push_bit_fragment_tagged(out, Tag::universal(3), bytes, unused, limits)
+    }
 }
 
 /// Patch a DER SEQUENCE's placeholder length to its shortest definite form.
@@ -5614,6 +6281,142 @@ mod tests {
         Ok(context.work_used)
     }
 
+    /// Decode, re-encode, and compare one explicit CER BOOLEAN record.
+    ///
+    /// # Parameters and returns
+    /// `input` is a complete record prefix; `max_work_bits` is the shared
+    /// operation ceiling. Returns cumulative work after canonical comparison.
+    ///
+    /// # Errors
+    /// Returns malformed input, budget, or canonical mismatch errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: explicit CER work tests. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: explicit wrapper coverage.
+    /// Example: `explicit_boolean_cer_work(input, ceiling)?`.
+    fn explicit_boolean_cer_work(input: &[u8], max_work_bits: usize) -> Result<usize, Error> {
+        let limits = Limits {
+            max_work_bits,
+            ..Limits::default()
+        };
+        let tag = Tag::context_specific(0);
+        let fields = [RecordField::new_explicit(tag, FieldKind::Boolean)?];
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SequenceReader::new_tagged(input, &fields, &mut context)?;
+        if reader.next_tagged_field()? != Some(tag) {
+            return Err(invalid("explicit CER BOOLEAN is missing"));
+        }
+        let value = reader.read_boolean()?;
+        if reader.next_tagged_field()?.is_some() {
+            return Err(invalid("explicit CER BOOLEAN record has an extra field"));
+        }
+        let consumed = reader.finish()?;
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context)?;
+        writer.write_boolean_explicit(tag, value)?;
+        let canonical = writer.finish()?;
+        context.verify_canonical(input, consumed.consumed_bytes, &canonical.bytes)?;
+        Ok(context.work_used)
+    }
+
+    /// Decode and canonically re-encode a fragmented explicit CER OCTET STRING.
+    ///
+    /// # Parameters and returns
+    /// `input` is a complete record prefix; `max_work_bits` is the shared
+    /// operation ceiling. Returns cumulative work after canonical comparison.
+    ///
+    /// # Errors
+    /// Returns malformed input, SIZE, budget, or canonical mismatch errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: explicit CER string work tests. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: explicit wrapper coverage.
+    /// Example: `explicit_octet_cer_work(input, ceiling)?`.
+    fn explicit_octet_cer_work(input: &[u8], max_work_bits: usize) -> Result<usize, Error> {
+        let limits = Limits {
+            max_work_bits,
+            ..Limits::default()
+        };
+        let tag = Tag::context_specific(0);
+        let fields = [RecordField::new_explicit(tag, FieldKind::OctetString)?];
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SequenceReader::new_tagged(input, &fields, &mut context)?;
+        if reader.next_tagged_field()? != Some(tag) {
+            return Err(invalid("explicit CER OCTET STRING is missing"));
+        }
+        let value = reader.read_octet_string(1001, 1001)?;
+        if reader.next_tagged_field()?.is_some() {
+            return Err(invalid("explicit CER OCTET STRING has an extra field"));
+        }
+        let consumed = reader.finish()?;
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context)?;
+        writer.write_octet_string_explicit(tag, &value, 1001, 1001)?;
+        let canonical = writer.finish()?;
+        context.verify_canonical(input, consumed.consumed_bytes, &canonical.bytes)?;
+        Ok(context.work_used)
+    }
+
+    /// Decode, re-encode, and compare one fragmented explicit CER BIT STRING.
+    ///
+    /// # Parameters and returns
+    /// `input` is a complete record prefix; `max_work_bits` is the shared
+    /// operation ceiling. Returns cumulative work after canonical comparison.
+    ///
+    /// # Errors
+    /// Returns malformed input, SIZE, budget, or canonical mismatch errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: explicit CER bit work tests. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: explicit wrapper coverage.
+    /// Example: `explicit_bit_cer_work(input, ceiling)?`.
+    fn explicit_bit_cer_work(input: &[u8], max_work_bits: usize) -> Result<usize, Error> {
+        let limits = Limits {
+            max_work_bits,
+            ..Limits::default()
+        };
+        let tag = Tag::context_specific(1);
+        let fields = [RecordField::new_explicit(tag, FieldKind::BitString)?];
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SequenceReader::new_tagged(input, &fields, &mut context)?;
+        if reader.next_tagged_field()? != Some(tag) {
+            return Err(invalid("explicit CER BIT STRING is missing"));
+        }
+        let value = reader.read_bit_string(8000, 8000)?;
+        if reader.next_tagged_field()?.is_some() {
+            return Err(invalid("explicit CER BIT STRING has an extra field"));
+        }
+        let consumed = reader.finish()?;
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context)?;
+        writer.write_bit_string_explicit(tag, value.as_bytes(), value.bit_len(), 8000, 8000)?;
+        let canonical = writer.finish()?;
+        context.verify_canonical(input, consumed.consumed_bytes, &canonical.bytes)?;
+        Ok(context.work_used)
+    }
+
+    /// Build nested indefinite OCTET STRINGs under one explicit wrapper.
+    ///
+    /// # Parameters and returns
+    /// `levels` is the number of constructed universal string nodes. Returns a
+    /// complete indefinite SEQUENCE prefix with matching EOCs.
+    ///
+    /// # Errors
+    /// This test-only builder uses bounded small inputs and cannot fail.
+    ///
+    /// # Source, version, history, example
+    /// Source: explicit BER depth tests. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: explicit nesting coverage.
+    /// Example: `nested_explicit_octets(2)`.
+    fn nested_explicit_octets(levels: usize) -> Vec<u8> {
+        let mut input = vec![0x30, 0x80, 0xa0, 0x80];
+        for _ in 0..levels {
+            input.extend_from_slice(&[0x24, 0x80]);
+        }
+        input.extend_from_slice(&[4, 0]);
+        for _ in 0..levels + 2 {
+            input.extend_from_slice(&[0, 0]);
+        }
+        input
+    }
+
     /// Check tagged SET retained storage and exact cumulative strict CER work.
     /// Source: operation-wide record budgets; version: 2026-11-01; inputs: 2 fields.
     /// Returns: assertions; errors: assertion failures; responsible: maintainers.
@@ -5646,5 +6449,462 @@ mod tests {
         let required = tagged_set_cer_work(&canonical, usize::MAX).unwrap();
         assert_eq!(tagged_set_cer_work(&canonical, required).unwrap(), required);
         assert!(tagged_set_cer_work(&canonical, required - 1).is_err());
+    }
+
+    /// Round-trip all six explicit primitive kinds with DER and CER wrappers.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Asserts canonical wrapper vectors and decoded values.
+    ///
+    /// # Errors
+    /// Panics on encoding, decoding, or vector mismatch.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 EXPLICIT record encoding. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: explicit wrapper tests.
+    /// Example: run via `cargo test`.
+    #[test]
+    fn explicit_record_fields_round_trip_der_and_cer() {
+        let limits = Limits::default();
+        let tags = [
+            Tag::context_specific(0),
+            Tag::context_specific(1),
+            Tag::context_specific(2),
+            Tag::context_specific(3),
+            Tag::context_specific(4),
+            Tag::context_specific(5),
+        ];
+        let fields = [
+            RecordField::new_explicit(tags[0], FieldKind::Boolean).unwrap(),
+            RecordField::new_explicit(tags[1], FieldKind::Integer).unwrap(),
+            RecordField::new_explicit(tags[2], FieldKind::BitString).unwrap(),
+            RecordField::new_explicit(tags[3], FieldKind::OctetString).unwrap(),
+            RecordField::new_explicit(tags[4], FieldKind::Null).unwrap(),
+            RecordField::new_explicit(tags[5], FieldKind::Enumerated).unwrap(),
+        ];
+        let der = [
+            0x30, 0x1f, 0xa0, 3, 1, 1, 0xff, 0xa1, 3, 2, 1, 3, 0xa2, 4, 3, 2, 7, 0x80, 0xa3, 4, 4,
+            2, b'x', b'y', 0xa4, 2, 5, 0, 0xa5, 3, 10, 1, 2,
+        ];
+        let cer = [
+            0x30, 0x80, 0xa0, 0x80, 1, 1, 0xff, 0, 0, 0xa1, 0x80, 2, 1, 3, 0, 0, 0xa2, 0x80, 3, 2,
+            7, 0x80, 0, 0, 0xa3, 0x80, 4, 2, b'x', b'y', 0, 0, 0xa4, 0x80, 5, 0, 0, 0, 0xa5, 0x80,
+            10, 1, 2, 0, 0, 0, 0,
+        ];
+
+        for (rule, expected) in [
+            (RecordEncoding::Der, der.as_slice()),
+            (RecordEncoding::Cer, cer.as_slice()),
+        ] {
+            let mut context = RecordContext::new(&limits);
+            let mut writer = SequenceWriter::new(rule, &mut context).unwrap();
+            writer.write_boolean_explicit(tags[0], true).unwrap();
+            writer.write_integer_explicit(tags[1], 3, 0, 3).unwrap();
+            writer
+                .write_bit_string_explicit(tags[2], &[0x80], 1, 1, 1)
+                .unwrap();
+            writer
+                .write_octet_string_explicit(tags[3], b"xy", 2, 2)
+                .unwrap();
+            writer.write_null_explicit(tags[4]).unwrap();
+            writer.write_enumerated_explicit(tags[5], 2).unwrap();
+            let encoded = writer.finish().unwrap();
+            assert_eq!(encoded.bytes, expected);
+
+            let mut context = RecordContext::new(&limits);
+            let mut reader =
+                SequenceReader::new_tagged(&encoded.bytes, &fields, &mut context).unwrap();
+            for tag in tags {
+                assert_eq!(reader.next_tagged_field().unwrap(), Some(tag));
+                match tag.number() {
+                    0 => assert!(reader.read_boolean().unwrap()),
+                    1 => assert_eq!(reader.read_integer(0, 3).unwrap(), 3),
+                    2 => assert_eq!(reader.read_bit_string(1, 1).unwrap().as_bytes(), &[0x80]),
+                    3 => assert_eq!(reader.read_octet_string(2, 2).unwrap(), b"xy"),
+                    4 => reader.read_null().unwrap(),
+                    5 => assert_eq!(reader.read_enumerated().unwrap(), 2),
+                    _ => panic!("unexpected test tag"),
+                }
+            }
+            assert_eq!(reader.next_tagged_field().unwrap(), None);
+            let consumed = reader.finish().unwrap();
+            let mut writer = SequenceWriter::new(rule, &mut context).unwrap();
+            writer.write_boolean_explicit(tags[0], true).unwrap();
+            writer.write_integer_explicit(tags[1], 3, 0, 3).unwrap();
+            writer
+                .write_bit_string_explicit(tags[2], &[0x80], 1, 1, 1)
+                .unwrap();
+            writer
+                .write_octet_string_explicit(tags[3], b"xy", 2, 2)
+                .unwrap();
+            writer.write_null_explicit(tags[4]).unwrap();
+            writer.write_enumerated_explicit(tags[5], 2).unwrap();
+            let canonical = writer.finish().unwrap();
+            context
+                .verify_canonical(&encoded.bytes, consumed.consumed_bytes, &canonical.bytes)
+                .unwrap();
+        }
+    }
+
+    /// Sort explicit SET writes and accept valid BER members in reverse order.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Asserts canonical writer order and unordered reader dispatch.
+    ///
+    /// # Errors
+    /// Panics on an unexpected encoding or decoded value.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET ordering and EXPLICIT wrappers. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: explicit SET coverage.
+    /// Example: run via `cargo test`.
+    #[test]
+    fn explicit_set_sorts_writes_and_reads_any_ber_member_order() {
+        let first = Tag::context_specific(0);
+        let second = Tag::context_specific(1);
+        let fields = [
+            RecordField::new_explicit(first, FieldKind::Boolean).unwrap(),
+            RecordField::new_explicit(second, FieldKind::Boolean).unwrap(),
+        ];
+        let limits = Limits::default();
+        let mut context = RecordContext::new(&limits);
+        let mut writer = SetWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer.write_boolean_explicit(second, false).unwrap();
+        assert!(writer.write_boolean_explicit(first, true).is_err());
+
+        let mut context = RecordContext::new(&limits);
+        let mut writer = SetWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer.write_boolean_explicit(first, true).unwrap();
+        writer.write_boolean_explicit(second, false).unwrap();
+        let encoded = writer.finish().unwrap();
+        assert_eq!(
+            encoded.bytes,
+            [0x31, 10, 0xa0, 3, 1, 1, 0xff, 0xa1, 3, 1, 1, 0]
+        );
+
+        let reversed = [0x31, 10, 0xa1, 3, 1, 1, 0, 0xa0, 3, 1, 1, 0xff];
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SetReader::new_tagged(&reversed, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(second));
+        assert!(!reader.read_boolean().unwrap());
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(first));
+        assert!(reader.read_boolean().unwrap());
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        assert_eq!(reader.finish().unwrap().consumed_bytes, reversed.len());
+    }
+
+    /// Accept permissive high-tag BER explicit aliases and emit minimal forms.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks high-tag construction and canonical CER comparison.
+    ///
+    /// # Errors
+    /// Panics on an unexpected parsing or encoding result.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 high-tag identifiers. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: explicit high-tag coverage.
+    /// Example: run via `cargo test`.
+    #[test]
+    fn explicit_high_tags_accept_ber_aliases_and_canonicalize() {
+        let tag = Tag::context_specific(128);
+        let fields = [RecordField::new_explicit(tag, FieldKind::Boolean).unwrap()];
+        let limits = Limits::default();
+        let mut context = RecordContext::new(&limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer.write_boolean_explicit(tag, true).unwrap();
+        let encoded = writer.finish().unwrap();
+        assert_eq!(encoded.bytes, [0x30, 7, 0xbf, 0x81, 0, 3, 1, 1, 0xff]);
+
+        let alias = [0x30, 8, 0xbf, 0x80, 0x81, 0, 3, 1, 1, 0xff];
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SequenceReader::new_tagged(&alias, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(tag));
+        assert!(reader.read_boolean().unwrap());
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        let consumed = reader.finish().unwrap();
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer.write_boolean_explicit(tag, true).unwrap();
+        let canonical = writer.finish().unwrap();
+        assert!(context
+            .verify_canonical(&alias, consumed.consumed_bytes, &canonical.bytes)
+            .is_err());
+    }
+
+    /// Accept valid explicit BER wrapper boundaries and reject malformed ones.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Exercises definite/indefinite wrappers and malformed children.
+    ///
+    /// # Errors
+    /// Panics on an unexpected parser result.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 explicit BER framing. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: explicit parser tests.
+    /// Example: run via `cargo test`.
+    #[test]
+    fn explicit_reader_checks_child_count_tags_eoc_and_bounds() {
+        let tag = Tag::context_specific(0);
+        let fields = [RecordField::new_explicit(tag, FieldKind::Boolean).unwrap()];
+        let limits = Limits::default();
+        let definite = [0x30, 5, 0xa0, 3, 1, 1, 0xff];
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SequenceReader::new_tagged(&definite, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(tag));
+        assert!(reader.read_boolean().unwrap());
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        assert_eq!(reader.finish().unwrap().consumed_bytes, definite.len());
+
+        let indefinite = [0x30, 0x80, 0xa0, 0x80, 1, 1, 0xff, 0, 0, 0, 0];
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SequenceReader::new_tagged(&indefinite, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(tag));
+        assert!(reader.read_boolean().unwrap());
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        assert_eq!(reader.finish().unwrap().consumed_bytes, indefinite.len());
+
+        let malformed: [&[u8]; 7] = [
+            &[0x30, 3, 0x80, 1, 0xff],
+            &[0x30, 2, 0xa0, 0],
+            &[0x30, 5, 0xa0, 3, 2, 1, 1],
+            &[0x30, 7, 0xa0, 5, 1, 1, 0xff, 5, 0],
+            &[0x30, 5, 0xa0, 3, 1, 2, 0xff],
+            &[0x30, 7, 0xa0, 5, 0x21, 3, 1, 1, 0xff],
+            &[0x30, 0x80, 0xa0, 0x80, 1, 1, 0xff, 5, 0, 0, 0, 0, 0],
+        ];
+        for input in malformed {
+            let mut context = RecordContext::new(&limits);
+            let mut reader = SequenceReader::new_tagged(input, &fields, &mut context).unwrap();
+            assert!(reader.next_tagged_field().is_err(), "input={input:x?}");
+        }
+
+        let missing_record_eoc = [0x30, 0x80, 0xa0, 0x80, 1, 1, 0xff, 0, 0];
+        let mut context = RecordContext::new(&limits);
+        let mut reader =
+            SequenceReader::new_tagged(&missing_record_eoc, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(tag));
+        assert!(reader.read_boolean().unwrap());
+        assert!(reader.next_tagged_field().is_err());
+        assert!(RecordField::new_explicit(
+            Tag::new(TagClass::Private, 1).unwrap(),
+            FieldKind::Boolean
+        )
+        .is_err());
+    }
+
+    /// Verify explicit strings preserve universal fragments and share budgets.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Covers nested BER, CER fragment boundaries, storage, and work.
+    ///
+    /// # Errors
+    /// Panics on an unexpected parser result.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 explicit CER string wrappers. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: explicit string tests.
+    /// Example: run via `cargo test`.
+    #[test]
+    fn explicit_string_wrappers_flatten_fragments_and_charge_shared_work() {
+        let limits = Limits::default();
+        let tag = Tag::context_specific(0);
+        let fields = [RecordField::new_explicit(tag, FieldKind::OctetString).unwrap()];
+        let nested = [
+            0x30, 0x80, 0xa0, 0x80, 0x24, 0x80, 4, 1, b'x', 0, 0, 0, 0, 0, 0,
+        ];
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SequenceReader::new_tagged(&nested, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(tag));
+        assert_eq!(reader.read_octet_string(1, 1).unwrap(), b"x");
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        reader.finish().unwrap();
+
+        let payload = vec![b'x'; 1001];
+        let mut context = RecordContext::new(&limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer
+            .write_octet_string_explicit(tag, &payload, 1001, 1001)
+            .unwrap();
+        let encoded_octets = writer.finish().unwrap();
+        assert_eq!(&encoded_octets.bytes[4..6], &[0x24, 0x80]);
+        assert_eq!(encoded_octets.bytes[6], 4);
+        assert_eq!(encoded_octets.bytes[1010], 4);
+        assert_eq!(&encoded_octets.bytes[1013..1019], &[0, 0, 0, 0, 0, 0]);
+        let required = explicit_octet_cer_work(&encoded_octets.bytes, usize::MAX).unwrap();
+        assert_eq!(
+            explicit_octet_cer_work(&encoded_octets.bytes, required).unwrap(),
+            required
+        );
+        assert!(explicit_octet_cer_work(&encoded_octets.bytes, required - 1).is_err());
+
+        let bit_tag = Tag::context_specific(1);
+        let bit_fields = [RecordField::new_explicit(bit_tag, FieldKind::BitString).unwrap()];
+        let bit_payload = vec![0xff; 1000];
+        let mut context = RecordContext::new(&limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer
+            .write_bit_string_explicit(bit_tag, &bit_payload, 8000, 8000, 8000)
+            .unwrap();
+        let encoded_bits = writer.finish().unwrap();
+        assert_eq!(&encoded_bits.bytes[4..6], &[0x23, 0x80]);
+        assert_eq!(&encoded_bits.bytes[6..11], &[3, 0x82, 3, 0xe8, 0]);
+        let mut context = RecordContext::new(&limits);
+        let mut reader =
+            SequenceReader::new_tagged(&encoded_bits.bytes, &bit_fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(bit_tag));
+        assert_eq!(
+            reader.read_bit_string(8000, 8000).unwrap().as_bytes(),
+            bit_payload
+        );
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        reader.finish().unwrap();
+        let required = explicit_bit_cer_work(&encoded_bits.bytes, usize::MAX).unwrap();
+        assert_eq!(
+            explicit_bit_cer_work(&encoded_bits.bytes, required).unwrap(),
+            required
+        );
+        assert!(explicit_bit_cer_work(&encoded_bits.bytes, required - 1).is_err());
+
+        let stored = [
+            0x30, 12, 0xa0, 4, 4, 2, 0xaa, 0xbb, 0xa1, 4, 4, 2, 0xcc, 0xdd,
+        ];
+        let two_fields = [
+            fields[0],
+            RecordField::new_explicit(Tag::context_specific(1), FieldKind::OctetString).unwrap(),
+        ];
+        let storage_limits = Limits {
+            max_output_bytes: 2,
+            ..Limits::default()
+        };
+        let mut context = RecordContext::new(&storage_limits);
+        let mut reader = SequenceReader::new_tagged(&stored, &two_fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(tag));
+        assert_eq!(reader.read_octet_string(2, 2).unwrap(), [0xaa, 0xbb]);
+        assert_eq!(
+            reader.next_tagged_field().unwrap(),
+            Some(Tag::context_specific(1))
+        );
+        assert!(reader.read_octet_string(2, 2).is_err());
+    }
+
+    /// Verify the explicit wrapper contributes one level to the BER depth cap.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Accepts the highest supported constructed depth and rejects
+    /// one additional nested constructed child.
+    ///
+    /// # Errors
+    /// Panics on an unexpected depth result.
+    ///
+    /// # Source, version, history, example
+    /// Source: fixed BER nesting cap. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: explicit depth tests.
+    /// Example: run via `cargo test`.
+    #[test]
+    fn explicit_wrapper_nesting_respects_fixed_depth_cap() {
+        let tag = Tag::context_specific(0);
+        let fields = [RecordField::new_explicit(tag, FieldKind::OctetString).unwrap()];
+        let limits = Limits::default();
+        let accepted = nested_explicit_octets(MAX_DEPTH - 2);
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SequenceReader::new_tagged(&accepted, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(tag));
+        assert_eq!(reader.read_octet_string(0, 0).unwrap(), []);
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        reader.finish().unwrap();
+
+        let too_deep = nested_explicit_octets(MAX_DEPTH - 1);
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SequenceReader::new_tagged(&too_deep, &fields, &mut context).unwrap();
+        assert!(reader.next_tagged_field().is_err());
+    }
+
+    /// Cover DER length transitions inside an explicit string wrapper.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks long-form child, wrapper, and record lengths.
+    ///
+    /// # Errors
+    /// Panics on a noncanonical or malformed encoding.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 DER length forms. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: explicit length boundaries.
+    /// Example: run via `cargo test`.
+    #[test]
+    fn explicit_der_wrapper_checks_long_form_lengths_and_canonicality() {
+        let tag = Tag::context_specific(0);
+        let fields = [RecordField::new_explicit(tag, FieldKind::OctetString).unwrap()];
+        let value = vec![0x5a; 126];
+        let limits = Limits::default();
+        let mut context = RecordContext::new(&limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer
+            .write_octet_string_explicit(tag, &value, 126, 126)
+            .unwrap();
+        let encoded = writer.finish().unwrap();
+        assert_eq!(
+            &encoded.bytes[..8],
+            &[0x30, 0x81, 0x83, 0xa0, 0x81, 0x80, 4, 126]
+        );
+
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SequenceReader::new_tagged(&encoded.bytes, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(tag));
+        assert_eq!(reader.read_octet_string(126, 126).unwrap(), value);
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        let consumed = reader.finish().unwrap();
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer
+            .write_octet_string_explicit(tag, &[0x5a; 126], 126, 126)
+            .unwrap();
+        let canonical = writer.finish().unwrap();
+        context
+            .verify_canonical(&encoded.bytes, consumed.consumed_bytes, &canonical.bytes)
+            .unwrap();
+    }
+
+    /// Check explicit CER work and output limits at exact boundaries.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Asserts exact work and pre-allocation output checks.
+    ///
+    /// # Errors
+    /// Panics on an unexpected limit result.
+    ///
+    /// # Source, version, history, example
+    /// Source: explicit operation budget tests. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: explicit wrapper budgets.
+    /// Example: run via `cargo test`.
+    #[test]
+    fn explicit_cer_scalar_work_and_output_limits_are_cumulative() {
+        let tag = Tag::context_specific(0);
+        let canonical = [0x30, 0x80, 0xa0, 0x80, 1, 1, 0xff, 0, 0, 0, 0];
+        let required = explicit_boolean_cer_work(&canonical, usize::MAX).unwrap();
+        assert_eq!(
+            explicit_boolean_cer_work(&canonical, required).unwrap(),
+            required
+        );
+        assert!(explicit_boolean_cer_work(&canonical, required - 1).is_err());
+
+        let limits = Limits {
+            max_output_bytes: 10,
+            ..Limits::default()
+        };
+        let mut context = RecordContext::new(&limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        assert!(writer.write_boolean_explicit(tag, true).is_err());
+        let limits = Limits {
+            max_output_bytes: 11,
+            ..Limits::default()
+        };
+        let mut context = RecordContext::new(&limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer.write_boolean_explicit(tag, true).unwrap();
+        assert_eq!(writer.finish().unwrap().bytes, canonical);
+
+        let der = [0x30, 5, 0xa0, 3, 1, 1, 0xff];
+        assert!(explicit_boolean_cer_work(&der, usize::MAX).is_err());
     }
 }

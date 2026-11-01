@@ -32,6 +32,8 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/TaggedSequence.asn1 \
     $(srcdir)/TaggedSet.asn1 \
     $(srcdir)/TaggedSetC.asn1 \
+    $(srcdir)/ExplicitRecords.asn1 \
+    $(srcdir)/ExplicitSet.asn1 \
     $(srcdir)/SetBerCer.asn1 \
     $(srcdir)/SetBerCerC.asn1 \
     $(srcdir)/ExtensibleEnum.asn1 \
@@ -125,5 +127,8 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/tagged_sequence_conformance.rs \
     $(srcdir)/tagged_set_conformance.rs \
     $(srcdir)/c_tagged_sequence.c \
+    $(srcdir)/explicit_sequence_conformance.rs \
+    $(srcdir)/explicit_set_conformance.rs \
+    $(srcdir)/c_explicit_record.c \
     $(srcdir)/coverage.json \
     $(srcdir)/README.md

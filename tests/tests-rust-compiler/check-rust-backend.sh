@@ -1842,17 +1842,131 @@ if ! cc -I"$tagged_c_out" "$tagged_c_out"/*.c "$test_srcdir/c_tagged_sequence.c"
 fi
 "$test_tmp/c-tagged-sequence"
 
+# A resolved EXPLICIT wrapper is supported for each selected direct field kind.
+explicit_sequence_out="$test_tmp/explicit-records-rust"
+"$asn1c_bin" --rust -gen-BER -S "$skeletons" -D "$explicit_sequence_out" \
+    "$test_srcdir/ExplicitRecords.asn1"
+mkdir "$explicit_sequence_out/tests"
+cp "$test_srcdir/explicit_sequence_conformance.rs" "$explicit_sequence_out/tests/"
+if ! (cd "$explicit_sequence_out" && \
+    CARGO_TARGET_DIR="$test_tmp/target-explicit-sequence" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-explicit-sequence" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/explicit-sequence-check.log" 2>&1; then
+    cat "$test_tmp/explicit-sequence-check.log"
+    echo "FAIL: explicit mixed-codec SEQUENCE tests or strict Clippy"
+    exit 1
+fi
+for method in encode_der decode_ber encode_cer decode_cer encode_uper decode_uper; do
+    grep -F "pub fn $method" "$explicit_sequence_out/src/explicit_sequence.rs" >/dev/null
+done
+
+explicit_sequence_ber="$test_tmp/explicit-sequence-ber-only"
+"$asn1c_bin" --rust -gen-BER -no-gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$explicit_sequence_ber" "$test_srcdir/ExplicitRecords.asn1"
+if ! (cargo check --offline --manifest-path "$explicit_sequence_ber/Cargo.toml" && \
+    cargo clippy --offline --manifest-path "$explicit_sequence_ber/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/explicit-sequence-ber-only.log" 2>&1; then
+    cat "$test_tmp/explicit-sequence-ber-only.log"
+    echo "FAIL: explicit BER-only SEQUENCE strict Clippy"
+    exit 1
+fi
+explicit_sequence_cer="$test_tmp/explicit-sequence-cer-only"
+"$asn1c_bin" --rust -gen-CER -no-gen-UPER -no-gen-BER -S "$skeletons" \
+    -D "$explicit_sequence_cer" "$test_srcdir/ExplicitRecords.asn1"
+if ! (cargo check --offline --manifest-path "$explicit_sequence_cer/Cargo.toml" && \
+    cargo clippy --offline --manifest-path "$explicit_sequence_cer/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/explicit-sequence-cer-only.log" 2>&1; then
+    cat "$test_tmp/explicit-sequence-cer-only.log"
+    echo "FAIL: explicit CER-only SEQUENCE strict Clippy"
+    exit 1
+fi
+
+explicit_set_out="$test_tmp/explicit-records-set-rust"
+"$asn1c_bin" --rust -gen-BER -no-gen-UPER -S "$skeletons" \
+    -D "$explicit_set_out" "$test_srcdir/ExplicitSet.asn1"
+mkdir "$explicit_set_out/tests"
+cp "$test_srcdir/explicit_set_conformance.rs" "$explicit_set_out/tests/"
+if ! (cd "$explicit_set_out" && \
+    CARGO_TARGET_DIR="$test_tmp/target-explicit-set" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-explicit-set" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/explicit-set-check.log" 2>&1; then
+    cat "$test_tmp/explicit-set-check.log"
+    echo "FAIL: explicit BER/CER SET tests or strict Clippy"
+    exit 1
+fi
+explicit_set_ber="$test_tmp/explicit-set-ber-only"
+"$asn1c_bin" --rust -gen-BER -no-gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$explicit_set_ber" "$test_srcdir/ExplicitSet.asn1"
+if ! (cargo check --offline --manifest-path "$explicit_set_ber/Cargo.toml" && \
+    cargo clippy --offline --manifest-path "$explicit_set_ber/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/explicit-set-ber-only.log" 2>&1; then
+    cat "$test_tmp/explicit-set-ber-only.log"
+    echo "FAIL: explicit BER-only SET strict Clippy"
+    exit 1
+fi
+explicit_set_cer="$test_tmp/explicit-set-cer-only"
+"$asn1c_bin" --rust -gen-CER -no-gen-UPER -no-gen-BER -S "$skeletons" \
+    -D "$explicit_set_cer" "$test_srcdir/ExplicitSet.asn1"
+if ! (cargo check --offline --manifest-path "$explicit_set_cer/Cargo.toml" && \
+    cargo clippy --offline --manifest-path "$explicit_set_cer/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/explicit-set-cer-only.log" 2>&1; then
+    cat "$test_tmp/explicit-set-cer-only.log"
+    echo "FAIL: explicit CER-only SET strict Clippy"
+    exit 1
+fi
+
+# C independently encodes/decodes explicit scalar and constructed-string values.
+explicit_c_out="$test_tmp/explicit-records-c"
+mkdir "$explicit_c_out"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -fwide-types -pdu=all \
+    -fgen-only-pdu-deps -no-gen-example -D "$explicit_c_out" \
+    "$test_srcdir/ExplicitRecords.asn1" "$test_srcdir/ExplicitSet.asn1" \
+    >"$test_tmp/explicit-records-c-generate.log" 2>&1
+explicit_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$explicit_c_out/Makefile.am.libasncodec")
+rm -f "$explicit_c_out/converter-example.c" "$explicit_c_out/pdu_collection.c"
+if ! cc $explicit_cflags -I"$explicit_c_out" "$explicit_c_out"/*.c \
+    "$test_srcdir/c_explicit_record.c" -lm -o "$test_tmp/c-explicit-record" \
+    >"$test_tmp/c-explicit-record-compile.log" 2>&1; then
+    cat "$test_tmp/c-explicit-record-compile.log"
+    echo "FAIL: explicit generated C reference did not compile"
+    exit 1
+fi
+"$test_tmp/c-explicit-record"
+if cc $explicit_cflags -fsanitize=address -fno-omit-frame-pointer -g \
+    -I"$explicit_c_out" "$explicit_c_out"/*.c "$test_srcdir/c_explicit_record.c" \
+    -lm -o "$test_tmp/c-explicit-record-asan" \
+    >"$test_tmp/c-explicit-record-asan-compile.log" 2>&1; then
+    asan_status=0
+    ASAN_OPTIONS=detect_leaks=1 "$test_tmp/c-explicit-record-asan" \
+        >"$test_tmp/c-explicit-record-asan.log" 2>&1 || asan_status=$?
+    if grep -Eq '^==[[:digit:]]+==AddressSanitizer: detect_leaks is not supported on this platform\.$' \
+        "$test_tmp/c-explicit-record-asan.log" && \
+        [ "$(wc -l <"$test_tmp/c-explicit-record-asan.log" | tr -d ' ')" -eq 1 ]; then
+        if ! ASAN_OPTIONS=detect_leaks=0 "$test_tmp/c-explicit-record-asan"; then
+            echo "FAIL: explicit C fixture AddressSanitizer fallback run"
+            exit 1
+        fi
+    elif [ "$asan_status" -ne 0 ]; then
+        cat "$test_tmp/c-explicit-record-asan.log"
+        echo "FAIL: explicit C fixture AddressSanitizer/LeakSanitizer run"
+        exit 1
+    fi
+fi
+
 # Fail closed on SET shapes and codec combinations outside the current slice.
-cat >"$test_tmp/SetTagged.asn1" <<'EOF'
-SetTagged DEFINITIONS ::= BEGIN
-Packet ::= SET { flag [0] BOOLEAN }
-END
-EOF
-cat >"$test_tmp/SetExplicit.asn1" <<'EOF'
-SetExplicit DEFINITIONS ::= BEGIN
-Packet ::= SET { flag [0] EXPLICIT BOOLEAN }
-END
-EOF
 cat >"$test_tmp/SetApplication.asn1" <<'EOF'
 SetApplication DEFINITIONS ::= BEGIN
 Packet ::= SET { flag [APPLICATION 2] IMPLICIT BOOLEAN }
@@ -1880,7 +1994,7 @@ END
 EOF
 cat >"$test_tmp/SetTaggedAny.asn1" <<'EOF'
 SetTaggedAny DEFINITIONS ::= BEGIN
-Packet ::= SET { value [5] IMPLICIT ANY }
+Packet ::= SET { value [5] EXPLICIT ANY }
 END
 EOF
 cat >"$test_tmp/SetAlias.asn1" <<'EOF'
@@ -1949,7 +2063,7 @@ SetExtension DEFINITIONS ::= BEGIN
 Packet ::= SET { flag BOOLEAN, ..., empty NULL }
 END
 EOF
-for fixture in SetTagged SetExplicit SetApplication SetPrivate SetUniversal \
+for fixture in SetApplication SetPrivate SetUniversal \
     SetRepeatedContextTag SetTooHighTag SetTaggedAny SetAlias SetNested SetRepeatedTag \
     SetNullDefault SetEnumDefault SetStringDefault SetUnbounded SetDisjointSize \
     SetExtensibleSize SetContaining SetNamedBits SetExtensibleEnum SetExtension; do
@@ -1978,16 +2092,6 @@ fi
 test ! -e "$test_tmp/rejected-set-xer-mix"
 
 # Reject unsupported tag classes/modes, collisions, aliases, and shapes.
-cat >"$test_tmp/SequenceBerCerTagged.asn1" <<'EOF'
-SequenceBerCerTagged DEFINITIONS ::= BEGIN
-Packet ::= SEQUENCE { flag [0] BOOLEAN }
-END
-EOF
-cat >"$test_tmp/SequenceBerCerExplicit.asn1" <<'EOF'
-SequenceBerCerExplicit DEFINITIONS ::= BEGIN
-Packet ::= SEQUENCE { flag [0] EXPLICIT BOOLEAN }
-END
-EOF
 cat >"$test_tmp/SequenceBerCerApplication.asn1" <<'EOF'
 SequenceBerCerApplication DEFINITIONS ::= BEGIN
 Packet ::= SEQUENCE { flag [APPLICATION 2] IMPLICIT BOOLEAN }
@@ -2010,7 +2114,23 @@ END
 EOF
 cat >"$test_tmp/SequenceBerCerTaggedAny.asn1" <<'EOF'
 SequenceBerCerTaggedAny DEFINITIONS ::= BEGIN
-Packet ::= SEQUENCE { value [5] IMPLICIT ANY }
+Packet ::= SEQUENCE { value [5] EXPLICIT ANY }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerExplicitAlias.asn1" <<'EOF'
+SequenceBerCerExplicitAlias DEFINITIONS ::= BEGIN
+Flag ::= BOOLEAN
+Packet ::= SEQUENCE { flag [0] EXPLICIT Flag }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerExplicitClass.asn1" <<'EOF'
+SequenceBerCerExplicitClass DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { flag [APPLICATION 2] EXPLICIT BOOLEAN }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerExplicitRoot.asn1" <<'EOF'
+SequenceBerCerExplicitRoot DEFINITIONS ::= BEGIN
+Packet ::= [0] EXPLICIT SEQUENCE { flag BOOLEAN }
 END
 EOF
 cat >"$test_tmp/SequenceBerCerDuplicate.asn1" <<'EOF'
@@ -2092,9 +2212,10 @@ SequenceBerCerExtensibleEnum DEFINITIONS ::= BEGIN
 Packet ::= SEQUENCE { state ENUMERATED { idle(0), ..., busy(1) } }
 END
 EOF
-for fixture in SequenceBerCerTagged SequenceBerCerExplicit SequenceBerCerApplication \
+for fixture in SequenceBerCerApplication \
     SequenceBerCerPrivate SequenceBerCerRepeatedContext SequenceBerCerTooHighTag \
-    SequenceBerCerTaggedAny \
+    SequenceBerCerTaggedAny SequenceBerCerExplicitAlias \
+    SequenceBerCerExplicitClass SequenceBerCerExplicitRoot \
     SequenceBerCerDuplicate SequenceBerCerNested \
     SequenceBerCerUnbounded SequenceBerCerNullDefault \
     SequenceBerCerEnumDefault SequenceBerCerOctetDefault \

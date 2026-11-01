@@ -1,0 +1,12 @@
+ExplicitSetModule DEFINITIONS IMPLICIT TAGS ::= BEGIN
+
+ExplicitSetRecord ::= SET {
+    flag [0] EXPLICIT BOOLEAN DEFAULT FALSE,
+    plain BOOLEAN OPTIONAL,
+    count [30] EXPLICIT INTEGER (0..8) DEFAULT 3,
+    marker [31] EXPLICIT NULL OPTIONAL,
+    setstate [127] EXPLICIT ENUMERATED { zero(0), two(2) },
+    extra [128] EXPLICIT BOOLEAN OPTIONAL
+}
+
+END

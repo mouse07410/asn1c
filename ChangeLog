@@ -1,4 +1,11 @@
 Changes since v1.5.3:
+	* Avoid applying the parent EXPLICIT tag twice to inline generated C
+	  ENUMERATED members. Add exact DER/CER SEQUENCE and SET vectors and
+	  BER/CER decoding regressions with IMPLICIT and BOOLEAN controls.
+	* Add one resolved context-specific EXPLICIT wrapper per direct member in
+	  the bounded Rust BER/DER/CER flat SEQUENCE and SET slices. Validate the
+	  intrinsic child and wrapper boundaries, canonical CER form, high tags,
+	  malformed inputs, resource limits, and C interoperability.
 	* Add resolved context-specific IMPLICIT member tags to the bounded Rust
 	  BER/DER/CER flat SEQUENCE and SET slices, including automatic and high tag
 	  numbers. Keep field kinds separate from effective identifiers, preserve

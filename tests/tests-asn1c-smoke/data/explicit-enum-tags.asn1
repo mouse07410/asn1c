@@ -1,0 +1,17 @@
+ExplicitEnumTags DEFINITIONS EXPLICIT TAGS ::= BEGIN
+ExplicitSequence ::= SEQUENCE {
+    state [127] ENUMERATED { zero(0), two(2) }
+}
+ExplicitSet ::= SET {
+    state [127] ENUMERATED { zero(0), two(2) }
+}
+ExplicitBoolean ::= SEQUENCE {
+    value [126] BOOLEAN
+}
+END
+
+ImplicitEnumTags DEFINITIONS IMPLICIT TAGS ::= BEGIN
+ImplicitSequence ::= SEQUENCE {
+    state [127] ENUMERATED { zero(0), two(2) }
+}
+END

@@ -8,7 +8,7 @@ strict CER prefix decoding, for BOOLEAN, NULL, finite bounded `i64` INTEGER,
 direct finite ENUMERATED, and fixed or bounded BIT/OCTET STRING values. See
 `rust/asn1c-runtime/README.md` and
 `libasn1compiler/asn1c_rust.c`. The generator rejects many schemas supported by
-C, including imports, references, root tags, and EXPLICIT tag stacks. These
+C, including imports, references, root tags, and multi-tag stacks. These
 rejections remain until the corresponding generated representation and codecs
 are implemented.
 
@@ -17,13 +17,14 @@ outer type and up to six distinct effective direct-field tags for BOOLEAN,
 NULL, bounded INTEGER, ENUMERATED, and finite bounded BIT/OCTET STRING fields.
 Required and OPTIONAL members and literal BOOLEAN/INTEGER DEFAULT members
 share one operation budget. Resolved context-specific IMPLICIT and AUTOMATIC
-member tags are supported. Nested records and broader primitive members
+member tags and one context-specific EXPLICIT wrapper per direct member are
+supported. Nested records and broader primitive members
 remain in the staged parity matrix below.
 
 The flat SET slice uses the same six direct field kinds under BER/CER-only
 selection. Its BER reader accepts arbitrary member order;
 the DER/CER writer emits ascending effective tags. Broader SET shapes,
-collections, nested records, and tag stacks remain future stages.
+collections, nested records, and multi-tag stacks remain future stages.
 
 ## Architecture and interfaces
 
@@ -61,8 +62,10 @@ An untagged field keeps its universal identifier. A context-specific IMPLICIT
 tag replaces only the outer field identifier; the primitive content rules and
 the universal identifiers of constructed BIT/OCTET STRING fragments remain
 unchanged. Automatic tags are read from the fixed member metadata instead of
-being recomputed from declaration position. References and EXPLICIT wrappers
-remain gated until the generator can represent and validate the full chain.
+being recomputed from declaration position. A single resolved context-specific
+EXPLICIT wrapper is supported for the same direct field kinds. References and
+longer tag chains remain gated until the generator can represent and validate
+the full chain.
 
 The runtime keeps field kind separate from effective identifier class and
 number. Readers match the full class/number pair, then validate the field's
@@ -75,9 +78,9 @@ gate limits tag numbers to the C target's representable range and rejects
 duplicate effective tags before publishing output. The existing untagged
 record API remains source compatible.
 
-### EXPLICIT field wrappers (planned)
+### EXPLICIT field wrappers (qualified slice)
 
-The next tag stage should accept one resolved context-specific EXPLICIT tag
+The current tag stage accepts one resolved context-specific EXPLICIT tag
 on each supported flat direct field. The effective outer tag determines
 record dispatch and SET order; an intrinsic universal child retains the
 declared field kind. DER wraps one complete child TLV in a constructed,
@@ -92,9 +95,34 @@ must reject missing or extra children, cross-boundary lengths, a primitive
 outer identifier, and unmatched EOCs. Constructed BIT/OCTET STRING children
 may have their own nested EOCs; wrapper traversal must match each level.
 Strict CER comparison rejects a definite wrapper or noncanonical child. The
-first gate should continue rejecting references, multi-tag chains, other
+generator continues rejecting references, multi-tag chains, other
 classes, nested records, and unsupported codec combinations until their
 representation and tests are complete.
+
+### Next compositional stage: inline nested SEQUENCE
+
+The next record stage should accept one nonrecursive inline SEQUENCE member
+inside a SEQUENCE or SET. Initially allow required and OPTIONAL members and
+the existing direct primitive leaf kinds; keep constructed DEFAULT,
+extensions, references, imports, CHOICE, and collections gated. Validate the
+entire inline tree before generation, including effective-tag collisions,
+optional dispatch ambiguity, field and node counts, and nesting depth.
+
+Nested readers and writers must borrow one `RecordContext`. A child reader
+receives an input span bounded by its parent and must consume that span
+exactly, including the matching EOC for an indefinite value. A child writer
+must account for its retained output along with parent output and wrappers;
+if it buffers a child, its simultaneous scratch storage needs an explicit
+limit. The generated child methods must not call their own public entry points
+with fresh limits. DER uses definite child lengths, while CER uses an
+indefinite child and EOC; an EXPLICIT field adds another wrapper layer.
+
+The acceptance tests need generated C/Rust vectors for natural, IMPLICIT, and
+EXPLICIT child tags, absent and present children, nested CER EOCs, SET order,
+string fragmentation, and DER length transitions. Reject truncated and extra
+EOCs, child lengths crossing a parent boundary, duplicate or unknown fields,
+trailing child bytes, and cumulative resource exhaustion. Check exact prefix
+consumption and strict CER comparison at each outer boundary.
 
 Strict CER decoding uses BER decoding followed by canonical CER encoding and
 comparison with exactly the consumed prefix. This matches the architecture of

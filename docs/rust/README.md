@@ -39,8 +39,9 @@ CER encoding and strict decoding. This is a limited direct-type slice;
 empty or flat SEQUENCE records with an untagged outer type and distinct
 effective direct-field tags for BOOLEAN, NULL, bounded INTEGER, ENUMERATED,
 and bounded BIT/OCTET STRING also support BER/DER/CER. Resolved
-context-specific IMPLICIT and AUTOMATIC member tags are supported within the
-C tag-number range. Root tags, EXPLICIT tag stacks, aliases, open types,
+context-specific IMPLICIT and AUTOMATIC member tags and one context-specific
+EXPLICIT wrapper per direct field are supported within the C tag-number range.
+Root tags, multi-tag stacks, aliases, open types,
 and broader constructed records do not yet have BER/DER/CER parity. See the
 [parity design](ber-der-cer-design.md).
 The same direct-field subset supports flat SET with an untagged outer type under a BER/CER-only

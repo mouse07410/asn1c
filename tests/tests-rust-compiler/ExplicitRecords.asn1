@@ -1,0 +1,40 @@
+ExplicitSequence DEFINITIONS EXPLICIT TAGS ::= BEGIN
+
+ExplicitRecord ::= SEQUENCE {
+    flag [0] BOOLEAN DEFAULT FALSE,
+    count [30] INTEGER (0..8) DEFAULT 3,
+    marker [31] EXPLICIT NULL OPTIONAL,
+    state [127] ENUMERATED { zero(0), two(2) },
+    extra [128] EXPLICIT BOOLEAN OPTIONAL
+}
+
+ExplicitDefaultTrue ::= SEQUENCE {
+    flag [30] EXPLICIT BOOLEAN DEFAULT TRUE
+}
+
+ExplicitStringRecord ::= SEQUENCE {
+    octets [31] OCTET STRING (SIZE(0..1001)),
+    bits [128] BIT STRING (SIZE(0..8000)) OPTIONAL
+}
+
+END
+
+ExplicitImplicitMode DEFINITIONS IMPLICIT TAGS ::= BEGIN
+
+ExplicitImplicitRecord ::= SEQUENCE {
+    flag [30] EXPLICIT BOOLEAN,
+    count [31] INTEGER (0..8) DEFAULT 3,
+    plain BOOLEAN OPTIONAL
+}
+
+END
+
+ExplicitAutomaticMode DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+ExplicitAutomaticRecord ::= SEQUENCE {
+    flag BOOLEAN,
+    count INTEGER (0..8) OPTIONAL,
+    marker NULL OPTIONAL
+}
+
+END

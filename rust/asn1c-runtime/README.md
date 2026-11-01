@@ -137,13 +137,13 @@ while generated code checks required fields and omits values equal to DEFAULT.
 Both readers' `finish` methods require the definite boundary or matching EOC to
 have been read. Writers use definite DER or indefinite CER outer framing;
 SEQUENCE fields follow declaration order, while SET fields must be written in
-ascending universal-tag order. `RecordContext::verify_canonical` charges the
+ascending effective-tag order. `RecordContext::verify_canonical` charges the
 final byte comparison after callers re-encode with that same context. This
-record API accepts at most six uniquely tagged fields, matching the supported
-universal tags. During decode, `max_output_bytes` also caps aggregate retained
+record API accepts at most six fields with unique effective tags. During
+decode, `max_output_bytes` also caps aggregate retained
 BIT/OCTET STRING payload bytes across fields. DER string fields are primitive;
 CER uses 1000-content-octet fragments, counting the BIT STRING unused-count
-octet. Tagged outer containers, extensions, and nested records remain outside
+octet. Tagged record containers, extensions, and nested records remain outside
 this slice.
 
 The record API also supports fixed effective tags with a separate `FieldKind`
@@ -159,6 +159,14 @@ groups, within input and work limits; DER/CER writers emit minimal high-tag
 identifiers. SET writer order compares class then number. For IMPLICIT
 BIT/OCTET STRING, the effective tag replaces only the outer tag; CER and BER
 constructed string fragments retain universal component tags 3 and 4.
+`RecordField::new_explicit` adds a context-specific EXPLICIT mode without
+changing the implicit constructor. The corresponding `write_*_explicit`
+methods wrap one intrinsic universal child; DER uses a definite wrapper and
+CER uses an indefinite wrapper with EOC. Readers accept definite or indefinite
+BER wrappers, require exactly one matching universal child, and charge wrapper
+parsing, child decoding, and strict CER re-encoding to the same record context.
+Explicit BIT/OCTET STRING children use their regular universal primitive or
+fragmented CER form inside the wrapper.
 
 Run the crate checks from the repository root:
 

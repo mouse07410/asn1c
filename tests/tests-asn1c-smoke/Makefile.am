@@ -29,6 +29,7 @@ TESTS += check-encoding-instructions.sh
 TESTS += check-APER-inline-constrained-ioc.sh
 TESTS += check-SET-open-type.sh
 TESTS += check-SET-ber-open.sh
+TESTS += check-explicit-enum-tags.sh
 TESTS += check-fprefix-link.sh
 TESTS += check-fprefix-anon-typedef.sh
 TESTS += check-CONTAINING.sh
@@ -47,7 +48,8 @@ EXTRA_DIST = README $(srcdir)/check-*.sh $(srcdir)/data/fprefix-link.asn \
 	$(srcdir)/data/fprefix-anon-typedef.asn \
 	$(srcdir)/data/issue-588-template.asn1 $(srcdir)/data/issue-588-use.asn1 \
 	$(srcdir)/data/issue-587-template.asn1 $(srcdir)/data/issue-587-use.asn1 \
-	$(srcdir)/data/issue-607-xer.asn1 $(srcdir)/data/issue-607-xer.c
+	$(srcdir)/data/issue-607-xer.asn1 $(srcdir)/data/issue-607-xer.c \
+	$(srcdir)/data/explicit-enum-tags.asn1 $(srcdir)/data/explicit-enum-tags.c
 
 clean-local:
 	rm -rf test-*

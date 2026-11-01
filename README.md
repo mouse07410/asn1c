@@ -141,10 +141,11 @@ under BER/DER/CER-only selection (`-no-gen-UPER`), with unordered BER field
 decoding and canonical tag-ordered DER/CER output. The current XER-only SET
 slice remains a separate codec selection.
 The same flat BER/DER/CER records accept resolved context-specific IMPLICIT
-member tags, including automatic and high tag numbers within the C runtime's
-range. Repeated primitive kinds are supported when effective tags are unique;
-SET output sorts by effective class and tag number. Root tags, EXPLICIT tag
-stacks, aliases, and nested records remain outside this slice.
+member tags, including automatic tags, and one context-specific EXPLICIT
+wrapper per direct field. High tag numbers within the C runtime's range and
+repeated primitive kinds with distinct effective tags are supported; SET
+output sorts by effective class and tag number. Root tags, multi-tag stacks,
+aliases, and nested records remain outside this slice.
 Rust CER output is selected by default with UPER; `-no-gen-UPER` selects
 CER-only output. `-gen-BER` adds BER prefix decoding and DER encoding for
 these direct types. See [Rust output usage and limits](docs/rust/implementation.md)
