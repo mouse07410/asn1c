@@ -130,6 +130,26 @@
       "evidence": "Ia5Values.asn1; ia5_conformance.rs; c_ia5.c"
     },
     {
+      "asn1_type": "IA5String record member",
+      "feature": "one direct natural unconstrained field in flat SEQUENCE or SET",
+      "codec": "BER/DER and CER only",
+      "variants": [
+        "required and OPTIONAL members with scalar siblings",
+        "empty, 127/128, 999/1000/1001, and multi-fragment contents",
+        "aggregate scratch context selected even when OPTIONAL member is absent",
+        "constructed BER fragments, unordered SET BER, and strict CER canonicality",
+        "raw high-byte BER/DER preservation, malformed/truncated and limited inputs"
+      ],
+      "directions": [
+        "DER encode",
+        "BER prefix decode",
+        "CER encode",
+        "strict CER prefix decode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "Ia5Record.asn1; ia5_record_conformance.rs; c_ia5_record.c"
+    },
+    {
       "asn1_type": "Restricted character strings (tags 7, 12, 18-22, 25-28, 30)",
       "feature": "direct untagged unconstrained roots with fixed per-wrapper runtime kinds",
       "codec": "BER/DER and CER only",
@@ -856,6 +876,8 @@
       "direct unbounded BIT/OCTET STRING with named bits, CONTAINING, explicit SIZE, tags, aliases, fields, imports, or non-BER/CER-only codec selection",
       "direct unbounded OBJECT IDENTIFIER and RELATIVE-OID with tags, constraints, aliases, fields, imports, or non-BER/CER-only codec selection",
       "direct unconstrained IA5String with tags, constraints, aliases, fields, imports, or non-BER/CER-only codec selection",
+      "IA5String record fields with tags, constraints, aliases, or imports",
+      "IA5String record fields with DEFAULT, nesting, multiplicity, or non-BER/CER codecs",
       "direct restricted character strings with tags, constraints, aliases, fields, imports, CHARACTER STRING, or non-BER/CER-only codec selection",
       "direct UTCTime with tags, constraints, aliases, fields, imports, or non-BER/CER-only codec selection",
       "direct GeneralizedTime with tags, constraints, aliases, fields, imports, or non-BER/CER-only codec selection",
@@ -875,7 +897,7 @@
     ]
   },
   "observed_counts": {
-    "generated_rust_test_functions": 198,
+    "generated_rust_test_functions": 202,
     "generated_choice_test_functions": 4,
     "live_C_choice_canonical_vectors_each_direction": 5,
     "live_C_choice_BER_alias_vectors": 9,
@@ -905,6 +927,8 @@
     "live_C_IA5_vectors_each_direction": 8,
     "IA5_mutated_octet_inputs": 1011,
     "IA5_truncated_prefix_inputs": 1011,
+    "generated_ia5_record_test_functions": 4,
+    "live_C_ia5_record_canonical_vectors_each_direction": 10,
     "live_C_restricted_string_vectors_each_direction": 78,
     "live_C_restricted_string_invalid_CER_vectors": 7,
     "restricted_string_constructed_BER_types": 13,

@@ -192,7 +192,7 @@ the Unicode scalar range, as the C descriptor does. Fragmentation is bytewise
 and may split a UTF8 sequence between tag-4 children; validation follows
 reassembly. The C compatibility target does not establish X.690 escape-state
 canonicality for the permissive legacy types. Tagged, constrained, aliased,
-imported, and member character strings remain outside the Rust slice.
+imported, and other member character strings remain outside the Rust slice.
 Direct untagged, unconstrained UTCTime roots support BER prefix decoding, DER
 encoding, CER encoding, and strict CER decoding under BER/CER-only selection.
 BER accepts raw and constructed tag-23 content with universal tag-4 children;
@@ -255,6 +255,16 @@ Its BER fields may arrive in any order; DER/CER sorts the child fields by
 effective tag independently of any parent SET sort. Empty inline SET children
 remain gated because the unmodified C generator does not compile that schema.
 Both child kinds share the parent record budget and exact nested boundary checks.
+One natural, unconstrained IA5String member is also supported in an untagged
+flat SEQUENCE or SET under BER/CER-only selection, with required or OPTIONAL
+presence and the existing supported scalar siblings. BER accepts primitive or
+constructed tag-22 content with universal tag-4 fragments; DER preserves raw
+bytes; CER checks the 7-bit repertoire and fragments content above 1000
+octets. Generated operations select aggregate scratch accounting even when
+the OPTIONAL member is absent. The aggregate cap counts record-owned output
+and retained decoded storage; caller-owned spare input capacity is excluded.
+Tagged or constrained IA5 fields, nested records, multiple IA5 fields, and
+mixed-codec record forms remain gated.
 One inline primitive CHOICE child with unique BOOLEAN, NULL, or bounded `i64`
 INTEGER alternatives is supported under BER/CER-only selection. An untagged
 SEQUENCE parent accepts a natural or one context-specific EXPLICIT CHOICE;

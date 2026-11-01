@@ -284,11 +284,26 @@ SEQUENCE fields follow declaration order, while SET fields must be written in
 ascending effective-tag order. `RecordContext::verify_canonical` charges the
 final byte comparison after callers re-encode with that same context. This
 record API accepts at most six fields with unique effective tags. During
-decode, `max_output_bytes` also caps aggregate retained BIT/OCTET STRING
+decode, `max_output_bytes` also caps aggregate retained BIT/OCTET/IA5
 payload bytes across fields. DER string fields are primitive; CER uses
 1000-content-octet fragments, counting the BIT STRING unused-count octet.
 Other tagged record containers, extensions, and deeper record trees remain
 outside this slice.
+
+Flat records also support natural, unconstrained `IA5String` fields through
+`FieldKind::Ia5String`, `write_ia5_string`, and `read_ia5_string`. BER and DER
+preserve arbitrary content bytes. CER validates every byte is at most `0x7f`;
+values through 1000 bytes are primitive, and larger values use constructed
+tag 22 with universal OCTET STRING tag-4 fragments. Record readers flatten
+definite or indefinite BER fragments and retain their allocation in the shared
+context for strict CER re-encoding. IA5-containing generated operations use
+`RecordContext::new_with_aggregate_scratch` even when the field is OPTIONAL and
+absent. This enables the 128 MiB retained-plus-record-output scratch cap while
+leaving nested-record callbacks disabled; public IA5 reader/writer methods
+reject contexts created with `RecordContext::new`. Record field accounting
+includes decoded IA5 capacity and record-owned output buffers; it does not add
+the capacity of a caller-owned IA5 input value. Direct top-level IA5 codecs use
+their own simultaneous value-plus-output scratch accounting.
 
 For a flat SEQUENCE root with one context-specific IMPLICIT tag, use
 `SequenceReader::new_tagged_root(input, tag, fields, context)` and

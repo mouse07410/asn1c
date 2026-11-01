@@ -384,6 +384,23 @@ empty byte vector in Rust and re-encodes as primitive `16 00`; C BER also
 decodes it, but its null-buffer representation cannot be passed directly to
 the C CER encoder without first providing valid in-memory storage.
 
+One direct natural, unconstrained `IA5String` member is also supported in a flat
+untagged SEQUENCE or SET under BER/CER-only selection. The member may be required
+or OPTIONAL and can have scalar siblings; generated records retain private
+`Ia5String` ownership without deriving `Clone`. All record encode/decode methods
+use aggregate-scratch accounting, including operations where an OPTIONAL IA5
+member is absent. Aliases, imports, tags, constraints, DEFAULT, nested members,
+multiple IA5 fields, and mixed or non-BER/CER codec selection fail before output
+publication.
+
+`Ia5Record.asn1`, `ia5_record_conformance.rs`, and `c_ia5_record.c` compare
+record DER/CER bytes and decoded values for empty, 127/128, 999/1000/1001, and
+multi-fragment content. They cover required SET and OPTIONAL SEQUENCE fields,
+constructed BER OCTET STRING fragments, unordered SET BER, strict CER order and
+framing checks, raw high-byte BER/DER preservation with CER rejection, suffix
+consumption, malformed and truncated input, and resource limits. The generated
+OPTIONAL-absent path is exercised while selecting aggregate-scratch context.
+
 `RestrictedStrings.asn1`, `restricted_strings_conformance.rs`, and
 `c_restricted_strings.c` cover direct untagged unconstrained ObjectDescriptor,
 UTF8String, NumericString, PrintableString, TeletexString/T61String,

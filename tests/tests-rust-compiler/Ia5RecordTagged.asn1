@@ -1,0 +1,3 @@
+Ia5RecordTagged DEFINITIONS ::= BEGIN
+Bad ::= SEQUENCE { text [3] IMPLICIT IA5String }
+END

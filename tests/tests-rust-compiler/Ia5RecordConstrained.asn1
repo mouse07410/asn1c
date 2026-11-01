@@ -1,0 +1,3 @@
+Ia5RecordConstrained DEFINITIONS ::= BEGIN
+Bad ::= SEQUENCE { text IA5String (SIZE(1..4)) }
+END

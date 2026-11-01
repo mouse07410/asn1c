@@ -1,0 +1,4 @@
+Ia5RecordRemote DEFINITIONS ::= BEGIN
+EXPORTS Remote;
+Remote ::= IA5String
+END

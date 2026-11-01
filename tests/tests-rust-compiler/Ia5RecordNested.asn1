@@ -1,0 +1,3 @@
+Ia5RecordNested DEFINITIONS ::= BEGIN
+Bad ::= SEQUENCE { child SEQUENCE { text IA5String } }
+END

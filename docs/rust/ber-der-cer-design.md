@@ -773,9 +773,9 @@ tags, collisions with unselected arms, duplicate distinct arms, exact limits,
 transactional writer failures, suffixes, truncation, C vectors, and negative
 schema gates.
 
-### IA5String fields in flat records (next qualified gate)
+### IA5String fields in flat records (qualified slice)
 
-The next record-field gate adds a direct, unconstrained IA5String member to
+This record-field gate adds a direct, unconstrained IA5String member to
 an untagged, nonrecursive top-level SEQUENCE or SET under BER/CER-only
 selection. Begin with natural tag 22 and required/OPTIONAL presence. Keep
 IMPLICIT/EXPLICIT member tags, DEFAULT, references, constraints, nested
@@ -795,6 +795,12 @@ fragments beyond that point. The parent's `RecordContext` covers all parsing,
 encoding, canonical comparison, and retained storage. Opt IA5-containing
 record operations into aggregate scratch accounting even when the optional
 member is absent, while preserving the existing flat scalar-record contract.
+The aggregate record cap counts operation-owned output and temporary buffers
+plus retained decoded `Vec` capacity. It does not count unused reserve capacity
+in a caller-owned IA5 value supplied to a record encoder; actual content and
+output length remain bounded. This differs from the direct IA5 root encoder's
+conservative input-capacity accounting. Strict CER re-encoding counts the
+decoded value once as retained storage and adds the canonical output.
 
 Acceptance includes empty, ASCII boundary, invalid CER byte, lengths 999,
 1000, 1001, and 2001, definite/indefinite constructed BER, wrong fragment
@@ -804,6 +810,42 @@ vectors for SEQUENCE with IA5String `A` are DER `30 03 16 01 41` and CER
 `30 80 16 01 41 00 00`; SET with that member and `[4] IMPLICIT BOOLEAN
 TRUE` is DER `31 06 16 01 41 84 01 ff` and CER
 `31 80 16 01 41 84 01 ff 00 00`.
+
+### OID fields in flat records (next qualified gate)
+
+Extend the flat BER/CER-only untagged SEQUENCE and SET gate to at most one
+natural direct OBJECT IDENTIFIER and one natural direct RELATIVE-OID field,
+each required or OPTIONAL, with the existing scalar siblings and six-field
+limit. Reject coexistence with IA5String, nested records, CHOICE, references,
+imports, constraints, DEFAULT, extension metadata, member/root tags, and
+other codec selections before publication. This bounded combination allows
+both universal tags 6 and 13 in either declaration order without ambiguous
+dispatch.
+
+Use the existing private canonical-content OID wrappers as field values.
+The record writer emits primitive definite tag-6 and tag-13 TLVs for DER and
+CER, retaining the shared record work/output/scratch accounting. The BER
+reader rejects constructed or indefinite primitive forms and normalizes
+redundant leading base-128 groups within the same operation context before
+moving each decoded allocation into its wrapper. It checks input and work
+before allocation, retains actual Vec capacity, and uses the same context
+for strict CER re-encoding and consumed-prefix comparison. Generated roots
+select aggregate scratch accounting even if an OPTIONAL OID field is absent;
+nested callbacks remain disabled. Ordinary record encoding excludes unused
+caller-owned input reserve capacity, as in the IA5 record gate.
+
+The repaired C encoder emits SEQUENCE with OID content `2a 81 00` and relative
+content `81 00` as DER `30 09 06 03 2a 81 00 0d 02 81 00` and CER
+`30 80 06 03 2a 81 00 0d 02 81 00 00 00`; SET uses the same field order
+with outer tag `31`, even when declared relative first. BER accepts reversed
+SET members and nonminimal tag aliases; strict CER rejects both. C BER also
+accepts empty or unterminated OID content and retains redundant base-128
+groups, while the current direct Rust OID codec rejects the first two and
+normalizes the last. Preserve and document that qualified divergence until
+the broader BER compatibility policy is settled. Acceptance includes both
+presence states, large arcs and length boundaries, malformed identifiers,
+duplicate and unknown fields, suffixes, all truncations, exact limits,
+canonical SET ordering, C vectors, and negative schema gates.
 
 ## Decisions still required
 

@@ -138,6 +138,11 @@ static uint32_t rust_ber_cer_choice_min_tag(asn1p_expr_t *);
 static uint32_t rust_ber_cer_choice_arm_tag(asn1p_expr_t *);
 static int rust_ber_cer_has_tagged_members(asn1p_expr_t *);
 static int rust_ber_cer_has_nested_record(asn1p_expr_t *);
+static int rust_ber_cer_has_ia5_member(asn1p_expr_t *);
+static const char *rust_ber_cer_context_constructor(asn1p_expr_t *);
+static int rust_check_ber_cer_ia5_record(asn1p_module_t *, asn1p_expr_t *,
+                                         uint64_t);
+static int rust_check_ber_cer_ia5_member(asn1p_module_t *, asn1p_expr_t *);
 static asn1p_expr_t *rust_ber_cer_choice_member(asn1p_expr_t *, size_t *);
 static int rust_ber_cer_has_empty_nested_record(asn1p_expr_t *);
 static int rust_ber_cer_tag_compare(const asn1p_expr_t *, const asn1p_expr_t *);
@@ -365,13 +370,89 @@ asn1c_rust_compile(asn1p_t *asn, const char *runtime_dir,
 }
 
 /*
+ * Validate one direct IA5String record member's approved untagged shape.
+ * Parameters: module supplies diagnostics; member is the IA5String AST node.
+ * Returns zero when valid or -1 with a source-located diagnostic. Errors:
+ * constraints, aliases, tags, unsupported metadata, and DEFAULT are rejected.
+ * Source: fixed ASN.1 AST and approved IA5 record gate.
+ * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
+ * History: IA5 flat-record stage. Example: direct optional IA5String passes.
+ */
+static int
+rust_check_ber_cer_ia5_member(asn1p_module_t *module, asn1p_expr_t *member) {
+    int valid_shape;
+    int natural_tag;
+    int no_extensions;
+    int supported_presence;
+    if(!module || !member) return -1;
+    valid_shape = rust_sequence_member_shape_valid(member);
+    natural_tag = member->tag.tag_class == TC_NOCLASS
+               && member->tag.tag_mode == TM_DEFAULT;
+    no_extensions = !member->constraints && !member->combined_constraints
+                 && !member->lhs_params && !member->rhs_pspecs
+                 && !member->ioc_table && !member->members.tq_head
+                 && member->encoding_control.encoding_type == EC_NONE;
+    supported_presence = member->marker.flags == EM_NOMARK
+                      || member->marker.flags == EM_OPTIONAL;
+    if(valid_shape && natural_tag && no_extensions && supported_presence
+       && !member->reference) return 0;
+    rust_diagnostic(module, member,
+        "record IA5String must be direct, unconstrained, natural-tagged, and required or OPTIONAL");
+    return -1;
+}
+
+/*
+ * Validate a flat BER/CER record that contains one natural IA5String field.
+ * Parameters: module supplies diagnostics; expr owns the root; codecs is the
+ * requested codec mask. Returns zero when no IA5 field exists or the one-field
+ * gate passes, otherwise -1. Errors: tags, references, nesting, multiplicity,
+ * and unsupported codecs fail before publication. Source: approved IA5 record
+ * gate. Version/date: 2026-11-01. Responsible: asn1c maintainers.
+ * History: IA5 record stage. Example: one OPTIONAL field with scalar siblings.
+ */
+static int
+rust_check_ber_cer_ia5_record(asn1p_module_t *module, asn1p_expr_t *expr,
+                              uint64_t codecs) {
+    const uint64_t supported = RUST_CODEC_BER | RUST_CODEC_CER;
+    asn1p_expr_t *member;
+    size_t ia5_count = 0;
+    if(!module || !expr) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        if(member->expr_type == ASN_STRING_IA5String && ++ia5_count > 1) {
+            rust_diagnostic(module, member,
+                            "BER/CER records support at most one direct IA5String field");
+            return -1;
+        }
+    }
+    if(!ia5_count) return 0;
+    if(!(codecs & supported) || (codecs & ~supported)
+       || expr->tag.tag_class != TC_NOCLASS || expr->tag.tag_mode != TM_DEFAULT) {
+        rust_diagnostic(module, expr,
+            "record IA5String requires an untagged root and BER/CER-only codecs");
+        return -1;
+    }
+    TQ_FOR(member, &expr->members, next) {
+        if(member->expr_type == ASN_STRING_IA5String) {
+            if(rust_check_ber_cer_ia5_member(module, member)) return -1;
+        } else if(member->expr_type == ASN_CONSTR_SEQUENCE
+                  || member->expr_type == ASN_CONSTR_SET
+                  || member->expr_type == ASN_CONSTR_CHOICE) {
+            rust_diagnostic(module, member,
+                            "record IA5String fields do not support nested record members");
+            return -1;
+        }
+    }
+    return 0;
+}
+
+/*
  * Validate module, type, constraint, and naming support before creating files.
  * Parameters: asn is the complete fixed tree; codecs is the requested mask.
- * Returns zero or -1. Diagnostics
- * retain ASN.1 source names and line numbers. No exception is raised. Original
- * source: new Rust backend. Version/date: 0.1.0, 2026-10-11. Responsible
- * party: asn1c maintainers. History: initial UPER type gate. Example:
- * rust_check_tree(fixed_tree).
+ * Returns zero when at least one supported assignment exists, otherwise -1.
+ * Errors: diagnostics retain ASN.1 source names and line numbers; no exception.
+ * Source: new Rust backend. Version/date: 0.1.0, 2026-10-11.
+ * Responsible party: asn1c maintainers. History: initial UPER type gate.
+ * Example: rust_check_tree(fixed_tree).
  */
 static int
 rust_check_tree(asn1p_t *asn, uint64_t codecs) {
@@ -1467,6 +1548,7 @@ rust_check_sequence(asn1p_module_t *module, asn1p_expr_t *expr,
                         "SEQUENCE needs supported UPER, CBOR, BER, or CER codecs");
         return -1;
     }
+    if(rust_check_ber_cer_ia5_record(module, expr, codecs)) return -1;
     if(rust_check_sequence_tree(module, expr, stack, 0, &nodes, &work, codecs)) return -1;
     if((codecs & RUST_CODEC_UPER)
        && (codecs & (RUST_CODEC_BER | RUST_CODEC_CER))
@@ -1509,6 +1591,7 @@ rust_check_set_ber_cer(asn1p_module_t *module, asn1p_expr_t *expr,
                         "context-specific IMPLICIT tag and BER/CER-only codecs");
         return -1;
     }
+    if(rust_check_ber_cer_ia5_record(module, expr, codecs)) return -1;
     TQ_FOR(member, &expr->members, next) {
         if(++count > RUST_BER_CER_FIELD_LIMIT || ++work > RUST_BER_CER_WORK_LIMIT) {
             rust_diagnostic(module, expr, "BER/CER SET exceeds the supported direct-field limit");
@@ -1647,6 +1730,16 @@ rust_check_ber_cer_member(asn1p_module_t *module, asn1p_expr_t *expr,
         }
         return 0;
     }
+    if(member->expr_type == ASN_STRING_IA5String) {
+        if(rust_check_ber_cer_ia5_member(module, member)
+           || (set && rust_check_sequence_name(module, expr, member))) return -1;
+        if(rust_ber_cer_duplicate_tag(expr, member)) {
+            rust_diagnostic(module, member,
+                            "BER/CER record fields must have unique effective tags");
+            return -1;
+        }
+        return 0;
+    }
     if(!rust_ber_cer_member_shape_valid(member)
        || (set && rust_check_sequence_name(module, expr, member))) {
         rust_diagnostic(module, member,
@@ -1762,6 +1855,7 @@ rust_sequence_ber_cer_tag(const asn1p_expr_t *member) {
     case ASN_BASIC_OCTET_STRING: return 4;
     case ASN_BASIC_NULL: return 5;
     case ASN_BASIC_ENUMERATED: return 10;
+    case ASN_STRING_IA5String: return 22;
     case ASN_CONSTR_SEQUENCE: return 16;
     case ASN_CONSTR_SET: return 17;
     default: return 0;
@@ -1909,6 +2003,39 @@ rust_ber_cer_has_nested_record(asn1p_expr_t *expr) {
 }
 
 /*
+ * Detect an IA5String member that requires aggregate runtime storage tracking.
+ * Input: expr owns one record's direct members. Returns one when present.
+ * Errors: none. Source: approved IA5 record accounting policy.
+ * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
+ * History: IA5 flat-record gate. Example: an absent OPTIONAL IA5 still selects
+ * aggregate accounting for the record operation.
+ */
+static int
+rust_ber_cer_has_ia5_member(asn1p_expr_t *expr) {
+    asn1p_expr_t *member;
+    if(!expr) return 0;
+    TQ_FOR(member, &expr->members, next) {
+        if(member->expr_type == ASN_STRING_IA5String) return 1;
+    }
+    return 0;
+}
+
+/*
+ * Select the runtime budget mode required by a generated record operation.
+ * Input: expr owns validated direct members. Returns a RecordContext method
+ * name for new/nested/aggregate-scratch mode. Errors: none. Source: runtime
+ * record context constructors. Version/date: 2026-11-01. Responsible party:
+ * asn1c maintainers. History: nested and IA5 record support.
+ * Example: an OPTIONAL IA5 field selects `new_with_aggregate_scratch`.
+ */
+static const char *
+rust_ber_cer_context_constructor(asn1p_expr_t *expr) {
+    if(rust_ber_cer_has_nested_record(expr)) return "new_nested";
+    if(rust_ber_cer_has_ia5_member(expr)) return "new_with_aggregate_scratch";
+    return "new";
+}
+
+/*
  * Purpose: locate the one validated inline CHOICE and its logical field index.
  * Input: expr owns a record; index receives declaration position when present.
  * Returns the CHOICE member or NULL. Errors: none; preflight limits count to one.
@@ -2014,6 +2141,7 @@ rust_ber_cer_field_kind(const asn1p_expr_t *member) {
     case ASN_BASIC_ENUMERATED: return "Enumerated";
     case ASN_CONSTR_SEQUENCE: return "Sequence";
     case ASN_CONSTR_SET: return "Set";
+    case ASN_STRING_IA5String: return "Ia5String";
     default: return NULL;
     }
 }
@@ -2901,6 +3029,14 @@ rust_check_sequence_tree_member(asn1p_module_t *module, asn1p_expr_t *parent,
         }
         return rust_check_sequence_tree(module, member, stack, depth + 1,
                                         nodes, work, codecs);
+    }
+    if(member->expr_type == ASN_STRING_IA5String) {
+        if(depth != 0) {
+            rust_diagnostic(module, member,
+                            "IA5String fields are supported only at the record root");
+            return -1;
+        }
+        return 0;
     }
     return rust_check_sequence_member(module, member);
 }
@@ -4739,10 +4875,12 @@ rust_write_sequence(FILE *stream, const char *name, asn1p_expr_t *expr,
                     int top_level, uint64_t codecs) {
     asn1p_expr_t *member;
     int has_members = expr->members.tq_head != 0;
+    const char *derive = rust_ber_cer_has_ia5_member(expr)
+                       ? "Debug, Eq, PartialEq" : "Clone, Debug, Eq, PartialEq";
     if(fprintf(stream,
         "/// ASN.1 SEQUENCE record with direct inline fields.\n"
-        "#[derive(Clone, Debug, Eq, PartialEq)]\n"
-        "pub struct %s {\n", name) < 0) return -1;
+        "#[derive(%s)]\n"
+        "pub struct %s {\n", derive, name) < 0) return -1;
     TQ_FOR(member, &expr->members, next) {
         if(rust_write_sequence_field(stream, name, member)) return -1;
     }
@@ -4895,7 +5033,7 @@ rust_write_sequence_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr
             "        self.encode_record_with_rule(\n"
             "            ::asn1c_runtime::ber::RecordEncoding::Der, &mut context)\n"
             "    }\n\n",
-            rust_ber_cer_has_nested_record(expr) ? "new_nested" : "new") < 0) return -1;
+            rust_ber_cer_context_constructor(expr)) < 0) return -1;
         if(rust_write_sequence_ber_cer_decode_method(stream, parent, expr, 0)) return -1;
     }
     if(codecs & RUST_CODEC_CER) {
@@ -4911,7 +5049,7 @@ rust_write_sequence_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr
             "        self.encode_record_with_rule(\n"
             "            ::asn1c_runtime::ber::RecordEncoding::Cer, &mut context)\n"
             "    }\n\n",
-            rust_ber_cer_has_nested_record(expr) ? "new_nested" : "new") < 0) return -1;
+            rust_ber_cer_context_constructor(expr)) < 0) return -1;
         if(rust_write_sequence_ber_cer_decode_method(stream, parent, expr, 1)) return -1;
     }
     return 0;
@@ -5309,8 +5447,7 @@ rust_write_set_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr,
     int tagged_root = expr->tag.tag_class == TC_CONTEXT_SPECIFIC
                    && expr->tag.tag_mode == TM_IMPLICIT;
     choice = rust_ber_cer_choice_member(expr, NULL);
-    const char *context_constructor = rust_ber_cer_has_nested_record(expr)
-                                    ? "new_nested" : "new";
+    const char *context_constructor = rust_ber_cer_context_constructor(expr);
     if(rust_ber_cer_sort_set_fields(expr, sorted,
                                     sizeof(sorted) / sizeof(sorted[0]), &count)) return -1;
     if(!top_level && rust_write_nested_ber_cer_fields(stream, expr, parent, 1)) return -1;
@@ -5402,6 +5539,7 @@ rust_write_set_ber_cer_decode_helper(FILE *stream, const char *parent,
         : member->expr_type == ASN_BASIC_BIT_STRING
           && rust_fixed_size(member, &(size_t){0}) == 0 ? "::std::vec::Vec<u8>"
         : member->expr_type == ASN_BASIC_BIT_STRING ? "::asn1c_runtime::BitStringValue"
+        : member->expr_type == ASN_STRING_IA5String ? "::asn1c_runtime::Ia5String"
         : nested_type;
     int ret;
     if(!name || !type) {
@@ -5718,8 +5856,7 @@ rust_write_set_ber_cer_decode_method(FILE *stream, const char *parent,
                    && expr->tag.tag_mode == TM_IMPLICIT;
     int tagged = tagged_root || rust_ber_cer_has_tagged_members(expr)
               || rust_ber_cer_choice_member(expr, NULL) != NULL;
-    const char *context_constructor = rust_ber_cer_has_nested_record(expr)
-                                    ? "new_nested" : "new";
+    const char *context_constructor = rust_ber_cer_context_constructor(expr);
     if(rust_write_method_doc(stream, cer
         ? "Strictly decode one CER SET prefix."
         : "Decode one BER SET prefix.",
@@ -5766,6 +5903,8 @@ static int
 rust_write_set(FILE *stream, const char *name, asn1p_expr_t *expr,
                int top_level, uint64_t codecs) {
     asn1p_expr_t *member;
+    const char *derive = rust_ber_cer_has_ia5_member(expr)
+                       ? "Debug, Eq, PartialEq" : "Clone, Debug, Eq, PartialEq";
     TQ_FOR(member, &expr->members, next) {
         if(member->expr_type == ASN_CONSTR_SEQUENCE || member->expr_type == ASN_CONSTR_SET) {
             char *nested_name = rust_nested_type_name(name, member);
@@ -5795,8 +5934,8 @@ rust_write_set(FILE *stream, const char *name, asn1p_expr_t *expr,
     if(strchr(name, '_') && fputs("#[allow(non_camel_case_types)]\n", stream) == EOF)
         return -1;
     if(fprintf(stream,
-        "#[derive(Clone, Debug, Eq, PartialEq)]\n"
-        "pub struct %s {\n", name) < 0) return -1;
+        "#[derive(%s)]\n"
+        "pub struct %s {\n", derive, name) < 0) return -1;
     TQ_FOR(member, &expr->members, next) {
         if(rust_write_sequence_field(stream, name, member)) return -1;
     }
@@ -6103,6 +6242,9 @@ rust_write_sequence_ber_cer_encode_value(FILE *stream, const char *parent,
     case ASN_BASIC_BIT_STRING:
         return rust_write_ber_cer_bits(stream, member, value, tag_argument,
                                        tagged, explicit_tag);
+    case ASN_STRING_IA5String:
+        if(tagged || explicit_tag) return -1;
+        return fprintf(stream, "writer.write_ia5_string(%s)?;\n", value) < 0 ? -1 : 0;
     default:
         return -1;
     }
@@ -6137,6 +6279,8 @@ rust_write_sequence_ber_cer_encode_optional(FILE *stream, const char *parent,
         return -1;
     if(member->expr_type == ASN_BASIC_OCTET_STRING)
         strcpy(value, "value.as_slice()");
+    else if(member->expr_type == ASN_STRING_IA5String)
+        strcpy(value, "value");
     else if(member->expr_type == ASN_BASIC_BIT_STRING)
         strcpy(value, "value");
     else if(member->expr_type == ASN_CONSTR_SEQUENCE || member->expr_type == ASN_CONSTR_SET)
@@ -6195,6 +6339,8 @@ rust_write_sequence_ber_cer_encode_required(FILE *stream, const char *parent,
        || (member->expr_type == ASN_BASIC_BIT_STRING
            && rust_fixed_size(member, &(size_t){0}) == 0))
         written = snprintf(value, sizeof(value), "&self.%s", name);
+    else if(member->expr_type == ASN_STRING_IA5String)
+        written = snprintf(value, sizeof(value), "&self.%s", name);
     else if(member->expr_type == ASN_BASIC_NULL)
         written = snprintf(value, sizeof(value), "()");
     else
@@ -6241,8 +6387,7 @@ rust_write_sequence_ber_cer_decode_method(FILE *stream, const char *parent,
     const char *suffix = cer ? "cer" : "ber";
     size_t choice_index = 0;
     asn1p_expr_t *choice = rust_ber_cer_choice_member(expr, &choice_index);
-    const char *context_constructor = rust_ber_cer_has_nested_record(expr)
-                                    ? "new_nested" : "new";
+    const char *context_constructor = rust_ber_cer_context_constructor(expr);
     int tagged_root = expr->tag.tag_class == TC_CONTEXT_SPECIFIC
                    && expr->tag.tag_mode == TM_IMPLICIT;
     if(rust_write_method_doc(stream, cer
@@ -6467,6 +6612,9 @@ rust_write_sequence_ber_cer_decode_value(FILE *stream, const char *parent,
         return rust_write_ber_cer_decode_octets(stream, member, indent);
     case ASN_BASIC_BIT_STRING:
         return rust_write_ber_cer_decode_bits(stream, member, indent);
+    case ASN_STRING_IA5String:
+        return fprintf(stream, "%slet value = reader.read_ia5_string()?;\n", indent) < 0
+            ? -1 : 0;
     default:
         return -1;
     }
@@ -7421,6 +7569,8 @@ rust_write_sequence_field(FILE *stream, const char *parent,
                          ? "::std::vec::Vec<u8>"
                        : member->expr_type == ASN_BASIC_BIT_STRING
                          ? "::asn1c_runtime::BitStringValue"
+                       : member->expr_type == ASN_STRING_IA5String
+                         ? "::asn1c_runtime::Ia5String"
                        : "::std::vec::Vec<u8>";
     int ret = -1;
     if(name) {

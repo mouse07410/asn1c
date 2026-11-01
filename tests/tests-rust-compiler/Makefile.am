@@ -95,6 +95,18 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/Ia5ValuesTagged.asn1 \
     $(srcdir)/ia5_conformance.rs \
     $(srcdir)/c_ia5.c \
+    $(srcdir)/Ia5Record.asn1 \
+    $(srcdir)/Ia5RecordAlias.asn1 \
+    $(srcdir)/Ia5RecordConstrained.asn1 \
+    $(srcdir)/Ia5RecordDefault.asn1 \
+    $(srcdir)/Ia5RecordImported.asn1 \
+    $(srcdir)/Ia5RecordImportedBase.asn1 \
+    $(srcdir)/Ia5RecordMultiple.asn1 \
+    $(srcdir)/Ia5RecordNested.asn1 \
+    $(srcdir)/Ia5RecordTagged.asn1 \
+    $(srcdir)/Ia5RecordTaggedRoot.asn1 \
+    $(srcdir)/ia5_record_conformance.rs \
+    $(srcdir)/c_ia5_record.c \
     $(srcdir)/RestrictedStrings.asn1 \
     $(srcdir)/RestrictedStringsAlias.asn1 \
     $(srcdir)/RestrictedStringsConstrained.asn1 \

@@ -15,6 +15,7 @@ const MAX_RECORD_SCRATCH_BYTES: usize = 128 * 1024 * 1024;
 const CER_FRAGMENT_MAX: usize = 1000;
 const TAG_BIT_STRING: u64 = 3;
 const TAG_OCTET_STRING: u64 = 4;
+const TAG_IA5_STRING: u64 = 22;
 const TAG_ENUMERATED: u64 = 10;
 const TAG_SEQUENCE: u64 = 16;
 const TAG_BOOLEAN: u64 = 1;
@@ -590,7 +591,7 @@ impl Tag {
     }
 }
 
-/// Semantic ASN.1 primitive kind carried separately from an effective tag.
+/// Semantic ASN.1 value kind carried separately from an effective tag.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FieldKind {
     /// BOOLEAN field content.
@@ -603,6 +604,8 @@ pub enum FieldKind {
     OctetString,
     /// Empty NULL field content.
     Null,
+    /// Raw `IA5String` content, validated only by CER encoding.
+    Ia5String,
     /// Signed numeric ENUMERATED field content.
     Enumerated,
     /// Inline constructed SEQUENCE record content.
@@ -639,6 +642,7 @@ impl FieldKind {
             Self::Integer => TAG_INTEGER,
             Self::BitString => TAG_BIT_STRING,
             Self::OctetString => TAG_OCTET_STRING,
+            Self::Ia5String => TAG_IA5_STRING,
             Self::Null => TAG_NULL,
             Self::Enumerated => TAG_ENUMERATED,
             Self::Sequence => TAG_SEQUENCE,
@@ -758,6 +762,13 @@ impl RecordField {
 /// Example: called by `RecordField::new` and all tagged writers.
 fn validate_field_descriptor(tag: Tag, kind: FieldKind) -> Result<(), Error> {
     tag.validate()?;
+    if kind == FieldKind::Ia5String
+        && (tag.class != TagClass::Universal || u64::from(tag.number) != TAG_IA5_STRING)
+    {
+        return Err(invalid(
+            "record IA5String fields require their natural universal tag",
+        ));
+    }
     if tag.class == TagClass::Universal && u64::from(tag.number) != kind.universal_tag() {
         return Err(invalid(
             "universal field tag does not match its primitive kind",
@@ -786,6 +797,11 @@ fn validate_field_mode(tag: Tag, kind: FieldKind, mode: TaggingMode) -> Result<(
         TaggingMode::Implicit => validate_field_descriptor(tag, kind),
         TaggingMode::Explicit => {
             tag.validate()?;
+            if kind == FieldKind::Ia5String {
+                return Err(invalid(
+                    "record IA5String fields do not support EXPLICIT tagging",
+                ));
+            }
             if tag.class != TagClass::ContextSpecific {
                 return Err(invalid("EXPLICIT record tags must be context-specific"));
             }
@@ -812,6 +828,7 @@ const fn field_kind_for_universal(tag: u64) -> Option<FieldKind> {
         TAG_INTEGER => Some(FieldKind::Integer),
         TAG_BIT_STRING => Some(FieldKind::BitString),
         TAG_OCTET_STRING => Some(FieldKind::OctetString),
+        TAG_IA5_STRING => Some(FieldKind::Ia5String),
         TAG_NULL => Some(FieldKind::Null),
         TAG_ENUMERATED => Some(FieldKind::Enumerated),
         TAG_SEQUENCE => Some(FieldKind::Sequence),
@@ -1270,7 +1287,7 @@ impl RecordKind {
 ///
 /// A context is created once for an encode or decode operation and may be
 /// reused for strict CER re-encoding and comparison. On decode, `max_output_bytes`
-/// also caps cumulative OCTET/BIT STRING payload allocation charges. Nested
+/// also caps cumulative OCTET/BIT/IA5 STRING payload allocation charges. Nested
 /// callback failures roll back traversal but keep work and allocation charges.
 pub struct RecordContext {
     /// Copied caller ceilings for this complete operation.
@@ -1285,8 +1302,10 @@ pub struct RecordContext {
     depth: usize,
     /// Active nested child records; this stage permits one; state variable.
     nested_record_depth: usize,
-    /// Whether the caller opted into nested aggregate scratch accounting.
-    nested_accounting: bool,
+    /// Whether fixed aggregate scratch accounting is enabled; state variable.
+    aggregate_scratch: bool,
+    /// Whether inline nested-record callbacks are enabled; state variable.
+    nested_records_enabled: bool,
 }
 
 /// One field header and content span in a flat SEQUENCE or SET.
@@ -1398,7 +1417,7 @@ impl RecordContext {
     /// Example: `let mut context = RecordContext::new(&limits);`.
     #[must_use]
     pub const fn new(limits: &Limits) -> Self {
-        Self::with_nested_accounting(limits, false)
+        Self::with_record_modes(limits, false, false)
     }
 
     /// Create one operation context with nested-record scratch accounting.
@@ -1408,7 +1427,7 @@ impl RecordContext {
     ///
     /// # Parameters and returns
     /// `limits` supplies whole-input, complete-output, and cumulative-work
-    /// maxima. Returns a context enforcing aggregate nested scratch bounds.
+    /// maxima. Returns a context enforcing aggregate scratch and nested-depth bounds.
     ///
     /// # Errors
     /// This constructor cannot fail and raises no exception.
@@ -1419,14 +1438,37 @@ impl RecordContext {
     /// Example: `let mut context = RecordContext::new_nested(&limits);`.
     #[must_use]
     pub const fn new_nested(limits: &Limits) -> Self {
-        Self::with_nested_accounting(limits, true)
+        Self::with_record_modes(limits, true, true)
     }
 
-    /// Initialize the shared record counters while preserving the public Limits API.
+    /// Create an operation context with aggregate record scratch accounting.
+    ///
+    /// Generated records containing variable-length string storage use this
+    /// constructor even when the optional string is absent. Nested record
+    /// callbacks remain disabled.
     ///
     /// # Parameters and returns
-    /// `limits` supplies existing ceilings; `nested` enables aggregate scratch
-    /// accounting. Returns an unused operation context.
+    /// `limits` supplies whole-input, output, and cumulative-work ceilings.
+    /// Returns a context enforcing the fixed record scratch cap.
+    ///
+    /// # Errors
+    /// This constructor cannot fail and raises no exception.
+    ///
+    /// # Source, version, history, example
+    /// Source: aggregate record scratch policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: variable-record storage.
+    /// Example: `RecordContext::new_with_aggregate_scratch(&limits)`.
+    #[must_use]
+    pub const fn new_with_aggregate_scratch(limits: &Limits) -> Self {
+        Self::with_record_modes(limits, true, false)
+    }
+
+    /// Initialize shared counters and independent record context capabilities.
+    ///
+    /// # Parameters and returns
+    /// `limits` supplies existing ceilings; `aggregate_scratch` enables the
+    /// combined allocation cap; `nested_records` enables nested callbacks.
+    /// Returns an unused operation context.
     ///
     /// # Errors
     /// This helper cannot fail.
@@ -1434,8 +1476,12 @@ impl RecordContext {
     /// # Source, version, history, example
     /// Source: bounded record-operation policy. Version: 2026-11-01.
     /// Responsible: asn1c maintainers. History: nested context opt-in.
-    /// Example: called by `new` and `new_nested`.
-    const fn with_nested_accounting(limits: &Limits, nested: bool) -> Self {
+    /// Example: called by the three public constructors.
+    const fn with_record_modes(
+        limits: &Limits,
+        aggregate_scratch: bool,
+        nested_records: bool,
+    ) -> Self {
         Self {
             limits: *limits,
             work_used: 0,
@@ -1443,7 +1489,8 @@ impl RecordContext {
             retained_capacity: 0,
             depth: 0,
             nested_record_depth: 0,
-            nested_accounting: nested,
+            aggregate_scratch,
+            nested_records_enabled: nested_records,
         }
     }
 
@@ -1511,7 +1558,7 @@ impl RecordContext {
     /// Responsible: asn1c maintainers. History: nested record support.
     /// Example: nested callbacks reserve one layer plus any wrapper.
     fn enter_nested(&mut self, layers: usize) -> Result<(), Error> {
-        if !self.nested_accounting {
+        if !self.nested_records_enabled {
             return Err(invalid("nested records require RecordContext::new_nested"));
         }
         if self.nested_record_depth != 0 {
@@ -1554,7 +1601,7 @@ impl RecordContext {
     /// Returns `SizeOverflow` if the retained counter is inconsistent.
     ///
     /// # Source, version, history, example
-    /// Source: bounded sequence scratch policy. Version: 2026-10-31.
+    /// Source: bounded record scratch policy. Version: 2026-10-31.
     /// Responsible: asn1c maintainers. History: shared string fields.
     /// Example: `let remaining = context.remaining_decode_limits()?`.
     fn remaining_decode_limits(&self) -> Result<Limits, Error> {
@@ -1564,7 +1611,7 @@ impl RecordContext {
             .max_output_bytes
             .checked_sub(self.retained_bytes)
             .ok_or(Error::SizeOverflow)?;
-        if self.nested_accounting {
+        if self.aggregate_scratch {
             let scratch_remaining = MAX_RECORD_SCRATCH_BYTES
                 .checked_sub(self.retained_capacity)
                 .ok_or(Error::SizeOverflow)?;
@@ -1580,11 +1627,11 @@ impl RecordContext {
     /// Charges remain cumulative even when a callback fails or the value drops.
     ///
     /// # Errors
-    /// Returns checked-size or output-limit errors. Nested decodes also enforce
-    /// the fixed scratch cap against cumulative capacity charges.
+    /// Returns checked-size or output-limit errors. Aggregate contexts also
+    /// enforce the fixed scratch cap against cumulative capacity charges.
     ///
     /// # Source, version, history, example
-    /// Source: sequence decoded-storage policy. Version: 2026-10-31.
+    /// Source: record decoded-storage policy. Version: 2026-10-31.
     /// Responsible: asn1c maintainers. History: bounded string fields.
     /// Example: `context.retain_decoded(owned.len(), owned.capacity())?`.
     fn retain_decoded(&mut self, bytes: usize, capacity: usize) -> Result<(), Error> {
@@ -1597,11 +1644,33 @@ impl RecordContext {
             .retained_capacity
             .checked_add(capacity)
             .ok_or(Error::SizeOverflow)?;
-        if self.nested_accounting {
+        if self.aggregate_scratch {
             check_scratch_total(total_capacity, MAX_RECORD_SCRATCH_BYTES)?;
         }
         self.retained_bytes = total;
         self.retained_capacity = total_capacity;
+        Ok(())
+    }
+
+    /// Require the fixed aggregate allocation cap for a variable record field.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns success only for a context created with aggregate
+    /// scratch accounting enabled.
+    ///
+    /// # Errors
+    /// Returns `InvalidEncoding` when the context was created with `new`.
+    ///
+    /// # Source, version, history, example
+    /// Source: flat-record `IA5String` resource policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: IA5 record gate.
+    /// Example: called at each public record IA5 reader/writer entry.
+    const fn require_aggregate_scratch(&self) -> Result<(), Error> {
+        if !self.aggregate_scratch {
+            return Err(invalid(
+                "record IA5String requires aggregate scratch accounting",
+            ));
+        }
         Ok(())
     }
 
@@ -1667,7 +1736,7 @@ impl SequenceWriter<'_> {
     ) -> Result<SequenceWriter<'_>, Error> {
         let minimum_size = if rule == RecordEncoding::Cer { 4 } else { 2 };
         context.check_output(minimum_size)?;
-        if context.nested_accounting {
+        if context.aggregate_scratch {
             check_scratch_total(
                 context
                     .retained_capacity
@@ -1680,7 +1749,7 @@ impl SequenceWriter<'_> {
         bytes
             .try_reserve_exact(2)
             .map_err(|_| Error::AllocationFailed { requested_bytes: 2 })?;
-        if context.nested_accounting {
+        if context.aggregate_scratch {
             check_scratch_total(
                 context
                     .retained_capacity
@@ -1751,13 +1820,17 @@ impl SequenceWriter<'_> {
     /// Responsible: asn1c maintainers. History: inline SEQUENCE support.
     /// Example: used before growing a nested child buffer.
     fn check_nested_storage(&self, child_len: usize) -> Result<(), Error> {
-        if !self.context.nested_accounting {
+        if !self.context.aggregate_scratch {
             return Ok(());
         }
+        let output_capacity = match self.parent_capacity {
+            Some(_) => child_len,
+            None => self.bytes.capacity().max(child_len),
+        };
         let total = self
             .parent_capacity
             .unwrap_or(0)
-            .checked_add(child_len)
+            .checked_add(output_capacity)
             .and_then(|size| size.checked_add(self.context.retained_capacity))
             .ok_or(Error::SizeOverflow)?;
         check_scratch_total(total, MAX_RECORD_SCRATCH_BYTES)
@@ -2363,6 +2436,54 @@ impl SequenceWriter<'_> {
         self.write_explicit_primitive(tag, FieldKind::Enumerated, &full[first..])
     }
 
+    /// Append one raw `IA5String` field under the natural universal tag 22.
+    ///
+    /// BER/DER preserve every byte. CER validates the 7-bit repertoire and
+    /// fragments content above 1000 octets with universal tag-4 children.
+    ///
+    /// # Parameters and returns
+    /// `value` supplies raw IA5 content. Returns success after committing one
+    /// canonical field in declaration or SET tag order.
+    ///
+    /// # Errors
+    /// Returns missing aggregate mode, CER repertoire, duplicate/order, limit,
+    /// checked-size, or allocation errors. Failed bytes and field state roll back.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 `IA5String` and C codec timing. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat record IA5 gate.
+    /// Example: `writer.write_ia5_string(&value)?`.
+    pub fn write_ia5_string(&mut self, value: &Ia5String) -> Result<(), Error> {
+        self.context.require_aggregate_scratch()?;
+        let tag = Tag::universal(22);
+        validate_field_descriptor(tag, FieldKind::Ia5String)?;
+        let bytes = value.as_bytes();
+        if self.rule == RecordEncoding::Cer {
+            validate_ia5_content(bytes, &self.context.limits, &mut self.context.work_used)?;
+        }
+        let field_size = if self.rule == RecordEncoding::Cer {
+            ia5_cer_encoded_len(bytes.len())?
+        } else {
+            tagged_primitive_field_size(tag, bytes.len())?
+        };
+        self.prepare_field(tag, field_size)?;
+        let start = self.bytes.len();
+        if let Err(error) = self.write_ia5_tlv(bytes) {
+            self.bytes.truncate(start);
+            return Err(error);
+        }
+        if self.bytes.len().checked_sub(start) != Some(field_size) {
+            self.bytes.truncate(start);
+            return Err(Error::SizeOverflow);
+        }
+        if let Err(error) = self.remember_tag(tag) {
+            self.bytes.truncate(start);
+            return Err(error);
+        }
+        self.last_tag = Some(tag);
+        Ok(())
+    }
+
     /// Append one bounded OCTET STRING using the selected record rule.
     ///
     /// # Parameters
@@ -2818,6 +2939,68 @@ impl SequenceWriter<'_> {
         Ok(())
     }
 
+    /// Write one canonical primitive or constructed CER `IA5String` field.
+    ///
+    /// # Parameters and returns
+    /// `content` is raw IA5 bytes already validated for CER when required.
+    /// Returns success after the full field TLV is appended.
+    ///
+    /// # Errors
+    /// Returns output/scratch-limit, checked-size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 CER `IA5String` fragmentation. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat record IA5 gate.
+    /// Example: called by `write_ia5_string` after all preflight checks.
+    fn write_ia5_tlv(&mut self, content: &[u8]) -> Result<(), Error> {
+        if self.rule != RecordEncoding::Cer || content.len() <= CER_FRAGMENT_MAX {
+            self.push_record_bytes(&[0x16])?;
+            let (length, length_len) = canonical_length_octets(content.len())?;
+            self.push_record_bytes(&length[..length_len])?;
+            return self.push_record_bytes(content);
+        }
+
+        self.push_record_bytes(&[0x36, 0x80])?;
+        for fragment in content.chunks(CER_FRAGMENT_MAX) {
+            self.push_record_bytes(&[0x04])?;
+            let (length, length_len) = canonical_length_octets(fragment.len())?;
+            self.push_record_bytes(&length[..length_len])?;
+            self.push_record_bytes(fragment)?;
+        }
+        self.push_record_bytes(&[0, 0])
+    }
+
+    /// Append record bytes after projected and actual aggregate-capacity checks.
+    ///
+    /// # Parameters and returns
+    /// `bytes` is a preflighted identifier, length, content, or EOC segment.
+    /// Returns success after fallible reservation and copying.
+    ///
+    /// # Errors
+    /// Returns output/scratch-limit, checked-size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: aggregate variable-record storage policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat record IA5 gate.
+    /// Example: called for each canonical IA5 TLV component.
+    fn push_record_bytes(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        let next = self
+            .bytes
+            .len()
+            .checked_add(bytes.len())
+            .ok_or(Error::SizeOverflow)?;
+        self.context.check_output(next)?;
+        self.check_nested_storage(next)?;
+        self.bytes
+            .try_reserve(bytes.len())
+            .map_err(|_| Error::AllocationFailed {
+                requested_bytes: next,
+            })?;
+        self.check_actual_nested_storage()?;
+        self.bytes.extend_from_slice(bytes);
+        Ok(())
+    }
+
     /// Remember one successfully emitted field identifier.
     ///
     /// # Parameters and returns
@@ -3069,6 +3252,24 @@ impl<'context> SetWriter<'context> {
     /// Example: `writer.write_enumerated(1)?`.
     pub fn write_enumerated(&mut self, value: i64) -> Result<(), Error> {
         self.inner.write_enumerated(value)
+    }
+
+    /// Append one raw `IA5String` member in increasing universal-tag order.
+    ///
+    /// # Parameters and returns
+    /// `value` supplies unconstrained raw bytes. Returns success after the
+    /// canonical tag-22 field is committed.
+    ///
+    /// # Errors
+    /// Returns aggregate-mode, CER repertoire, duplicate/order, resource,
+    /// checked-size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET and `IA5String` rules. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat record IA5 gate.
+    /// Example: `writer.write_ia5_string(&value)?`.
+    pub fn write_ia5_string(&mut self, value: &Ia5String) -> Result<(), Error> {
+        self.inner.write_ia5_string(value)
     }
 
     /// Append one bounded OCTET STRING member in increasing tag order.
@@ -3392,8 +3593,8 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
     ///
     /// # Parameters
     /// `input` is the full available slice; `expected_tags` lists up to six
-    /// unique BOOLEAN, INTEGER, BIT STRING, OCTET STRING, NULL, or ENUMERATED
-    /// universal tags in schema order; `context` supplies shared budgets.
+    /// unique BOOLEAN, INTEGER, BIT, OCTET, IA5, NULL, or ENUMERATED universal
+    /// tags in schema order; `context` supplies shared budgets.
     ///
     /// # Returns
     /// A cursor accepting definite or indefinite BER outer lengths.
@@ -4156,6 +4357,37 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
         Ok(decoded.value)
     }
 
+    /// Decode and flatten one raw `IA5String` field under universal tag 22.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns owned content bytes in the `Ia5String` wrapper;
+    /// primitive and constructed definite/indefinite BER are accepted.
+    ///
+    /// # Errors
+    /// Returns missing aggregate mode, malformed BER, storage/output/work,
+    /// checked-size, or allocation errors. The IA5 repertoire is not checked.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 `IA5String` and C BER callback. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat record IA5 gate.
+    /// Example: `let value = reader.read_ia5_string()?`.
+    pub fn read_ia5_string(&mut self) -> Result<Ia5String, Error> {
+        self.context.require_aggregate_scratch()?;
+        let field = self.current_field(FieldKind::Ia5String)?;
+        let encoded = &self.input[field.tlv_start..field.tlv_end];
+        let limits = self.context.remaining_decode_limits()?;
+        let decoded = decode_ia5_ber_bytes(encoded, &limits, &mut self.context.work_used)?;
+        if decoded.consumed_bytes != encoded.len() {
+            return Err(invalid("IA5String field has trailing encoded data"));
+        }
+        self.context
+            .retain_decoded(decoded.value.len(), decoded.value.capacity())?;
+        self.current = None;
+        Ok(Ia5String {
+            bytes: decoded.value,
+        })
+    }
+
     /// Decode and flatten the current bounded BER BIT STRING field.
     ///
     /// # Parameters
@@ -4652,6 +4884,23 @@ impl<'input, 'tags, 'context> SetReader<'input, 'tags, 'context> {
     /// Example: `let bytes = reader.read_octet_string(1, 8)?`.
     pub fn read_octet_string(&mut self, lower: usize, upper: usize) -> Result<Vec<u8>, Error> {
         self.inner.read_octet_string(lower, upper)
+    }
+
+    /// Decode one raw `IA5String` SET member under natural universal tag 22.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns the owned raw IA5 value after BER flattening.
+    ///
+    /// # Errors
+    /// Returns aggregate-mode, malformed BER, retained-storage, output, work,
+    /// checked-size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 BER SET and `IA5String`. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat record IA5 gate.
+    /// Example: `let value = reader.read_ia5_string()?`.
+    pub fn read_ia5_string(&mut self) -> Result<Ia5String, Error> {
+        self.inner.read_ia5_string()
     }
 
     /// Decode and flatten the current bounded BIT STRING SET member.
@@ -8672,6 +8921,7 @@ const fn intrinsic_tag(kind: FieldKind) -> Tag {
         FieldKind::Integer => Tag::universal(2),
         FieldKind::BitString => Tag::universal(3),
         FieldKind::OctetString => Tag::universal(4),
+        FieldKind::Ia5String => Tag::universal(22),
         FieldKind::Null => Tag::universal(5),
         FieldKind::Enumerated => Tag::universal(10),
         FieldKind::Sequence => Tag::universal(16),
@@ -8797,7 +9047,7 @@ fn retag_root_record(
         .checked_add(identifier.len())
         .ok_or(Error::SizeOverflow)?;
     context.check_output(new_len)?;
-    if context.nested_accounting {
+    if context.aggregate_scratch {
         check_combined_capacities(parent_capacity, new_len, context.retained_capacity)?;
     }
     let shifted_work = if identifier.len() > 1 {
@@ -8815,7 +9065,7 @@ fn retag_root_record(
                 requested_bytes: new_len,
             })?;
     }
-    if context.nested_accounting {
+    if context.aggregate_scratch {
         check_combined_capacities(parent_capacity, bytes.capacity(), context.retained_capacity)?;
     }
     if identifier.len() == 1 {
@@ -11299,6 +11549,38 @@ const fn length_size(length: usize) -> usize {
     }
     let bits = length.bit_width();
     1 + bits.div_ceil(8) as usize
+}
+
+/// Build the shortest definite length form in a fixed stack buffer.
+///
+/// # Parameters and returns
+/// `length` is content size. Returns length octets and the initialized prefix
+/// length without allocating.
+///
+/// # Errors
+/// Returns `SizeOverflow` only if a platform length cannot fit its own octets.
+///
+/// # Source, version, history, example
+/// Source: X.690 definite length forms. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: flat record IA5 writer.
+/// Example: tag-4 fragments use this to preflight before reserving output.
+fn canonical_length_octets(
+    length: usize,
+) -> Result<([u8; 1 + std::mem::size_of::<usize>()], usize), Error> {
+    let mut output = [0_u8; 1 + std::mem::size_of::<usize>()];
+    if length < 128 {
+        output[0] = u8::try_from(length).map_err(|_| Error::SizeOverflow)?;
+        return Ok((output, 1));
+    }
+    let bytes = length.to_be_bytes();
+    let first = bytes
+        .iter()
+        .position(|byte| *byte != 0)
+        .ok_or(Error::SizeOverflow)?;
+    let count = bytes.len() - first;
+    output[0] = 0x80 | u8::try_from(count).map_err(|_| Error::SizeOverflow)?;
+    output[1..=count].copy_from_slice(&bytes[first..]);
+    Ok((output, count + 1))
 }
 
 /// Validate BIT STRING unused count and low padding bits.
@@ -15828,6 +16110,729 @@ mod tests {
             &encoded.bytes[encoded.bytes.len() - 5..],
             &[4, 1, 0x7f, 0, 0]
         );
+    }
+
+    /// Encode one flat SEQUENCE containing a natural `IA5String` field.
+    ///
+    /// # Parameters and returns
+    /// `rule` selects DER or CER; `value` is the raw IA5 wrapper; `limits`
+    /// bounds the operation. Returns the complete record TLV.
+    ///
+    /// # Errors
+    /// Returns encoding, resource, size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 flat record fields. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: record `IA5String` gate.
+    /// Example: used by record IA5 writer tests.
+    fn encode_sequence_ia5(
+        rule: RecordEncoding,
+        value: &Ia5String,
+        limits: &Limits,
+    ) -> Result<Encoded, Error> {
+        let mut context = RecordContext::new_with_aggregate_scratch(limits);
+        let mut writer = SequenceWriter::new(rule, &mut context)?;
+        writer.write_ia5_string(value)?;
+        writer.finish()
+    }
+
+    /// Strictly decode and canonicalize one flat CER SEQUENCE `IA5String` field.
+    ///
+    /// # Parameters and returns
+    /// `input` may have a suffix; `limits` bounds the shared operation. Returns
+    /// raw value bytes and exact consumed-prefix counts.
+    ///
+    /// # Errors
+    /// Returns BER, CER repertoire/canonicality, resource, size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 CER record comparison. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: record `IA5String` gate.
+    /// Example: used by strict record IA5 tests.
+    fn strict_decode_sequence_ia5(
+        input: &[u8],
+        limits: &Limits,
+    ) -> Result<Decoded<Ia5String>, Error> {
+        let fields = [RecordField::new(Tag::universal(22), FieldKind::Ia5String)?];
+        let mut context = RecordContext::new_with_aggregate_scratch(limits);
+        let mut reader = SequenceReader::new_tagged(input, &fields, &mut context)?;
+        if reader.next_tagged_field()? != Some(Tag::universal(22)) {
+            return Err(invalid("record IA5String field is missing"));
+        }
+        let value = reader.read_ia5_string()?;
+        if reader.next_tagged_field()?.is_some() {
+            return Err(invalid("record contains an unexpected extra field"));
+        }
+        let consumed = reader.finish()?.consumed_bytes;
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context)?;
+        writer.write_ia5_string(&value)?;
+        let canonical = writer.finish()?;
+        context.verify_canonical(input, consumed, &canonical.bytes)?;
+        Ok(Decoded {
+            value,
+            consumed_bits: consumed.checked_mul(8).ok_or(Error::SizeOverflow)?,
+            consumed_bytes: consumed,
+        })
+    }
+
+    /// Strictly decode one CER SET containing `IA5String` and tagged BOOLEAN.
+    ///
+    /// # Parameters and returns
+    /// `input` may have a suffix; `limits` bounds the complete operation.
+    /// Returns unit and exact consumed-prefix counts.
+    ///
+    /// # Errors
+    /// Returns malformed BER, canonicality, resource, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET component order and strict CER comparison.
+    /// Version: 2026-11-01. Responsible: runtime maintainers.
+    /// History: record `IA5String` gate. Example: used by SET canonical tests.
+    fn strict_decode_set_ia5_boolean(input: &[u8], limits: &Limits) -> Result<Decoded<()>, Error> {
+        let fields = [
+            RecordField::new(Tag::universal(22), FieldKind::Ia5String)?,
+            RecordField::new(Tag::context_specific(4), FieldKind::Boolean)?,
+        ];
+        let mut context = RecordContext::new_with_aggregate_scratch(limits);
+        let mut reader = SetReader::new_tagged(input, &fields, &mut context)?;
+        let mut value = None;
+        let mut flag = None;
+        while let Some(tag) = reader.next_tagged_field()? {
+            match tag {
+                Tag {
+                    class: TagClass::Universal,
+                    number: 22,
+                } => value = Some(reader.read_ia5_string()?),
+                Tag {
+                    class: TagClass::ContextSpecific,
+                    number: 4,
+                } => flag = Some(reader.read_boolean()?),
+                _ => return Err(invalid("SET IA5 fixture contains an unexpected tag")),
+            }
+        }
+        let span = reader.finish()?;
+        let value = value.ok_or_else(|| invalid("SET IA5 fixture is missing IA5String"))?;
+        let flag = flag.ok_or_else(|| invalid("SET IA5 fixture is missing BOOLEAN"))?;
+        let mut writer = SetWriter::new(RecordEncoding::Cer, &mut context)?;
+        writer.write_ia5_string(&value)?;
+        writer.write_boolean_tagged(Tag::context_specific(4), flag)?;
+        let canonical = writer.finish()?;
+        context.verify_canonical(input, span.consumed_bytes, &canonical.bytes)?;
+        Ok(Decoded {
+            value: (),
+            consumed_bits: span.consumed_bits,
+            consumed_bytes: span.consumed_bytes,
+        })
+    }
+
+    /// Match flat record IA5 C vectors and all requested CER fragment boundaries.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Covers DER/CER SEQUENCE and SET vectors, empty content,
+    /// primitive/constructed boundaries, and full-size fragment placement.
+    ///
+    /// # Errors
+    /// Panics when generated runtime record bytes differ from the approved vectors.
+    ///
+    /// # Source, version, history, example
+    /// Source: C record codec vectors and X.690 CER. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat record IA5 gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn flat_record_ia5_vectors_and_fragment_boundaries() {
+        let limits = Limits::default();
+        let value = Ia5String::try_from_bytes(b"A", &limits).unwrap();
+        assert_eq!(
+            encode_sequence_ia5(RecordEncoding::Der, &value, &limits)
+                .unwrap()
+                .bytes,
+            [0x30, 3, 0x16, 1, b'A']
+        );
+        assert_eq!(
+            encode_sequence_ia5(RecordEncoding::Cer, &value, &limits)
+                .unwrap()
+                .bytes,
+            [0x30, 0x80, 0x16, 1, b'A', 0, 0]
+        );
+
+        let mut set_context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut set = SetWriter::new(RecordEncoding::Der, &mut set_context).unwrap();
+        set.write_ia5_string(&value).unwrap();
+        set.write_boolean_tagged(Tag::context_specific(4), true)
+            .unwrap();
+        assert_eq!(
+            set.finish().unwrap().bytes,
+            [0x31, 6, 0x16, 1, b'A', 0x84, 1, 0xff]
+        );
+        let mut set_context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut set = SetWriter::new(RecordEncoding::Cer, &mut set_context).unwrap();
+        set.write_ia5_string(&value).unwrap();
+        set.write_boolean_tagged(Tag::context_specific(4), true)
+            .unwrap();
+        assert_eq!(
+            set.finish().unwrap().bytes,
+            [0x31, 0x80, 0x16, 1, b'A', 0x84, 1, 0xff, 0, 0]
+        );
+
+        for size in [0, 127, 128, 999, 1000, 1001, 2001] {
+            let content = vec![b'A'; size];
+            let value = Ia5String::try_from_bytes(&content, &limits).unwrap();
+            let encoded = encode_sequence_ia5(RecordEncoding::Cer, &value, &limits).unwrap();
+            assert_eq!(encoded.bytes.len(), ia5_cer_encoded_len(size).unwrap() + 4);
+            assert_eq!(&encoded.bytes[..2], &[0x30, 0x80]);
+            assert_eq!(&encoded.bytes[encoded.bytes.len() - 2..], &[0, 0]);
+            if size <= CER_FRAGMENT_MAX {
+                assert_eq!(encoded.bytes[2], 0x16);
+                let (length, length_len) = canonical_length_octets(size).unwrap();
+                assert_eq!(&encoded.bytes[3..3 + length_len], &length[..length_len]);
+                assert_eq!(
+                    &encoded.bytes[3 + length_len..3 + length_len + size],
+                    content
+                );
+            } else {
+                assert_eq!(&encoded.bytes[2..8], &[0x36, 0x80, 4, 0x82, 3, 0xe8]);
+                assert_eq!(
+                    &encoded.bytes[encoded.bytes.len() - 7..],
+                    &[4, 1, b'A', 0, 0, 0, 0]
+                );
+            }
+        }
+    }
+
+    /// Decode constructed IA5 BER fields and reject malformed fragments.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Tests definite/indefinite roots, tag-4 fragments,
+    /// aliases, suffix preservation, and strict CER canonical comparison.
+    ///
+    /// # Errors
+    /// Panics if valid BER fails, malformed BER succeeds, or CER aliases pass.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 BER constructed string rules. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat record IA5 gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn flat_record_ia5_ber_constructed_aliases_and_strict_cer() {
+        let limits = Limits::default();
+        let fields = [RecordField::new(Tag::universal(22), FieldKind::Ia5String).unwrap()];
+        let definite = [0x30, 8, 0x36, 6, 4, 1, b'A', 4, 1, b'B', 0xff];
+        let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut reader = SequenceReader::new_tagged(&definite, &fields, &mut context).unwrap();
+        assert_eq!(
+            reader.next_tagged_field().unwrap(),
+            Some(Tag::universal(22))
+        );
+        assert_eq!(reader.read_ia5_string().unwrap().as_bytes(), b"AB");
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        assert_eq!(reader.finish().unwrap().consumed_bytes, definite.len() - 1);
+
+        let indefinite = [0x30, 0x80, 0x36, 0x80, 4, 1, b'A', 4, 1, b'B', 0, 0, 0, 0];
+        let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut reader = SequenceReader::new_tagged(&indefinite, &fields, &mut context).unwrap();
+        assert_eq!(
+            reader.next_tagged_field().unwrap(),
+            Some(Tag::universal(22))
+        );
+        assert_eq!(reader.read_ia5_string().unwrap().as_bytes(), b"AB");
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        assert_eq!(reader.finish().unwrap().consumed_bytes, indefinite.len());
+        assert!(strict_decode_sequence_ia5(&indefinite, &limits).is_err());
+
+        let canonical = [0x30, 0x80, 0x16, 1, b'A', 0, 0, 0xff];
+        assert_eq!(
+            strict_decode_sequence_ia5(&canonical, &limits)
+                .unwrap()
+                .consumed_bytes,
+            canonical.len() - 1
+        );
+        let raw_high_bit = [0x30, 3, 0x16, 1, 0x80];
+        let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut reader = SequenceReader::new_tagged(&raw_high_bit, &fields, &mut context).unwrap();
+        reader.next_tagged_field().unwrap();
+        assert_eq!(reader.read_ia5_string().unwrap().as_bytes(), [0x80]);
+        reader.next_tagged_field().unwrap();
+        assert!(strict_decode_sequence_ia5(&raw_high_bit, &limits).is_err());
+        let high_tag_alias = [0x30, 4, 0x1f, 0x16, 1, b'A'];
+        let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut reader =
+            SequenceReader::new_tagged(&high_tag_alias, &fields, &mut context).unwrap();
+        assert_eq!(
+            reader.next_tagged_field().unwrap(),
+            Some(Tag::universal(22))
+        );
+        assert_eq!(reader.read_ia5_string().unwrap().as_bytes(), b"A");
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        assert!(strict_decode_sequence_ia5(&high_tag_alias, &limits).is_err());
+
+        for malformed in [
+            &[0x30, 5, 0x36, 3, 0x16, 1, b'A'][..],
+            &[0x30, 0x80, 0x36, 0x80, 4, 1, b'A', 0, 0][..],
+            &[0x30, 0x80, 0x36, 0x80, 4, 1, b'A'][..],
+        ] {
+            assert!(std::panic::catch_unwind(|| {
+                let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+                let mut reader = SequenceReader::new_tagged(malformed, &fields, &mut context)?;
+                if reader.next_tagged_field()?.is_some() {
+                    let _ = reader.read_ia5_string()?;
+                }
+                Ok::<(), Error>(())
+            })
+            .is_ok());
+            let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+            let result = SequenceReader::new_tagged(malformed, &fields, &mut context).and_then(
+                |mut reader| {
+                    reader.next_tagged_field()?;
+                    reader.read_ia5_string()?;
+                    reader.next_tagged_field().map(|_| ())
+                },
+            );
+            assert!(result.is_err(), "{malformed:?}");
+        }
+    }
+
+    /// Mutate and truncate record IA5 roots without permitting panics.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Covers primitive DER/CER, constructed definite/indefinite
+    /// BER, all truncation points, and bounded identifier/content mutations.
+    ///
+    /// # Errors
+    /// Panics only if any bounded BER or strict CER path unwinds.
+    ///
+    /// # Source, version, history, example
+    /// Source: malformed record fuzz regression. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat record IA5 gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn flat_record_ia5_mutations_and_truncations_do_not_panic() {
+        let der_record = [0x30, 3, 0x16, 1, b'A'];
+        let cer_record = [0x30, 0x80, 0x16, 1, b'A', 0, 0];
+        let constructed_definite = [0x30, 5, 0x36, 3, 4, 1, b'A'];
+        let constructed_indefinite = [0x30, 0x80, 0x36, 0x80, 4, 1, b'A', 0, 0, 0, 0];
+        let wires: &[&[u8]] = &[
+            &der_record,
+            &cer_record,
+            &constructed_definite,
+            &constructed_indefinite,
+        ];
+        let limits = Limits::default();
+        let fields = [RecordField::new(Tag::universal(22), FieldKind::Ia5String).unwrap()];
+        for wire in wires {
+            for end in 0..wire.len() {
+                assert!(std::panic::catch_unwind(|| {
+                    let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+                    let attempt = SequenceReader::new_tagged(&wire[..end], &fields, &mut context)
+                        .and_then(|mut reader| {
+                            while reader.next_tagged_field()?.is_some() {
+                                reader.read_ia5_string()?;
+                            }
+                            reader.finish().map(|_| ())
+                        });
+                    let _ = attempt;
+                    let _ = strict_decode_sequence_ia5(&wire[..end], &limits);
+                })
+                .is_ok());
+            }
+            for index in 0..wire.len() {
+                for replacement in [0, 1, 0x16, 0x36, 0x80, 0xff] {
+                    let mut mutated = wire.to_vec();
+                    mutated[index] = replacement;
+                    assert!(std::panic::catch_unwind(|| {
+                        let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+                        let _ = SequenceReader::new_tagged(&mutated, &fields, &mut context);
+                        let _ = strict_decode_sequence_ia5(&mutated, &limits);
+                    })
+                    .is_ok());
+                }
+            }
+        }
+    }
+
+    /// Enforce aggregate context mode and transactional SET field behavior.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks natural field descriptors, SET ordering/duplicates,
+    /// optional aggregate setup, and CER rejection without committing bytes.
+    ///
+    /// # Errors
+    /// Panics if a context bypass, order violation, duplicate, or rollback is missed.
+    ///
+    /// # Source, version, history, example
+    /// Source: flat record field constraints. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: record `IA5String` gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn flat_record_ia5_context_and_set_semantics() {
+        let limits = Limits::default();
+        let value = Ia5String::try_from_bytes(b"A", &limits).unwrap();
+        let invalid = Ia5String::try_from_bytes(&[0x80], &limits).unwrap();
+        assert_eq!(
+            encode_sequence_ia5(RecordEncoding::Der, &invalid, &limits)
+                .unwrap()
+                .bytes,
+            [0x30, 3, 0x16, 1, 0x80]
+        );
+        assert!(RecordField::new(Tag::context_specific(2), FieldKind::Ia5String).is_err());
+        assert!(RecordField::new_explicit(Tag::context_specific(2), FieldKind::Ia5String).is_err());
+
+        let mut flat_context = RecordContext::new(&limits);
+        let mut flat_writer = SequenceWriter::new(RecordEncoding::Der, &mut flat_context).unwrap();
+        assert!(matches!(
+            flat_writer.write_ia5_string(&value),
+            Err(Error::InvalidEncoding {
+                reason: "record IA5String requires aggregate scratch accounting"
+            })
+        ));
+        let field = RecordField::new(Tag::universal(22), FieldKind::Ia5String).unwrap();
+        let fields = [field];
+        let input = [0x30, 3, 0x16, 1, b'A'];
+        let mut flat_context = RecordContext::new(&limits);
+        let mut flat_reader =
+            SequenceReader::new_tagged(&input, &fields, &mut flat_context).unwrap();
+        flat_reader.next_tagged_field().unwrap();
+        assert!(flat_reader.read_ia5_string().is_err());
+        let mut aggregate = RecordContext::new_with_aggregate_scratch(&limits);
+        assert!(aggregate.aggregate_scratch);
+        assert!(!aggregate.nested_records_enabled);
+        let mut writer = SetWriter::new(RecordEncoding::Cer, &mut aggregate).unwrap();
+        let original = writer.inner.bytes.clone();
+        assert!(writer.write_ia5_string(&invalid).is_err());
+        assert_eq!(writer.inner.bytes, original);
+
+        let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut set = SetWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        set.write_boolean_tagged(Tag::context_specific(4), true)
+            .unwrap();
+        assert!(set.write_ia5_string(&value).is_err());
+        assert_eq!(set.finish().unwrap().bytes, [0x31, 3, 0x84, 1, 0xff]);
+
+        let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut set = SetWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        set.write_ia5_string(&value).unwrap();
+        assert!(set.write_ia5_string(&value).is_err());
+        assert_eq!(
+            set.finish().unwrap().bytes,
+            [0x31, 0x80, 0x16, 1, b'A', 0, 0]
+        );
+    }
+
+    /// Keep aggregate scratch accounting active when optional IA5 is absent.
+    ///
+    /// # Parameters and returns
+    /// No parameters. A synthetic retained counter makes a sibling BOOLEAN
+    /// fail its projected scratch check only in aggregate mode.
+    ///
+    /// # Errors
+    /// Panics if optional absence disables the generated record scratch policy.
+    ///
+    /// # Source, version, history, example
+    /// Source: IA5-containing record operation policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat record IA5 gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn flat_record_ia5_optional_absence_keeps_aggregate_scratch() {
+        let limits = Limits::default();
+        let mut aggregate = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut aggregate).unwrap();
+        writer.context.retained_capacity = MAX_RECORD_SCRATCH_BYTES - 4;
+        assert!(writer.write_boolean(false).is_err());
+
+        let mut flat = RecordContext::new(&limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut flat).unwrap();
+        writer.context.retained_capacity = MAX_RECORD_SCRATCH_BYTES - 4;
+        writer.write_boolean(false).unwrap();
+    }
+
+    /// Decode SET IA5 members in BER order and reject duplicate natural tags.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Tests arbitrary BER member order and duplicate IA5 fields.
+    ///
+    /// # Errors
+    /// Panics if unordered SET dispatch or duplicate tracking differs.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET dispatch. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: record `IA5String` gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn flat_record_ia5_set_reader_order_and_duplicate_checks() {
+        let limits = Limits::default();
+        let fields = [
+            RecordField::new(Tag::context_specific(4), FieldKind::Boolean).unwrap(),
+            RecordField::new(Tag::universal(22), FieldKind::Ia5String).unwrap(),
+        ];
+        let reversed = [0x31, 6, 0x84, 1, 0xff, 0x16, 1, b'A'];
+        let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut reader = SetReader::new_tagged(&reversed, &fields, &mut context).unwrap();
+        assert_eq!(
+            reader.next_tagged_field().unwrap(),
+            Some(Tag::context_specific(4))
+        );
+        assert!(reader.read_boolean().unwrap());
+        assert_eq!(
+            reader.next_tagged_field().unwrap(),
+            Some(Tag::universal(22))
+        );
+        assert_eq!(reader.read_ia5_string().unwrap().as_bytes(), b"A");
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        assert_eq!(reader.finish().unwrap().consumed_bytes, reversed.len());
+
+        let canonical = [0x31, 0x80, 0x16, 1, b'A', 0x84, 1, 0xff, 0, 0, 0xff];
+        assert_eq!(
+            strict_decode_set_ia5_boolean(&canonical, &limits)
+                .unwrap()
+                .consumed_bytes,
+            canonical.len() - 1
+        );
+        assert!(strict_decode_set_ia5_boolean(&reversed, &limits).is_err());
+
+        let duplicate = [0x31, 6, 0x16, 1, b'A', 0x16, 1, b'B'];
+        let ia5_field = [RecordField::new(Tag::universal(22), FieldKind::Ia5String).unwrap()];
+        let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut reader = SetReader::new_tagged(&duplicate, &ia5_field, &mut context).unwrap();
+        assert_eq!(
+            reader.next_tagged_field().unwrap(),
+            Some(Tag::universal(22))
+        );
+        assert_eq!(reader.read_ia5_string().unwrap().as_bytes(), b"A");
+        assert!(reader.next_tagged_field().is_err());
+    }
+
+    /// Enforce exact input, payload, output, and cumulative-work boundaries.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Measures one primitive IA5 record and checks exact and
+    /// one-below limits for both record writing and BER field decoding.
+    ///
+    /// # Errors
+    /// Panics if a resource boundary is accepted below or rejected at its limit.
+    ///
+    /// # Source, version, history, example
+    /// Source: bounded record IA5 resource policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat record IA5 gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn flat_record_ia5_input_output_and_work_limits_are_exact() {
+        let value = Ia5String::try_from_bytes(b"A", &Limits::default()).unwrap();
+        let mut baseline_context = RecordContext::new_with_aggregate_scratch(&Limits::default());
+        let mut baseline = SequenceWriter::new(RecordEncoding::Der, &mut baseline_context).unwrap();
+        baseline.write_ia5_string(&value).unwrap();
+        let expected = baseline.finish().unwrap();
+        let exact_work = baseline_context.work_used;
+        let exact = Limits {
+            max_output_bytes: expected.bytes.len(),
+            max_work_bits: exact_work,
+            ..Limits::default()
+        };
+        assert_eq!(
+            encode_sequence_ia5(RecordEncoding::Der, &value, &exact)
+                .unwrap()
+                .bytes,
+            expected.bytes
+        );
+        assert!(encode_sequence_ia5(
+            RecordEncoding::Der,
+            &value,
+            &Limits {
+                max_output_bytes: expected.bytes.len() - 1,
+                ..exact
+            },
+        )
+        .is_err());
+        assert!(encode_sequence_ia5(
+            RecordEncoding::Der,
+            &value,
+            &Limits {
+                max_work_bits: exact_work - 1,
+                ..exact
+            },
+        )
+        .is_err());
+
+        let fields = [RecordField::new(Tag::universal(22), FieldKind::Ia5String).unwrap()];
+        let wire = [0x30, 3, 0x16, 1, b'A'];
+        for max_input in [wire.len(), wire.len() - 1] {
+            let limits = Limits {
+                max_input_bytes: max_input,
+                ..Limits::default()
+            };
+            let mut context = RecordContext::new_with_aggregate_scratch(&limits);
+            let reader = SequenceReader::new_tagged(&wire, &fields, &mut context);
+            assert_eq!(reader.is_ok(), max_input == wire.len());
+        }
+
+        let mut exact_context = RecordContext::new_with_aggregate_scratch(&Limits::default());
+        let mut exact_reader =
+            SequenceReader::new_tagged(&wire, &fields, &mut exact_context).unwrap();
+        exact_reader.next_tagged_field().unwrap();
+        let decoded = exact_reader.read_ia5_string().unwrap();
+        assert_eq!(decoded.as_bytes(), b"A");
+        exact_reader.next_tagged_field().unwrap();
+        let exact_decode_work = exact_context.work_used;
+        let exact_decode = Limits {
+            max_output_bytes: 1,
+            max_work_bits: exact_decode_work,
+            ..Limits::default()
+        };
+        let mut context = RecordContext::new_with_aggregate_scratch(&exact_decode);
+        let mut reader = SequenceReader::new_tagged(&wire, &fields, &mut context).unwrap();
+        reader.next_tagged_field().unwrap();
+        assert_eq!(reader.read_ia5_string().unwrap().as_bytes(), b"A");
+        reader.next_tagged_field().unwrap();
+
+        let mut no_payload = RecordContext::new_with_aggregate_scratch(&Limits {
+            max_output_bytes: 0,
+            ..Limits::default()
+        });
+        let mut reader = SequenceReader::new_tagged(&wire, &fields, &mut no_payload).unwrap();
+        reader.next_tagged_field().unwrap();
+        assert!(reader.read_ia5_string().is_err());
+        let mut low_work = RecordContext::new_with_aggregate_scratch(&Limits {
+            max_work_bits: exact_decode_work - 1,
+            ..Limits::default()
+        });
+        let mut reader = SequenceReader::new_tagged(&wire, &fields, &mut low_work).unwrap();
+        reader.next_tagged_field().unwrap();
+        assert!(reader.read_ia5_string().is_err());
+    }
+
+    /// Pin parse, validation, re-encode, and compare work for one CER record.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Independently counts each one-byte IA5 phase and asserts
+    /// the exact cumulative total plus one-below rejection.
+    ///
+    /// # Errors
+    /// Panics if any record IA5 phase is omitted from the shared work budget.
+    ///
+    /// # Source, version, history, example
+    /// Source: record parser/writer work charging. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: strict record IA5 gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn flat_record_ia5_strict_cer_work_is_fixed() {
+        let input = [0x30, 0x80, 0x16, 1, b'A', 0, 0];
+        let mut context = RecordContext::new_with_aggregate_scratch(&Limits::default());
+        let fields = [RecordField::new(Tag::universal(22), FieldKind::Ia5String).unwrap()];
+        let mut reader = SequenceReader::new_tagged(&input, &fields, &mut context).unwrap();
+        assert_eq!(
+            reader.next_tagged_field().unwrap(),
+            Some(Tag::universal(22))
+        );
+        let value = reader.read_ia5_string().unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        let consumed = reader.finish().unwrap().consumed_bytes;
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer.write_ia5_string(&value).unwrap();
+        let canonical = writer.finish().unwrap();
+        context
+            .verify_canonical(&input, consumed, &canonical.bytes)
+            .unwrap();
+        assert_eq!(context.work_used, 30 * 8);
+        assert!(strict_decode_sequence_ia5(
+            &input,
+            &Limits {
+                max_work_bits: 30 * 8 - 1,
+                ..Limits::default()
+            },
+        )
+        .is_err());
+    }
+
+    /// Prove aggregate-only mode protects absent IA5 and strict re-encoding.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Uses synthetic retained-capacity counters, small real
+    /// buffers, prior OCTET/IA5 retention, and a shared CER re-encode context.
+    ///
+    /// # Errors
+    /// Panics if the aggregate constructor enables nested callbacks or misses
+    /// projected/actual scratch-cap boundaries.
+    ///
+    /// # Source, version, history, example
+    /// Source: 128 MiB record aggregate scratch policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: flat record IA5 gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn flat_record_ia5_aggregate_scratch_is_exact_and_shared() {
+        let limits = Limits::default();
+        let empty = Ia5String::try_from_bytes(&[], &limits).unwrap();
+        let output_capacity = encode_sequence_ia5(RecordEncoding::Der, &empty, &limits)
+            .unwrap()
+            .bytes
+            .capacity();
+        let mut exact_context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut exact_writer =
+            SequenceWriter::new(RecordEncoding::Der, &mut exact_context).unwrap();
+        assert!(!exact_writer.context.nested_records_enabled);
+        exact_writer.context.retained_capacity = MAX_RECORD_SCRATCH_BYTES - output_capacity;
+        exact_writer.write_ia5_string(&empty).unwrap();
+        assert_eq!(exact_writer.finish().unwrap().bytes, [0x30, 2, 0x16, 0]);
+
+        let mut over_context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut over_writer = SequenceWriter::new(RecordEncoding::Der, &mut over_context).unwrap();
+        over_writer.context.retained_capacity = MAX_RECORD_SCRATCH_BYTES - output_capacity + 1;
+        assert!(over_writer.write_ia5_string(&empty).is_err());
+        assert_eq!(over_writer.bytes, [0x30, 0]);
+
+        let input = [0x30, 0x80, 4, 1, 0xaa, 0x16, 1, b'A', 0, 0];
+        let fields = [
+            RecordField::new(Tag::universal(4), FieldKind::OctetString).unwrap(),
+            RecordField::new(Tag::universal(22), FieldKind::Ia5String).unwrap(),
+        ];
+        let mut retained_context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut reader =
+            SequenceReader::new_tagged(&input, &fields, &mut retained_context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(Tag::universal(4)));
+        let octets = reader.read_octet_string(1, 1).unwrap();
+        assert_eq!(
+            reader.next_tagged_field().unwrap(),
+            Some(Tag::universal(22))
+        );
+        let ia5 = reader.read_ia5_string().unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        let consumed = reader.finish().unwrap().consumed_bytes;
+        assert_eq!(retained_context.retained_bytes, 2);
+
+        let mut baseline_context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut baseline = SequenceWriter::new(RecordEncoding::Cer, &mut baseline_context).unwrap();
+        baseline.write_octet_string(&octets, 1, 1).unwrap();
+        baseline.write_ia5_string(&ia5).unwrap();
+        let expected = baseline.finish().unwrap();
+        let output_capacity = expected.bytes.capacity();
+        let retained = retained_context.retained_capacity;
+        retained_context.retained_capacity = retained
+            .checked_add(
+                MAX_RECORD_SCRATCH_BYTES
+                    .checked_sub(output_capacity)
+                    .and_then(|remaining| remaining.checked_sub(retained))
+                    .unwrap(),
+            )
+            .unwrap();
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut retained_context).unwrap();
+        writer.write_octet_string(&octets, 1, 1).unwrap();
+        writer.write_ia5_string(&ia5).unwrap();
+        let canonical = writer.finish().unwrap();
+        retained_context
+            .verify_canonical(&input, consumed, &canonical.bytes)
+            .unwrap();
+        assert_eq!(canonical.bytes, expected.bytes);
+
+        let mut over_context = RecordContext::new_with_aggregate_scratch(&limits);
+        let mut reader = SequenceReader::new_tagged(&input, &fields, &mut over_context).unwrap();
+        reader.next_tagged_field().unwrap();
+        let octets = reader.read_octet_string(1, 1).unwrap();
+        reader.next_tagged_field().unwrap();
+        let ia5 = reader.read_ia5_string().unwrap();
+        reader.next_tagged_field().unwrap();
+        reader.finish().unwrap();
+        over_context.retained_capacity = MAX_RECORD_SCRATCH_BYTES - output_capacity + 1;
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut over_context).unwrap();
+        let first = writer.write_octet_string(&octets, 1, 1);
+        let second = first.and_then(|()| writer.write_ia5_string(&ia5));
+        assert!(second.is_err() || writer.finish().is_err());
     }
 
     /// Enforce exact constructor, DER, and CER encoder resource limits.

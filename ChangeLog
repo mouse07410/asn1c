@@ -1,4 +1,9 @@
 Changes since v1.5.3:
+	* Add one natural, unconstrained IA5String field to Rust BER/DER/CER
+	  flat SEQUENCE and SET records under BER/CER-only selection. Preserve
+	  raw BER/DER bytes, validate CER repertoire and fragments, share an
+	  aggregate record scratch budget, and reject unsupported schemas
+	  before publishing generated output.
 	* Correct C CER inline OBJECT IDENTIFIER and RELATIVE-OID member-size
 	  validation for required SEQUENCE/SET fields; retain bounds rejection
 	  and add generated-style canonical vectors.

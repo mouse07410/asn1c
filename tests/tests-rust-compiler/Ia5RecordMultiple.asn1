@@ -1,0 +1,3 @@
+Ia5RecordMultiple DEFINITIONS ::= BEGIN
+Bad ::= SEQUENCE { first IA5String, second IA5String }
+END

@@ -1,0 +1,4 @@
+Ia5RecordImported DEFINITIONS ::= BEGIN
+IMPORTS Remote FROM Ia5RecordRemote;
+Bad ::= SEQUENCE { text Remote }
+END

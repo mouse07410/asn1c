@@ -3113,7 +3113,7 @@ if ! "$test_tmp/c-oid"; then
 fi
 
 # Direct unconstrained IA5String keeps BER/DER raw-byte timing and strict CER.
-for fixture in Ia5ValuesAlias Ia5ValuesConstrained Ia5ValuesField \
+for fixture in Ia5ValuesAlias Ia5ValuesConstrained \
     Ia5ValuesImport Ia5ValuesTagged; do
     rejected_out="$test_tmp/rejected-$fixture"
     if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
@@ -3210,6 +3210,123 @@ if ! cc $ia5_cflags -I"$ia5_c" "$ia5_c"/*.c "$test_srcdir/c_ia5.c" \
 fi
 if ! "$test_tmp/c-ia5"; then
     echo "FAIL: C IA5 BER/DER/CER vectors or compatibility probes failed"
+    exit 1
+fi
+
+# Direct IA5String record support shares aggregate scratch across an operation.
+for fixture in Ia5RecordAlias Ia5RecordConstrained Ia5RecordDefault \
+    Ia5RecordMultiple Ia5RecordNested Ia5RecordTagged Ia5RecordTaggedRoot; do
+    rejected_out="$test_tmp/rejected-$fixture"
+    if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$rejected_out" "$test_srcdir/$fixture.asn1" \
+        >"$test_tmp/$fixture.log" 2>&1; then
+        echo "FAIL: Rust backend accepted unsupported IA5 record shape $fixture"
+        exit 1
+    fi
+    test ! -e "$rejected_out"
+done
+
+ia5_record_import="$test_tmp/rejected-Ia5RecordImported"
+if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$ia5_record_import" "$test_srcdir/Ia5RecordImported.asn1" \
+    "$test_srcdir/Ia5RecordImportedBase.asn1" \
+    >"$test_tmp/Ia5RecordImported.log" 2>&1; then
+    echo "FAIL: Rust backend accepted imported IA5 record field"
+    exit 1
+fi
+test ! -e "$ia5_record_import"
+
+for selection in mixed uper; do
+    rejected_out="$test_tmp/rejected-ia5-record-$selection"
+    if [ "$selection" = mixed ]; then
+        if "$asn1c_bin" --rust -S "$skeletons" -D "$rejected_out" \
+            "$test_srcdir/Ia5Record.asn1" >"$test_tmp/ia5-record-$selection.log" 2>&1; then
+            echo "FAIL: mixed codecs accepted IA5 record fields"
+            exit 1
+        fi
+    else
+        if "$asn1c_bin" --rust -gen-UPER -no-gen-BER -no-gen-CER -S "$skeletons" \
+            -D "$rejected_out" "$test_srcdir/Ia5Record.asn1" \
+            >"$test_tmp/ia5-record-$selection.log" 2>&1; then
+            echo "FAIL: UPER-only selection accepted IA5 record fields"
+            exit 1
+        fi
+    fi
+    test ! -e "$rejected_out"
+done
+
+ia5_record_rust="$test_tmp/ia5-record-rust"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$ia5_record_rust" "$test_srcdir/Ia5Record.asn1"
+mkdir "$ia5_record_rust/tests"
+cp "$test_srcdir/ia5_record_conformance.rs" "$ia5_record_rust/tests/"
+ia5_record_source="$ia5_record_rust/src/ia5_record.rs"
+test "$(grep -c 'RecordContext::new_with_aggregate_scratch' \
+    "$ia5_record_source")" -ge 8
+if grep -F '#[derive(Clone' "$ia5_record_source" >/dev/null; then
+    echo "FAIL: IA5 record wrapper derives infallible Clone"
+    exit 1
+fi
+if ! (cd "$ia5_record_rust" && \
+    CARGO_TARGET_DIR="$test_tmp/target-ia5-record" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-ia5-record" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/ia5-record-rust.log" 2>&1; then
+    cat "$test_tmp/ia5-record-rust.log"
+    echo "FAIL: IA5 record conformance or strict Clippy"
+    exit 1
+fi
+
+for codec in BER CER; do
+    if [ "$codec" = BER ]; then
+        ia5_record_unwanted='encode_cer|decode_cer'
+        "$asn1c_bin" --rust -gen-BER -no-gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$test_tmp/ia5-record-$codec-only" "$test_srcdir/Ia5Record.asn1"
+    else
+        ia5_record_unwanted='encode_der|decode_ber'
+        "$asn1c_bin" --rust -gen-CER -no-gen-BER -no-gen-UPER -S "$skeletons" \
+            -D "$test_tmp/ia5-record-$codec-only" "$test_srcdir/Ia5Record.asn1"
+    fi
+    ia5_record_codec_out="$test_tmp/ia5-record-$codec-only"
+    if (cargo check --offline --manifest-path "$ia5_record_codec_out/Cargo.toml" && \
+        cargo clippy --offline --manifest-path "$ia5_record_codec_out/Cargo.toml" \
+        --all-targets --all-features -- -W clippy::pedantic \
+        -W clippy::nursery -D warnings) \
+        >"$test_tmp/ia5-record-$codec-only.log" 2>&1; then
+        :
+    else
+        cat "$test_tmp/ia5-record-$codec-only.log"
+        echo "FAIL: IA5 record $codec-only strict Clippy"
+        exit 1
+    fi
+    if grep -E "pub fn ($ia5_record_unwanted)" \
+        "$ia5_record_codec_out/src/ia5_record.rs" >/dev/null; then
+        echo "FAIL: IA5 record $codec-only output has unselected methods"
+        exit 1
+    fi
+done
+
+ia5_record_c="$test_tmp/ia5-record-c"
+mkdir "$ia5_record_c"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$ia5_record_c" "$test_srcdir/Ia5Record.asn1" \
+    >"$test_tmp/ia5-record-c-generate.log" 2>&1
+ia5_record_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$ia5_record_c/Makefile.am.libasncodec")
+rm -f "$ia5_record_c/converter-example.c" "$ia5_record_c/pdu_collection.c"
+if ! cc $ia5_record_cflags -I"$ia5_record_c" "$ia5_record_c"/*.c \
+    "$test_srcdir/c_ia5_record.c" -lm -o "$test_tmp/c-ia5-record" \
+    >"$test_tmp/ia5-record-c-compile.log" 2>&1; then
+    cat "$test_tmp/ia5-record-c-compile.log"
+    echo "FAIL: C IA5 record differential fixture did not compile"
+    exit 1
+fi
+if ! "$test_tmp/c-ia5-record"; then
+    echo "FAIL: C IA5 record BER/DER/CER vectors or compatibility probes failed"
     exit 1
 fi
 

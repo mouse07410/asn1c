@@ -1,0 +1,3 @@
+Ia5RecordTaggedRoot DEFINITIONS ::= BEGIN
+Bad ::= [2] IMPLICIT SEQUENCE { text IA5String }
+END

@@ -1,0 +1,4 @@
+Ia5RecordAlias DEFINITIONS ::= BEGIN
+Text ::= IA5String
+Bad ::= SEQUENCE { text Text }
+END

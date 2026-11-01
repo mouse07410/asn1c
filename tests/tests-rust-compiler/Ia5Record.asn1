@@ -1,0 +1,15 @@
+Ia5Record DEFINITIONS ::= BEGIN
+
+Sequence ::= SEQUENCE {
+    before BOOLEAN,
+    text IA5String OPTIONAL,
+    count INTEGER (0..5),
+    bytes OCTET STRING (SIZE(1..4))
+}
+
+Set ::= SET {
+    text IA5String,
+    flag [4] IMPLICIT BOOLEAN
+}
+
+END
