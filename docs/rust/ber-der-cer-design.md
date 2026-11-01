@@ -12,10 +12,11 @@ C, including imports, references, and tags. These rejections must remain
 until the corresponding generated representation and codecs are implemented.
 
 The next implemented slice handles empty or flat untagged SEQUENCE records
-with distinct direct BOOLEAN, NULL, and bounded INTEGER fields. Required,
-OPTIONAL, and literal BOOLEAN/INTEGER DEFAULT members share one operation
-budget. SET, nested records, tagging, and broader primitive members remain
-in the staged parity matrix below.
+with distinct direct BOOLEAN, NULL, bounded INTEGER, ENUMERATED, and finite
+bounded BIT/OCTET STRING fields. Required and OPTIONAL members and literal
+BOOLEAN/INTEGER DEFAULT members share one operation budget. SET, nested
+records, tagging, and broader primitive members remain in the staged parity
+matrix below.
 
 ## Architecture and interfaces
 

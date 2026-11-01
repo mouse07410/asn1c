@@ -219,7 +219,7 @@
     },
     {
       "asn1_type": "SEQUENCE",
-      "feature": "empty or flat untagged direct BOOLEAN, NULL, and bounded INTEGER fields with unique universal tags; required, OPTIONAL, and literal BOOLEAN/INTEGER DEFAULT",
+      "feature": "empty or flat untagged direct fields with unique universal tags: BOOLEAN, NULL, bounded INTEGER, inline ENUMERATED, fixed/bounded OCTET STRING and BIT STRING; required or OPTIONAL, with literal BOOLEAN/INTEGER DEFAULT only",
       "codec": "UPER + BER decode / DER encode + CER decode and encode",
       "variants": [
         "DER definite-length and CER indefinite-length framing",
@@ -227,9 +227,14 @@
         "DEFAULT omission and BER substitution for literal BOOLEAN and INTEGER",
         "CER rejection of explicit DEFAULT values",
         "empty record encoding and decoding",
+        "declared ENUMERATED numeric values and rejection of unknown values",
+        "required and OPTIONAL fixed/bounded OCTET STRING and BIT STRING members",
+        "DER OCTET STRING child and outer length edges at 125/126 and 127/128",
+        "CER OCTET STRING fragmentation at 1000/1001 and BIT STRING at 999/1000 payload octets",
+        "BER constructed OCTET/BIT STRING fields and strict CER noncanonical-fragment rejection",
         "unknown, duplicate, reordered, missing, truncated, and out-of-range fields",
-        "prefix consumption and cumulative input, output, and work limits",
-        "unsupported tags, aliases, repeated universal tags, nesting, and bounds rejected"
+        "prefix consumption and cumulative input, retained-string output, and work limits",
+        "unsupported tags, aliases, repeated universal tags, nesting, defaults, and size ranges rejected"
       ],
       "directions": [
         "BER decode",

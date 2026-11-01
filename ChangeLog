@@ -1,4 +1,8 @@
 Changes since v1.5.3:
+	* Extend flat Rust BER/DER/CER SEQUENCE fields to direct ENUMERATED and
+	  finite bounded BIT/OCTET STRING values. Keep constructed BER flattening,
+	  CER fragmentation, and strict canonical comparison on one record budget;
+	  add generated C comparisons at DER length and CER fragment boundaries.
 	* Add generated Rust BER prefix decoding, DER encoding, CER encoding, and
 	  strict CER decoding for flat untagged SEQUENCE records with unique direct
 	  BOOLEAN, NULL, and bounded INTEGER fields. Support required, OPTIONAL,

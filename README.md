@@ -130,10 +130,11 @@ nonextensible ENUMERATED values fitting signed 64-bit integers, and direct
 fixed or bounded BIT STRING and OCTET STRING values with supported finite
 `SIZE` constraints. Long strings use CER fragmentation; `decode_cer()`
 re-encodes and compares the consumed prefix to reject noncanonical forms.
-Flat untagged SEQUENCE records with unique direct BOOLEAN, NULL, and bounded
-INTEGER fields also support required, OPTIONAL, and literal BOOLEAN/INTEGER
-DEFAULT members, including an empty record. Their BER/DER/CER operations share
-one record-wide resource budget.
+Flat untagged SEQUENCE records with distinct direct BOOLEAN, NULL, bounded
+INTEGER, ENUMERATED, and finite bounded BIT/OCTET STRING fields also support
+required and OPTIONAL members, literal BOOLEAN/INTEGER DEFAULT members, and
+an empty record. Their BER/DER/CER operations share one record-wide resource
+budget.
 Rust CER output is selected by default with UPER; `-no-gen-UPER` selects
 CER-only output. `-gen-BER` adds BER prefix decoding and DER encoding for
 these direct types. See [Rust output usage and limits](docs/rust/implementation.md)

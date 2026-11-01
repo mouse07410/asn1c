@@ -37,7 +37,8 @@ Direct nonextensible ENUMERATED values and fixed or bounded OCTET STRING and
 BIT STRING assignments also support BER prefix decoding, DER encoding, and
 CER encoding and strict decoding. This is a limited direct-type slice;
 empty or flat untagged SEQUENCE records with distinct direct BOOLEAN, NULL,
-and bounded INTEGER fields also support BER/DER/CER. Tags, aliases, open types,
+bounded INTEGER, ENUMERATED, and bounded BIT/OCTET STRING fields also support
+BER/DER/CER. Tags, aliases, open types,
 and broader constructed records do not yet have BER/DER/CER parity. See the
 [parity design](ber-der-cer-design.md).
 

@@ -20,4 +20,41 @@ DefaultRecord ::= SEQUENCE {
 
 EmptyRecord ::= SEQUENCE { }
 
+ExtendedRecord ::= SEQUENCE {
+    state-value ENUMERATED { queued(17), active(3), complete(91) } OPTIONAL,
+    octets OCTET STRING (SIZE(0..128)),
+    bits BIT STRING (SIZE(1..16)) OPTIONAL,
+    number INTEGER (-5..5)
+}
+
+EnumeratedRecord ::= SEQUENCE {
+    state ENUMERATED { queued(17), active(3), complete(91) }
+}
+
+OctetBoundaryRecord ::= SEQUENCE {
+    octets OCTET STRING (SIZE(0..1001))
+}
+
+BitBoundaryRecord ::= SEQUENCE {
+    bits BIT STRING (SIZE(1..8000))
+}
+
+FixedStringsRecord ::= SEQUENCE {
+    octets OCTET STRING (SIZE(3)),
+    bits BIT STRING (SIZE(5))
+}
+
+OptionalOctetRecord ::= SEQUENCE {
+    octets OCTET STRING (SIZE(1..4)) OPTIONAL
+}
+
+OptionalBitRecord ::= SEQUENCE {
+    bits BIT STRING (SIZE(1..16)) OPTIONAL
+}
+
+OptionalFixedStringsRecord ::= SEQUENCE {
+    octets OCTET STRING (SIZE(2)) OPTIONAL,
+    bits BIT STRING (SIZE(3)) OPTIONAL
+}
+
 END

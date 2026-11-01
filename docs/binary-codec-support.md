@@ -143,8 +143,9 @@ compares the consumed prefix. With `-gen-BER`, these direct types also receive
 BER prefix decoding and DER encoding. BER accepts constructed BIT/OCTET STRING
 forms within bounded nesting. Flat untagged SEQUENCE records also support
 required, OPTIONAL, and literal BOOLEAN/INTEGER DEFAULT fields when every
-field is a direct BOOLEAN, NULL, or finite bounded INTEGER with a distinct
-universal tag; empty records are supported. Other constructed records remain
+field is a direct BOOLEAN, NULL, finite bounded INTEGER, nonextensible
+ENUMERATED, or finite bounded BIT/OCTET STRING with a distinct universal tag;
+empty records are supported. Other constructed records remain
 outside the Rust BER/DER/CER slice.
 Rust codec defaults include UPER and CER; `-no-gen-UPER` selects CER-only
 generation. See [the Rust implementation matrix](rust/implementation.md#implemented-boundary)

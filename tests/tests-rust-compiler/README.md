@@ -74,6 +74,17 @@ framing, unknown/duplicate/reordered fields, truncation, range violations, and
 resource ceilings. Tagged, automatic-tagged, nested, duplicate-tag, unbounded,
 and unsupported DEFAULT shapes fail before crate publication. The fixture also
 builds all three codec families together with UPER and runs strict Clippy.
+The third BER/CER SEQUENCE slice adds direct inline ENUMERATED and finite fixed
+or bounded OCTET STRING and BIT STRING fields. New members may be required or
+OPTIONAL; enum wire values use their declared ASN.1 numbers. Records remain flat,
+untagged, nonextensible, and limited to six unique universal tags. New kinds do
+not accept DEFAULT, named bits, CONTAINING, aliases, or unsupported size ranges.
+Mixed UPER/BER/CER tests and BER-only/CER-only builds check selector-sensitive
+emitters. C comparisons cover DER length edges at 125/126 and 127/128 OCTET
+bytes, CER OCTET thresholds at 1000/1001, and CER BIT content thresholds at
+999/1000 payload octets. BER constructed OCTET/BIT fields, strict CER rejection
+of noncanonical fragments, unknown enum values, and cumulative record budgets
+are also covered.
 The fixed-size string fixture covers standalone OCTET STRING and BIT STRING,
 zero-sized values, bit packing inside a mixed SEQUENCE, malformed lengths and
 pad bits, truncation, and whole-operation budgets. It also checks that the

@@ -774,13 +774,20 @@ if ! (cd "$additional_out" && CARGO_TARGET_DIR="$test_tmp/target-aper-oer" \
     exit 1
 fi
 
-# Fixed-size strings require UPER-only selection and compile with strict Clippy.
-if "$asn1c_bin" --rust -S "$skeletons" -D "$test_tmp/rejected-string-default" \
-    "$test_srcdir/StringSlice.asn1" >"$test_tmp/rejected-string-default.log" 2>&1; then
-    echo "FAIL: default Rust codecs accepted strings without CER support"
+# Direct fixed strings and the unique-tag record now support the default mask.
+string_default_out="$test_tmp/string-default"
+"$asn1c_bin" --rust -S "$skeletons" -D "$string_default_out" \
+    "$test_srcdir/StringSlice.asn1"
+if ! (cd "$string_default_out" && \
+    cargo check --offline --manifest-path Cargo.toml && \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/string-default-check.log" 2>&1; then
+    cat "$test_tmp/string-default-check.log"
+    echo "FAIL: generated default-mask string crate or strict Clippy"
     exit 1
 fi
-test ! -e "$test_tmp/rejected-string-default"
+grep -F 'pub fn encode_cer' "$string_default_out/src/string_slice.rs" >/dev/null
 for unsupported in ExtensibleString ExtensibleOctets VariableUnion VariableOversize \
     VariableBitsExtensible VariableBitsUnion VariableBitsOversize NamedBitString \
     OversizeOctets OversizeBits; do
@@ -1601,7 +1608,9 @@ done
 sequence_ber_only="$test_tmp/sequence-ber-only"
 "$asn1c_bin" --rust -gen-BER -no-gen-UPER -no-gen-CER -S "$skeletons" \
     -D "$sequence_ber_only" "$test_srcdir/SequenceBerCer.asn1"
-if ! cargo check --offline --manifest-path "$sequence_ber_only/Cargo.toml" \
+if ! (cargo check --offline --manifest-path "$sequence_ber_only/Cargo.toml" && \
+    cargo clippy --offline --manifest-path "$sequence_ber_only/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings) \
     >"$test_tmp/sequence-ber-only-check.log" 2>&1; then
     cat "$test_tmp/sequence-ber-only-check.log"
     echo "FAIL: BER-only SEQUENCE crate did not compile"
@@ -1619,7 +1628,9 @@ fi
 sequence_cer_only="$test_tmp/sequence-cer-only"
 "$asn1c_bin" --rust -gen-CER -no-gen-UPER -no-gen-BER -S "$skeletons" \
     -D "$sequence_cer_only" "$test_srcdir/SequenceBerCer.asn1"
-if ! cargo check --offline --manifest-path "$sequence_cer_only/Cargo.toml" \
+if ! (cargo check --offline --manifest-path "$sequence_cer_only/Cargo.toml" && \
+    cargo clippy --offline --manifest-path "$sequence_cer_only/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings) \
     >"$test_tmp/sequence-cer-only-check.log" 2>&1; then
     cat "$test_tmp/sequence-cer-only-check.log"
     echo "FAIL: CER-only SEQUENCE crate did not compile"
@@ -1688,9 +1699,74 @@ SequenceBerCerNullDefault DEFINITIONS ::= BEGIN
 Packet ::= SEQUENCE { empty NULL DEFAULT NULL }
 END
 EOF
+cat >"$test_tmp/SequenceBerCerEnumDefault.asn1" <<'EOF'
+SequenceBerCerEnumDefault DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { state ENUMERATED { idle(0), busy(1) } DEFAULT idle }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerOctetDefault.asn1" <<'EOF'
+SequenceBerCerOctetDefault DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { data OCTET STRING (SIZE(1..2)) DEFAULT 'AB'H }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerBitDefault.asn1" <<'EOF'
+SequenceBerCerBitDefault DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { data BIT STRING (SIZE(1..2)) DEFAULT '1'B }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerUnboundedString.asn1" <<'EOF'
+SequenceBerCerUnboundedString DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { data OCTET STRING }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerExtensibleString.asn1" <<'EOF'
+SequenceBerCerExtensibleString DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { data BIT STRING (SIZE(1..3,...)) }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerContaining.asn1" <<'EOF'
+SequenceBerCerContaining DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { data OCTET STRING (CONTAINING INTEGER) }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerNamedBits.asn1" <<'EOF'
+SequenceBerCerNamedBits DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { data BIT STRING { red(0), blue(1) } (SIZE(1..2)) }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerTooMany.asn1" <<'EOF'
+SequenceBerCerTooMany DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE {
+    a BOOLEAN, b INTEGER (0..1), c BIT STRING (SIZE(1)),
+    d OCTET STRING (SIZE(1)), e NULL,
+    f ENUMERATED { one(1) }, g BOOLEAN
+}
+END
+EOF
+cat >"$test_tmp/SequenceBerCerRepeatedOctets.asn1" <<'EOF'
+SequenceBerCerRepeatedOctets DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { first OCTET STRING (SIZE(1)), second OCTET STRING (SIZE(2)) }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerDisjointSize.asn1" <<'EOF'
+SequenceBerCerDisjointSize DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { data OCTET STRING (SIZE(1..2 | 4..5)) }
+END
+EOF
+cat >"$test_tmp/SequenceBerCerExtensibleEnum.asn1" <<'EOF'
+SequenceBerCerExtensibleEnum DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { state ENUMERATED { idle(0), ..., busy(1) } }
+END
+EOF
 for fixture in SequenceBerCerTagged SequenceBerCerAutomatic \
     SequenceBerCerDuplicate SequenceBerCerNested \
-    SequenceBerCerUnbounded SequenceBerCerNullDefault; do
+    SequenceBerCerUnbounded SequenceBerCerNullDefault \
+    SequenceBerCerEnumDefault SequenceBerCerOctetDefault \
+    SequenceBerCerBitDefault SequenceBerCerUnboundedString \
+    SequenceBerCerExtensibleString SequenceBerCerContaining \
+    SequenceBerCerNamedBits SequenceBerCerTooMany \
+    SequenceBerCerRepeatedOctets SequenceBerCerDisjointSize \
+    SequenceBerCerExtensibleEnum; do
     if "$asn1c_bin" --rust -gen-BER -no-gen-UPER -no-gen-CER \
         -S "$skeletons" -D "$test_tmp/rejected-$fixture" \
         "$test_tmp/$fixture.asn1" >"$test_tmp/$fixture.log" 2>&1; then

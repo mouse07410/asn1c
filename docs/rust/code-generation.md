@@ -77,7 +77,8 @@ ENUMERATED roots fitting `i64`, and direct fixed or bounded BIT/OCTET STRING
 values with supported finite `SIZE` constraints. `-gen-BER` adds `decode_ber`
 and `encode_der` for those types. Its `--rust` defaults to UPER and CER.
 Empty or flat untagged SEQUENCE records with distinct direct BOOLEAN, NULL,
-and bounded INTEGER fields also have BER/DER/CER methods. Other constructed
+bounded INTEGER, nonextensible ENUMERATED, and finite bounded BIT/OCTET STRING
+fields also have BER/DER/CER methods. Other constructed
 records and many C-supported BER-family forms remain outside the implemented
 slice; see [the implementation matrix](implementation.md).
 
@@ -240,7 +241,7 @@ integer-width heuristics.
 | OBJECT IDENTIFIER | runtime `ObjectIdentifier` | Use checked arcs; do not assume every arc fits a machine integer. |
 | RELATIVE-OID | runtime `RelativeOid` | Same checked-arithmetic requirement as OID arcs. |
 | UTCTime, GeneralizedTime | runtime time wrapper or validated text newtype | Canonical rules need explicit APIs. |
-| SEQUENCE, SET | generated `struct` | UPER SEQUENCE fields use values and `Option<T>`; inline nested records share a cursor and put their presence bitmap before each record payload. The BER/DER/CER slice handles flat untagged SEQUENCE records with distinct direct BOOLEAN, NULL, and bounded INTEGER fields, including supported defaults. SET is unsupported under these rules. |
+| SEQUENCE, SET | generated `struct` | UPER SEQUENCE fields use values and `Option<T>`; inline nested records share a cursor and put their presence bitmap before each record payload. The BER/DER/CER slice handles flat untagged SEQUENCE records with distinct direct BOOLEAN, NULL, bounded INTEGER, ENUMERATED, and BIT/OCTET STRING fields, including supported BOOLEAN/INTEGER defaults. SET is unsupported under these rules. |
 | CHOICE | generated `enum` | Include an unknown extension variant when the type is extensible. |
 | SEQUENCE OF, SET OF | `Vec<T>` newtype | Retain SET OF ordering rules in codec logic. |
 | Type reference | module-qualified reference | Use public newtypes for aliases that add constraints or API identity. |
@@ -259,7 +260,8 @@ output. UPER-only selection supports direct and SEQUENCE-member ENUMERATED
 and strings within the documented size bounds.
 Direct fixed-size OCTET STRING assignments also accept the JER codec alone or
 with UPER. Their generated methods call the runtime's fixed-size hexadecimal
-JER helpers. BIT STRING and OCTET STRING SEQUENCE fields remain UPER-only.
+JER helpers. Supported flat SEQUENCE BIT/OCTET STRING fields also have
+BER/DER/CER methods; JER methods for those fields remain unavailable.
 Bounded variable-size strings are supported as direct assignments; unbounded
 or disjoint strings, named-bit lists, and extensible ENUMERATED remain future
 increments.

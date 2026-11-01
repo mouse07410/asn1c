@@ -126,8 +126,9 @@ re-encoding, and byte comparison. SIZE constraints remain the generated type's
 responsibility.
 
 `RecordContext`, `SequenceReader`, and `SequenceWriter` compose a flat,
-untagged SEQUENCE with direct BOOLEAN, NULL, and bounded INTEGER fields under
-one input/output/work budget. Supply the unique universal field tags in
+untagged SEQUENCE with direct BOOLEAN, NULL, ENUMERATED, bounded INTEGER, and
+bounded BIT/OCTET STRING fields under one input/output/work budget. Supply the
+unique universal field tags in
 declaration order to `SequenceReader`; `next_field` advances one field and the
 matching `read_*` method consumes it. Optional/default omissions are represented
 by absent tags, while generated code checks required fields and omits values
@@ -136,9 +137,11 @@ and `finish` requires the definite boundary or matching EOC to have been read.
 The writer emits declaration-order child TLVs with a definite DER outer length
 or indefinite CER outer length. `RecordContext::verify_canonical` charges the
 final byte comparison after callers re-encode with that same context. This
-initial record API accepts at most three uniquely tagged fields, matching the
-supported BOOLEAN/NULL/INTEGER tag set; tagged records, extensions, and nested
-records remain outside this slice.
+record API accepts at most six uniquely tagged fields, matching the supported
+universal tags. During decode, `max_output_bytes` also caps aggregate retained
+BIT/OCTET STRING payload bytes across fields. DER string fields are primitive;
+CER uses 1000-content-octet fragments, counting the BIT STRING unused-count
+octet. Tagged records, extensions, and nested records remain outside this slice.
 
 Run the crate checks from the repository root:
 

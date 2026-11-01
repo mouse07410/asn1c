@@ -18,7 +18,7 @@ const TAG_SEQUENCE: u64 = 16;
 const TAG_BOOLEAN: u64 = 1;
 const TAG_INTEGER: u64 = 2;
 const TAG_NULL: u64 = 5;
-const MAX_SEQUENCE_FIELDS: usize = 3;
+const MAX_SEQUENCE_FIELDS: usize = 6;
 
 /// Canonical encoding rule used for one generated record.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -32,12 +32,15 @@ pub enum RecordEncoding {
 /// Shared resource accounting for one generated BER/DER/CER record operation.
 ///
 /// A context is created once for an encode or decode operation and may be
-/// reused for strict CER re-encoding and comparison.
+/// reused for strict CER re-encoding and comparison. On decode, `max_output_bytes`
+/// also caps aggregate retained OCTET/BIT STRING payload storage.
 pub struct RecordContext {
     /// Copied caller ceilings for this complete operation.
     limits: Limits,
     /// Cumulative work; this is a state variable.
     work_used: usize,
+    /// Retained decoded string storage; this is a state variable.
+    retained_bytes: usize,
 }
 
 /// One field header and content span in a flat SEQUENCE.
@@ -45,6 +48,10 @@ pub struct RecordContext {
 struct FieldSpan {
     /// Universal tag number of the current field.
     tag: u64,
+    /// First identifier byte in caller input.
+    tlv_start: usize,
+    /// Exclusive encoded field end in caller input.
+    tlv_end: usize,
     /// Whether the field uses constructed encoding.
     constructed: bool,
     /// First content byte in caller input.
@@ -53,7 +60,7 @@ struct FieldSpan {
     content_end: usize,
 }
 
-/// Encode direct primitive fields into one bounded SEQUENCE operation.
+/// Encode direct fields into one bounded SEQUENCE operation.
 pub struct SequenceWriter<'context> {
     /// Encoding form selected for the outer record.
     rule: RecordEncoding,
@@ -61,7 +68,7 @@ pub struct SequenceWriter<'context> {
     context: &'context mut RecordContext,
     /// Complete output buffer with outer header placeholder; state variable.
     bytes: Vec<u8>,
-    /// Bit mask of BOOLEAN, INTEGER, and NULL tags already emitted; state variable.
+    /// Bit mask of emitted universal tags; state variable.
     seen_mask: u8,
 }
 
@@ -106,6 +113,7 @@ impl RecordContext {
         Self {
             limits: *limits,
             work_used: 0,
+            retained_bytes: 0,
         }
     }
 
@@ -159,6 +167,52 @@ impl RecordContext {
         charge_work(&mut self.work_used, bytes, &self.limits)
     }
 
+    /// Return output limits remaining for one retained-string decode operation.
+    ///
+    /// # Parameters and returns
+    /// Returns a copy with the retained-storage ceiling; work is charged
+    /// directly to this context during parsing.
+    ///
+    /// # Errors
+    /// Returns `SizeOverflow` if the retained counter is inconsistent.
+    ///
+    /// # Source, version, history, example
+    /// Source: bounded sequence scratch policy. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: shared string fields.
+    /// Example: `let remaining = context.remaining_decode_limits()?`.
+    fn remaining_decode_limits(&self) -> Result<Limits, Error> {
+        let mut remaining = self.limits;
+        remaining.max_output_bytes = self
+            .limits
+            .max_output_bytes
+            .checked_sub(self.retained_bytes)
+            .ok_or(Error::SizeOverflow)?;
+        Ok(remaining)
+    }
+
+    /// Retain decoded field bytes after a decoder has checked the remaining cap.
+    ///
+    /// # Parameters and returns
+    /// `bytes` is the field's owned payload length; returns success when the
+    /// cumulative retained storage stays within `max_output_bytes`.
+    ///
+    /// # Errors
+    /// Returns checked-size or output-limit errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: sequence decoded-storage policy. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: bounded string fields.
+    /// Example: `context.retain_decoded(owned.len())?`.
+    fn retain_decoded(&mut self, bytes: usize) -> Result<(), Error> {
+        let total = self
+            .retained_bytes
+            .checked_add(bytes)
+            .ok_or(Error::SizeOverflow)?;
+        check(Resource::OutputBytes, total, self.limits.max_output_bytes)?;
+        self.retained_bytes = total;
+        Ok(())
+    }
+
     /// Check projected complete record output before growing the buffer.
     ///
     /// # Parameters and returns
@@ -184,7 +238,7 @@ impl SequenceWriter<'_> {
     /// owns the cumulative work ceiling and complete output limit.
     ///
     /// # Returns
-    /// A writer ready to receive its declaration-order primitive fields.
+    /// A writer ready to receive its declaration-order primitive fields or strings.
     ///
     /// # Errors
     /// Returns output-limit, work-limit, or allocation errors. No panic.
@@ -247,7 +301,7 @@ impl SequenceWriter<'_> {
     /// Responsible: asn1c maintainers. History: flat record runtime API.
     /// Example: `writer.write_null()?`.
     pub fn write_null(&mut self) -> Result<(), Error> {
-        self.write_field(TAG_NULL, &[], 0x04)
+        self.write_field(TAG_NULL, &[], 0x10)
     }
 
     /// Append one minimally encoded bounded signed INTEGER field.
@@ -274,6 +328,130 @@ impl SequenceWriter<'_> {
         self.write_field(TAG_INTEGER, &full[first..], 0x02)
     }
 
+    /// Append one minimally encoded numeric ENUMERATED field.
+    ///
+    /// # Parameters and returns
+    /// `value` is the generated variant's signed numeric representation.
+    /// Returns success after writing a shortest universal tag 10 TLV.
+    ///
+    /// # Errors
+    /// Returns duplicate-field, output/work-limit, size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 ENUMERATED content. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: direct record fields.
+    /// Example: `writer.write_enumerated(-1)?`.
+    pub fn write_enumerated(&mut self, value: i64) -> Result<(), Error> {
+        let full = value.to_be_bytes();
+        let first = minimal_signed_start(full);
+        self.write_field(TAG_ENUMERATED, &full[first..], 0x20)
+    }
+
+    /// Append one bounded OCTET STRING using the selected record rule.
+    ///
+    /// # Parameters
+    /// `value` is the payload; `lower` and `upper` are inclusive SIZE bounds.
+    /// CER fragments values above 1000 content octets.
+    ///
+    /// # Returns
+    /// `Ok(())` after appending the canonical child TLV or fragment sequence.
+    ///
+    /// # Errors
+    /// Returns invalid bounds/SIZE, duplicate-field, resource, size, or
+    /// allocation errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 OCTET STRING DER/CER rules. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: direct record string fields.
+    /// Example: `writer.write_octet_string(b"abc", 1, 8)?`.
+    pub fn write_octet_string(
+        &mut self,
+        value: &[u8],
+        lower: usize,
+        upper: usize,
+    ) -> Result<(), Error> {
+        validate_size(value.len(), lower, upper)?;
+        let field_size = octet_field_size(value.len(), self.rule)?;
+        self.prepare_field(field_size, 0x08)?;
+        match (self.rule, value.len() > CER_FRAGMENT_MAX) {
+            (RecordEncoding::Cer, true) => {
+                push(&mut self.bytes, &[0x24, 0x80], &self.context.limits)?;
+                for fragment in value.chunks(CER_FRAGMENT_MAX) {
+                    push_primitive(
+                        &mut self.bytes,
+                        TAG_OCTET_STRING,
+                        fragment,
+                        &self.context.limits,
+                    )?;
+                }
+                push(&mut self.bytes, &[0, 0], &self.context.limits)?;
+            }
+            _ => push_primitive(
+                &mut self.bytes,
+                TAG_OCTET_STRING,
+                value,
+                &self.context.limits,
+            )?,
+        }
+        self.seen_mask |= 0x08;
+        Ok(())
+    }
+
+    /// Append one bounded BIT STRING using the selected record rule.
+    ///
+    /// # Parameters
+    /// `bytes` stores packed bits; `bit_len` gives their meaningful width;
+    /// `lower_bits` and `upper_bits` are inclusive SIZE bounds. CER fragments
+    /// content above 1000 octets including each unused-count octet.
+    ///
+    /// # Returns
+    /// `Ok(())` after appending the canonical child TLV or fragment sequence.
+    ///
+    /// # Errors
+    /// Returns malformed storage/padding, invalid bounds/SIZE, duplicate-field,
+    /// resource, size, or allocation errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 BIT STRING DER/CER rules. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: direct record string fields.
+    /// Example: `writer.write_bit_string(&[0xa0], 3, 1, 8)?`.
+    pub fn write_bit_string(
+        &mut self,
+        bytes: &[u8],
+        bit_len: usize,
+        lower_bits: usize,
+        upper_bits: usize,
+    ) -> Result<(), Error> {
+        validate_packed_bits(bytes, bit_len)?;
+        validate_size(bit_len, lower_bits, upper_bits)?;
+        let unused = unused_bits(bit_len);
+        let field_size = bit_field_size(bytes.len(), self.rule)?;
+        self.prepare_field(field_size, 0x04)?;
+        let content_len = bytes.len().checked_add(1).ok_or(Error::SizeOverflow)?;
+        if self.rule == RecordEncoding::Cer && content_len > CER_FRAGMENT_MAX {
+            push(&mut self.bytes, &[0x23, 0x80], &self.context.limits)?;
+            let fragment_count = bytes.len().div_ceil(CER_FRAGMENT_MAX - 1);
+            for (index, fragment) in bytes.chunks(CER_FRAGMENT_MAX - 1).enumerate() {
+                let fragment_unused = if index + 1 == fragment_count {
+                    unused
+                } else {
+                    0
+                };
+                push_bit_fragment(
+                    &mut self.bytes,
+                    fragment,
+                    fragment_unused,
+                    &self.context.limits,
+                )?;
+            }
+            push(&mut self.bytes, &[0, 0], &self.context.limits)?;
+        } else {
+            push_bit_fragment(&mut self.bytes, bytes, unused, &self.context.limits)?;
+        }
+        self.seen_mask |= 0x04;
+        Ok(())
+    }
+
     /// Finalize the complete record and release the shared context borrow.
     ///
     /// # Parameters and returns
@@ -298,6 +476,9 @@ impl SequenceWriter<'_> {
                     .ok_or(Error::SizeOverflow)?;
                 self.context.check_output(total_len)?;
                 self.context.charge(length_len)?;
+                if content_len >= 128 {
+                    self.context.charge(content_len)?;
+                }
                 patch_der_length(&mut self.bytes, content_len)?;
             }
             RecordEncoding::Cer => {
@@ -327,16 +508,36 @@ impl SequenceWriter<'_> {
     /// Responsible: asn1c maintainers. History: flat record runtime API.
     /// Example: used by the public typed field methods.
     fn write_field(&mut self, tag: u64, content: &[u8], mask: u8) -> Result<(), Error> {
+        let field_size = 1_usize
+            .checked_add(length_size(content.len()))
+            .and_then(|n| n.checked_add(content.len()))
+            .ok_or(Error::SizeOverflow)?;
+        self.prepare_field(field_size, mask)?;
+        push_primitive(&mut self.bytes, tag, content, &self.context.limits)?;
+        self.seen_mask |= mask;
+        Ok(())
+    }
+
+    /// Check uniqueness, complete output, and work before a field is appended.
+    ///
+    /// # Parameters and returns
+    /// `field_size` is the complete child TLV size; `mask` is its unique-tag
+    /// bit. Returns the mask after checks.
+    ///
+    /// # Errors
+    /// Returns duplicate-tag, size, output-limit, or work-limit errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: shared bounded TLV writer. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: direct string support.
+    /// Example: called by each typed `write_*` method.
+    fn prepare_field(&mut self, field_size: usize, mask: u8) -> Result<(), Error> {
         if self.seen_mask & mask != 0 {
             return Err(invalid(
                 "flat SEQUENCE writer received a duplicate universal tag",
             ));
         }
         let content_size = self.bytes.len().checked_sub(2).ok_or(Error::SizeOverflow)?;
-        let field_size = 1_usize
-            .checked_add(length_size(content.len()))
-            .and_then(|n| n.checked_add(content.len()))
-            .ok_or(Error::SizeOverflow)?;
         let next_content = content_size
             .checked_add(field_size)
             .ok_or(Error::SizeOverflow)?;
@@ -344,8 +545,6 @@ impl SequenceWriter<'_> {
             .check_output(record_size(self.rule, next_content)?)?;
         let work_bytes = field_size.checked_add(1).ok_or(Error::SizeOverflow)?;
         self.context.charge(work_bytes)?;
-        push_primitive(&mut self.bytes, tag, content, &self.context.limits)?;
-        self.seen_mask |= mask;
         Ok(())
     }
 }
@@ -354,9 +553,9 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
     /// Start decoding one BER SEQUENCE prefix against declaration-order tags.
     ///
     /// # Parameters
-    /// `input` is the full available slice; `expected_tags` lists up to three
-    /// unique BOOLEAN, NULL, or INTEGER universal tags in schema order;
-    /// `context` supplies one whole-input and cumulative-work budget.
+    /// `input` is the full available slice; `expected_tags` lists up to six
+    /// unique BOOLEAN, INTEGER, BIT STRING, OCTET STRING, NULL, or ENUMERATED
+    /// universal tags in schema order; `context` supplies shared budgets.
     ///
     /// # Returns
     /// A cursor accepting definite or indefinite BER outer lengths.
@@ -368,7 +567,7 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
     /// # Source, version, history, example
     /// Source: X.690 BER SEQUENCE framing. Version: 2026-10-31.
     /// Responsible: asn1c maintainers. History: flat record runtime API.
-    /// Example: `SequenceReader::new(input, &[1, 5, 2], &mut context)?`.
+    /// Example: `SequenceReader::new(input, &[1, 4, 10], &mut context)?`.
     pub fn new(
         input: &'input [u8],
         expected_tags: &'tags [u64],
@@ -380,13 +579,19 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
             context.limits.max_input_bytes,
         )?;
         if expected_tags.len() > MAX_SEQUENCE_FIELDS {
-            return Err(invalid(
-                "record reader supports at most three direct fields",
-            ));
+            return Err(invalid("record reader supports at most six direct fields"));
         }
         for (index, tag) in expected_tags.iter().enumerate() {
             context.charge(1)?;
-            if !matches!(*tag, TAG_BOOLEAN | TAG_INTEGER | TAG_NULL) {
+            if !matches!(
+                *tag,
+                TAG_BOOLEAN
+                    | TAG_INTEGER
+                    | TAG_BIT_STRING
+                    | TAG_OCTET_STRING
+                    | TAG_NULL
+                    | TAG_ENUMERATED
+            ) {
                 return Err(invalid(
                     "SEQUENCE descriptor contains an unsupported field tag",
                 ));
@@ -510,6 +715,8 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
             .unwrap_or_else(|| end.saturating_sub(2));
         self.current = Some(FieldSpan {
             tag: header.tag,
+            tlv_start: start,
+            tlv_end: end,
             constructed: header.constructed,
             content_start: header.content,
             content_end,
@@ -596,6 +803,108 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
         Ok(value)
     }
 
+    /// Decode the current primitive numeric ENUMERATED field.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns its signed i64 representation; generated code
+    /// maps that number to a declared variant.
+    ///
+    /// # Errors
+    /// Returns `InvalidEncoding` for a constructed, empty, or out-of-range
+    /// value and work-limit errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 BER ENUMERATED rules. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: direct record fields.
+    /// Example: `let variant_number = reader.read_enumerated()?`.
+    pub fn read_enumerated(&mut self) -> Result<i64, Error> {
+        let field = self.current_field(TAG_ENUMERATED)?;
+        if field.constructed {
+            return Err(invalid("BER ENUMERATED field must use primitive form"));
+        }
+        let content = &self.input[field.content_start..field.content_end];
+        self.context.charge(content.len())?;
+        let value = signed_value(content)?;
+        self.current = None;
+        Ok(value)
+    }
+
+    /// Decode and flatten the current bounded BER OCTET STRING field.
+    ///
+    /// # Parameters
+    /// `lower` and `upper` are inclusive SIZE bounds. The current field may be
+    /// primitive or constructed with definite/indefinite fragments.
+    ///
+    /// # Returns
+    /// Owned concatenated payload bytes.
+    ///
+    /// # Errors
+    /// Returns malformed BER, invalid SIZE, storage/output/work limits, or
+    /// allocation errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 BER OCTET STRING. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: direct record strings.
+    /// Example: `let bytes = reader.read_octet_string(1, 32)?`.
+    pub fn read_octet_string(&mut self, lower: usize, upper: usize) -> Result<Vec<u8>, Error> {
+        validate_size_bounds(lower, upper)?;
+        let field = self.current_field(TAG_OCTET_STRING)?;
+        let encoded = &self.input[field.tlv_start..field.tlv_end];
+        let limits = self.context.remaining_decode_limits()?;
+        let decoded =
+            decode_octet_ber_with_work(encoded, &limits, &mut self.context.work_used, Some(upper))?;
+        if decoded.consumed_bytes != encoded.len() {
+            return Err(invalid("OCTET STRING field has trailing encoded data"));
+        }
+        validate_size(decoded.value.len(), lower, upper)?;
+        self.context.retain_decoded(decoded.value.len())?;
+        self.current = None;
+        Ok(decoded.value)
+    }
+
+    /// Decode and flatten the current bounded BER BIT STRING field.
+    ///
+    /// # Parameters
+    /// `lower_bits` and `upper_bits` are inclusive SIZE bounds. The current
+    /// field may be primitive or constructed with definite/indefinite fragments.
+    ///
+    /// # Returns
+    /// A validated packed bit value with its exact meaningful bit length.
+    ///
+    /// # Errors
+    /// Returns malformed BER, invalid SIZE, storage/output/work limits, or
+    /// allocation errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 BER BIT STRING. Version: 2026-10-31.
+    /// Responsible: asn1c maintainers. History: direct record strings.
+    /// Example: `let bits = reader.read_bit_string(1, 32)?`.
+    pub fn read_bit_string(
+        &mut self,
+        lower_bits: usize,
+        upper_bits: usize,
+    ) -> Result<BitStringValue, Error> {
+        validate_size_bounds(lower_bits, upper_bits)?;
+        let field = self.current_field(TAG_BIT_STRING)?;
+        let encoded = &self.input[field.tlv_start..field.tlv_end];
+        let limits = self.context.remaining_decode_limits()?;
+        let payload_cap = packed_storage_len(upper_bits);
+        let decoded = decode_bit_ber_with_work(
+            encoded,
+            &limits,
+            &mut self.context.work_used,
+            Some(payload_cap),
+        )?;
+        if decoded.consumed_bytes != encoded.len() {
+            return Err(invalid("BIT STRING field has trailing encoded data"));
+        }
+        validate_size(decoded.value.bit_len(), lower_bits, upper_bits)?;
+        self.context
+            .retain_decoded(decoded.value.as_bytes().len())?;
+        self.current = None;
+        Ok(decoded.value)
+    }
+
     /// Finish traversal and return the exact SEQUENCE prefix consumption.
     ///
     /// # Parameters and returns
@@ -675,6 +984,16 @@ struct BitAccumulator {
     bytes: Vec<u8>,
     /// Fragment padding/count metadata; this is a state variable.
     state: BitState,
+}
+
+/// Shared limits, work counter, and schema payload ceiling during flattening.
+struct FlattenBudget<'limits, 'work> {
+    /// Remaining global output and work ceilings.
+    limits: &'limits Limits,
+    /// Cumulative parser work; this is a state variable.
+    work: &'work mut usize,
+    /// Optional SIZE upper bound checked before payload appends.
+    max_payload: Option<usize>,
 }
 
 /// Decode one BER ENUMERATED prefix to a signed numeric value.
@@ -860,17 +1179,68 @@ fn decode_octet_ber_work(
     input: &[u8],
     limits: &Limits,
 ) -> Result<(Decoded<Vec<u8>>, usize), Error> {
-    let (header, end, bits, mut work) = parse_root(input, TAG_OCTET_STRING, true, limits)?;
+    decode_octet_ber_work_bounded(input, limits, None)
+}
+
+/// Decode OCTET STRING under an optional schema payload ceiling.
+///
+/// # Parameters and returns
+/// `input` is one TLV; `limits` supplies remaining shared ceilings;
+/// `max_payload` is an optional SIZE upper bound checked before each append.
+/// Returns the decoded value and work spent in bits.
+///
+/// # Errors
+/// Returns malformed BER, SIZE, work/output, allocation, or size errors.
+///
+/// # Source, version, history, example
+/// Source: bounded BER record string fields. Version: 2026-10-31.
+/// Responsible: maintainers. History: shared record contexts.
+/// Example: used by `SequenceReader::read_octet_string`.
+fn decode_octet_ber_work_bounded(
+    input: &[u8],
+    limits: &Limits,
+    max_payload: Option<usize>,
+) -> Result<(Decoded<Vec<u8>>, usize), Error> {
+    let mut work = 0;
+    let decoded = decode_octet_ber_with_work(input, limits, &mut work, max_payload)?;
+    Ok((decoded, work))
+}
+
+/// Decode and flatten OCTET STRING while charging a caller-owned work counter.
+///
+/// # Parameters and returns
+/// `input` is one TLV; `limits` supplies current ceilings; `work` is shared
+/// cumulative work; `max_payload` is an optional schema size cap. Returns the
+/// decoded value and consumed prefix.
+///
+/// # Errors
+/// Returns malformed BER, SIZE, work/output, allocation, or size errors.
+///
+/// # Source, version, history, example
+/// Source: bounded BER record string fields. Version: 2026-10-31.
+/// Responsible: maintainers. History: direct cumulative work mutation.
+/// Example: called by `SequenceReader::read_octet_string`.
+fn decode_octet_ber_with_work(
+    input: &[u8],
+    limits: &Limits,
+    work: &mut usize,
+    max_payload: Option<usize>,
+) -> Result<Decoded<Vec<u8>>, Error> {
+    let (header, end, bits) = parse_root_with_work(input, TAG_OCTET_STRING, true, limits, work)?;
     let mut value = Vec::new();
-    flatten_octets(input, &header, end, 0, &mut value, limits, &mut work)?;
-    Ok((
-        Decoded {
-            value,
-            consumed_bits: bits,
-            consumed_bytes: end,
-        },
-        work,
-    ))
+    {
+        let mut budget = FlattenBudget {
+            limits,
+            work,
+            max_payload,
+        };
+        flatten_octets(input, &header, end, 0, &mut value, &mut budget)?;
+    }
+    Ok(Decoded {
+        value,
+        consumed_bits: bits,
+        consumed_bytes: end,
+    })
 }
 
 /// Strictly decode one canonical CER OCTET STRING prefix.
@@ -999,7 +1369,54 @@ fn decode_bit_ber_work(
     input: &[u8],
     limits: &Limits,
 ) -> Result<(Decoded<BitStringValue>, usize), Error> {
-    let (header, end, bits, mut work) = parse_root(input, TAG_BIT_STRING, true, limits)?;
+    decode_bit_ber_work_bounded(input, limits, None)
+}
+
+/// Decode BIT STRING under an optional schema payload ceiling.
+///
+/// # Parameters and returns
+/// `input` is one TLV; `limits` supplies remaining shared ceilings;
+/// `max_payload` caps accumulated packed bytes before each append. Returns the
+/// validated value and parser work in bits.
+///
+/// # Errors
+/// Returns malformed BER, SIZE, work/output, allocation, or size errors.
+///
+/// # Source, version, history, example
+/// Source: bounded BER record string fields. Version: 2026-10-31.
+/// Responsible: maintainers. History: shared record contexts.
+/// Example: used by `SequenceReader::read_bit_string`.
+fn decode_bit_ber_work_bounded(
+    input: &[u8],
+    limits: &Limits,
+    max_payload: Option<usize>,
+) -> Result<(Decoded<BitStringValue>, usize), Error> {
+    let mut work = 0;
+    let decoded = decode_bit_ber_with_work(input, limits, &mut work, max_payload)?;
+    Ok((decoded, work))
+}
+
+/// Decode and flatten BIT STRING while charging a caller-owned work counter.
+///
+/// # Parameters and returns
+/// `input` is one TLV; `limits` supplies current ceilings; `work` is shared
+/// cumulative work; `max_payload` is an optional schema storage cap. Returns
+/// the validated value and consumed prefix.
+///
+/// # Errors
+/// Returns malformed BER, SIZE, work/output, allocation, or size errors.
+///
+/// # Source, version, history, example
+/// Source: bounded BER record string fields. Version: 2026-10-31.
+/// Responsible: maintainers. History: direct cumulative work mutation.
+/// Example: called by `SequenceReader::read_bit_string`.
+fn decode_bit_ber_with_work(
+    input: &[u8],
+    limits: &Limits,
+    work: &mut usize,
+    max_payload: Option<usize>,
+) -> Result<Decoded<BitStringValue>, Error> {
+    let (header, end, bits) = parse_root_with_work(input, TAG_BIT_STRING, true, limits, work)?;
     let mut value = BitAccumulator {
         bytes: Vec::new(),
         state: BitState {
@@ -1007,7 +1424,14 @@ fn decode_bit_ber_work(
             fragments: 0,
         },
     };
-    flatten_bits(input, &header, end, 0, &mut value, limits, &mut work)?;
+    {
+        let mut budget = FlattenBudget {
+            limits,
+            work,
+            max_payload,
+        };
+        flatten_bits(input, &header, end, 0, &mut value, &mut budget)?;
+    }
     let bit_len = value
         .bytes
         .len()
@@ -1015,14 +1439,11 @@ fn decode_bit_ber_work(
         .and_then(|n| n.checked_sub(usize::from(value.state.unused)))
         .ok_or(Error::SizeOverflow)?;
     let value = BitStringValue::new(value.bytes, bit_len)?;
-    Ok((
-        Decoded {
-            value,
-            consumed_bits: bits,
-            consumed_bytes: end,
-        },
-        work,
-    ))
+    Ok(Decoded {
+        value,
+        consumed_bits: bits,
+        consumed_bytes: end,
+    })
 }
 
 /// Strictly decode one canonical CER BIT STRING prefix.
@@ -1077,9 +1498,33 @@ fn parse_root(
     constructed: bool,
     limits: &Limits,
 ) -> Result<(Header, usize, usize, usize), Error> {
+    let mut work = 0;
+    let (header, end, bits) = parse_root_with_work(input, tag, constructed, limits, &mut work)?;
+    Ok((header, end, bits, work))
+}
+
+/// Parse a BER root while charging directly to the caller's work counter.
+///
+/// # Parameters and returns
+/// `input`, `tag`, `constructed`, and `limits` define the accepted root;
+/// `work` is the cumulative counter shared with its enclosing operation.
+/// Returns header, consumed bytes, and wire bits.
+///
+/// # Errors
+/// Returns malformed TLV, truncation, work, input-limit, or size errors.
+///
+/// # Source, version, history, example
+/// Source: checked BER framing. Version: 2026-10-31. Responsible: maintainers.
+/// History: shared record decoder accounting. Example: BER record string read.
+fn parse_root_with_work(
+    input: &[u8],
+    tag: u64,
+    constructed: bool,
+    limits: &Limits,
+    work: &mut usize,
+) -> Result<(Header, usize, usize), Error> {
     check(Resource::InputBytes, input.len(), limits.max_input_bytes)?;
-    let mut work_bits = 0;
-    let header = parse_header(input, 0, input.len(), &mut work_bits, true, limits)?;
+    let header = parse_header(input, 0, input.len(), work, true, limits)?;
     if header.class != 0 || header.tag != tag {
         return Err(invalid(
             "BER identifier does not match expected universal tag",
@@ -1090,9 +1535,9 @@ fn parse_root(
             "BER constructed form is not valid for this primitive",
         ));
     }
-    let end = scan(input, 0, input.len(), 0, &mut work_bits, false, limits)?;
+    let end = scan(input, 0, input.len(), 0, work, false, limits)?;
     let bits = end.checked_mul(8).ok_or(Error::SizeOverflow)?;
-    Ok((header, end, bits, work_bits))
+    Ok((header, end, bits))
 }
 
 /// Parse identifier and length while respecting the parent boundary.
@@ -1255,7 +1700,7 @@ fn scan(
 ///
 /// # Parameters and returns
 /// `input`, `head`, and `end` identify the TLV; `depth` bounds recursion;
-/// `out` accumulates payload; `limits` caps storage; `work` charges rescans.
+/// `out` accumulates payload; `budget` carries storage and work ceilings.
 /// Returns success.
 ///
 /// # Errors
@@ -1270,13 +1715,17 @@ fn flatten_octets(
     end: usize,
     depth: usize,
     out: &mut Vec<u8>,
-    limits: &Limits,
-    work: &mut usize,
+    budget: &mut FlattenBudget<'_, '_>,
 ) -> Result<(), Error> {
     if !head.constructed {
         let stop = content_end(head)?;
-        charge_work(work, stop - head.content, limits)?;
-        append_payload(out, &input[head.content..stop], limits)?;
+        charge_work(budget.work, stop - head.content, budget.limits)?;
+        append_payload(
+            out,
+            &input[head.content..stop],
+            budget.max_payload,
+            budget.limits,
+        )?;
         return Ok(());
     }
     if depth >= MAX_DEPTH {
@@ -1290,12 +1739,20 @@ fn flatten_octets(
         if is_eoc(input, cursor, end) {
             break;
         }
-        let child = parse_header(input, cursor, bound, work, true, limits)?;
+        let child = parse_header(input, cursor, bound, budget.work, true, budget.limits)?;
         if child.class != 0 || child.tag != TAG_OCTET_STRING {
             return Err(invalid("constructed OCTET STRING contains another tag"));
         }
-        let child_end = scan(input, cursor, bound, depth + 1, work, false, limits)?;
-        flatten_octets(input, &child, child_end, depth + 1, out, limits, work)?;
+        let child_end = scan(
+            input,
+            cursor,
+            bound,
+            depth + 1,
+            budget.work,
+            false,
+            budget.limits,
+        )?;
+        flatten_octets(input, &child, child_end, depth + 1, out, budget)?;
         cursor = child_end;
     }
     Ok(())
@@ -1305,8 +1762,8 @@ fn flatten_octets(
 ///
 /// # Parameters and returns
 /// `input`, `head`, and `end` locate the TLV; `depth` bounds recursion;
-/// `value` accumulates payload and fragment state; `limits` caps storage;
-/// `work` charges rescans. Returns success.
+/// `value` accumulates payload and fragment state; `budget` carries limits.
+/// Returns success.
 ///
 /// # Errors
 /// Returns malformed tags or unused counts, depth, limit, size, or allocation errors.
@@ -1320,8 +1777,7 @@ fn flatten_bits(
     end: usize,
     depth: usize,
     value: &mut BitAccumulator,
-    limits: &Limits,
-    work: &mut usize,
+    budget: &mut FlattenBudget<'_, '_>,
 ) -> Result<(), Error> {
     if !head.constructed {
         let stop = content_end(head)?;
@@ -1336,10 +1792,10 @@ fn flatten_bits(
             return Err(invalid("non-final BIT STRING fragment has unused bits"));
         }
         let offset = value.bytes.len();
-        charge_work(work, payload.len(), limits)?;
-        append_payload(&mut value.bytes, payload, limits)?;
+        charge_work(budget.work, payload.len(), budget.limits)?;
+        append_payload(&mut value.bytes, payload, budget.max_payload, budget.limits)?;
         if unused > 0 && !payload.is_empty() {
-            charge_work(work, 1, limits)?;
+            charge_work(budget.work, 1, budget.limits)?;
         }
         normalize_padding_at(&mut value.bytes, offset, payload.len(), unused);
         value.state.fragments = value
@@ -1361,12 +1817,20 @@ fn flatten_bits(
         if is_eoc(input, cursor, end) {
             break;
         }
-        let child = parse_header(input, cursor, bound, work, true, limits)?;
+        let child = parse_header(input, cursor, bound, budget.work, true, budget.limits)?;
         if child.class != 0 || child.tag != TAG_BIT_STRING {
             return Err(invalid("constructed BIT STRING contains another tag"));
         }
-        let child_end = scan(input, cursor, bound, depth + 1, work, false, limits)?;
-        flatten_bits(input, &child, child_end, depth + 1, value, limits, work)?;
+        let child_end = scan(
+            input,
+            cursor,
+            bound,
+            depth + 1,
+            budget.work,
+            false,
+            budget.limits,
+        )?;
+        flatten_bits(input, &child, child_end, depth + 1, value, budget)?;
         cursor = child_end;
     }
     Ok(())
@@ -1468,6 +1932,160 @@ fn record_size(rule: RecordEncoding, content_len: usize) -> Result<usize, Error>
             .and_then(|size| size.checked_add(content_len))
             .ok_or(Error::SizeOverflow),
         RecordEncoding::Cer => 4_usize.checked_add(content_len).ok_or(Error::SizeOverflow),
+    }
+}
+
+/// Validate inclusive ASN.1 SIZE bounds independently of a field's value.
+///
+/// # Parameters and returns
+/// `lower` and `upper` are inclusive bounds. Returns success when ordered.
+///
+/// # Errors
+/// Returns `InvalidEncoding` when the lower bound exceeds the upper bound.
+///
+/// # Source, version, history, example
+/// Source: generated finite string SIZE constraints. Version: 2026-10-31.
+/// Responsible: asn1c maintainers. History: bounded record fields.
+/// Example: `validate_size_bounds(0, 64)?`.
+const fn validate_size_bounds(lower: usize, upper: usize) -> Result<(), Error> {
+    if lower > upper {
+        return Err(invalid("string SIZE lower bound exceeds upper bound"));
+    }
+    Ok(())
+}
+
+/// Validate one actual length against inclusive ASN.1 SIZE bounds.
+///
+/// # Parameters and returns
+/// `size` is the measured octet or bit count; `lower`/`upper` are inclusive.
+/// Returns success when the measured length is in range.
+///
+/// # Errors
+/// Returns `InvalidEncoding` for an invalid range or out-of-range value.
+///
+/// # Source, version, history, example
+/// Source: generated finite string SIZE constraints. Version: 2026-10-31.
+/// Responsible: asn1c maintainers. History: bounded record fields.
+/// Example: `validate_size(payload.len(), 1, 64)?`.
+fn validate_size(size: usize, lower: usize, upper: usize) -> Result<(), Error> {
+    validate_size_bounds(lower, upper)?;
+    if size < lower || size > upper {
+        return Err(invalid("string length is outside its SIZE bounds"));
+    }
+    Ok(())
+}
+
+/// Compute packed storage bytes for a logical BIT STRING width without overflow.
+///
+/// # Parameters and returns
+/// `bit_len` is the meaningful bit count. Returns its ceiling byte count.
+///
+/// # Errors
+/// This total helper cannot fail.
+///
+/// # Source, version, history, example
+/// Source: ASN.1 packed BIT STRING representation. Version: 2026-10-31.
+/// Responsible: asn1c maintainers. History: borrowed record writer.
+/// Example: `packed_storage_len(9) == 2`.
+const fn packed_storage_len(bit_len: usize) -> usize {
+    if bit_len.is_multiple_of(8) {
+        bit_len / 8
+    } else {
+        bit_len / 8 + 1
+    }
+}
+
+/// Validate borrowed packed BIT STRING storage without allocating a wrapper.
+///
+/// # Parameters and returns
+/// `bytes` contains MSB-first payload; `bit_len` is the exact meaningful width.
+/// Returns success for exact storage and zero padding.
+///
+/// # Errors
+/// Returns `InvalidEncoding` for a byte-count mismatch or nonzero unused bits.
+///
+/// # Source, version, history, example
+/// Source: `BitStringValue` storage invariant. Version: 2026-10-31.
+/// Responsible: asn1c maintainers. History: avoid fixed-value copies.
+/// Example: `validate_packed_bits(&[0xa0], 3)?`.
+fn validate_packed_bits(bytes: &[u8], bit_len: usize) -> Result<(), Error> {
+    if bytes.len() != packed_storage_len(bit_len) {
+        return Err(invalid("BIT STRING storage does not match its bit length"));
+    }
+    let unused = unused_bits(bit_len);
+    if unused > 0 {
+        let mask = (1_u8 << unused) - 1;
+        if bytes.last().is_some_and(|last| last & mask != 0) {
+            return Err(invalid("BIT STRING has nonzero unused trailing bits"));
+        }
+    }
+    Ok(())
+}
+
+/// Compute one primitive universal child TLV size for a content length.
+///
+/// # Parameters and returns
+/// `content_len` is the encoded content size. Returns tag, length, and content
+/// octets using shortest definite length form.
+///
+/// # Errors
+/// Returns `SizeOverflow` on checked arithmetic failure.
+///
+/// # Source, version, history, example
+/// Source: X.690 primitive TLV lengths. Version: 2026-10-31.
+/// Responsible: asn1c maintainers. History: bounded record strings.
+/// Example: `primitive_field_size(3)? == 5`.
+fn primitive_field_size(content_len: usize) -> Result<usize, Error> {
+    1_usize
+        .checked_add(length_size(content_len))
+        .and_then(|n| n.checked_add(content_len))
+        .ok_or(Error::SizeOverflow)
+}
+
+/// Compute exact OCTET STRING child size before any fragment loop.
+///
+/// # Parameters and returns
+/// `payload_len` is the value size; `rule` selects DER or CER. Returns complete
+/// primitive or constructed child TLV size in O(1).
+///
+/// # Errors
+/// Returns `SizeOverflow` on checked arithmetic failure.
+///
+/// # Source, version, history, example
+/// Source: X.690 CER OCTET STRING fragmentation. Version: 2026-10-31.
+/// Responsible: asn1c maintainers. History: bounded record strings.
+/// Example: `octet_field_size(1001, RecordEncoding::Cer)?`.
+fn octet_field_size(payload_len: usize, rule: RecordEncoding) -> Result<usize, Error> {
+    if rule == RecordEncoding::Cer && payload_len > CER_FRAGMENT_MAX {
+        fragmented_size(payload_len, payload_len.div_ceil(CER_FRAGMENT_MAX), false)
+    } else {
+        primitive_field_size(payload_len)
+    }
+}
+
+/// Compute exact BIT STRING child size before any fragment loop.
+///
+/// # Parameters and returns
+/// `payload_len` is packed byte count; `rule` selects DER or CER. Returns the
+/// complete child size in O(1), counting each unused-count octet.
+///
+/// # Errors
+/// Returns `SizeOverflow` on checked arithmetic failure.
+///
+/// # Source, version, history, example
+/// Source: X.690 CER BIT STRING fragmentation. Version: 2026-10-31.
+/// Responsible: asn1c maintainers. History: bounded record strings.
+/// Example: `bit_field_size(1000, RecordEncoding::Cer)?`.
+fn bit_field_size(payload_len: usize, rule: RecordEncoding) -> Result<usize, Error> {
+    let content_len = payload_len.checked_add(1).ok_or(Error::SizeOverflow)?;
+    if rule == RecordEncoding::Cer && content_len > CER_FRAGMENT_MAX {
+        fragmented_size(
+            payload_len,
+            payload_len.div_ceil(CER_FRAGMENT_MAX - 1),
+            true,
+        )
+    } else {
+        primitive_field_size(content_len)
     }
 }
 
@@ -1933,11 +2551,19 @@ fn content_end(head: &Header) -> Result<usize, Error> {
 /// # Source, version, history, example
 /// Source: bounded Rust decode allocation. Version: 2026-10-31.
 /// Responsible: maintainers. History: first string API. Example: flattening.
-fn append_payload(out: &mut Vec<u8>, payload: &[u8], limits: &Limits) -> Result<(), Error> {
+fn append_payload(
+    out: &mut Vec<u8>,
+    payload: &[u8],
+    max_payload: Option<usize>,
+    limits: &Limits,
+) -> Result<(), Error> {
     let next = out
         .len()
         .checked_add(payload.len())
         .ok_or(Error::SizeOverflow)?;
+    if max_payload.is_some_and(|maximum| next > maximum) {
+        return Err(invalid("BER string exceeds its declared SIZE upper bound"));
+    }
     check(Resource::OutputBytes, next, limits.max_output_bytes)?;
     out.try_reserve(payload.len())
         .map_err(|_| Error::AllocationFailed {
@@ -2438,10 +3064,10 @@ mod tests {
     #[test]
     fn sequence_rejects_ambiguous_and_malformed_fields() {
         let limits = Limits::default();
-        let too_many_tags = [1, 2, 3, 4];
+        let too_many_tags = [1, 2, 3, 4, 5, 10, 16];
         let mut context = RecordContext::new(&limits);
         assert!(SequenceReader::new(&[0x30, 0], &too_many_tags, &mut context).is_err());
-        let unsupported_tag = [4];
+        let unsupported_tag = [6];
         let mut context = RecordContext::new(&limits);
         assert!(SequenceReader::new(&[0x30, 0], &unsupported_tag, &mut context).is_err());
         let duplicate_tags = [1, 1];
@@ -2563,5 +3189,286 @@ mod tests {
         let mut context = RecordContext::new(&too_small_output);
         let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
         assert!(writer.write_boolean(true).is_err());
+    }
+
+    /// Encode large DER fields across short/long length and shift boundaries.
+    /// Source: X.690 DER length rules; version: 2026-10-31; values: 127/128
+    /// payload octets. Returns: exact framing assertions. Errors: assertions.
+    /// Responsible: maintainers. History: bounded record strings. Example: test.
+    #[test]
+    fn sequence_der_octets_cover_127_128_and_charge_body_shift() {
+        for (length, expected_outer, expected_field) in [
+            (127, [0x30, 0x81, 0x81], &[0x04, 0x7f][..]),
+            (128, [0x30, 0x81, 0x83], &[0x04, 0x81, 0x80][..]),
+        ] {
+            let payload = vec![0x5a; length];
+            let limits = Limits::default();
+            let mut context = RecordContext::new(&limits);
+            let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+            writer.write_octet_string(&payload, length, length).unwrap();
+            let encoded = writer.finish().unwrap();
+            assert_eq!(&encoded.bytes[..3], &expected_outer);
+            assert_eq!(&encoded.bytes[3..3 + expected_field.len()], expected_field);
+            assert_eq!(
+                encoded.bytes.len(),
+                expected_outer.len() + expected_field.len() + length
+            );
+
+            let mut context = RecordContext::new(&limits);
+            let mut reader =
+                SequenceReader::new(&encoded.bytes, &[TAG_OCTET_STRING], &mut context).unwrap();
+            assert_eq!(reader.next_field().unwrap(), Some(TAG_OCTET_STRING));
+            assert_eq!(reader.read_octet_string(length, length).unwrap(), payload);
+            assert_eq!(reader.next_field().unwrap(), None);
+            assert_eq!(reader.finish().unwrap().consumed_bytes, encoded.bytes.len());
+        }
+
+        let payload = vec![0x7f; 127];
+        let limits = Limits {
+            max_work_bits: 2096,
+            ..Limits::default()
+        };
+        let mut context = RecordContext::new(&limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer.write_octet_string(&payload, 127, 127).unwrap();
+        assert_eq!(writer.finish().unwrap().bytes.len(), 132);
+
+        let limits = Limits {
+            max_work_bits: 2095,
+            ..Limits::default()
+        };
+        let mut context = RecordContext::new(&limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer.write_octet_string(&payload, 127, 127).unwrap();
+        assert!(writer.finish().is_err());
+    }
+
+    /// Check canonical CER OCTET and BIT STRING fragmentation boundaries.
+    /// Source: X.690 CER string rules; version: 2026-10-31; values: OCTET 1000/
+    /// 1001, BIT 999/1000 payload octets. Returns: framing and round-trip checks.
+    /// Errors: failed assertions; responsible: maintainers. History: records.
+    /// Example: run using `cargo test`.
+    #[test]
+    fn sequence_cer_octet_and_bit_fragment_boundaries() {
+        for (length, first_tag) in [(1000, 0x04), (1001, 0x24)] {
+            let payload = vec![0x6b; length];
+            let limits = Limits::default();
+            let mut context = RecordContext::new(&limits);
+            let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+            writer.write_octet_string(&payload, length, length).unwrap();
+            let encoded = writer.finish().unwrap();
+            assert_eq!(&encoded.bytes[..2], &[0x30, 0x80]);
+            assert_eq!(encoded.bytes[2], first_tag);
+            if length == 1001 {
+                assert_eq!(encoded.bytes[3], 0x80);
+            }
+            assert_eq!(&encoded.bytes[encoded.bytes.len() - 2..], &[0, 0]);
+
+            let mut context = RecordContext::new(&limits);
+            let mut reader =
+                SequenceReader::new(&encoded.bytes, &[TAG_OCTET_STRING], &mut context).unwrap();
+            assert_eq!(reader.next_field().unwrap(), Some(TAG_OCTET_STRING));
+            assert_eq!(reader.read_octet_string(length, length).unwrap(), payload);
+            assert_eq!(reader.next_field().unwrap(), None);
+            assert_eq!(reader.finish().unwrap().consumed_bytes, encoded.bytes.len());
+        }
+
+        for (payload_len, first_tag) in [(999, 0x03), (1000, 0x23)] {
+            let payload = vec![0xa5; payload_len];
+            let bit_len = payload_len * 8;
+            let limits = Limits::default();
+            let mut context = RecordContext::new(&limits);
+            let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+            writer
+                .write_bit_string(&payload, bit_len, bit_len, bit_len)
+                .unwrap();
+            let encoded = writer.finish().unwrap();
+            assert_eq!(encoded.bytes[2], first_tag);
+            if payload_len == 1000 {
+                assert_eq!(encoded.bytes[3], 0x80);
+            }
+
+            let mut context = RecordContext::new(&limits);
+            let mut reader =
+                SequenceReader::new(&encoded.bytes, &[TAG_BIT_STRING], &mut context).unwrap();
+            assert_eq!(reader.next_field().unwrap(), Some(TAG_BIT_STRING));
+            let decoded = reader.read_bit_string(bit_len, bit_len).unwrap();
+            assert_eq!(decoded.as_bytes(), payload);
+            assert_eq!(decoded.bit_len(), bit_len);
+            assert_eq!(reader.next_field().unwrap(), None);
+            assert_eq!(reader.finish().unwrap().consumed_bytes, encoded.bytes.len());
+        }
+    }
+
+    /// Decode constructed BER strings and enforce aggregate retained storage.
+    /// Source: X.690 BER constructed strings; version: 2026-10-31; vectors:
+    /// definite/indefinite fragments and two fields. Returns: assertions.
+    /// Errors: malformed or over-budget inputs return errors. Responsible:
+    /// maintainers. History: sequence string budgets. Example: cargo test.
+    #[test]
+    fn sequence_flattens_constructed_strings_and_caps_retained_storage() {
+        let octets = [0x30, 0x0a, 0x24, 0x80, 0x04, 1, b'a', 0x04, 1, b'b', 0, 0];
+        let mut context = RecordContext::new(&Limits::default());
+        let mut reader = SequenceReader::new(&octets, &[TAG_OCTET_STRING], &mut context).unwrap();
+        assert_eq!(reader.next_field().unwrap(), Some(TAG_OCTET_STRING));
+        assert_eq!(reader.read_octet_string(2, 2).unwrap(), b"ab");
+        assert_eq!(reader.next_field().unwrap(), None);
+        assert_eq!(reader.finish().unwrap().consumed_bytes, octets.len());
+
+        let nested = [
+            0x30, 0x0c, 0x24, 0x0a, 0x04, 1, b'a', 0x24, 0x80, 0x04, 1, b'b', 0, 0,
+        ];
+        let mut context = RecordContext::new(&Limits::default());
+        let mut reader = SequenceReader::new(&nested, &[TAG_OCTET_STRING], &mut context).unwrap();
+        assert_eq!(reader.next_field().unwrap(), Some(TAG_OCTET_STRING));
+        assert_eq!(reader.read_octet_string(2, 2).unwrap(), b"ab");
+        assert_eq!(reader.next_field().unwrap(), None);
+        assert_eq!(reader.finish().unwrap().consumed_bytes, nested.len());
+
+        let bits = [
+            0x30, 0x0c, 0x23, 0x80, 0x03, 2, 0, 0xaa, 0x03, 2, 3, 0xa7, 0, 0,
+        ];
+        let mut context = RecordContext::new(&Limits::default());
+        let mut reader = SequenceReader::new(&bits, &[TAG_BIT_STRING], &mut context).unwrap();
+        assert_eq!(reader.next_field().unwrap(), Some(TAG_BIT_STRING));
+        let decoded = reader.read_bit_string(13, 13).unwrap();
+        assert_eq!(decoded.as_bytes(), [0xaa, 0xa0]);
+        assert_eq!(reader.next_field().unwrap(), None);
+        assert_eq!(reader.finish().unwrap().consumed_bytes, bits.len());
+
+        let many = [0x30, 0x0c, 0x04, 5, 1, 2, 3, 4, 5, 0x03, 3, 0, 0x11, 0x22];
+        let limits = Limits {
+            max_output_bytes: 6,
+            ..Limits::default()
+        };
+        let mut context = RecordContext::new(&limits);
+        let mut reader =
+            SequenceReader::new(&many, &[TAG_OCTET_STRING, TAG_BIT_STRING], &mut context).unwrap();
+        assert_eq!(reader.next_field().unwrap(), Some(TAG_OCTET_STRING));
+        assert_eq!(reader.read_octet_string(5, 5).unwrap(), [1, 2, 3, 4, 5]);
+        assert_eq!(reader.next_field().unwrap(), Some(TAG_BIT_STRING));
+        let before_failed_append = reader.context.work_used;
+        assert!(matches!(
+            reader.read_bit_string(16, 16),
+            Err(Error::LimitExceeded {
+                resource: Resource::OutputBytes,
+                ..
+            })
+        ));
+        assert!(reader.context.work_used > before_failed_append);
+    }
+
+    /// Keep failed string-decoder work charged when callers retry a field.
+    /// Source: shared BER operation budget; version: 2026-10-31; input: an
+    /// OCTET STRING whose first requested SIZE upper bound is too small.
+    /// Returns: counter assertions. Errors: assertion failures. Responsible:
+    /// maintainers. History: failed-pass accounting. Example: cargo test.
+    #[test]
+    fn sequence_failed_string_decode_keeps_work_charged() {
+        let input = [0x30, 5, 0x04, 3, 0x11, 0x22, 0x33];
+        let mut context = RecordContext::new(&Limits::default());
+        let mut reader = SequenceReader::new(&input, &[TAG_OCTET_STRING], &mut context).unwrap();
+        assert_eq!(reader.next_field().unwrap(), Some(TAG_OCTET_STRING));
+        let before = reader.context.work_used;
+        assert!(reader.read_octet_string(0, 2).is_err());
+        let after_failure = reader.context.work_used;
+        assert!(after_failure > before);
+        assert_eq!(reader.read_octet_string(3, 3).unwrap(), [0x11, 0x22, 0x33]);
+        assert!(reader.context.work_used > after_failure);
+    }
+
+    /// Reject noncanonical BER padding when a record is decoded as strict CER.
+    /// Source: X.690 BIT STRING canonical content; version: 2026-10-31; vector
+    /// has nonzero low padding bits. Returns: canonical comparison failure.
+    /// Errors: assertion failures. Responsible: maintainers. History: records.
+    /// Example: run using `cargo test`.
+    #[test]
+    fn sequence_strict_cer_rejects_noncanonical_bit_padding() {
+        let input = [0x30, 0x80, 0x03, 0x02, 0x05, 0xa7, 0, 0];
+        let limits = Limits::default();
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SequenceReader::new(&input, &[TAG_BIT_STRING], &mut context).unwrap();
+        assert_eq!(reader.next_field().unwrap(), Some(TAG_BIT_STRING));
+        let value = reader.read_bit_string(3, 3).unwrap();
+        assert_eq!(value.as_bytes(), [0xa0]);
+        assert_eq!(reader.next_field().unwrap(), None);
+        let consumed = reader.finish().unwrap();
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer
+            .write_bit_string(value.as_bytes(), value.bit_len(), 3, 3)
+            .unwrap();
+        let canonical = writer.finish().unwrap();
+        assert!(context
+            .verify_canonical(&input, consumed.consumed_bytes, &canonical.bytes)
+            .is_err());
+    }
+
+    /// Share strict CER work across ENUMERATED and constructed string fields.
+    /// Source: X.690 CER canonical comparison; version: 2026-10-31; input is a
+    /// BER-valid noncanonical OCTET fragmentation. Returns: strict rejection.
+    /// Errors: assertion failure; responsible: maintainers. History: records.
+    /// Example: run using `cargo test`.
+    #[test]
+    fn sequence_enumerated_round_trip_and_strict_string_fragment_check() {
+        let limits = Limits::default();
+        let payload = vec![0x55; 1001];
+        let mut context = RecordContext::new(&limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer.write_enumerated(-129).unwrap();
+        writer
+            .write_octet_string(&payload, payload.len(), payload.len())
+            .unwrap();
+        let canonical = writer.finish().unwrap();
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SequenceReader::new(
+            &canonical.bytes,
+            &[TAG_ENUMERATED, TAG_OCTET_STRING],
+            &mut context,
+        )
+        .unwrap();
+        assert_eq!(reader.next_field().unwrap(), Some(TAG_ENUMERATED));
+        assert_eq!(reader.read_enumerated().unwrap(), -129);
+        assert_eq!(reader.next_field().unwrap(), Some(TAG_OCTET_STRING));
+        assert_eq!(
+            reader
+                .read_octet_string(payload.len(), payload.len())
+                .unwrap(),
+            payload
+        );
+        assert_eq!(reader.next_field().unwrap(), None);
+        let consumed = reader.finish().unwrap();
+        context
+            .verify_canonical(&canonical.bytes, consumed.consumed_bytes, &canonical.bytes)
+            .unwrap();
+
+        let mut noncanonical = vec![0x30, 0x80, 0x0a, 2, 0xff, 0x7f, 0x24, 0x80];
+        noncanonical.extend_from_slice(&[0x04, 0x82, 0x03, 0xe7]);
+        noncanonical.extend_from_slice(&vec![0x55; 999]);
+        noncanonical.extend_from_slice(&[0x04, 2, 0x55, 0x55, 0, 0, 0, 0]);
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SequenceReader::new(
+            &noncanonical,
+            &[TAG_ENUMERATED, TAG_OCTET_STRING],
+            &mut context,
+        )
+        .unwrap();
+        assert_eq!(reader.next_field().unwrap(), Some(TAG_ENUMERATED));
+        assert_eq!(reader.read_enumerated().unwrap(), -129);
+        assert_eq!(reader.next_field().unwrap(), Some(TAG_OCTET_STRING));
+        let decoded = reader
+            .read_octet_string(payload.len(), payload.len())
+            .unwrap();
+        assert_eq!(decoded, payload);
+        assert_eq!(reader.next_field().unwrap(), None);
+        let consumed = reader.finish().unwrap();
+        let mut writer = SequenceWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer.write_enumerated(-129).unwrap();
+        writer
+            .write_octet_string(&decoded, decoded.len(), decoded.len())
+            .unwrap();
+        let reencoded = writer.finish().unwrap();
+        assert!(context
+            .verify_canonical(&noncanonical, consumed.consumed_bytes, &reencoded.bytes)
+            .is_err());
     }
 }
