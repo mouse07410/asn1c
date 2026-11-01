@@ -1,0 +1,3 @@
+TaggedRootSetExtension DEFINITIONS ::= BEGIN
+RootExtension ::= [3] IMPLICIT SET { x INTEGER (0..255), ... }
+END

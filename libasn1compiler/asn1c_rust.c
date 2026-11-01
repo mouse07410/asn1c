@@ -91,7 +91,7 @@ static asn1p_expr_t *rust_contained_primitive(asn1p_module_t *, asn1p_expr_t *);
 static const asn1p_constraint_t *rust_containing_node(const asn1p_constraint_t *, unsigned);
 static int rust_write_containing(FILE *, const char *, asn1p_expr_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_type(asn1p_module_t *, asn1p_expr_t *, uint64_t);
-static int rust_tagged_sequence_root_candidate(const asn1p_expr_t *, uint64_t);
+static int rust_tagged_record_root_candidate(const asn1p_expr_t *, uint64_t);
 static int rust_check_sequence(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_sequence_ber_cer(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_set_ber_cer(asn1p_module_t *, asn1p_expr_t *, uint64_t);
@@ -743,16 +743,17 @@ rust_contained_primitive(asn1p_module_t *module, asn1p_expr_t *expr) {
 /*
  * Purpose: recognize the one tagged-root candidate codec and tag shape.
  * Inputs: expr is a fixed assignment and codecs is the selected mask.
- * Returns one for a context-specific IMPLICIT SEQUENCE tag within C's range
- * and a nonempty BER/CER-only codec mask; no exceptions are generated.
+ * Returns one for a context-specific IMPLICIT SEQUENCE/SET tag within C's
+ * range and a nonempty BER/CER-only codec mask; no exceptions are generated.
  * Source: fixed ASN.1 AST and C BER tag limit. Version/date: 2026-11-01.
- * Author: asn1c maintainers. History: tagged SEQUENCE root slice.
- * Example: `[3] IMPLICIT SEQUENCE` selected for BER passes this check.
+ * Author: asn1c maintainers. History: tagged SEQUENCE and SET roots.
+ * Example: `[3] IMPLICIT SET` selected for BER passes this check.
  */
 static int
-rust_tagged_sequence_root_candidate(const asn1p_expr_t *expr, uint64_t codecs) {
+rust_tagged_record_root_candidate(const asn1p_expr_t *expr, uint64_t codecs) {
     const uint64_t ber_cer = RUST_CODEC_BER | RUST_CODEC_CER;
-    return expr && expr->expr_type == ASN_CONSTR_SEQUENCE
+    return expr && (expr->expr_type == ASN_CONSTR_SEQUENCE
+                    || expr->expr_type == ASN_CONSTR_SET)
         && expr->tag.tag_class == TC_CONTEXT_SPECIFIC
         && expr->tag.tag_mode == TM_IMPLICIT
         && expr->tag.tag_value >= 0
@@ -787,9 +788,9 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
         return -1;
     }
     if(expr->tag.tag_class != TC_NOCLASS
-       && !rust_tagged_sequence_root_candidate(expr, codecs)) {
+       && !rust_tagged_record_root_candidate(expr, codecs)) {
         rust_diagnostic(module, expr,
-                        "type tags are supported only on BER/CER-only flat SEQUENCE roots");
+                        "type tags are supported only on BER/CER-only flat SEQUENCE/SET roots");
         return -1;
     }
     if(codecs & RUST_CODEC_XER) {
@@ -1114,21 +1115,35 @@ rust_check_set_ber_cer(asn1p_module_t *module, asn1p_expr_t *expr,
     size_t count = 0;
     size_t nodes = 1;
     size_t work = 0;
+    int tagged_root = expr->tag.tag_class != TC_NOCLASS;
     const uint64_t supported = RUST_CODEC_BER | RUST_CODEC_CER;
     if(expr->expr_type != ASN_CONSTR_SET || !(codecs & supported)
        || (codecs & ~supported) || expr->reference
-       || expr->tag.tag_class != TC_NOCLASS || expr->constraints
+       || (tagged_root && !rust_tagged_record_root_candidate(expr, codecs))
+       || expr->constraints
        || expr->combined_constraints || expr->lhs_params || expr->ioc_table
        || expr->marker.flags || expr->rhs_pspecs) {
         rust_diagnostic(module, expr,
-                        "BER/CER SET root must be untagged and use only BER/CER codecs");
+                        "BER/CER SET root needs an untagged root or one supported "
+                        "context-specific IMPLICIT tag and BER/CER-only codecs");
         return -1;
     }
     TQ_FOR(member, &expr->members, next) {
-        if(++count > RUST_BER_CER_FIELD_LIMIT || ++work > RUST_BER_CER_WORK_LIMIT
-           || (member->expr_type == ASN_CONSTR_SEQUENCE
-               && ++nodes > RUST_BER_CER_NODE_LIMIT)
-           || rust_check_ber_cer_member(module, expr, member, 1, &work)) return -1;
+        if(++count > RUST_BER_CER_FIELD_LIMIT || ++work > RUST_BER_CER_WORK_LIMIT) {
+            rust_diagnostic(module, expr, "BER/CER SET exceeds the supported direct-field limit");
+            return -1;
+        }
+        if(tagged_root && member->expr_type == ASN_CONSTR_SEQUENCE) {
+            rust_diagnostic(module, member,
+                            "tagged BER/CER SET roots require direct primitive fields");
+            return -1;
+        }
+        if(member->expr_type == ASN_CONSTR_SEQUENCE
+           && ++nodes > RUST_BER_CER_NODE_LIMIT) {
+            rust_diagnostic(module, member, "BER/CER SET nesting exceeds the supported depth");
+            return -1;
+        }
+        if(rust_check_ber_cer_member(module, expr, member, 1, &work)) return -1;
     }
     return 0;
 }
@@ -1155,18 +1170,30 @@ rust_check_sequence_ber_cer(asn1p_module_t *module, asn1p_expr_t *expr,
     size_t work = 0;
     int tagged_root = expr->tag.tag_class != TC_NOCLASS;
     if(expr->expr_type != ASN_CONSTR_SEQUENCE || expr->reference
-       || (tagged_root && !rust_tagged_sequence_root_candidate(expr, codecs))) {
+       || (tagged_root && !rust_tagged_record_root_candidate(expr, codecs))) {
         rust_diagnostic(module, expr,
                         "BER/CER SEQUENCE root needs an untagged root or one supported "
                         "context-specific IMPLICIT tag with BER/CER-only codecs");
         return -1;
     }
     TQ_FOR(member, &expr->members, next) {
-        if(++count > RUST_BER_CER_FIELD_LIMIT || ++work > RUST_BER_CER_WORK_LIMIT
-           || (tagged_root && member->expr_type == ASN_CONSTR_SEQUENCE)
-           || (member->expr_type == ASN_CONSTR_SEQUENCE
-               && ++nodes > RUST_BER_CER_NODE_LIMIT)
-           || rust_check_ber_cer_member(module, expr, member, 0, &work)) return -1;
+        if(++count > RUST_BER_CER_FIELD_LIMIT || ++work > RUST_BER_CER_WORK_LIMIT) {
+            rust_diagnostic(module, expr,
+                            "BER/CER SEQUENCE exceeds the supported direct-field limit");
+            return -1;
+        }
+        if(tagged_root && member->expr_type == ASN_CONSTR_SEQUENCE) {
+            rust_diagnostic(module, member,
+                            "tagged BER/CER SEQUENCE roots require direct primitive fields");
+            return -1;
+        }
+        if(member->expr_type == ASN_CONSTR_SEQUENCE
+           && ++nodes > RUST_BER_CER_NODE_LIMIT) {
+            rust_diagnostic(module, member,
+                            "BER/CER SEQUENCE nesting exceeds the supported depth");
+            return -1;
+        }
+        if(rust_check_ber_cer_member(module, expr, member, 0, &work)) return -1;
     }
     return 0;
 }
@@ -3841,6 +3868,8 @@ rust_write_set_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr,
     size_t i;
     asn1p_expr_t *member;
     int has_members = expr->members.tq_head != 0;
+    int tagged_root = expr->tag.tag_class == TC_CONTEXT_SPECIFIC
+                   && expr->tag.tag_mode == TM_IMPLICIT;
     const char *context_constructor = rust_ber_cer_has_nested_sequence(expr)
                                     ? "new_nested" : "new";
     if(rust_ber_cer_sort_set_fields(expr, sorted,
@@ -3862,7 +3891,16 @@ rust_write_set_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr,
         if(rust_write_sequence_ber_cer_encode_field(stream, parent, sorted[i]))
             return -1;
     }
-    if(fputs("        writer.finish()\n    }\n\n", stream) == EOF) return -1;
+    if(tagged_root) {
+        if(fprintf(stream,
+            "        writer.finish_tagged_root("
+            "::asn1c_runtime::ber::Tag::context_specific(0x%04" PRIx32 "_%04" PRIx32
+            "))\n    }\n\n",
+            (uint32_t)expr->tag.tag_value >> 16,
+            (uint32_t)expr->tag.tag_value & UINT32_C(0xffff)) < 0) return -1;
+    } else if(fputs("        writer.finish()\n    }\n\n", stream) == EOF) {
+        return -1;
+    }
     TQ_FOR(member, &expr->members, next) {
         if(rust_write_set_ber_cer_decode_helper(stream, parent, member)) return -1;
     }
@@ -3949,18 +3987,32 @@ rust_write_set_ber_cer_decode_helper(FILE *stream, const char *parent,
 /*
  * Emit the appropriate SET reader constructor and tag list.
  * Parameters: stream receives Rust; expr owns fields; tagged selects descriptor
- * dispatch. Returns zero or -1. Source: X.690 SET fields and runtime API.
+ * dispatch; tagged_root selects the outer-tag reader. Returns zero or -1.
+ * Source: X.690 SET fields and runtime API.
  * Version/date: 2026-11-01. Author: asn1c maintainers. History: tagged SET.
  * Example: build a descriptor-backed reader for context-specific fields.
  */
 static int
-rust_write_set_ber_cer_reader(FILE *stream, asn1p_expr_t *expr, int tagged) {
+rust_write_set_ber_cer_reader(FILE *stream, asn1p_expr_t *expr, int tagged,
+                              int tagged_root) {
     asn1p_expr_t *member;
     if(tagged) {
-        if(rust_write_ber_cer_field_descriptors(stream, expr, "            ")
-           || fputs("            let mut reader = ::asn1c_runtime::ber::SetReader::new_tagged(\n"
-                    "                input, &__asn1c_expected_fields, &mut context)?;\n",
-                    stream) == EOF) return -1;
+        if(rust_write_ber_cer_field_descriptors(stream, expr, "            ")) return -1;
+        if(tagged_root) {
+            if(fprintf(stream,
+                "            let mut reader = ::asn1c_runtime::ber::SetReader::"
+                "new_tagged_root(\n"
+                "                input, ::asn1c_runtime::ber::Tag::context_specific("
+                "0x%04" PRIx32 "_%04" PRIx32 "),\n"
+                "                &__asn1c_expected_fields, &mut context)?;\n",
+                (uint32_t)expr->tag.tag_value >> 16,
+                (uint32_t)expr->tag.tag_value & UINT32_C(0xffff)) < 0) return -1;
+        } else if(fputs(
+            "            let mut reader = ::asn1c_runtime::ber::SetReader::new_tagged(\n"
+            "                input, &__asn1c_expected_fields, &mut context)?;\n",
+            stream) == EOF) {
+            return -1;
+        }
         return 0;
     }
     if(fputs("            let mut reader = ::asn1c_runtime::ber::SetReader::new(\n"
@@ -4124,7 +4176,9 @@ rust_write_set_ber_cer_construct_value(FILE *stream, asn1p_expr_t *expr) {
 static int
 rust_write_set_ber_cer_decode_method(FILE *stream, asn1p_expr_t *expr, int cer) {
     const char *suffix = cer ? "cer" : "ber";
-    int tagged = rust_ber_cer_has_tagged_members(expr);
+    int tagged_root = expr->tag.tag_class == TC_CONTEXT_SPECIFIC
+                   && expr->tag.tag_mode == TM_IMPLICIT;
+    int tagged = tagged_root || rust_ber_cer_has_tagged_members(expr);
     const char *context_constructor = rust_ber_cer_has_nested_sequence(expr)
                                     ? "new_nested" : "new";
     if(rust_write_method_doc(stream, cer
@@ -4141,7 +4195,7 @@ rust_write_set_ber_cer_decode_method(FILE *stream, asn1p_expr_t *expr, int cer) 
         "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
         "        let mut context = ::asn1c_runtime::ber::RecordContext::%s(limits);\n"
         "        let (value, consumed) = {\n", suffix, context_constructor) < 0) return -1;
-    if(rust_write_set_ber_cer_reader(stream, expr, tagged)
+    if(rust_write_set_ber_cer_reader(stream, expr, tagged, tagged_root)
        || rust_write_set_ber_cer_decode_slots(stream, expr)
        || rust_write_set_ber_cer_dispatch(stream, expr, tagged)
        || fputs("            let consumed = reader.finish()?;\n", stream) == EOF

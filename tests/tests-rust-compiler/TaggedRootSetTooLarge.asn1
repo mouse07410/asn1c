@@ -1,0 +1,3 @@
+TaggedRootSetTooLarge DEFINITIONS ::= BEGIN
+RootTooLarge ::= [1073741824] IMPLICIT SET { x INTEGER (0..255) }
+END

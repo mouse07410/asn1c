@@ -1,0 +1,3 @@
+TaggedRootSetApplication DEFINITIONS ::= BEGIN
+RootApplication ::= [APPLICATION 3] IMPLICIT SET { x INTEGER (0..255) }
+END

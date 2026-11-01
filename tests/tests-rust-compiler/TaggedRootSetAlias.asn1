@@ -1,0 +1,4 @@
+TaggedRootSetAlias DEFINITIONS ::= BEGIN
+RootAlias ::= [3] IMPLICIT RootBase
+RootBase ::= SET { x INTEGER (0..255) }
+END

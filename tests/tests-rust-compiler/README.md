@@ -130,6 +130,19 @@ The generated C fixture checks DER/CER parity for `[3] IMPLICIT SEQUENCE`,
 tags 31 and `0x3fffffff`, BER/CER decoding, indefinite BER, and the nonminimal
 root alias.
 
+The tagged-root SET slice accepts one context-specific IMPLICIT tag on a flat
+top-level SET for BER/CER-only selection. DER and CER retain SET field sorting
+by effective class and number, while BER accepts arbitrary field order. Tests
+cover reverse-declaration C vectors, mixed universal/context-specific child
+tags, root tags 0, 30, 31, 127, and `0x3fffffff`, empty SETs, OPTIONAL/DEFAULT
+fields, prefix use, resource ceilings, primitive/mismatched roots, malformed
+EOC, and isolated strict CER rejection of indefinite reversed fields and
+nonminimal root aliases. Explicit/other-class roots, aliases, extensions,
+nested children, stacked tags, and mixed codec masks fail before publication.
+BER-only, CER-only, and combined generator masks pass strict Clippy. C parity
+uses a separate nonempty schema because generated empty C SET types do not
+compile portably.
+
 The sixth BER/CER slice supports one resolved context-specific EXPLICIT wrapper
 on each supported direct SEQUENCE or SET field, alongside universal and
 IMPLICIT fields. Generated readers require the wrapper to contain exactly one

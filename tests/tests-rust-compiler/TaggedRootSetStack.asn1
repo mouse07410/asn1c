@@ -1,0 +1,3 @@
+TaggedRootSetStack DEFINITIONS ::= BEGIN
+RootStack ::= [3] IMPLICIT [4] IMPLICIT SET { x INTEGER (0..255) }
+END

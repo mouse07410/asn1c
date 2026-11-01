@@ -31,6 +31,18 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/SequenceBerCer.asn1 \
     $(srcdir)/TaggedSequence.asn1 \
     $(srcdir)/TaggedRootSequence.asn1 \
+    $(srcdir)/TaggedRootSet.asn1 \
+    $(srcdir)/TaggedRootSetC.asn1 \
+    $(srcdir)/TaggedRootSetExplicit.asn1 \
+    $(srcdir)/TaggedRootSetApplication.asn1 \
+    $(srcdir)/TaggedRootSetNested.asn1 \
+    $(srcdir)/TaggedRootSetNestedSequence.asn1 \
+    $(srcdir)/TaggedRootSetExtension.asn1 \
+    $(srcdir)/TaggedRootSetAlias.asn1 \
+    $(srcdir)/TaggedRootSetStack.asn1 \
+    $(srcdir)/TaggedRootSetTooLarge.asn1 \
+    $(srcdir)/tagged_root_set_conformance.rs \
+    $(srcdir)/c_tagged_root_set.c \
     $(srcdir)/TaggedRootExplicit.asn1 \
     $(srcdir)/TaggedRootApplication.asn1 \
     $(srcdir)/TaggedRootNested.asn1 \

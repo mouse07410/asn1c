@@ -1,4 +1,7 @@
 Changes since v1.5.3:
+	* Extend the bounded Rust BER/DER/CER flat SET slice to one resolved
+	  context-specific IMPLICIT root tag under BER/CER-only selection. Preserve
+	  effective-tag output order, unordered BER input, and shared CER limits.
 	* Add one context-specific IMPLICIT tag on a direct flat Rust SEQUENCE
 	  root under BER/CER-only selection. Preserve the shared record budget,
 	  accept C-compatible BER root aliases, and require canonical CER framing.

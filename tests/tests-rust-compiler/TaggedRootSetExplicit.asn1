@@ -1,0 +1,3 @@
+TaggedRootSetExplicit DEFINITIONS ::= BEGIN
+RootExplicit ::= [3] EXPLICIT SET { x INTEGER (0..255) }
+END

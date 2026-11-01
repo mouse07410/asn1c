@@ -101,6 +101,7 @@ fresh directory after adding application code or running Cargo there.
 | Flat SEQUENCE with untagged outer type | BER prefix decoding, DER encoding, CER encoding and strict CER decoding for empty records or up to six direct BOOLEAN, NULL, bounded i64 INTEGER, nonextensible ENUMERATED, and finite bounded BIT/OCTET STRING fields with distinct effective tags; untagged, resolved context-specific IMPLICIT or one EXPLICIT wrapper, or AUTOMATIC members; required, OPTIONAL, and literal BOOLEAN/INTEGER DEFAULT; one shared record budget |
 | Flat SEQUENCE with one context-specific IMPLICIT root tag | BER prefix decoding, DER encoding, CER encoding, and strict CER decoding for the direct flat field slice above, with BER/CER-only codec selection and a root tag number through `0x3fff_ffff` |
 | Flat SET with untagged outer type | BER prefix decoding in any member order, effective-tag-ordered DER/CER encoding, and strict CER decoding for the same six direct field kinds; empty, required, OPTIONAL, and literal BOOLEAN/INTEGER DEFAULT records; resolved IMPLICIT/EXPLICIT/AUTOMATIC member tags; BER/CER-only codec selection |
+| Flat SET with one context-specific IMPLICIT root tag | The direct flat SET slice above with BER/CER-only codec selection, unordered BER member decoding, effective-tag-ordered DER/CER output, strict CER decoding, and a root tag number through `0x3fff_ffff` |
 | One inline SEQUENCE child in an untagged SEQUENCE or SET | BER prefix decoding, DER encoding, CER encoding, and strict CER decoding; nonrecursive child with up to six direct supported primitive leaves, required/OPTIONAL members, and natural, resolved context-specific IMPLICIT or one EXPLICIT child tag; one shared record and scratch budget; SET and empty child require BER/CER-only selection |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in APER and OER encode/decode; each call begins at an octet boundary |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Opt-in JER encode/decode of one complete JSON primitive with -gen-JER |
@@ -231,8 +232,8 @@ prefix, so parsing, output, and comparison share the work limit. Constructed
 BER BIT/OCTET STRING fields are flattened under that limit, and `max_output_bytes`
 also caps cumulative retained decoded string bytes. The generator rejects
 deeper nested, colliding-effective-tag, extensible, or unsupported field forms.
-A direct flat SEQUENCE with one resolved context-specific IMPLICIT root tag is
-supported under BER/CER-only selection; other root tags are rejected.
+A direct flat SEQUENCE or SET with one resolved context-specific IMPLICIT root
+tag is supported under BER/CER-only selection; other root tags are rejected.
 
 The flat SET slice uses the same six direct field kinds and record context.
 BER accepts members in any order, rejects duplicates and unknown tags, and
@@ -248,11 +249,13 @@ the C runtime's packed-tag limit on this target. BER accepts C-compatible
 nonminimal high-tag aliases; strict CER rejects them. Constructed tagged
 strings retain universal fragment tags. Two fields of the same primitive
 kind are permitted when their effective class/number pairs differ. Tagged
-flat SEQUENCE roots replace the universal outer identifier with one resolved
-context-specific IMPLICIT tag under BER/CER-only selection. BER accepts
+flat SEQUENCE and SET roots replace their universal outer identifier with one
+resolved context-specific IMPLICIT tag under BER/CER-only selection. BER accepts
 C-compatible nonminimal root identifiers, and strict CER requires the shortest
-form and canonical indefinite framing. Other root tags, multi-tag stacks,
-references, imports, and broader nested records remain outside this slice.
+form and canonical indefinite framing. Tagged SET roots retain unordered BER
+member decoding and effective-tag-sorted DER/CER output. Other root tags,
+multi-tag stacks, references, imports, and broader nested records remain
+outside this slice.
 
 The nested record slice permits one nonrecursive inline SEQUENCE child in an
 untagged SEQUENCE or BER/CER-only SET. Child leaves use the supported direct

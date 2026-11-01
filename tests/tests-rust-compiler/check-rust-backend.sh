@@ -1169,7 +1169,7 @@ if "$asn1c_bin" --rust -no-gen-CER -S "$skeletons" \
     echo "FAIL: Rust backend accepted a top-level tagged type"
     exit 1
 fi
-grep -F 'type tags are supported only on BER/CER-only flat SEQUENCE roots' \
+grep -F 'type tags are supported only on BER/CER-only flat SEQUENCE/SET roots' \
     "$test_tmp/rejected-top-level-tag.log" >/dev/null
 test ! -e "$test_tmp/rejected-top-level-tag"
 
@@ -1265,7 +1265,7 @@ for fixture in Alias Import TaggedBoolean ExtensibleInteger UnionInteger \
     case "$fixture" in
         Alias) expected='Rust backend does not support' ;;
         Import) expected='IMPORTS are not supported' ;;
-        TaggedBoolean) expected='type tags are supported only on BER/CER-only flat SEQUENCE roots' ;;
+        TaggedBoolean) expected='type tags are supported only on BER/CER-only flat SEQUENCE/SET roots' ;;
         ExtensibleInteger|UnionInteger|UnconstrainedInteger)
             expected='INTEGER needs one finite, nonextensible range fitting i64' ;;
         NamedNumber) expected='Rust backend does not support' ;;
@@ -1873,6 +1873,89 @@ if ! cc -I"$tagged_root_c_out" "$tagged_root_c_out"/*.c \
     exit 1
 fi
 "$test_tmp/c-tagged-root"
+
+# A context-specific IMPLICIT tag may replace a flat top-level SET root.
+tagged_root_set_out="$test_tmp/tagged-root-set-rust"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$tagged_root_set_out" "$test_srcdir/TaggedRootSet.asn1"
+mkdir "$tagged_root_set_out/tests"
+cp "$test_srcdir/tagged_root_set_conformance.rs" "$tagged_root_set_out/tests/"
+if ! (cd "$tagged_root_set_out" && cargo test --offline --manifest-path Cargo.toml && \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/tagged-root-set-check.log" 2>&1; then
+    cat "$test_tmp/tagged-root-set-check.log"
+    echo "FAIL: tagged SET-root conformance or strict Clippy"
+    exit 1
+fi
+for method in encode_der decode_ber encode_cer decode_cer; do
+    grep -F "pub fn $method" "$tagged_root_set_out/src/tagged_root_set.rs" >/dev/null
+done
+if grep -E 'pub fn (encode|decode)_(uper|cbor|jer|xer|aper|oer)' \
+    "$tagged_root_set_out/src/tagged_root_set.rs" >/dev/null; then
+    echo "FAIL: tagged SET-root output retained an unsupported codec"
+    exit 1
+fi
+
+tagged_root_set_ber="$test_tmp/tagged-root-set-ber-only"
+"$asn1c_bin" --rust -gen-BER -no-gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$tagged_root_set_ber" "$test_srcdir/TaggedRootSet.asn1"
+if ! (cargo check --offline --manifest-path "$tagged_root_set_ber/Cargo.toml" && \
+    cargo clippy --offline --manifest-path "$tagged_root_set_ber/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/tagged-root-set-ber-only.log" 2>&1; then
+    cat "$test_tmp/tagged-root-set-ber-only.log"
+    echo "FAIL: tagged SET-root BER-only strict Clippy"
+    exit 1
+fi
+tagged_root_set_cer="$test_tmp/tagged-root-set-cer-only"
+"$asn1c_bin" --rust -gen-CER -no-gen-BER -no-gen-UPER -S "$skeletons" \
+    -D "$tagged_root_set_cer" "$test_srcdir/TaggedRootSet.asn1"
+if ! (cargo check --offline --manifest-path "$tagged_root_set_cer/Cargo.toml" && \
+    cargo clippy --offline --manifest-path "$tagged_root_set_cer/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/tagged-root-set-cer-only.log" 2>&1; then
+    cat "$test_tmp/tagged-root-set-cer-only.log"
+    echo "FAIL: tagged SET-root CER-only strict Clippy"
+    exit 1
+fi
+
+for root_set_fixture in TaggedRootSetExplicit.asn1 TaggedRootSetApplication.asn1 \
+    TaggedRootSetNested.asn1 TaggedRootSetNestedSequence.asn1 \
+    TaggedRootSetExtension.asn1 TaggedRootSetAlias.asn1 TaggedRootSetStack.asn1 \
+    TaggedRootSetTooLarge.asn1; do
+    rejected_out="$test_tmp/rejected-${root_set_fixture%.asn1}"
+    if "$asn1c_bin" --rust -gen-BER -no-gen-UPER -no-gen-CER -S "$skeletons" \
+        -D "$rejected_out" "$test_srcdir/$root_set_fixture" \
+        >"$test_tmp/rejected-tagged-root-set.log" 2>&1; then
+        echo "FAIL: unsupported tagged SET-root shape $root_set_fixture was accepted"
+        exit 1
+    fi
+    test ! -e "$rejected_out"
+done
+if "$asn1c_bin" --rust -gen-BER -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/rejected-tagged-root-set-mixed" \
+    "$test_srcdir/TaggedRootSet.asn1" >"$test_tmp/rejected-tagged-root-set-mixed.log" 2>&1; then
+    echo "FAIL: tagged SET-root mixed codec selection was accepted"
+    exit 1
+fi
+test ! -e "$test_tmp/rejected-tagged-root-set-mixed"
+
+# C parity uses a separate schema because the C generator emits empty SET enums.
+tagged_root_set_c_out="$test_tmp/tagged-root-set-c"
+mkdir "$tagged_root_set_c_out"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -D "$tagged_root_set_c_out" \
+    "$test_srcdir/TaggedRootSetC.asn1" \
+    >"$test_tmp/tagged-root-set-c-generate.log" 2>&1
+rm -f "$tagged_root_set_c_out/converter-example.c" "$tagged_root_set_c_out/pdu_collection.c"
+if ! cc -I"$tagged_root_set_c_out" "$tagged_root_set_c_out"/*.c \
+    "$test_srcdir/c_tagged_root_set.c" -lm -o "$test_tmp/c-tagged-root-set" \
+    >"$test_tmp/tagged-root-set-c-compile.log" 2>&1; then
+    cat "$test_tmp/tagged-root-set-c-compile.log"
+    echo "FAIL: generated C tagged SET-root reference did not compile"
+    exit 1
+fi
+"$test_tmp/c-tagged-root-set"
 
 tagged_set_out="$test_tmp/tagged-set-rust"
 "$asn1c_bin" --rust -gen-BER -no-gen-UPER -S "$skeletons" -D "$tagged_set_out" \

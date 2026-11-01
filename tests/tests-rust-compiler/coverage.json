@@ -272,6 +272,30 @@
     },
     {
       "asn1_type": "SET",
+      "feature": "one context-specific IMPLICIT tag on a direct flat top-level SET",
+      "codec": "BER decode / DER encode + CER decode and encode",
+      "variants": [
+        "BER/CER-only selector gate; mixed UPER and other codec masks rejected",
+        "DER/CER field sorting by effective class and number with reversed declarations",
+        "unordered BER dispatch for definite and indefinite root forms",
+        "context root tags 0, 30, 31, 127, and 0x3fffffff",
+        "empty SET and required, OPTIONAL, and DEFAULT direct fields",
+        "strict CER rejects indefinite reversed fields and nonminimal root aliases independently",
+        "malformed roots, primitive form, EOC, unknown/duplicate/missing children, and limits",
+        "explicit/other-class roots, references, extensions, nested children, and tag stacks rejected",
+        "generated C DER/CER parity for context and mixed universal/context children"
+      ],
+      "directions": [
+        "BER decode",
+        "DER encode",
+        "CER decode",
+        "CER encode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "TaggedRootSet.asn1; TaggedRootSetC.asn1; tagged_root_set_conformance.rs; c_tagged_root_set.c; check-rust-backend.sh"
+    },
+    {
+      "asn1_type": "SET",
       "feature": "empty or flat untagged direct fields with distinct universal tags: BOOLEAN, bounded INTEGER, fixed/bounded BIT and OCTET STRING, NULL, nonextensible inline ENUMERATED; required/OPTIONAL, literal BOOLEAN/INTEGER DEFAULT",
       "codec": "BER decode / DER encode + CER decode and encode",
       "variants": [

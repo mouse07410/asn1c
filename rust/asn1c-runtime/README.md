@@ -156,6 +156,15 @@ tag identifiers; canonical CER uses the shortest identifier and indefinite
 outer length. The root API preserves `RecordContext::new` flat-record resource
 behavior, including checked output and work for identifier growth.
 
+Flat SET roots support the same single context-specific IMPLICIT tag through
+`SetReader::new_tagged_root(input, tag, fields, context)` and
+`SetWriter::finish_tagged_root(tag)`. The writer keeps SET components in
+ascending effective-tag order, while the BER reader accepts any member order.
+Strict CER validation re-encodes with the same context, so reversed member
+order is rejected as noncanonical. For [3] IMPLICIT SET with [0] INTEGER 2
+and [1] BOOLEAN TRUE, DER is `a3 06 80 01 02 81 01 ff` and CER is
+`a3 80 80 01 02 81 01 ff 00 00`.
+
 The record API also supports fixed effective tags with a separate `FieldKind`
 through `RecordField`, `Tag`, and `TagClass`. `SequenceReader::new_tagged` and
 `SetReader::new_tagged` borrow up to six checked descriptors; their typed

@@ -2243,6 +2243,24 @@ impl<'context> SetWriter<'context> {
     pub fn finish(self) -> Result<Encoded, Error> {
         self.inner.finish()
     }
+
+    /// Finalize the SET with a context-specific IMPLICIT root tag.
+    ///
+    /// # Parameters and returns
+    /// `self` owns the tag-sorted members; `tag` replaces the universal SET
+    /// identifier. Returns complete DER/CER bytes and their bit length.
+    ///
+    /// # Errors
+    /// Returns invalid-tag, output/work-limit, checked-size, or allocation
+    /// errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 IMPLICIT SET tagging. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged SET root support.
+    /// Example: `writer.finish_tagged_root(Tag::context_specific(3))?`.
+    pub fn finish_tagged_root(self, tag: Tag) -> Result<Encoded, Error> {
+        self.inner.finish_tagged_root(tag)
+    }
 }
 
 impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
@@ -3036,6 +3054,44 @@ impl<'input, 'tags, 'context> SetReader<'input, 'tags, 'context> {
                 Some(fields),
                 context,
                 RecordKind::Set,
+            )?,
+        })
+    }
+
+    /// Start decoding a context-specific IMPLICIT SET root.
+    ///
+    /// # Parameters
+    /// `input` is the full available slice; `tag` is the constructed
+    /// context-specific replacement identifier; `fields` lists direct members;
+    /// `context` supplies shared input, output, retained-storage, and work limits.
+    ///
+    /// # Returns
+    /// A cursor over the SET. `finish()` reports its exact prefix while members
+    /// may appear in any BER order.
+    ///
+    /// # Errors
+    /// Returns invalid tag or descriptor, input-limit, truncation, framing,
+    /// size, or work errors. No panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 IMPLICIT constructed SET tagging. Version: 2026-11-01.
+    /// Responsible: asn1c maintainers. History: tagged SET root support.
+    /// Example: `SetReader::new_tagged_root(input, tag, &fields, &mut context)?`.
+    pub fn new_tagged_root(
+        input: &'input [u8],
+        tag: Tag,
+        fields: &'tags [RecordField],
+        context: &'context mut RecordContext,
+    ) -> Result<Self, Error> {
+        validate_implicit_root_tag(tag)?;
+        Ok(Self {
+            inner: SequenceReader::new_with_outer_tag(
+                input,
+                &[],
+                Some(fields),
+                context,
+                RecordKind::Set,
+                tag,
             )?,
         })
     }
@@ -4696,7 +4752,7 @@ fn apply_nested_tagging(
     Ok(())
 }
 
-/// Validate a context-specific tag used to replace a SEQUENCE root identifier.
+/// Validate a context-specific tag used to replace a constructed record root.
 ///
 /// # Parameters and returns
 /// `tag` is the requested IMPLICIT root tag. Returns success when its class and
@@ -4713,7 +4769,7 @@ fn validate_implicit_root_tag(tag: Tag) -> Result<(), Error> {
     tag.validate()?;
     if tag.class != TagClass::ContextSpecific {
         return Err(invalid(
-            "IMPLICIT SEQUENCE root tag must be context-specific",
+            "IMPLICIT constructed root tag must be context-specific",
         ));
     }
     Ok(())
@@ -4722,7 +4778,7 @@ fn validate_implicit_root_tag(tag: Tag) -> Result<(), Error> {
 /// Replace a completed root identifier and meter the bytes moved in place.
 ///
 /// # Parameters and returns
-/// `bytes` is a complete SEQUENCE TLV; `identifier` is its shortest constructed
+/// `bytes` is a complete record TLV; `identifier` is its shortest constructed
 /// replacement; `context` supplies shared work and output ceilings;
 /// `parent_capacity` is retained parent storage. Returns success after retagging.
 ///
@@ -8753,5 +8809,297 @@ mod tests {
             assert_eq!(reader.next_tagged_field().unwrap(), None);
             assert_eq!(reader.finish().unwrap().consumed_bytes, encoded.bytes.len());
         }
+    }
+
+    /// Match the C DER/CER SET fixture and decode members in reverse BER order.
+    /// Source: C [3] IMPLICIT SET { [0] INTEGER 2, [1] BOOLEAN TRUE }.
+    /// Version: 2026-11-01. Inputs: DER, CER, and reversed BER member order.
+    /// Returns: assertions. Errors: assertion failures. Responsible: maintainers.
+    /// History: tagged SET root regression. Example: run via `cargo test`.
+    #[test]
+    fn tagged_set_root_matches_c_vectors_and_accepts_unordered_ber() {
+        let limits = Limits::default();
+        let root_tag = Tag::context_specific(3);
+        let integer_tag = Tag::context_specific(0);
+        let boolean_tag = Tag::context_specific(1);
+        let fields = [
+            RecordField::new(integer_tag, FieldKind::Integer).unwrap(),
+            RecordField::new(boolean_tag, FieldKind::Boolean).unwrap(),
+        ];
+
+        let mut context = RecordContext::new(&limits);
+        let mut writer = SetWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer.write_integer_tagged(integer_tag, 2, 0, 3).unwrap();
+        writer.write_boolean_tagged(boolean_tag, true).unwrap();
+        let der = writer.finish_tagged_root(root_tag).unwrap();
+        assert_eq!(der.bytes, [0xa3, 6, 0x80, 1, 2, 0x81, 1, 0xff]);
+
+        let mut context = RecordContext::new(&limits);
+        let mut writer = SetWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer.write_integer_tagged(integer_tag, 2, 0, 3).unwrap();
+        writer.write_boolean_tagged(boolean_tag, true).unwrap();
+        let cer = writer.finish_tagged_root(root_tag).unwrap();
+        assert_eq!(cer.bytes, [0xa3, 0x80, 0x80, 1, 2, 0x81, 1, 0xff, 0, 0]);
+
+        let reversed = [0xa3, 6, 0x81, 1, 0xff, 0x80, 1, 2];
+        let mut suffixed = reversed.to_vec();
+        suffixed.extend_from_slice(&[5, 0]);
+        let mut context = RecordContext::new(&limits);
+        let mut reader =
+            SetReader::new_tagged_root(&suffixed, root_tag, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(boolean_tag));
+        assert!(reader.read_boolean().unwrap());
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(integer_tag));
+        assert_eq!(reader.read_integer(0, 3).unwrap(), 2);
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        assert_eq!(reader.finish().unwrap().consumed_bytes, reversed.len());
+
+        let only_integer = [0xa3, 3, 0x80, 1, 2];
+        let mut context = RecordContext::new(&limits);
+        let mut reader =
+            SetReader::new_tagged_root(&only_integer, root_tag, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(integer_tag));
+        assert_eq!(reader.read_integer(0, 3).unwrap(), 2);
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        assert_eq!(reader.finish().unwrap().consumed_bytes, only_integer.len());
+
+        for (rule, encoded) in [
+            (RecordEncoding::Der, &[0xa3, 0][..]),
+            (RecordEncoding::Cer, &[0xa3, 0x80, 0, 0][..]),
+        ] {
+            let mut context = RecordContext::new(&limits);
+            let writer = SetWriter::new(rule, &mut context).unwrap();
+            assert_eq!(writer.finish_tagged_root(root_tag).unwrap().bytes, encoded);
+            let mut context = RecordContext::new(&limits);
+            let mut reader =
+                SetReader::new_tagged_root(encoded, root_tag, &fields, &mut context).unwrap();
+            assert_eq!(reader.next_tagged_field().unwrap(), None);
+            assert_eq!(reader.finish().unwrap().consumed_bytes, encoded.len());
+        }
+    }
+
+    /// Reject reversed SET order in CER using one cumulative operation context.
+    /// Source: X.690 CER SET canonical ordering and shared budget contract.
+    /// Version: 2026-11-01. Inputs: reversed CER members. Returns: assertions.
+    /// Errors: assertion failures. Responsible: maintainers.
+    /// History: tagged SET root regression. Example: run via `cargo test`.
+    #[test]
+    fn tagged_set_root_strict_cer_reencoding_checks_sorted_order() {
+        let limits = Limits::default();
+        let root_tag = Tag::context_specific(3);
+        let integer_tag = Tag::context_specific(0);
+        let boolean_tag = Tag::context_specific(1);
+        let fields = [
+            RecordField::new(integer_tag, FieldKind::Integer).unwrap(),
+            RecordField::new(boolean_tag, FieldKind::Boolean).unwrap(),
+        ];
+        let reversed = [0xa3, 0x80, 0x81, 1, 0xff, 0x80, 1, 2, 0, 0];
+        let mut context = RecordContext::new(&limits);
+        let mut reader =
+            SetReader::new_tagged_root(&reversed, root_tag, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(boolean_tag));
+        assert!(reader.read_boolean().unwrap());
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(integer_tag));
+        assert_eq!(reader.read_integer(0, 3).unwrap(), 2);
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        let consumed = reader.finish().unwrap().consumed_bytes;
+
+        let mut writer = SetWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer.write_integer_tagged(integer_tag, 2, 0, 3).unwrap();
+        writer.write_boolean_tagged(boolean_tag, true).unwrap();
+        let canonical = writer.finish_tagged_root(root_tag).unwrap();
+        assert_eq!(
+            canonical.bytes,
+            [0xa3, 0x80, 0x80, 1, 2, 0x81, 1, 0xff, 0, 0]
+        );
+        assert!(context
+            .verify_canonical(&reversed, consumed, &canonical.bytes)
+            .is_err());
+    }
+
+    /// Check canonical high tags, BER aliases, and rejected root tag classes.
+    /// Source: X.690 high tags and C-compatible parser range.
+    /// Version: 2026-11-01. Inputs: boundary tags, aliases, invalid descriptors.
+    /// Returns: assertions. Errors: assertion failures. Responsible: maintainers.
+    /// History: tagged SET root regression. Example: run via `cargo test`.
+    #[test]
+    fn tagged_set_root_high_tags_aliases_and_validation() {
+        let limits = Limits::default();
+        let integer_tag = Tag::context_specific(0);
+        let boolean_tag = Tag::context_specific(1);
+        let fields = [
+            RecordField::new(integer_tag, FieldKind::Integer).unwrap(),
+            RecordField::new(boolean_tag, FieldKind::Boolean).unwrap(),
+        ];
+        for number in [30, 31, 127, MAX_TAG_NUMBER] {
+            let tag = Tag::context_specific(number);
+            let mut context = RecordContext::new(&limits);
+            let mut writer = SetWriter::new(RecordEncoding::Der, &mut context).unwrap();
+            writer.write_integer_tagged(integer_tag, 2, 0, 3).unwrap();
+            let encoded = writer.finish_tagged_root(tag).unwrap();
+            let mut identifier = [0_u8; 6];
+            let identifier_len = encode_identifier_bytes(tag, true, &mut identifier).unwrap();
+            assert_eq!(
+                &encoded.bytes[..identifier_len],
+                &identifier[..identifier_len]
+            );
+            let mut context = RecordContext::new(&limits);
+            let mut reader =
+                SetReader::new_tagged_root(&encoded.bytes, tag, &fields, &mut context).unwrap();
+            assert_eq!(reader.next_tagged_field().unwrap(), Some(integer_tag));
+            assert_eq!(reader.read_integer(0, 3).unwrap(), 2);
+            assert_eq!(reader.next_tagged_field().unwrap(), None);
+            assert_eq!(reader.finish().unwrap().consumed_bytes, encoded.bytes.len());
+        }
+
+        let alias = [0xbf, 0x80, 0x1f, 6, 0x80, 1, 2, 0x81, 1, 0xff];
+        let alias_tag = Tag::context_specific(31);
+        let mut context = RecordContext::new(&limits);
+        let mut reader =
+            SetReader::new_tagged_root(&alias, alias_tag, &fields, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(integer_tag));
+        assert_eq!(reader.read_integer(0, 3).unwrap(), 2);
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(boolean_tag));
+        assert!(reader.read_boolean().unwrap());
+        assert_eq!(reader.next_tagged_field().unwrap(), None);
+        assert_eq!(reader.finish().unwrap().consumed_bytes, alias.len());
+
+        let invalid_tags = [
+            Tag::universal(3),
+            Tag {
+                class: TagClass::Application,
+                number: 3,
+            },
+            Tag {
+                class: TagClass::Private,
+                number: 3,
+            },
+            Tag {
+                class: TagClass::ContextSpecific,
+                number: MAX_TAG_NUMBER + 1,
+            },
+        ];
+        for tag in invalid_tags {
+            let mut context = RecordContext::new(&limits);
+            assert!(SetReader::new_tagged_root(&[], tag, &fields, &mut context).is_err());
+            let mut context = RecordContext::new(&limits);
+            let writer = SetWriter::new(RecordEncoding::Der, &mut context).unwrap();
+            assert!(writer.finish_tagged_root(tag).is_err());
+        }
+    }
+
+    /// Reject malformed SET root framing and bounded mutations.
+    /// Source: X.690 constructed SET framing and EOC rules.
+    /// Version: 2026-11-01. Inputs: truncations, EOC misuse, and mutations.
+    /// Returns: assertions. Errors: assertion failures. Responsible: maintainers.
+    /// History: tagged SET root regression. Example: run via `cargo test`.
+    #[test]
+    fn tagged_set_root_rejects_malformed_framing_and_checks_resources() {
+        let limits = Limits::default();
+        let root_tag = Tag::context_specific(3);
+        let integer_tag = Tag::context_specific(0);
+        let boolean_tag = Tag::context_specific(1);
+        let fields = [
+            RecordField::new(integer_tag, FieldKind::Integer).unwrap(),
+            RecordField::new(boolean_tag, FieldKind::Boolean).unwrap(),
+        ];
+        let reversed = [0xa3, 6, 0x81, 1, 0xff, 0x80, 1, 2];
+        let decode = |input: &[u8]| -> Result<usize, Error> {
+            let mut context = RecordContext::new(&limits);
+            let mut reader = SetReader::new_tagged_root(input, root_tag, &fields, &mut context)?;
+            while let Some(tag) = reader.next_tagged_field()? {
+                match tag {
+                    tag if tag == boolean_tag => {
+                        reader.read_boolean()?;
+                    }
+                    tag if tag == integer_tag => {
+                        reader.read_integer(0, 3)?;
+                    }
+                    _ => return Err(invalid("tagged SET contains an unknown member")),
+                }
+            }
+            Ok(reader.finish()?.consumed_bytes)
+        };
+        for end in 0..reversed.len() {
+            assert!(decode(&reversed[..end]).is_err());
+        }
+        assert_eq!(decode(&reversed).unwrap(), reversed.len());
+        let mut suffixed = reversed.to_vec();
+        suffixed.extend_from_slice(&[5, 0]);
+        let tight_input = Limits {
+            max_input_bytes: reversed.len(),
+            ..limits
+        };
+        let mut context = RecordContext::new(&tight_input);
+        assert!(SetReader::new_tagged_root(&suffixed, root_tag, &fields, &mut context).is_err());
+        assert!(decode(&[0x83, 6, 0x80, 1, 2, 0x81, 1, 0xff]).is_err());
+        assert!(decode(&[0xa3, 8, 0, 0, 0x80, 1, 2, 0x81, 1, 0xff]).is_err());
+        assert!(decode(&[0xa3, 0x80, 0x80, 1, 2, 0x81, 1, 0xff]).is_err());
+        assert!(decode(&[0xbf, 0x84, 0x80, 0x80, 0x80, 0, 6, 0x80, 1, 2, 0x81, 1, 0xff]).is_err());
+        for index in 0..reversed.len() {
+            for bit in 0..8 {
+                let mut changed = reversed;
+                changed[index] ^= 1 << bit;
+                let _ = decode(&changed);
+            }
+        }
+    }
+
+    /// Enforce tagged SET output and shifted-work budgets at exact boundaries.
+    /// Source: runtime complete-output and cumulative-work policy.
+    /// Version: 2026-11-01. Inputs: high-tag SET and tight limits.
+    /// Returns: assertions. Errors: assertion failures. Responsible: maintainers.
+    /// History: tagged SET root regression. Example: run via `cargo test`.
+    #[test]
+    fn tagged_set_root_checks_output_and_work_limits() {
+        let limits = Limits::default();
+        let integer_tag = Tag::context_specific(0);
+        let boolean_tag = Tag::context_specific(1);
+        let high_tag = Tag::context_specific(31);
+        let exact_output = Limits {
+            max_output_bytes: 9,
+            ..limits
+        };
+        let mut context = RecordContext::new(&exact_output);
+        let mut writer = SetWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer.write_integer_tagged(integer_tag, 2, 0, 3).unwrap();
+        writer.write_boolean_tagged(boolean_tag, true).unwrap();
+        assert_eq!(writer.finish_tagged_root(high_tag).unwrap().bytes.len(), 9);
+
+        let below_output = Limits {
+            max_output_bytes: 8,
+            ..limits
+        };
+        let mut context = RecordContext::new(&below_output);
+        let mut writer = SetWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer.write_integer_tagged(integer_tag, 2, 0, 3).unwrap();
+        writer.write_boolean_tagged(boolean_tag, true).unwrap();
+        assert!(writer.finish_tagged_root(high_tag).is_err());
+
+        let measured_limits = Limits::default();
+        let mut measured = RecordContext::new(&measured_limits);
+        let mut writer = SetWriter::new(RecordEncoding::Der, &mut measured).unwrap();
+        writer.write_integer_tagged(integer_tag, 2, 0, 3).unwrap();
+        writer.write_boolean_tagged(boolean_tag, true).unwrap();
+        writer.finish_tagged_root(high_tag).unwrap();
+        let exact_work = measured.work_used;
+        let exact_limits = Limits {
+            max_work_bits: exact_work,
+            ..measured_limits
+        };
+        let mut exact = RecordContext::new(&exact_limits);
+        let mut writer = SetWriter::new(RecordEncoding::Der, &mut exact).unwrap();
+        writer.write_integer_tagged(integer_tag, 2, 0, 3).unwrap();
+        writer.write_boolean_tagged(boolean_tag, true).unwrap();
+        assert!(writer.finish_tagged_root(high_tag).is_ok());
+        let below_limits = Limits {
+            max_work_bits: exact_work - 1,
+            ..measured_limits
+        };
+        let mut below = RecordContext::new(&below_limits);
+        let mut writer = SetWriter::new(RecordEncoding::Der, &mut below).unwrap();
+        writer.write_integer_tagged(integer_tag, 2, 0, 3).unwrap();
+        writer.write_boolean_tagged(boolean_tag, true).unwrap();
+        assert!(writer.finish_tagged_root(high_tag).is_err());
     }
 }

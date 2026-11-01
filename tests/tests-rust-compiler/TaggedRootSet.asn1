@@ -1,0 +1,24 @@
+TaggedRootSet DEFINITIONS ::= BEGIN
+
+RootTagged ::= [3] IMPLICIT SET {
+    y [1] IMPLICIT BOOLEAN,
+    x [0] IMPLICIT INTEGER (0..255)
+}
+
+RootMixed ::= [3] IMPLICIT SET {
+    y [1] IMPLICIT BOOLEAN,
+    a INTEGER (0..255),
+    x [0] IMPLICIT INTEGER (0..255)
+}
+
+RootTag0 ::= [0] IMPLICIT SET { x INTEGER (0..255) }
+RootTag30 ::= [30] IMPLICIT SET { x INTEGER (0..255) }
+RootTag31 ::= [31] IMPLICIT SET { x INTEGER (0..255) }
+RootTag127 ::= [127] IMPLICIT SET { x INTEGER (0..255) }
+RootTagMax ::= [1073741823] IMPLICIT SET { x INTEGER (0..255) }
+
+RootEmpty ::= [4] IMPLICIT SET {}
+RootOptional ::= [5] IMPLICIT SET { x [0] IMPLICIT INTEGER (0..255) OPTIONAL }
+RootDefault ::= [6] IMPLICIT SET { x [0] IMPLICIT INTEGER (0..255) DEFAULT 2 }
+
+END

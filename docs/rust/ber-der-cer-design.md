@@ -26,10 +26,10 @@ selection. Its BER reader accepts arbitrary member order;
 the DER/CER writer emits ascending effective tags. Broader SET shapes,
 collections, broader nested records, and multi-tag stacks remain future stages.
 
-A BER/CER-only flat SEQUENCE may use one resolved context-specific IMPLICIT
-root tag in the C representable range. This replaces the outer SEQUENCE
-identifier while retaining the constructed form and field encodings. Other
-root tags and tagged roots combined with nested fields remain gated.
+A BER/CER-only flat SEQUENCE or SET may use one resolved context-specific
+IMPLICIT root tag in the C representable range. This replaces the outer
+constructed identifier while retaining the member encodings. Other root tags
+and tagged roots combined with nested fields remain gated.
 
 ## Architecture and interfaces
 
@@ -83,9 +83,9 @@ gate limits tag numbers to the C target's representable range and rejects
 duplicate effective tags before publishing output. The existing untagged
 record API remains source compatible.
 
-### IMPLICIT flat SEQUENCE root (qualified slice)
+### IMPLICIT flat SEQUENCE and SET roots (qualified slice)
 
-The tagged-root stage accepts a direct flat SEQUENCE assignment with one
+The tagged-root stage accepts a direct flat SEQUENCE or SET assignment with one
 resolved context-specific IMPLICIT root tag from 0 through `0x3fff_ffff`,
 selected only for BER and/or CER. It reuses the existing direct-field and
 effective-tag validation. The runtime reader validates the constructed root
@@ -94,7 +94,8 @@ growth and body movement to the same record context. DER emits a definite
 outer length, while CER emits an indefinite outer length and matching EOC.
 Strict CER compares the consumed prefix with a tagged-root re-encoding through
 the same context. BER may accept a nonminimal high-tag alias compatible with
-the C decoder, but strict CER rejects it.
+the C decoder, but strict CER rejects it. Tagged SET decoding keeps unordered
+BER member dispatch; DER and CER sort members by effective class and number.
 
 The generator keeps top-level aliases, references, imports, nested members,
 multi-tag stacks, other tag classes and modes, and mixed codec selections
@@ -260,6 +261,42 @@ selection flags expose exactly the implemented operations, adversarial cases
 fail safely, and checks pass. The matrix is a target, not evidence that C
 implements every conceivable ASN.1 feature.
 
+### Arbitrary INTEGER representation (approved initial gate, not implemented)
+
+The first arbitrary INTEGER stage will cover an untagged top-level,
+unconstrained `INTEGER` under BER/CER-only selection. It will introduce a
+separate Rust type that privately stores a nonempty, minimal, big-endian signed
+two's-complement byte sequence. Fallible constructors normalize sign padding;
+borrowed canonical bytes and fallible `i64` conversion provide access without
+a third-party bigint dependency. Existing bounded `i64` types and APIs remain
+unchanged. This representation is mathematically unbounded, but each operation
+is subject to the caller's finite input, output, work, and scratch limits.
+The intended runtime surface is `BigInteger::try_from_signed_bytes`,
+`as_signed_bytes`, and `try_to_i64`, plus separate
+`encode_big_integer_der`/`encode_big_integer_cer` and
+`decode_big_integer_ber`/`decode_big_integer_cer` functions. Conversion
+overflow uses its own small error type or an explicit `Option`; it must not
+silently truncate or change the existing runtime `Error` variants.
+
+The BER reader will accept redundant sign extension as a C compatibility
+extension, normalize the value, and preserve exact prefix consumption. It will
+reject an empty INTEGER content. A local C probe showed that the wide C
+`INTEGER_t` BER decoder accepts empty content, while strict CER rejects it;
+mapping that malformed input to a valid Rust value would hide the defect. DER
+and CER emit minimal primitive contents, and strict CER re-encodes and compares
+through one operation budget. Input lengths and available bytes must be checked
+before allocation, with bounded retained capacity and checked work for sign
+trimming, copying, output, and comparison.
+
+The C comparison for arbitrary values must use generated `-fwide-types`
+descriptors: on the probed host, default unconstrained INTEGER generation used
+native `long` storage and rejected values outside its width. Native width
+variants, bounded ranges beyond `i64`, record fields, aliases, tags,
+extensions, and constraint timing require separate gates. Test both signs
+across the `i64` boundary, 127/128 length transitions, malformed lengths,
+truncation, nonminimal BER padding, strict CER rejection, exact limits, and C
+wide-type interoperability before enabling generator output.
+
 ## Decisions still required
 
 * **Streaming:** C BER decoders preserve state and can return `RC_WMORE`;
@@ -299,7 +336,9 @@ implements every conceivable ASN.1 feature.
   value cannot simply bypass those invariants. Test C decode success separately
   from subsequent constraint failure, as required by `docs/rust/testing.md`,
   and document any intentional compatibility difference.
-* **Limits and representations:** agree how to extend `Limits` without
-  breaking public struct literals, select finite defaults, and define arbitrary
-  integer, unknown extension and opaque open-type representations. Document
-  cases where Rust's bounded operation intentionally differs from C's limits.
+* **Limits and remaining representations:** agree how to extend `Limits`
+  without breaking public struct literals, select finite defaults and an
+  aggregate scratch policy, and define unknown extension and opaque open-type
+  representations. The initial arbitrary INTEGER representation above does not
+  settle native-width or constrained-wide INTEGER behavior. Document cases
+  where Rust's bounded operation intentionally differs from C's limits.

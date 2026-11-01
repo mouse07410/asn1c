@@ -161,12 +161,13 @@ an untagged SEQUENCE or BER/CER-only SET, with up to six direct supported
 primitive leaves and required/OPTIONAL presence. Child record tags may be
 natural, resolved context-specific IMPLICIT, or one EXPLICIT wrapper. Parent
 and child share one record context and an opt-in fixed aggregate scratch cap.
-One resolved context-specific IMPLICIT tag on a direct flat SEQUENCE root is
-also supported under BER/CER-only selection, with a tag number through
+One resolved context-specific IMPLICIT tag on a direct flat SEQUENCE or SET
+root is also supported under BER/CER-only selection, with a tag number through
 `0x3fff_ffff`. BER accepts a C-compatible nonminimal high-tag alias; strict
 CER requires the shortest identifier and an indefinite constructed root.
-Other root tags, multi-tag stacks, aliases, and broader C forms remain outside
-this slice.
+SET retains unordered BER member decoding and effective-tag-ordered DER/CER
+output. Other root tags, multi-tag stacks, aliases, and broader C forms remain
+outside this slice.
 
 Rust codec defaults include UPER and CER; `-no-gen-UPER` selects CER-only
 generation. See [the Rust implementation matrix](rust/implementation.md#implemented-boundary)
