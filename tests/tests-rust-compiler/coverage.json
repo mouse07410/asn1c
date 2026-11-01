@@ -130,6 +130,26 @@
       "evidence": "Ia5Values.asn1; ia5_conformance.rs; c_ia5.c"
     },
     {
+      "asn1_type": "Restricted character strings (tags 7, 12, 18-22, 25-28, 30)",
+      "feature": "direct untagged unconstrained roots with fixed per-wrapper runtime kinds",
+      "codec": "BER/DER and CER only",
+      "variants": [
+        "intrinsic tags 7, 12, 18-22, 25-28, and 30 including both distinct AST aliases",
+        "empty and 127/128/999/1000/1001-byte boundaries; aligned BMP and UniversalString sizes",
+        "CER descriptor validation for Numeric, Printable, Visible/ISO646, UTF8, BMP, and UniversalString",
+        "C-compatible minimal one- through six-byte UTF8, surrogate and above-U+10FFFF cases",
+        "constructed BER, OCTET STRING fragment tags, prefix consumption, malformed and limited input"
+      ],
+      "directions": [
+        "DER encode",
+        "BER prefix decode",
+        "CER encode",
+        "strict CER prefix decode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "RestrictedStrings.asn1; restricted_strings_conformance.rs; c_restricted_strings.c"
+    },
+    {
       "asn1_type": "BIT STRING, OCTET STRING",
       "feature": "direct untagged unconstrained root values",
       "codec": "BER/DER and CER only",
@@ -676,7 +696,7 @@
   "comparison_policy": {
     "C_role": "Current C implementation is a comparison implementation, not a protocol oracle.",
     "independent_checks": "Rust fixed vectors, malformed-input checks, budgets, and round trips",
-    "canonicality": "CER claims are limited to listed generated record and primitive vectors, including BigInteger, direct unbounded strings, and OID values; bit counts cover full TLVs.; IA5String BER raw bytes and strict CER repertoire validation"
+    "canonicality": "CER claims cover listed vectors only. Bit counts cover full TLVs. IA5 BER preserves bytes; CER enforces its 7-bit alphabet."
   },
   "compiler_boundary_checks": {
     "rejected_before_output": [
@@ -696,7 +716,8 @@
       "named BIT STRING forms with BER or CER selection",
       "direct unbounded BIT/OCTET STRING with named bits, CONTAINING, explicit SIZE, tags, aliases, fields, imports, or non-BER/CER-only codec selection",
       "direct unbounded OBJECT IDENTIFIER and RELATIVE-OID with tags, constraints, aliases, fields, imports, or non-BER/CER-only codec selection",
-      "direct unconstrained IA5String with tags, constraints, aliases, fields, imports, or non-BER/CER-only codec selection"
+      "direct unconstrained IA5String with tags, constraints, aliases, fields, imports, or non-BER/CER-only codec selection",
+      "direct restricted character strings with tags, constraints, aliases, fields, imports, CHARACTER STRING, or non-BER/CER-only codec selection"
     ],
     "output_safety": [
       "unowned destination preservation",
@@ -710,7 +731,7 @@
     ]
   },
   "observed_counts": {
-    "generated_rust_test_functions": 79,
+    "generated_rust_test_functions": 165,
     "live_c_rust_vectors_each_direction": 8,
     "single_octet_mutation_inputs": 796,
     "JER_single_octet_mutation_inputs": 256,
@@ -736,6 +757,9 @@
     "OID_truncated_prefix_inputs": 1005,
     "live_C_IA5_vectors_each_direction": 8,
     "IA5_mutated_octet_inputs": 1011,
-    "IA5_truncated_prefix_inputs": 1011
+    "IA5_truncated_prefix_inputs": 1011,
+    "live_C_restricted_string_vectors_each_direction": 78,
+    "live_C_restricted_string_invalid_CER_vectors": 7,
+    "restricted_string_constructed_BER_types": 13
   }
 }

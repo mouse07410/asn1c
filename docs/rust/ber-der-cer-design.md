@@ -7,7 +7,8 @@ runtime currently supplies BER prefix decoding and DER and CER encoding, plus
 strict CER prefix decoding, for BOOLEAN, NULL, finite bounded `i64` INTEGER,
 unconstrained arbitrary-precision INTEGER, direct finite ENUMERATED, direct
 unconstrained OBJECT IDENTIFIER and RELATIVE-OID, and fixed, bounded, or direct
-unconstrained BIT/OCTET STRING values, and direct untagged IA5String. See
+unconstrained BIT/OCTET STRING values, and direct untagged restricted character
+strings. See
 `rust/asn1c-runtime/README.md` and
 `libasn1compiler/asn1c_rust.c`. The generator rejects many schemas supported by
 C, including imports, references, most root tags, and multi-tag stacks. These
@@ -409,6 +410,62 @@ input, retained value, output, work, and scratch budget. The selected-method
 generator gate and tests must cover empty, invalid high-bit, 999/1000/1001
 and larger lengths, nested BER forms, fragment tags, high-tag aliases,
 truncation, suffixes, mutations, exact limits, and live C vectors.
+
+### Remaining direct restricted character strings (qualified initial gate)
+
+Extend only direct untagged, unconstrained, top-level restricted string roots
+under BER/CER-only selection. The intrinsic universal tags are
+ObjectDescriptor 7, UTF8String 12, NumericString 18, PrintableString 19,
+TeletexString/T61String 20, VideotexString 21, GraphicString 25,
+VisibleString/ISO646String 26, GeneralString 27, UniversalString 28, and
+BMPString 30. The aliases at tags 20 and 26 retain distinct generated type
+names but share runtime encoding rules. IA5String tag 22 remains supported by
+its existing source-compatible public API. `CHARACTER STRING` tag 29, time
+types, defined types, tags, fields, imports, constraints, and other codec
+selections remain gated.
+
+Add a `CharacterStringKind` enum and private-byte `CharacterString` value with
+fallible `try_from_bytes(kind, bytes, limits)`, borrowed `as_bytes()`, and
+read-only `kind()`. Do not derive infallible `Clone`. Generic DER/CER encoders
+take the value's stored kind; BER/CER decoders take an expected kind and
+report exact prefix consumption. Keep the `Ia5String` API unchanged while
+sharing the checked tag-parameterized framing engine. A generated wrapper
+fixes its kind in its constructor and decoder, so callers cannot pair a type
+with another type's tag or CER validator.
+
+Construction, BER decoding, and DER encoding preserve raw bytes as the C
+callbacks do. CER encoding and strict CER decoding apply the corresponding C
+descriptor's general constraint to complete reassembled content:
+
+| Kind | C-compatible CER content check |
+| --- | --- |
+| NumericString | Every byte is space or ASCII digit. |
+| PrintableString | Every byte belongs to letters, digits, space, or `'()+,-./:=?`. |
+| VisibleString and ISO646String | Every byte is from `20` through `7e`. |
+| BMPString | Content length is divisible by two; C accepts surrogate values. |
+| UniversalString | Content length is divisible by four; C accepts out-of-range scalar values. |
+| UTF8String | C's minimal 1- through 6-byte sequence check: valid starts and continuations, complete sequences and shortest length. It accepts surrogate values, values above `10ffff`, and minimal legacy 5- and 6-byte encodings. Do not use Rust `str::from_utf8` as the validator. |
+| ObjectDescriptor, TeletexString/T61String, VideotexString, GraphicString, GeneralString | No effective C character constraint; arbitrary bytes pass. |
+
+These policies target the C codec's observable behavior. C acceptance of
+legacy UTF8 forms and arbitrary escape-based character content does not prove
+X.690 character repertoire or escape-state canonicality. Record these as
+qualified C-compatibility decisions rather than broad standards claims.
+Universal tag 4 primitive children form constructed BER strings. CER keeps
+the type's own outer tag, is primitive through 1000 content octets, then uses
+an indefinite constructed outer value with 1000-octet universal tag 4
+fragments and EOC. Fragmentation is bytewise: a UTF8 sequence may cross a
+fragment boundary, so validate only after reassembly. Strict CER compares
+the exact consumed prefix with canonical output under one cumulative input,
+retained value, output, work, and aggregate scratch budget.
+
+The acceptance set includes each AST kind and shared-tag alias, valid and
+invalid C constraint cases, minimal legacy UTF8 forms and invalid UTF8
+sequences, UTF8 split across CER fragments, BMP/Universal alignment, empty
+values, 127/128 and 999/1000/1001 length transitions, nested definite and
+indefinite BER, high-tag aliases, wrong fragment tags and EOCs, suffixes,
+truncation at every boundary, mutations, exact limits, and live C vectors.
+All excluded schema shapes must fail before output publication.
 
 ## Decisions still required
 

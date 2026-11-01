@@ -2135,12 +2135,12 @@ check_intersection_allocation_failure(void) {
 /**
  * Purpose: Run internal interval split and allocation-failure regressions.
  * Original source: asn1c range-computation unit-test entry point.
- * Version: Updated 2026-10-21 for issue #582.
+ * Version: Updated 2026-11-01 for ISO646String alias coverage.
  * Parameters: None.
  * Returns: Zero after every range assertion passes.
  * Exceptions: Assertions fail on incorrect intervals or error propagation.
  * Author: asn1c maintainers.
- * History: Added fault-injected intersection cleanup coverage.
+ * History: Added fault-injected intersection cleanup and alphabet alias checks.
  * Example: make check_crange && ./check_crange.
  */
 int main() {
@@ -2148,6 +2148,12 @@ int main() {
     asn1cnst_range_t *rb = _range_new();
 
 	assert(check_intersection_allocation_failure() == 0);
+	/* ISO646 shares VisibleString's alphabet; unknown known-multiplier
+	 * kinds must return a null range instead of aborting the fixer. */
+	assert(asn1constraint_default_alphabet(ASN_STRING_ISO646String)
+		== asn1constraint_default_alphabet(ASN_STRING_VisibleString));
+	assert(asn1constraint_default_alphabet(
+		(asn1p_expr_type_e)(ASN_STRING_KM_MASK | 0xff)) == NULL);
 
     fprintf(stderr, "Testing (MIN..20) x (10..15) => (MIN..9,10..15,16..20)\n");
 

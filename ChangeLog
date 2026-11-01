@@ -1,4 +1,9 @@
 Changes since v1.5.3:
+	* Extend direct Rust BER/DER/CER roots to the C-supported restricted
+	  character strings under BER/CER-only selection. Preserve raw BER/DER
+	  bytes, apply each C descriptor's CER repertoire or alignment rule,
+	  share tag-4 CER fragmentation, and compare legacy UTF8, aliases,
+	  malformed input, and resource boundaries with generated C.
 	* Add direct untagged IA5String Rust BER/DER/CER support under
 	  BER/CER-only selection. Preserve C-compatible raw BER and DER bytes,
 	  apply the 7-bit repertoire for CER, and test OCTET STRING fragments,

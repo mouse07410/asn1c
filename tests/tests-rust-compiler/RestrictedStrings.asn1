@@ -1,0 +1,15 @@
+RestrictedStrings DEFINITIONS ::= BEGIN
+ObjectDescriptorValue ::= ObjectDescriptor
+UTF8Value ::= UTF8String
+NumericValue ::= NumericString
+PrintableValue ::= PrintableString
+TeletexValue ::= TeletexString
+T61Value ::= T61String
+VideotexValue ::= VideotexString
+GraphicValue ::= GraphicString
+VisibleValue ::= VisibleString
+ISO646Value ::= ISO646String
+GeneralValue ::= GeneralString
+UniversalValue ::= UniversalString
+BMPValue ::= BMPString
+END

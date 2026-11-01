@@ -1,0 +1,3 @@
+RestrictedStringsConstrained DEFINITIONS ::= BEGIN
+Value ::= NumericString (SIZE(1..10))
+END

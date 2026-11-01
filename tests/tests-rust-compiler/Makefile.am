@@ -50,9 +50,17 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/Ia5ValuesField.asn1 \
     $(srcdir)/Ia5ValuesImport.asn1 \
     $(srcdir)/Ia5ValuesTagged.asn1 \
-    $(srcdir)/Ia5OtherRestrictedString.asn1 \
     $(srcdir)/ia5_conformance.rs \
     $(srcdir)/c_ia5.c \
+    $(srcdir)/RestrictedStrings.asn1 \
+    $(srcdir)/RestrictedStringsAlias.asn1 \
+    $(srcdir)/RestrictedStringsConstrained.asn1 \
+    $(srcdir)/RestrictedStringsField.asn1 \
+    $(srcdir)/RestrictedStringsImport.asn1 \
+    $(srcdir)/RestrictedStringsTagged.asn1 \
+    $(srcdir)/RestrictedStringsUnsupported.asn1 \
+    $(srcdir)/restricted_strings_conformance.rs \
+    $(srcdir)/c_restricted_strings.c \
     $(srcdir)/FirstSlice.asn1 \
     $(srcdir)/SequenceSlice.asn1 \
     $(srcdir)/StringSlice.asn1 \

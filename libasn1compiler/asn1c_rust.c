@@ -91,6 +91,8 @@ static int rust_check_unconstrained_string_codecs(asn1p_module_t *,
                                                 asn1p_expr_t *, uint64_t);
 static int rust_check_oid_codecs(asn1p_module_t *, asn1p_expr_t *, uint64_t);
 static int rust_check_ia5_codecs(asn1p_module_t *, asn1p_expr_t *, uint64_t);
+static int rust_check_character_string(asn1p_module_t *, asn1p_expr_t *, uint64_t);
+static const char *rust_character_string_kind(asn1p_expr_t *);
 static asn1p_expr_t *rust_contained_primitive(asn1p_module_t *, asn1p_expr_t *);
 static const asn1p_constraint_t *rust_containing_node(const asn1p_constraint_t *, unsigned);
 static int rust_write_containing(FILE *, const char *, asn1p_expr_t *, asn1p_expr_t *, uint64_t);
@@ -177,6 +179,8 @@ static int rust_write_oid(FILE *, const char *, int, uint64_t);
 static int rust_write_oid_ber_cer(FILE *, int, int);
 static int rust_write_ia5_string(FILE *, const char *, uint64_t);
 static int rust_write_ia5_string_ber_cer(FILE *, int);
+static int rust_write_character_string(FILE *, const char *, asn1p_expr_t *, uint64_t);
+static int rust_write_character_string_ber_cer(FILE *, const char *, int);
 static int rust_write_bounded_octets(FILE *, const char *, size_t, size_t,
                                     uint64_t);
 static int rust_write_bounded_octets_uper(FILE *, size_t, size_t);
@@ -850,6 +854,90 @@ rust_check_ia5_codecs(asn1p_module_t *module, asn1p_expr_t *expr,
     return -1;
 }
 
+/* Map one supported restricted-string AST type to its runtime kind.
+ * Inputs: expr is a fixed parser-tree assignment. Returns a runtime enum
+ * variant name, or NULL for every type outside the approved direct-string set.
+ * Errors: none. Source: approved restricted-string BER/CER gate.
+ * Version/date: 2026-11-01. Responsible: asn1c maintainers. History: direct
+ * restricted roots. Example: ASN_STRING_ISO646String maps to Iso646String.
+ */
+static const char *
+rust_character_string_kind(asn1p_expr_t *expr) {
+    switch(expr->expr_type) {
+    case ASN_STRING_ObjectDescriptor: return "ObjectDescriptor";
+    case ASN_STRING_UTF8String: return "Utf8String";
+    case ASN_STRING_NumericString: return "NumericString";
+    case ASN_STRING_PrintableString: return "PrintableString";
+    case ASN_STRING_TeletexString: return "TeletexString";
+    case ASN_STRING_T61String: return "T61String";
+    case ASN_STRING_VideotexString: return "VideotexString";
+    case ASN_STRING_GraphicString: return "GraphicString";
+    case ASN_STRING_VisibleString: return "VisibleString";
+    case ASN_STRING_ISO646String: return "Iso646String";
+    case ASN_STRING_GeneralString: return "GeneralString";
+    case ASN_STRING_UniversalString: return "UniversalString";
+    case ASN_STRING_BMPString: return "BmpString";
+    default: return NULL;
+    }
+}
+
+/* Return the ASN.1 spelling used in direct-string diagnostics.
+ * Inputs: expr is a fixed parser-tree assignment. Returns a static string or
+ * NULL for types outside the approved set. Errors: none. Source: ASN.1 lexer.
+ * Version/date: 2026-11-01. Responsible: asn1c maintainers. History: direct
+ * restricted roots. Example: T61String is kept distinct from TeletexString.
+ */
+static const char *
+rust_character_string_name(asn1p_expr_t *expr) {
+    switch(expr->expr_type) {
+    case ASN_STRING_ObjectDescriptor: return "ObjectDescriptor";
+    case ASN_STRING_UTF8String: return "UTF8String";
+    case ASN_STRING_NumericString: return "NumericString";
+    case ASN_STRING_PrintableString: return "PrintableString";
+    case ASN_STRING_TeletexString: return "TeletexString";
+    case ASN_STRING_T61String: return "T61String";
+    case ASN_STRING_VideotexString: return "VideotexString";
+    case ASN_STRING_GraphicString: return "GraphicString";
+    case ASN_STRING_VisibleString: return "VisibleString";
+    case ASN_STRING_ISO646String: return "ISO646String";
+    case ASN_STRING_GeneralString: return "GeneralString";
+    case ASN_STRING_UniversalString: return "UniversalString";
+    case ASN_STRING_BMPString: return "BMPString";
+    default: return NULL;
+    }
+}
+
+/* Validate one direct restricted-string assignment and its codec selection.
+ * Inputs: module/expr identify the assignment; codecs is its selected mask.
+ * Returns zero when supported or -1 after a located diagnostic. Errors: none.
+ * Source: approved restricted-string gate. Version/date: 2026-11-01.
+ * Responsible: asn1c maintainers. History: direct roots. Example: UTF8String.
+ */
+static int
+rust_check_character_string(asn1p_module_t *module, asn1p_expr_t *expr,
+                            uint64_t codecs) {
+    const uint64_t ber_cer = RUST_CODEC_BER | RUST_CODEC_CER;
+    const char *name = rust_character_string_name(expr);
+    char diagnostic[160];
+    int count;
+    if(!name) return -1;
+    if(expr->constraints || expr->combined_constraints || expr->reference
+       || expr->rhs_pspecs || expr->marker.flags != EM_NOMARK
+       || expr->lhs_params || expr->ioc_table || expr->members.tq_head) {
+        count = snprintf(diagnostic, sizeof(diagnostic),
+                         "%s requires a direct untagged unconstrained root", name);
+        if(count < 0 || (size_t)count >= sizeof(diagnostic)) return -1;
+        rust_diagnostic(module, expr, diagnostic);
+        return -1;
+    }
+    if(codecs && !(codecs & ~ber_cer)) return 0;
+    count = snprintf(diagnostic, sizeof(diagnostic),
+                     "unconstrained %s requires BER/CER-only codec selection", name);
+    if(count < 0 || (size_t)count >= sizeof(diagnostic)) return -1;
+    rust_diagnostic(module, expr, diagnostic);
+    return -1;
+}
+
 /*
  * Reject one unsupported type before output publication.
  * Parameters: module and expr identify the fixed assignment; codecs is the
@@ -962,6 +1050,8 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
         }
         return rust_check_ia5_codecs(module, expr, codecs);
     }
+    if(rust_character_string_kind(expr))
+        return rust_check_character_string(module, expr, codecs);
     if(expr->expr_type == ASN_BASIC_OCTET_STRING) {
         size_t lower, upper;
         if(!expr->constraints && !expr->combined_constraints)
@@ -3512,6 +3602,8 @@ rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
             expr->expr_type == ASN_BASIC_RELATIVE_OID, codecs);
     } else if(expr->expr_type == ASN_STRING_IA5String) {
         ret = rust_write_ia5_string(stream, name, codecs);
+    } else if(rust_character_string_kind(expr)) {
+        ret = rust_write_character_string(stream, name, expr, codecs);
     } else {
         int64_t lower, upper;
         if(rust_integer_bounds(expr, &lower, &upper)) ret = -1;
@@ -6951,6 +7043,114 @@ rust_write_ia5_string_ber_cer(FILE *stream, int cer) {
         "        ::asn1c_runtime::decode_ia5_string_%s(input, limits)\n"
         "            .map(|decoded| decoded.map(Self))\n    }\n",
         suffix, suffix) < 0)
+        return -1;
+    return 0;
+}
+
+/* Emit a private-byte wrapper for one fixed restricted ASN.1 string kind.
+ * Inputs: stream receives Rust; name is the generated assignment; expr selects
+ * the fixed runtime kind; codecs is a validated BER/CER mask. Returns zero or
+ * -1 on output failure. Errors: runtime methods report malformed data/limits.
+ * Source: approved CharacterString runtime API. Version/date: 2026-11-01.
+ * Responsible: asn1c maintainers. History: direct restricted-string roots.
+ * Example: rust_write_character_string(out, "Text", utf8, RUST_CODEC_BER).
+ */
+static int
+rust_write_character_string(FILE *stream, const char *name, asn1p_expr_t *expr,
+                            uint64_t codecs) {
+    const char *kind = rust_character_string_kind(expr);
+    const char *asn_name = rust_character_string_name(expr);
+    if(!kind || !asn_name) return -1;
+    if(fprintf(stream,
+        "/// Unconstrained ASN.1 `%s` with private raw-byte storage.\n"
+        "#[derive(Debug, Eq, PartialEq)]\n"
+        "pub struct %s(\n"
+        "    /// Owned character-string content state variable.\n"
+        "    ::asn1c_runtime::CharacterString\n"
+        ");\n\nimpl %s {\n", asn_name, name, name) < 0)
+        return -1;
+    if(rust_write_method_doc(stream, "Construct an owned character string from raw bytes.",
+            "`bytes` is raw content; `limits` bounds input, storage, and work.",
+            "Returns privately owned bytes without applying CER validation.",
+            "Returns an error if input or allocation exceeds configured limits.",
+            "`let value = Type::try_from_bytes(&[0xff], &limits)?;"))
+        return -1;
+    if(fprintf(stream,
+        "    pub fn try_from_bytes(\n"
+        "        bytes: &[u8], limits: &::asn1c_runtime::Limits\n"
+        "    ) -> ::core::result::Result<Self, ::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::CharacterString::try_from_bytes(\n"
+        "            ::asn1c_runtime::CharacterStringKind::%s, bytes, limits\n"
+        "        ).map(Self)\n    }\n", kind) < 0)
+        return -1;
+    if(rust_write_method_doc(stream, "Borrow the stored character-string bytes.",
+            "`self` is the value to inspect.",
+            "Returns the original content bytes without copying.",
+            "This accessor cannot fail.", "`let bytes = value.as_bytes();"))
+        return -1;
+    if(fputs("    #[must_use]\n"
+             "    pub fn as_bytes(&self) -> &[u8] { self.0.as_bytes() }\n",
+             stream) == EOF)
+        return -1;
+    if((codecs & RUST_CODEC_BER)
+       && rust_write_character_string_ber_cer(stream, kind, 0)) return -1;
+    if((codecs & RUST_CODEC_CER)
+       && rust_write_character_string_ber_cer(stream, kind, 1)) return -1;
+    return fputs("}\n\n", stream) == EOF ? -1 : 0;
+}
+
+/* Emit selected DER/BER and CER methods for a fixed character-string kind.
+ * Inputs: stream receives Rust; kind is the runtime enum variant; cer selects
+ * CER rather than BER/DER. Returns zero or -1 on output failure. Errors are
+ * returned by runtime codecs. Source: CharacterString runtime API.
+ * Version/date: 2026-11-01. Responsible: asn1c maintainers. History: direct
+ * restricted roots. Example: rust_write_character_string_ber_cer(out, "Utf8String", 1).
+ */
+static int
+rust_write_character_string_ber_cer(FILE *stream, const char *kind, int cer) {
+    const char *suffix = cer ? "cer" : "ber";
+    const char *encode = cer ? "cer" : "der";
+    const char *description = cer
+        ? "Encode this value using the selected character-string CER rules."
+        : "Encode this value using DER while preserving raw content bytes.";
+    const char *decode_description = cer
+        ? "Strictly decode one CER string TLV and report prefix consumption."
+        : "Decode one BER string TLV and report prefix consumption.";
+    const char *encode_result = cer
+        ? "Returns an error for invalid content, output limits, or work limits."
+        : "Returns an error if output or work exceeds configured limits.";
+    const char *decode_result = cer
+        ? "Returns an error for invalid content, noncanonical input, or limits."
+        : "Returns an error for malformed input or exhausted limits.";
+    const char *encode_example = cer
+        ? "`let encoded = value.encode_cer(&Default::default())?;"
+        : "`let encoded = value.encode_der(&Default::default())?;";
+    const char *decode_example = cer
+        ? "`let decoded = Type::decode_cer(input, &Default::default())?;"
+        : "`let decoded = Type::decode_ber(input, &Default::default())?;";
+    if(rust_write_method_doc(stream, description,
+            "`self` is the value; `limits` bounds output and work.",
+            "Returns the complete universal-tag TLV.", encode_result, encode_example))
+        return -1;
+    if(fprintf(stream,
+        "    pub fn encode_%s(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Encoded, "
+        "::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::encode_character_string_%s(&self.0, limits)\n"
+        "    }\n", encode, encode) < 0)
+        return -1;
+    if(rust_write_method_doc(stream, decode_description,
+            "`input` is a prefix; `limits` bounds input, decoded storage, and work.",
+            "Returns the value and exact consumed byte and bit counts.",
+            decode_result, decode_example)) return -1;
+    if(fprintf(stream,
+        "    pub fn decode_%s(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, "
+        "::asn1c_runtime::Error> {\n"
+        "        ::asn1c_runtime::decode_character_string_%s(\n"
+        "            input, ::asn1c_runtime::CharacterStringKind::%s, limits\n"
+        "        ).map(|decoded| decoded.map(Self))\n    }\n",
+        suffix, suffix, kind) < 0)
         return -1;
     return 0;
 }

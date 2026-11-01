@@ -2943,7 +2943,7 @@ fi
 
 # Direct unconstrained IA5String keeps BER/DER raw-byte timing and strict CER.
 for fixture in Ia5ValuesAlias Ia5ValuesConstrained Ia5ValuesField \
-    Ia5ValuesImport Ia5ValuesTagged Ia5OtherRestrictedString; do
+    Ia5ValuesImport Ia5ValuesTagged; do
     rejected_out="$test_tmp/rejected-$fixture"
     if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
         -D "$rejected_out" "$test_srcdir/$fixture.asn1" \
@@ -3039,6 +3039,115 @@ if ! cc $ia5_cflags -I"$ia5_c" "$ia5_c"/*.c "$test_srcdir/c_ia5.c" \
 fi
 if ! "$test_tmp/c-ia5"; then
     echo "FAIL: C IA5 BER/DER/CER vectors or compatibility probes failed"
+    exit 1
+fi
+
+# Direct restricted character strings keep type tags fixed and CER checks exact.
+for fixture in RestrictedStringsAlias RestrictedStringsConstrained \
+    RestrictedStringsField RestrictedStringsImport RestrictedStringsTagged \
+    RestrictedStringsUnsupported; do
+    rejected_out="$test_tmp/rejected-$fixture"
+    if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$rejected_out" "$test_srcdir/$fixture.asn1" \
+        >"$test_tmp/$fixture.log" 2>&1; then
+        echo "FAIL: Rust backend accepted unsupported restricted-string shape $fixture"
+        exit 1
+    fi
+    test ! -e "$rejected_out"
+done
+
+restricted_mixed="$test_tmp/rejected-restricted-mixed"
+if "$asn1c_bin" --rust -S "$skeletons" -D "$restricted_mixed" \
+    "$test_srcdir/RestrictedStrings.asn1" \
+    >"$test_tmp/restricted-mixed.log" 2>&1; then
+    echo "FAIL: mixed default codecs accepted restricted character strings"
+    exit 1
+fi
+test ! -e "$restricted_mixed"
+restricted_uper="$test_tmp/rejected-restricted-uper"
+if "$asn1c_bin" --rust -gen-UPER -no-gen-BER -no-gen-CER -S "$skeletons" \
+    -D "$restricted_uper" "$test_srcdir/RestrictedStrings.asn1" \
+    >"$test_tmp/restricted-uper.log" 2>&1; then
+    echo "FAIL: UPER-only selection accepted restricted character strings"
+    exit 1
+fi
+test ! -e "$restricted_uper"
+
+restricted_rust="$test_tmp/restricted-rust"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$restricted_rust" "$test_srcdir/RestrictedStrings.asn1"
+mkdir "$restricted_rust/tests"
+cp "$test_srcdir/restricted_strings_conformance.rs" "$restricted_rust/tests/"
+restricted_source="$restricted_rust/src/restricted_strings.rs"
+for method in try_from_bytes as_bytes encode_der decode_ber encode_cer decode_cer; do
+    grep -F "pub fn $method" "$restricted_source" >/dev/null
+done
+for kind in TeletexString T61String VisibleString Iso646String; do
+    grep -F "CharacterStringKind::$kind" "$restricted_source" >/dev/null
+done
+if grep -F '#[derive(Clone' "$restricted_source" >/dev/null; then
+    echo "FAIL: restricted-string wrappers derive infallible Clone"
+    exit 1
+fi
+if ! (cd "$restricted_rust" && \
+    CARGO_TARGET_DIR="$test_tmp/target-restricted" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-restricted" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/restricted-rust.log" 2>&1; then
+    cat "$test_tmp/restricted-rust.log"
+    echo "FAIL: restricted-string conformance or strict Clippy"
+    exit 1
+fi
+
+for codec in BER CER; do
+    if [ "$codec" = BER ]; then
+        restricted_unwanted='encode_cer|decode_cer'
+        "$asn1c_bin" --rust -gen-BER -no-gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$test_tmp/restricted-$codec-only" "$test_srcdir/RestrictedStrings.asn1"
+    else
+        restricted_unwanted='encode_der|decode_ber'
+        "$asn1c_bin" --rust -gen-CER -no-gen-BER -no-gen-UPER -S "$skeletons" \
+            -D "$test_tmp/restricted-$codec-only" "$test_srcdir/RestrictedStrings.asn1"
+    fi
+    restricted_codec_out="$test_tmp/restricted-$codec-only"
+    if (cargo check --offline --manifest-path "$restricted_codec_out/Cargo.toml" && \
+        cargo clippy --offline --manifest-path "$restricted_codec_out/Cargo.toml" \
+        --all-targets --all-features -- -W clippy::pedantic \
+        -W clippy::nursery -D warnings) >"$test_tmp/restricted-$codec-only.log" 2>&1; then
+        :
+    else
+        cat "$test_tmp/restricted-$codec-only.log"
+        echo "FAIL: restricted-string $codec-only strict Clippy"
+        exit 1
+    fi
+    if grep -E "pub fn ($restricted_unwanted)" \
+        "$restricted_codec_out/src/restricted_strings.rs" >/dev/null; then
+        echo "FAIL: restricted-string $codec-only output has unselected methods"
+        exit 1
+    fi
+done
+
+restricted_c="$test_tmp/restricted-c"
+mkdir "$restricted_c"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$restricted_c" "$test_srcdir/RestrictedStrings.asn1" \
+    >"$test_tmp/restricted-c-generate.log" 2>&1
+restricted_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$restricted_c/Makefile.am.libasncodec")
+rm -f "$restricted_c/converter-example.c" "$restricted_c/pdu_collection.c"
+if ! cc $restricted_cflags -I"$restricted_c" "$restricted_c"/*.c \
+    "$test_srcdir/c_restricted_strings.c" -lm -o "$test_tmp/c-restricted" \
+    >"$test_tmp/restricted-c-compile.log" 2>&1; then
+    cat "$test_tmp/restricted-c-compile.log"
+    echo "FAIL: C restricted-string differential fixture did not compile"
+    exit 1
+fi
+if ! "$test_tmp/c-restricted"; then
+    echo "FAIL: C restricted-string BER/DER/CER vectors failed"
     exit 1
 fi
 

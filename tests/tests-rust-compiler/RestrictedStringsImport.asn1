@@ -1,0 +1,8 @@
+RestrictedStringsImport DEFINITIONS ::= BEGIN
+IMPORTS Remote FROM RestrictedStringsRemote;
+Value ::= BMPString
+END
+
+RestrictedStringsRemote DEFINITIONS ::= BEGIN
+Remote ::= BOOLEAN
+END

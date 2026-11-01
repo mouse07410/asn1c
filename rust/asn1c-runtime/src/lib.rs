@@ -2,7 +2,8 @@
 //!
 //! In addition to a limited PER/OER/CER/DER/BER codec slice, this crate covers
 //! BOOLEAN, NULL, bounded and arbitrary-precision signed INTEGER, direct
-//! ENUMERATED, OBJECT IDENTIFIER, RELATIVE-OID, fixed and bounded-size UPER
+//! ENUMERATED, OBJECT IDENTIFIER, RELATIVE-OID, direct character strings,
+//! fixed and bounded-size UPER
 //! strings, fixed or bounded JER strings, and direct CBOR primitives and opaque
 //! ANY values.
 //! It uses only the Rust standard library and applies caller-configurable input,
@@ -40,15 +41,18 @@ pub use aper::{
     encode_integer_aper, encode_null_aper,
 };
 pub use ber::{
-    decode_bit_string_ber, decode_bit_string_cer, decode_enumerated_ber, decode_enumerated_cer,
+    decode_bit_string_ber, decode_bit_string_cer, decode_character_string_ber,
+    decode_character_string_cer, decode_enumerated_ber, decode_enumerated_cer,
     decode_ia5_string_ber, decode_ia5_string_cer, decode_object_identifier_ber,
     decode_object_identifier_cer, decode_octet_string_ber, decode_octet_string_cer,
     decode_relative_oid_ber, decode_relative_oid_cer, encode_bit_string_cer, encode_bit_string_der,
-    encode_enumerated_cer, encode_enumerated_der, encode_ia5_string_cer, encode_ia5_string_der,
+    encode_character_string_cer, encode_character_string_der, encode_enumerated_cer,
+    encode_enumerated_der, encode_ia5_string_cer, encode_ia5_string_der,
     encode_object_identifier_cer, encode_object_identifier_der, encode_octet_string_cer,
-    encode_octet_string_der, encode_relative_oid_cer, encode_relative_oid_der, FieldKind,
-    Ia5String, ObjectIdentifier, RecordContext, RecordEncoding, RecordField, RelativeOid,
-    SequenceReader, SequenceWriter, SetReader, SetWriter, Tag, TagClass, MAX_TAG_NUMBER,
+    encode_octet_string_der, encode_relative_oid_cer, encode_relative_oid_der, CharacterString,
+    CharacterStringKind, FieldKind, Ia5String, ObjectIdentifier, RecordContext, RecordEncoding,
+    RecordField, RelativeOid, SequenceReader, SequenceWriter, SetReader, SetWriter, Tag, TagClass,
+    MAX_TAG_NUMBER,
 };
 pub use big_integer::{
     decode_big_integer_ber, decode_big_integer_cer, encode_big_integer_cer, encode_big_integer_der,

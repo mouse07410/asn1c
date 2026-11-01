@@ -2,8 +2,15 @@
 #include "asn1fix_crange.h"
 
 /*
- * Check that a specific constraint is compatible
- * with the given expression type.
+ * Purpose: check whether one ASN.1 constraint applies to an expression type.
+ * Original source: the existing X.680 Table 9 compatibility switch.
+ * Version/date: existing implementation, documented 2026-11-01.
+ * Inputs: expr_type is the parser type, constr_type is the constraint kind,
+ * and fbless_SIZE permits the existing SIZE extension on integer kinds.
+ * Returns one for compatible, zero for incompatible, or -1 for deferred cases.
+ * Errors/exceptions: no exception; unsupported combinations return a status.
+ * Responsible party: asn1c maintainers. History: existing compatibility rule.
+ * Example: an OCTET STRING accepts an ACT_CT_SIZE constraint.
  */
 int
 asn1constraint_compatible(asn1p_expr_type_e expr_type,
@@ -117,6 +124,16 @@ asn1constraint_compatible(asn1p_expr_type_e expr_type,
 #define DECL(name, lb, ub) DECL_RANGE(name, lb, ub, 0, 0)
 #define DECL_notOPV(name, lb, ub) DECL_RANGE(name, lb, ub, 1, 1)
 
+/*
+ * Purpose: return the built-in alphabet range for one ASN.1 string type.
+ * Original source: the existing X.680/X.691 default alphabet table.
+ * Version/date: existing implementation; ISO646 alias fix, 2026-11-01.
+ * Inputs: expr_type is the fixed ASN.1 type, including Visible/ISO646 aliases.
+ * Returns a static range, or NULL for a type without a supported default.
+ * Errors/exceptions: no exception; unexpected kinds return NULL.
+ * Responsible party: asn1c maintainers. History: map ISO646 to Visible range.
+ * Example: ISO646String and VisibleString return the same range.
+ */
 asn1cnst_range_t *
 asn1constraint_default_alphabet(asn1p_expr_type_e expr_type) {
 	DECL_notOPV(octstr,	0x00, 0xff);	/* Not OER- and PER-visible */
@@ -199,6 +216,7 @@ asn1constraint_default_alphabet(asn1p_expr_type_e expr_type) {
 	case ASN_STRING_PrintableString:
 		return &range_PrintableString;
 	case ASN_STRING_VisibleString:
+	case ASN_STRING_ISO646String:
 		return &range_VisibleString;
 	case ASN_STRING_IA5String:
 		return &range_uint7;
@@ -233,7 +251,7 @@ asn1constraint_default_alphabet(asn1p_expr_type_e expr_type) {
 	default:
 		if(!(expr_type & ASN_STRING_MASK))
 			break;
-		assert(expr_type & ASN_STRING_NKM_MASK);
+		if(!(expr_type & ASN_STRING_NKM_MASK)) return NULL;
 		/*
 		 * X.691, 9.3.6
 		 * Not a known-multiplier character string.

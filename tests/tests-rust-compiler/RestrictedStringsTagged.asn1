@@ -1,0 +1,3 @@
+RestrictedStringsTagged DEFINITIONS ::= BEGIN
+Value ::= [0] IMPLICIT PrintableString
+END

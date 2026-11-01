@@ -1,0 +1,3 @@
+RestrictedStringsUnsupported DEFINITIONS ::= BEGIN
+Value ::= CHARACTER STRING
+END

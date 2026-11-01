@@ -180,8 +180,19 @@ STRING fragments under the IA5 outer tag, and canonical CER fragments content
 above 1000 octets. An empty constructed BER value normalizes to empty Rust
 bytes and can be encoded as canonical `16 00`; the C BER decoder leaves a null
 buffer for that form, so its later constraint check or CER encode fails.
-Other character-string kinds, tagged or constrained IA5 roots, aliases,
-imports, and IA5 fields remain outside the Rust slice.
+The other direct restricted character-string roots with universal tags 7, 12,
+18 through 21, 25 through 28, and 30 use the same raw BER/DER and canonical
+CER entry points under BER/CER-only selection. TeletexString/T61String and
+VisibleString/ISO646String retain distinct generated names for their shared
+tags. CER applies the C descriptor's Numeric, Printable, Visible, UTF8,
+BMP, or Universal check; ObjectDescriptor, Teletex, Videotex, Graphic, and
+General have no effective C character validator. The UTF8 check accepts
+minimal legacy five- and six-byte forms, surrogate values, and values above
+the Unicode scalar range, as the C descriptor does. Fragmentation is bytewise
+and may split a UTF8 sequence between tag-4 children; validation follows
+reassembly. The C compatibility target does not establish X.690 escape-state
+canonicality for the permissive legacy types. Tagged, constrained, aliased,
+imported, and member character strings remain outside the Rust slice.
 Flat SET records with an untagged outer type and the same six direct field kinds are
 available when only BER and/or CER are selected. BER accepts members in any
 order; DER/CER emits them by ascending effective tag class and number, and strict CER rejects

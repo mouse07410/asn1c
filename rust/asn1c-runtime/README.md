@@ -170,6 +170,29 @@ with 1000-byte tag-4 fragments. Empty `16 00` is valid. BER also decodes an
 empty constructed value, which strict CER rejects because its canonical form
 is primitive `16 00`.
 
+`CharacterStringKind` and `CharacterString` provide the same checked BER/DER/CER
+operations for direct untagged ObjectDescriptor, UTF8String, NumericString,
+PrintableString, TeletexString/T61String, VideotexString, GraphicString,
+VisibleString/ISO646String, GeneralString, UniversalString, and BMPString roots.
+The aliases preserve their requested kind while sharing universal tags 20 and
+26. The generic value stores raw bytes; BER decode and DER encode do not apply
+the CER checks. CER validation follows the C runtime: NumericString accepts
+space and digits, PrintableString its ASN.1 alphabet, VisibleString bytes
+`0x20..=0x7e`, IA5String bytes through `0x7f`, BMPString content lengths
+divisible by two, and UniversalString content lengths divisible by four.
+ObjectDescriptor, Teletex/T61, Videotex, Graphic, and GeneralString accept
+arbitrary bytes under the C descriptors' no-op constraints. UTF8String mirrors
+the C runtime's minimal 1- through 6-byte sequence validator, including legacy
+5/6-byte forms and values outside Unicode scalar range; Rust `str::from_utf8`
+would reject some C-accepted values. These are C compatibility rules rather
+than broad claims about X.690 character repertoire validity.
+
+Generic character strings use their own universal tag and universal OCTET
+STRING tag 4 child fragments. CER stays primitive through 1000 content bytes,
+then uses 1000-byte fragments. UTF8 validation runs after BER reassembly, so a
+sequence may cross a fragment boundary. Strict CER re-encoding and comparison
+share cumulative input, output, work, and scratch limits.
+
 `RecordContext`, `SequenceReader`, `SequenceWriter`, `SetReader`, and `SetWriter`
 compose flat SEQUENCE and SET values with direct BOOLEAN, NULL,
 ENUMERATED, bounded INTEGER, and bounded BIT/OCTET STRING fields under one

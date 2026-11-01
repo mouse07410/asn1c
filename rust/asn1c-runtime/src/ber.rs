@@ -15,7 +15,6 @@ const MAX_RECORD_SCRATCH_BYTES: usize = 128 * 1024 * 1024;
 const CER_FRAGMENT_MAX: usize = 1000;
 const TAG_BIT_STRING: u64 = 3;
 const TAG_OCTET_STRING: u64 = 4;
-const TAG_IA5_STRING: u64 = 22;
 const TAG_ENUMERATED: u64 = 10;
 const TAG_SEQUENCE: u64 = 16;
 const TAG_BOOLEAN: u64 = 1;
@@ -24,13 +23,153 @@ const TAG_NULL: u64 = 5;
 const TAG_SET: u64 = 17;
 const TAG_OBJECT_IDENTIFIER: u32 = 6;
 const TAG_RELATIVE_OID: u32 = 13;
+/// Maximum simultaneous retained and canonical character-string buffer capacity.
+const MAX_CHARACTER_STRING_SCRATCH_BYTES: usize = 128 * 1024 * 1024;
 /// Maximum simultaneous retained and canonical OID codec buffer capacity.
 const MAX_OID_SCRATCH_BYTES: usize = 128 * 1024 * 1024;
-/// Maximum simultaneous retained and canonical IA5 codec buffer capacity.
-const MAX_IA5_SCRATCH_BYTES: usize = 128 * 1024 * 1024;
 const MAX_SEQUENCE_FIELDS: usize = 6;
 /// Largest BER tag number representable by the C runtime's packed tag value.
 pub const MAX_TAG_NUMBER: u32 = 0x3fff_ffff;
+
+/// Direct untagged ASN.1 character-string root supported by the BER/CER runtime.
+///
+/// `TeletexString`/`T61String` share universal tag 20; `VisibleString`/
+/// `ISO646String` share tag 26. Values preserve their selected type identity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CharacterStringKind {
+    /// `ObjectDescriptor`, universal tag 7; arbitrary bytes under C behavior.
+    ObjectDescriptor,
+    /// `UTF8String`, universal tag 12; validates C's minimal 1-6 byte forms in CER.
+    Utf8String,
+    /// `NumericString`, universal tag 18.
+    NumericString,
+    /// `PrintableString`, universal tag 19.
+    PrintableString,
+    /// `TeletexString`, universal tag 20; arbitrary bytes under C behavior.
+    TeletexString,
+    /// `T61String` alias, universal tag 20.
+    T61String,
+    /// `VideotexString`, universal tag 21; arbitrary bytes under C behavior.
+    VideotexString,
+    /// `IA5String`, universal tag 22.
+    Ia5String,
+    /// `GraphicString`, universal tag 25; arbitrary bytes under C behavior.
+    GraphicString,
+    /// `VisibleString`, universal tag 26.
+    VisibleString,
+    /// `ISO646String` alias, universal tag 26.
+    Iso646String,
+    /// `GeneralString`, universal tag 27; arbitrary bytes under C behavior.
+    GeneralString,
+    /// `UniversalString`, universal tag 28; content length must be divisible by four.
+    UniversalString,
+    /// `BMPString`, universal tag 30; content length must be divisible by two.
+    BmpString,
+}
+
+impl CharacterStringKind {
+    /// Return the selected type's intrinsic universal tag number.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns one supported tag number from the enum variant.
+    ///
+    /// # Errors
+    /// This mapping cannot fail or panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 universal character-string tags. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct character-string gate.
+    /// Example: `CharacterStringKind::Utf8String.tag_number() == 12`.
+    #[must_use]
+    pub const fn tag_number(self) -> u32 {
+        match self {
+            Self::ObjectDescriptor => 7,
+            Self::Utf8String => 12,
+            Self::NumericString => 18,
+            Self::PrintableString => 19,
+            Self::TeletexString | Self::T61String => 20,
+            Self::VideotexString => 21,
+            Self::Ia5String => 22,
+            Self::GraphicString => 25,
+            Self::VisibleString | Self::Iso646String => 26,
+            Self::GeneralString => 27,
+            Self::UniversalString => 28,
+            Self::BmpString => 30,
+        }
+    }
+}
+
+/// Owned raw octets for a direct ASN.1 character-string value.
+///
+/// BER decoding and DER encoding preserve bytes. CER applies the C descriptor's
+/// content check for the stored `kind`; the type has no infallible `Clone`.
+#[derive(Debug, Eq, PartialEq)]
+pub struct CharacterString {
+    /// Selected ASN.1 string type used for tag and CER checks; state variable.
+    kind: CharacterStringKind,
+    /// Owned raw content octets; state variable.
+    bytes: Vec<u8>,
+}
+
+impl CharacterString {
+    /// Copy raw bytes into a typed string value without applying CER validation.
+    ///
+    /// # Parameters and returns
+    /// `kind` fixes the intrinsic type; `bytes` is raw content; `limits` caps
+    /// input, retained output, and copy work. Returns an owned value.
+    ///
+    /// # Errors
+    /// Returns resource, checked-size, or fallible allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: C BER/DER callback timing. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: restricted-string runtime gate.
+    /// Example: `CharacterString::try_from_bytes(kind, b"abc", limits)?`.
+    pub fn try_from_bytes(
+        kind: CharacterStringKind,
+        bytes: &[u8],
+        limits: &Limits,
+    ) -> Result<Self, Error> {
+        Ok(Self {
+            kind,
+            bytes: copy_character_string_bytes(bytes, limits)?,
+        })
+    }
+
+    /// Return the selected kind.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns the Copy enum selected at construction.
+    ///
+    /// # Errors
+    /// This accessor cannot fail or panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: direct character-string API. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: restricted-string runtime gate.
+    /// Example: `value.kind() == CharacterStringKind::Ia5String`.
+    #[must_use]
+    pub const fn kind(&self) -> CharacterStringKind {
+        self.kind
+    }
+
+    /// Borrow the raw content bytes without applying a character constraint.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns stored content bytes.
+    ///
+    /// # Errors
+    /// This accessor cannot fail or panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: direct character-string API. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: restricted-string runtime gate.
+    /// Example: `value.as_bytes() == b"abc"`.
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
 
 /// Canonical encoded content octets for an ASN.1 OBJECT IDENTIFIER.
 ///
@@ -155,20 +294,9 @@ impl Ia5String {
     /// Responsible: runtime maintainers. History: direct IA5 gate.
     /// Example: `Ia5String::try_from_bytes(&[0x41], limits)?`.
     pub fn try_from_bytes(bytes: &[u8], limits: &Limits) -> Result<Self, Error> {
-        check(Resource::InputBytes, bytes.len(), limits.max_input_bytes)?;
-        check(Resource::OutputBytes, bytes.len(), limits.max_output_bytes)?;
-        check_ia5_scratch(bytes.len())?;
-        let mut work = 0;
-        charge_work(&mut work, bytes.len(), limits)?;
-        let mut owned = Vec::new();
-        owned
-            .try_reserve_exact(bytes.len())
-            .map_err(|_| Error::AllocationFailed {
-                requested_bytes: bytes.len(),
-            })?;
-        check_ia5_scratch(owned.capacity())?;
-        owned.extend_from_slice(bytes);
-        Ok(Self { bytes: owned })
+        Ok(Self {
+            bytes: copy_character_string_bytes(bytes, limits)?,
+        })
     }
 
     /// Borrow the raw `IA5String` content bytes.
@@ -3839,7 +3967,7 @@ pub fn encode_ia5_string_cer(value: &Ia5String, limits: &Limits) -> Result<Encod
     validate_ia5_content(&value.bytes, limits, &mut work)?;
     let encoded_len = ia5_cer_encoded_len(value.bytes.len())?;
     check(Resource::OutputBytes, encoded_len, limits.max_output_bytes)?;
-    check_ia5_scratch(
+    check_character_string_scratch(
         value
             .bytes
             .capacity()
@@ -3901,6 +4029,123 @@ pub fn decode_ia5_string_cer(input: &[u8], limits: &Limits) -> Result<Decoded<Ia
     })
 }
 
+/// Encode a typed restricted character string as canonical DER.
+///
+/// # Parameters and returns
+/// `value` fixes the string kind and raw bytes; `limits` caps output/work/scratch.
+/// Returns a primitive TLV using the kind's universal tag.
+///
+/// # Errors
+/// Returns output, work, scratch, size, or allocation errors. CER constraints
+/// are intentionally not checked by DER encoding.
+///
+/// # Source, version, history, example
+/// Source: C DER callbacks. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: restricted-string runtime gate.
+/// Example: `encode_character_string_der(&value, limits)?`.
+pub fn encode_character_string_der(
+    value: &CharacterString,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    encode_character_string_der_bytes(value.kind, &value.bytes, value.bytes.capacity(), limits)
+}
+
+/// Encode a typed restricted character string as canonical CER.
+///
+/// # Parameters and returns
+/// `value` fixes the string kind and raw bytes; `limits` caps output/work/scratch.
+/// Returns a primitive TLV through 1000 content octets or tag-4 fragmentation.
+///
+/// # Errors
+/// Returns invalid C repertoire/alignment, output/work/scratch, size, or
+/// allocation errors.
+///
+/// # Source, version, history, example
+/// Source: C CER constraints and X.690 string forms. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: restricted-string runtime gate.
+/// Example: `encode_character_string_cer(&value, limits)?`.
+pub fn encode_character_string_cer(
+    value: &CharacterString,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    let mut work = 0;
+    validate_character_string_content(value.kind, &value.bytes, limits, &mut work)?;
+    let encoded_len = character_string_cer_encoded_len(value.kind, value.bytes.len())?;
+    check(Resource::OutputBytes, encoded_len, limits.max_output_bytes)?;
+    check_character_string_scratch(
+        value
+            .bytes
+            .capacity()
+            .checked_add(encoded_len)
+            .ok_or(Error::SizeOverflow)?,
+    )?;
+    charge_work(&mut work, encoded_len, limits)?;
+    encode_character_string_cer_precharged(value.kind, &value.bytes, value.bytes.capacity(), limits)
+}
+
+/// Decode one BER character-string prefix using the requested intrinsic tag.
+///
+/// # Parameters and returns
+/// `input` may have a suffix; `kind` selects the expected universal tag;
+/// `limits` caps the whole input, retained bytes, and work. Returns raw bytes
+/// and exact prefix consumption without applying the CER content check.
+///
+/// # Errors
+/// Returns malformed BER, wrong tags/fragments, resource, size, or allocation
+/// errors.
+///
+/// # Source, version, history, example
+/// Source: C OCTET STRING-based string callbacks. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: restricted-string runtime gate.
+/// Example: `decode_character_string_ber(input, kind, limits)?`.
+pub fn decode_character_string_ber(
+    input: &[u8],
+    kind: CharacterStringKind,
+    limits: &Limits,
+) -> Result<Decoded<CharacterString>, Error> {
+    let mut work = 0;
+    let decoded = decode_character_string_ber_bytes(input, kind, limits, &mut work)?;
+    Ok(Decoded {
+        value: CharacterString {
+            kind,
+            bytes: decoded.value,
+        },
+        consumed_bits: decoded.consumed_bits,
+        consumed_bytes: decoded.consumed_bytes,
+    })
+}
+
+/// Strictly decode one canonical CER character-string prefix.
+///
+/// # Parameters and returns
+/// `input` may have a suffix; `kind` selects the expected universal tag;
+/// `limits` caps whole input, retained/output scratch, and cumulative work.
+/// Returns validated raw bytes and exact prefix consumption.
+///
+/// # Errors
+/// Returns malformed BER, invalid C-compatible content, noncanonical CER,
+/// resource, size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: C CER constraints and X.690 canonical forms. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: restricted-string runtime gate.
+/// Example: `decode_character_string_cer(input, kind, limits)?`.
+pub fn decode_character_string_cer(
+    input: &[u8],
+    kind: CharacterStringKind,
+    limits: &Limits,
+) -> Result<Decoded<CharacterString>, Error> {
+    let decoded = decode_character_string_cer_bytes(input, kind, limits)?;
+    Ok(Decoded {
+        value: CharacterString {
+            kind,
+            bytes: decoded.value,
+        },
+        consumed_bits: decoded.consumed_bits,
+        consumed_bytes: decoded.consumed_bytes,
+    })
+}
+
 /// Encode raw IA5 content as DER under its simultaneous value/output budget.
 ///
 /// # Parameters and returns
@@ -3919,17 +4164,45 @@ fn encode_ia5_der(
     retained_capacity: usize,
     limits: &Limits,
 ) -> Result<Encoded, Error> {
+    encode_character_string_der_bytes(
+        CharacterStringKind::Ia5String,
+        bytes,
+        retained_capacity,
+        limits,
+    )
+}
+
+/// Encode one raw string payload as a DER primitive under a shared scratch cap.
+///
+/// # Parameters and returns
+/// `kind` selects the universal tag; `bytes` is raw content;
+/// `retained_capacity` is a live value allocation; `limits` caps output/work.
+/// Returns the complete primitive TLV.
+///
+/// # Errors
+/// Returns resource, checked-size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: C DER string callbacks. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: shared IA5/restricted-string core.
+/// Example: called by public character-string and IA5 DER methods.
+fn encode_character_string_der_bytes(
+    kind: CharacterStringKind,
+    bytes: &[u8],
+    retained_capacity: usize,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
     let encoded_len = single_identifier_tlv_len(bytes.len())?;
     check(Resource::OutputBytes, encoded_len, limits.max_output_bytes)?;
-    check_ia5_scratch(
+    check_character_string_scratch(
         retained_capacity
             .checked_add(encoded_len)
             .ok_or(Error::SizeOverflow)?,
     )?;
     let mut work = 0;
     charge_work(&mut work, encoded_len, limits)?;
-    let encoded = write_primitive(TAG_IA5_STRING, bytes, limits)?;
-    check_ia5_scratch(
+    let encoded = write_primitive(u64::from(kind.tag_number()), bytes, limits)?;
+    check_character_string_scratch(
         retained_capacity
             .checked_add(encoded.bytes.capacity())
             .ok_or(Error::SizeOverflow)?,
@@ -3955,20 +4228,48 @@ fn encode_ia5_cer_precharged(
     retained_capacity: usize,
     limits: &Limits,
 ) -> Result<Encoded, Error> {
-    let encoded_len = ia5_cer_encoded_len(bytes.len())?;
+    encode_character_string_cer_precharged(
+        CharacterStringKind::Ia5String,
+        bytes,
+        retained_capacity,
+        limits,
+    )
+}
+
+/// Write canonical CER string bytes after content validation and work precharge.
+///
+/// # Parameters and returns
+/// `kind` selects the outer tag; `bytes` is validated content;
+/// `retained_capacity` is a live value buffer; `limits` caps output/scratch.
+/// Returns canonical primitive or constructed CER.
+///
+/// # Errors
+/// Returns resource, checked-size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 CER string forms. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: shared IA5/restricted-string core.
+/// Example: called after `validate_character_string_content`.
+fn encode_character_string_cer_precharged(
+    kind: CharacterStringKind,
+    bytes: &[u8],
+    retained_capacity: usize,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    let encoded_len = character_string_cer_encoded_len(kind, bytes.len())?;
     check(Resource::OutputBytes, encoded_len, limits.max_output_bytes)?;
-    check_ia5_scratch(
+    check_character_string_scratch(
         retained_capacity
             .checked_add(encoded_len)
             .ok_or(Error::SizeOverflow)?,
     )?;
     let mut output = new_output(encoded_len, limits)?;
     if bytes.len() <= CER_FRAGMENT_MAX {
-        push_identifier(&mut output, false, TAG_IA5_STRING, limits)?;
+        push_identifier(&mut output, false, u64::from(kind.tag_number()), limits)?;
         push_length(&mut output, bytes.len(), limits)?;
         push(&mut output, bytes, limits)?;
     } else {
-        push_indefinite_header(&mut output, Tag::universal(22), limits)?;
+        push_indefinite_header(&mut output, Tag::universal(kind.tag_number()), limits)?;
         for fragment in bytes.chunks(CER_FRAGMENT_MAX) {
             push_primitive(&mut output, TAG_OCTET_STRING, fragment, limits)?;
         }
@@ -3977,7 +4278,7 @@ fn encode_ia5_cer_precharged(
     if output.len() != encoded_len {
         return Err(Error::SizeOverflow);
     }
-    check_ia5_scratch(
+    check_character_string_scratch(
         retained_capacity
             .checked_add(output.capacity())
             .ok_or(Error::SizeOverflow)?,
@@ -3999,11 +4300,31 @@ fn encode_ia5_cer_precharged(
 /// Responsible: runtime maintainers. History: direct IA5 gate.
 /// Example: 1001 content bytes select constructed output.
 fn ia5_cer_encoded_len(content_len: usize) -> Result<usize, Error> {
+    character_string_cer_encoded_len(CharacterStringKind::Ia5String, content_len)
+}
+
+/// Return exact CER size for a kind's outer tag and universal tag-4 fragments.
+///
+/// # Parameters and returns
+/// `kind` selects the universal outer tag; `content_len` is reassembled bytes.
+/// Returns primitive or constructed complete-TLV size.
+///
+/// # Errors
+/// Returns `SizeOverflow` when checked size arithmetic fails.
+///
+/// # Source, version, history, example
+/// Source: C CER fragmentation and X.690 9.2. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: shared string CER sizing.
+/// Example: content above 1000 selects constructed output.
+fn character_string_cer_encoded_len(
+    kind: CharacterStringKind,
+    content_len: usize,
+) -> Result<usize, Error> {
     if content_len <= CER_FRAGMENT_MAX {
         return single_identifier_tlv_len(content_len);
     }
     let count = content_len.div_ceil(CER_FRAGMENT_MAX);
-    fragmented_size_tagged(content_len, count, false, Tag::universal(22))
+    fragmented_size_tagged(content_len, count, false, Tag::universal(kind.tag_number()))
 }
 
 /// Decode one BER `IA5String` and preserve its raw bytes.
@@ -4025,11 +4346,7 @@ fn decode_ia5_ber_bytes(
     limits: &Limits,
     work: &mut usize,
 ) -> Result<Decoded<Vec<u8>>, Error> {
-    let decode_limits = ia5_decode_limits(limits);
-    let decoded =
-        decode_octet_ber_with_tag_work(input, Tag::universal(22), &decode_limits, work, None)?;
-    check_ia5_scratch(decoded.value.capacity())?;
-    Ok(decoded)
+    decode_character_string_ber_bytes(input, CharacterStringKind::Ia5String, limits, work)
 }
 
 /// Strictly decode and canonicalize one CER `IA5String` under one budget.
@@ -4046,12 +4363,34 @@ fn decode_ia5_ber_bytes(
 /// Responsible: runtime maintainers. History: direct IA5 gate.
 /// Example: called by `decode_ia5_string_cer`.
 fn decode_ia5_cer_bytes(input: &[u8], limits: &Limits) -> Result<Decoded<Vec<u8>>, Error> {
+    decode_character_string_cer_bytes(input, CharacterStringKind::Ia5String, limits)
+}
+
+/// Decode and re-encode one strict CER prefix under a shared work/scratch budget.
+///
+/// # Parameters and returns
+/// `input` is the complete supplied slice; `kind` selects tag/check semantics;
+/// `limits` caps input/output/work/scratch. Returns raw bytes and prefix use.
+///
+/// # Errors
+/// Returns BER framing, content constraint, canonicality, resource, size, or
+/// allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 strict CER and C descriptor constraints. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: shared IA5/restricted-string core.
+/// Example: called by generic and IA5 CER decoders.
+fn decode_character_string_cer_bytes(
+    input: &[u8],
+    kind: CharacterStringKind,
+    limits: &Limits,
+) -> Result<Decoded<Vec<u8>>, Error> {
     let mut work = 0;
-    let decoded = decode_ia5_ber_bytes(input, limits, &mut work)?;
-    validate_ia5_content(&decoded.value, limits, &mut work)?;
-    let encoded_len = ia5_cer_encoded_len(decoded.value.len())?;
+    let decoded = decode_character_string_ber_bytes(input, kind, limits, &mut work)?;
+    validate_character_string_content(kind, &decoded.value, limits, &mut work)?;
+    let encoded_len = character_string_cer_encoded_len(kind, decoded.value.len())?;
     check(Resource::OutputBytes, encoded_len, limits.max_output_bytes)?;
-    check_ia5_scratch(
+    check_character_string_scratch(
         decoded
             .value
             .capacity()
@@ -4063,10 +4402,51 @@ fn decode_ia5_cer_bytes(input: &[u8], limits: &Limits) -> Result<Decoded<Vec<u8>
         .checked_add(compare_len)
         .ok_or(Error::SizeOverflow)?;
     charge_work(&mut work, future_work, limits)?;
-    let canonical = encode_ia5_cer_precharged(&decoded.value, decoded.value.capacity(), limits)?;
+    let canonical = encode_character_string_cer_precharged(
+        kind,
+        &decoded.value,
+        decoded.value.capacity(),
+        limits,
+    )?;
     if input.get(..decoded.consumed_bytes) != Some(canonical.bytes.as_slice()) {
-        return Err(invalid("CER IA5String differs from canonical re-encoding"));
+        let reason = if kind == CharacterStringKind::Ia5String {
+            "CER IA5String differs from canonical re-encoding"
+        } else {
+            "CER character string differs from canonical re-encoding"
+        };
+        return Err(invalid(reason));
     }
+    Ok(decoded)
+}
+
+/// Decode one BER character-string and bound its retained value capacity.
+///
+/// # Parameters and returns
+/// `input` is the whole slice; `kind` selects the outer tag; `limits` caps
+/// input/output; `work` shares parser and flattening work. Returns exact prefix.
+///
+/// # Errors
+/// Returns malformed BER, tag/fragment, output/work, scratch, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: C OCTET STRING-based BER callbacks. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: shared string BER core.
+/// Example: called by public generic and IA5 BER decoders.
+fn decode_character_string_ber_bytes(
+    input: &[u8],
+    kind: CharacterStringKind,
+    limits: &Limits,
+    work: &mut usize,
+) -> Result<Decoded<Vec<u8>>, Error> {
+    let decode_limits = character_string_decode_limits(limits);
+    let decoded = decode_octet_ber_with_tag_work(
+        input,
+        Tag::universal(kind.tag_number()),
+        &decode_limits,
+        work,
+        None,
+    )?;
+    check_character_string_scratch(decoded.value.capacity())?;
     Ok(decoded)
 }
 
@@ -4084,11 +4464,162 @@ fn decode_ia5_cer_bytes(input: &[u8], limits: &Limits) -> Result<Decoded<Vec<u8>
 /// Responsible: runtime maintainers. History: direct IA5 gate.
 /// Example: CER operations validate before output/publication.
 fn validate_ia5_content(bytes: &[u8], limits: &Limits, work: &mut usize) -> Result<(), Error> {
+    validate_character_string_content(CharacterStringKind::Ia5String, bytes, limits, work)
+}
+
+/// Apply the selected C descriptor's CER content check and meter the scan.
+///
+/// # Parameters and returns
+/// `kind` selects the C-compatible repertoire/alignment rule; `bytes` is fully
+/// reassembled content; `limits` caps work; `work` shares the operation budget.
+/// Returns success when the selected type's check accepts the content.
+///
+/// # Errors
+/// Returns `WorkBits` when scanning exceeds the ceiling or `InvalidEncoding`
+/// when the content violates the selected C rule.
+///
+/// # Source, version, history, example
+/// Source: C skeleton descriptor constraints. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: restricted-string runtime gate.
+/// Example: called before CER encode and after BER reassembly.
+fn validate_character_string_content(
+    kind: CharacterStringKind,
+    bytes: &[u8],
+    limits: &Limits,
+    work: &mut usize,
+) -> Result<(), Error> {
     charge_work(work, bytes.len(), limits)?;
-    if bytes.iter().any(|octet| octet & 0x80 != 0) {
-        return Err(invalid("IA5String content contains an octet above 0x7f"));
+    let valid = match kind {
+        CharacterStringKind::NumericString => bytes
+            .iter()
+            .all(|byte| *byte == b' ' || byte.is_ascii_digit()),
+        CharacterStringKind::PrintableString => bytes.iter().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(
+                    *byte,
+                    b' ' | b'\''
+                        | b'('
+                        | b')'
+                        | b'+'
+                        | b','
+                        | b'-'
+                        | b'.'
+                        | b'/'
+                        | b':'
+                        | b'='
+                        | b'?'
+                )
+        }),
+        CharacterStringKind::VisibleString | CharacterStringKind::Iso646String => {
+            bytes.iter().all(|byte| (0x20..=0x7e).contains(byte))
+        }
+        CharacterStringKind::Ia5String => bytes.iter().all(|byte| *byte <= 0x7f),
+        CharacterStringKind::Utf8String => is_c_compatible_utf8(bytes),
+        CharacterStringKind::BmpString => bytes.len().is_multiple_of(2),
+        CharacterStringKind::UniversalString => bytes.len().is_multiple_of(4),
+        CharacterStringKind::ObjectDescriptor
+        | CharacterStringKind::TeletexString
+        | CharacterStringKind::T61String
+        | CharacterStringKind::VideotexString
+        | CharacterStringKind::GraphicString
+        | CharacterStringKind::GeneralString => true,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(invalid(character_string_constraint_reason(kind)))
     }
-    Ok(())
+}
+
+/// Return the static diagnostic for one failed C-compatible string check.
+///
+/// # Parameters and returns
+/// `kind` identifies the already-failed validator. Returns a static message.
+///
+/// # Errors
+/// This lookup cannot fail or panic.
+///
+/// # Source, version, history, example
+/// Source: C descriptor constraint classes. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: restricted-string runtime gate.
+/// Example: passed to `InvalidEncoding` after validator failure.
+const fn character_string_constraint_reason(kind: CharacterStringKind) -> &'static str {
+    match kind {
+        CharacterStringKind::NumericString => {
+            "NumericString contains a byte outside space and digits"
+        }
+        CharacterStringKind::PrintableString => {
+            "PrintableString contains a byte outside its alphabet"
+        }
+        CharacterStringKind::VisibleString | CharacterStringKind::Iso646String => {
+            "VisibleString contains a byte outside 0x20..=0x7e"
+        }
+        CharacterStringKind::Ia5String => "IA5String content contains an octet above 0x7f",
+        CharacterStringKind::Utf8String => "UTF8String is not a minimal C-compatible sequence",
+        CharacterStringKind::BmpString => "BMPString content length is not divisible by two",
+        CharacterStringKind::UniversalString => {
+            "UniversalString content length is not divisible by four"
+        }
+        CharacterStringKind::ObjectDescriptor
+        | CharacterStringKind::TeletexString
+        | CharacterStringKind::T61String
+        | CharacterStringKind::VideotexString
+        | CharacterStringKind::GraphicString
+        | CharacterStringKind::GeneralString => "character string constraint failed",
+    }
+}
+
+/// Match the C runtime's minimal one-to-six-octet `UTF8String` validator.
+///
+/// # Parameters and returns
+/// `bytes` is the complete reassembled value. Returns false for invalid starts,
+/// incomplete sequences, bad continuations, and overlong encodings.
+///
+/// # Errors
+/// Does not allocate or panic; malformed bytes return false.
+///
+/// # Source, version, history, example
+/// Source: `UTF8String__process` in the C skeleton. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: C compatibility gate.
+/// Example: accepts minimal legacy 5-byte `[0xf8, 0x88, 0x80, 0x80, 0x80]`.
+fn is_c_compatible_utf8(bytes: &[u8]) -> bool {
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        let first = bytes[cursor];
+        let width = match first {
+            0x00..=0x7f => 1,
+            0xc0..=0xdf => 2,
+            0xe0..=0xef => 3,
+            0xf0..=0xf7 => 4,
+            0xf8..=0xfb => 5,
+            0xfc..=0xfd => 6,
+            _ => return false,
+        };
+        if width > bytes.len() - cursor {
+            return false;
+        }
+        let mut value = u32::from(first & (0xff >> width));
+        for octet in &bytes[cursor + 1..cursor + width] {
+            if !(0x80..=0xbf).contains(octet) {
+                return false;
+            }
+            value = (value << 6) | u32::from(octet & 0x3f);
+        }
+        let minimum = match width {
+            1 => 0,
+            2 => 0x80,
+            3 => 0x800,
+            4 => 0x1_0000,
+            5 => 0x20_0000,
+            6 => 0x400_0000,
+            _ => return false,
+        };
+        if value < minimum {
+            return false;
+        }
+        cursor += width;
+    }
+    true
 }
 
 /// Cap IA5 retained bytes while preserving caller input and work limits.
@@ -4104,27 +4635,63 @@ fn validate_ia5_content(bytes: &[u8], limits: &Limits, work: &mut usize) -> Resu
 /// Source: bounded scalar scratch policy. Version: 2026-11-01.
 /// Responsible: runtime maintainers. History: direct IA5 gate.
 /// Example: passed to the shared OCTET flattener.
-fn ia5_decode_limits(limits: &Limits) -> Limits {
+fn character_string_decode_limits(limits: &Limits) -> Limits {
     let mut decoded_limits = *limits;
-    decoded_limits.max_output_bytes = decoded_limits.max_output_bytes.min(MAX_IA5_SCRATCH_BYTES);
+    decoded_limits.max_output_bytes = decoded_limits
+        .max_output_bytes
+        .min(MAX_CHARACTER_STRING_SCRATCH_BYTES);
     decoded_limits
 }
 
-/// Bound simultaneous IA5 value and canonical TLV buffers.
+/// Bound simultaneous retained and canonical character-string buffers.
 ///
 /// # Parameters and returns
 /// `bytes` is the checked sum of live allocation capacities. Returns success
-/// when within the scalar scratch ceiling.
+/// when it does not exceed the fixed string scratch cap.
 ///
 /// # Errors
-/// Returns `LimitExceeded(OutputBytes)` when the fixed ceiling is exceeded.
+/// Returns `LimitExceeded(OutputBytes)` when the cap is exceeded.
 ///
 /// # Source, version, history, example
-/// Source: BigInteger/OID scalar scratch policy. Version: 2026-11-01.
-/// Responsible: runtime maintainers. History: direct IA5 gate.
-/// Example: checks retained bytes plus strict-CER output.
-const fn check_ia5_scratch(bytes: usize) -> Result<(), Error> {
-    check(Resource::OutputBytes, bytes, MAX_IA5_SCRATCH_BYTES)
+/// Source: scalar codec scratch policy. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: restricted-string runtime gate.
+/// Example: checks retained value plus canonical output.
+const fn check_character_string_scratch(bytes: usize) -> Result<(), Error> {
+    check(
+        Resource::OutputBytes,
+        bytes,
+        MAX_CHARACTER_STRING_SCRATCH_BYTES,
+    )
+}
+
+/// Fallibly copy unvalidated character-string bytes under scalar limits.
+///
+/// # Parameters and returns
+/// `bytes` is raw input; `limits` caps input, retained output, and copy work.
+/// Returns an owned buffer after checking its actual reserved capacity.
+///
+/// # Errors
+/// Returns input/output/work/scratch, size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: C BER/DER string values and scalar scratch policy. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: shared IA5/restricted-string core.
+/// Example: used by `CharacterString` and `Ia5String` constructors.
+fn copy_character_string_bytes(bytes: &[u8], limits: &Limits) -> Result<Vec<u8>, Error> {
+    check(Resource::InputBytes, bytes.len(), limits.max_input_bytes)?;
+    check(Resource::OutputBytes, bytes.len(), limits.max_output_bytes)?;
+    check_character_string_scratch(bytes.len())?;
+    let mut work = 0;
+    charge_work(&mut work, bytes.len(), limits)?;
+    let mut owned = Vec::new();
+    owned
+        .try_reserve_exact(bytes.len())
+        .map_err(|_| Error::AllocationFailed {
+            requested_bytes: bytes.len(),
+        })?;
+    check_character_string_scratch(owned.capacity())?;
+    owned.extend_from_slice(bytes);
+    Ok(owned)
 }
 
 /// Normalize one encoded OID content value under constructor limits.
@@ -11316,8 +11883,8 @@ mod tests {
         )
         .is_err());
 
-        assert!(check_ia5_scratch(MAX_IA5_SCRATCH_BYTES).is_ok());
-        assert!(check_ia5_scratch(MAX_IA5_SCRATCH_BYTES + 1).is_err());
+        assert!(check_character_string_scratch(MAX_CHARACTER_STRING_SCRATCH_BYTES).is_ok());
+        assert!(check_character_string_scratch(MAX_CHARACTER_STRING_SCRATCH_BYTES + 1).is_err());
     }
 
     /// Check retained-plus-output scratch boundaries without large allocations.
@@ -11338,7 +11905,7 @@ mod tests {
             max_output_bytes: 3,
             ..Limits::default()
         };
-        let exact_retained = MAX_IA5_SCRATCH_BYTES - 3;
+        let exact_retained = MAX_CHARACTER_STRING_SCRATCH_BYTES - 3;
         let over_retained = exact_retained + 1;
 
         assert_eq!(
@@ -11539,6 +12106,700 @@ mod tests {
                     mutated[index] = replacement;
                     let _ = decode_ia5_string_ber(&mutated, &limits);
                     let _ = decode_ia5_string_cer(&mutated, &limits);
+                }
+            }
+        }
+    }
+
+    /// Check universal tag mappings, aliases, raw BER/DER, and empty CER values.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Exercises every supported kind and shared-tag alias.
+    ///
+    /// # Errors
+    /// Panics on wrong tag selection, lost raw bytes, or malformed empty output.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 universal tags and C descriptors. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: restricted-string runtime gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn character_string_kinds_preserve_raw_values_and_empty_forms() {
+        let cases: &[(CharacterStringKind, u8)] = &[
+            (CharacterStringKind::ObjectDescriptor, 7),
+            (CharacterStringKind::Utf8String, 12),
+            (CharacterStringKind::NumericString, 18),
+            (CharacterStringKind::PrintableString, 19),
+            (CharacterStringKind::TeletexString, 20),
+            (CharacterStringKind::T61String, 20),
+            (CharacterStringKind::VideotexString, 21),
+            (CharacterStringKind::Ia5String, 22),
+            (CharacterStringKind::GraphicString, 25),
+            (CharacterStringKind::VisibleString, 26),
+            (CharacterStringKind::Iso646String, 26),
+            (CharacterStringKind::GeneralString, 27),
+            (CharacterStringKind::UniversalString, 28),
+            (CharacterStringKind::BmpString, 30),
+        ];
+        let limits = Limits::default();
+        for (kind, tag) in cases {
+            assert_eq!(kind.tag_number(), u32::from(*tag));
+            let value = CharacterString::try_from_bytes(*kind, &[0xff], &limits).unwrap();
+            assert_eq!(value.kind(), *kind);
+            assert_eq!(value.as_bytes(), [0xff]);
+            let der = encode_character_string_der(&value, &limits).unwrap();
+            assert_eq!(der.bytes, [*tag, 1, 0xff]);
+            let decoded = decode_character_string_ber(&der.bytes, *kind, &limits).unwrap();
+            assert_eq!(decoded.value.kind(), *kind);
+            assert_eq!(decoded.value.as_bytes(), [0xff]);
+
+            let empty = CharacterString::try_from_bytes(*kind, &[], &limits).unwrap();
+            let cer = encode_character_string_cer(&empty, &limits).unwrap();
+            assert_eq!(cer.bytes, [*tag, 0]);
+            assert_eq!(
+                decode_character_string_cer(&cer.bytes, *kind, &limits)
+                    .unwrap()
+                    .value
+                    .as_bytes(),
+                []
+            );
+        }
+    }
+
+    /// Keep generic IA5 codecs byte-for-byte aligned with the source-compatible API.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Compares values, encodings, decodings, and prefix use.
+    ///
+    /// # Errors
+    /// Panics if either IA5 API changes observable encoding or decode behavior.
+    ///
+    /// # Source, version, history, example
+    /// Source: approved IA5 compatibility surface. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: shared string core regression.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn generic_ia5_kind_matches_existing_ia5_api() {
+        let limits = Limits::default();
+        let bytes = [0, 0x1b, 0x7f];
+        let legacy = Ia5String::try_from_bytes(&bytes, &limits).unwrap();
+        let generic =
+            CharacterString::try_from_bytes(CharacterStringKind::Ia5String, &bytes, &limits)
+                .unwrap();
+        let der_from_ia5 = encode_ia5_string_der(&legacy, &limits).unwrap();
+        let der_from_kind = encode_character_string_der(&generic, &limits).unwrap();
+        let cer_from_ia5 = encode_ia5_string_cer(&legacy, &limits).unwrap();
+        let cer_from_kind = encode_character_string_cer(&generic, &limits).unwrap();
+        assert_eq!(der_from_kind.bytes, der_from_ia5.bytes);
+        assert_eq!(cer_from_kind.bytes, cer_from_ia5.bytes);
+
+        let raw_ia5 = decode_ia5_string_ber(&der_from_kind.bytes, &limits).unwrap();
+        let raw_generic = decode_character_string_ber(
+            &der_from_ia5.bytes,
+            CharacterStringKind::Ia5String,
+            &limits,
+        )
+        .unwrap();
+        assert_eq!(raw_ia5.value.as_bytes(), raw_generic.value.as_bytes());
+        assert_eq!(raw_ia5.consumed_bytes, raw_generic.consumed_bytes);
+
+        let strict_ia5 = decode_ia5_string_cer(&cer_from_kind.bytes, &limits).unwrap();
+        let strict_generic = decode_character_string_cer(
+            &cer_from_ia5.bytes,
+            CharacterStringKind::Ia5String,
+            &limits,
+        )
+        .unwrap();
+        assert_eq!(strict_ia5.value.as_bytes(), strict_generic.value.as_bytes());
+        assert_eq!(strict_ia5.consumed_bytes, strict_generic.consumed_bytes);
+    }
+
+    /// Match C CER validators for alphabets, alignment, and unvalidated kinds.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Tests valid and invalid content for each validator class.
+    ///
+    /// # Errors
+    /// Panics on C-compatible accepted values being rejected or invalid values passing.
+    ///
+    /// # Source, version, history, example
+    /// Source: C skeleton descriptor constraints. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: restricted-string runtime gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn character_string_cer_validators_match_c_descriptor_rules() {
+        let limits = Limits::default();
+        let printable =
+            b" '()+,-./:=?0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+        let accepted: &[(CharacterStringKind, &[u8])] = &[
+            (CharacterStringKind::ObjectDescriptor, &[0xff, 0x80]),
+            (CharacterStringKind::TeletexString, &[0xff, 0x80]),
+            (CharacterStringKind::T61String, &[0xff, 0x80]),
+            (CharacterStringKind::VideotexString, &[0xff, 0x80]),
+            (CharacterStringKind::GraphicString, &[0xff, 0x80]),
+            (CharacterStringKind::GeneralString, &[0xff, 0x80]),
+            (CharacterStringKind::NumericString, b" 0123456789"),
+            (CharacterStringKind::PrintableString, printable),
+            (CharacterStringKind::VisibleString, &[0x20, 0x7e]),
+            (CharacterStringKind::Iso646String, &[0x20, 0x7e]),
+            (CharacterStringKind::Ia5String, &[0, 0x1b, 0x7f]),
+            (CharacterStringKind::BmpString, &[0xd8, 0]),
+            (
+                CharacterStringKind::UniversalString,
+                &[0xff, 0xff, 0xff, 0xff],
+            ),
+        ];
+        for (kind, bytes) in accepted {
+            let value = CharacterString::try_from_bytes(*kind, bytes, &limits).unwrap();
+            let encoded = encode_character_string_cer(&value, &limits).unwrap();
+            assert_eq!(
+                decode_character_string_cer(&encoded.bytes, *kind, &limits)
+                    .unwrap()
+                    .value
+                    .as_bytes(),
+                *bytes
+            );
+        }
+
+        let rejected: &[(CharacterStringKind, &[u8])] = &[
+            (CharacterStringKind::NumericString, b"A"),
+            (CharacterStringKind::PrintableString, b"*"),
+            (CharacterStringKind::VisibleString, &[0x1f]),
+            (CharacterStringKind::Iso646String, &[0x7f]),
+            (CharacterStringKind::Ia5String, &[0x80]),
+            (CharacterStringKind::BmpString, &[0]),
+            (CharacterStringKind::UniversalString, &[0, 0, 0]),
+            (CharacterStringKind::Utf8String, &[0xff]),
+        ];
+        for (kind, bytes) in rejected {
+            let value = CharacterString::try_from_bytes(*kind, bytes, &limits).unwrap();
+            assert!(encode_character_string_der(&value, &limits).is_ok());
+            assert!(encode_character_string_cer(&value, &limits).is_err());
+            let der = encode_character_string_der(&value, &limits).unwrap();
+            assert!(decode_character_string_ber(&der.bytes, *kind, &limits).is_ok());
+            assert!(decode_character_string_cer(&der.bytes, *kind, &limits).is_err());
+        }
+    }
+
+    /// Preserve C's minimal legacy `UTF8String` forms rather than Rust UTF-8 rules.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Covers ASCII, surrogate/out-of-range, 5/6-byte, and invalid forms.
+    ///
+    /// # Errors
+    /// Panics if C-compatible UTF8 inputs are rejected or malformed inputs pass.
+    ///
+    /// # Source, version, history, example
+    /// Source: C `UTF8String__process`. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: restricted-string runtime gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn character_string_utf8_validator_matches_legacy_c_behavior() {
+        let limits = Limits::default();
+        let accepted: &[&[u8]] = &[
+            b"hello",
+            &[0xed, 0xa0, 0x80],
+            &[0xf4, 0x90, 0x80, 0x80],
+            &[0xf8, 0x88, 0x80, 0x80, 0x80],
+            &[0xfc, 0x84, 0x80, 0x80, 0x80, 0x80],
+            &[0xfd, 0xbf, 0xbf, 0xbf, 0xbf, 0xbf],
+        ];
+        for bytes in accepted {
+            let value =
+                CharacterString::try_from_bytes(CharacterStringKind::Utf8String, bytes, &limits)
+                    .unwrap();
+            let encoded = encode_character_string_cer(&value, &limits).unwrap();
+            assert_eq!(
+                decode_character_string_cer(
+                    &encoded.bytes,
+                    CharacterStringKind::Utf8String,
+                    &limits
+                )
+                .unwrap()
+                .value
+                .as_bytes(),
+                *bytes
+            );
+        }
+
+        let rejected: &[&[u8]] = &[
+            &[0x80],
+            &[0xfe],
+            &[0xff],
+            &[0xc0, 0x80],
+            &[0xe2, 0x28, 0xa1],
+            &[0xf0, 0x90, 0x80],
+        ];
+        for bytes in rejected {
+            let value =
+                CharacterString::try_from_bytes(CharacterStringKind::Utf8String, bytes, &limits)
+                    .unwrap();
+            assert!(encode_character_string_cer(&value, &limits).is_err());
+        }
+    }
+
+    /// Reassemble BER before UTF8 validation and split CER content bytewise.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Tests nested tag-4 BER and a UTF8 sequence split at byte 1000.
+    ///
+    /// # Errors
+    /// Panics if reassembly, prefix consumption, or strict CER comparison differs.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 string components and C CER byte chunking. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: restricted-string runtime gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn character_string_constructed_ber_and_utf8_cer_fragmentation() {
+        let limits = Limits::default();
+        let nested = [
+            0x2c, 0x80, 4, 1, 0xc2, 0x24, 0x80, 4, 1, 0xa2, 0, 0, 0, 0, 0xff,
+        ];
+        let decoded =
+            decode_character_string_ber(&nested, CharacterStringKind::Utf8String, &limits).unwrap();
+        assert_eq!(decoded.value.as_bytes(), [0xc2, 0xa2]);
+        assert_eq!(decoded.consumed_bytes, 14);
+        assert!(
+            decode_character_string_cer(&nested, CharacterStringKind::Utf8String, &limits).is_err()
+        );
+
+        let nested_definite = [0x32, 0x80, 4, 1, b'1', 0x24, 3, 4, 1, b'2', 0, 0];
+        let decoded = decode_character_string_ber(
+            &nested_definite,
+            CharacterStringKind::NumericString,
+            &limits,
+        )
+        .unwrap();
+        assert_eq!(decoded.value.as_bytes(), b"12");
+        assert_eq!(decoded.consumed_bytes, nested_definite.len());
+
+        let mut split_value = vec![b'a'; 999];
+        split_value.extend([0xc2, 0xa2]);
+        let value =
+            CharacterString::try_from_bytes(CharacterStringKind::Utf8String, &split_value, &limits)
+                .unwrap();
+        let encoded = encode_character_string_cer(&value, &limits).unwrap();
+        assert_eq!(&encoded.bytes[..6], &[0x2c, 0x80, 4, 0x82, 3, 0xe8]);
+        assert_eq!(
+            &encoded.bytes[encoded.bytes.len() - 5..],
+            &[4, 1, 0xa2, 0, 0]
+        );
+        assert_eq!(
+            decode_character_string_cer(&encoded.bytes, CharacterStringKind::Utf8String, &limits)
+                .unwrap()
+                .value
+                .as_bytes(),
+            split_value
+        );
+    }
+
+    /// Check generic CER length transitions, fragments, aliases, and malformed BER.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Tests 127/128 and 1000/1001/2001-byte `ObjectDescriptor` values.
+    ///
+    /// # Errors
+    /// Panics on wrong boundaries, prefix consumption, alias, or malformed acceptance.
+    ///
+    /// # Source, version, history, example
+    /// Source: C CER probes and X.690 framing. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: restricted-string runtime gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn character_string_cer_boundaries_and_ber_aliases() {
+        let limits = Limits::default();
+        let cases = [
+            (127, 129),
+            (128, 131),
+            (999, 1003),
+            (1000, 1004),
+            (1001, 1011),
+            (2001, 2015),
+        ];
+        for (size, encoded_len) in cases {
+            let value = CharacterString::try_from_bytes(
+                CharacterStringKind::ObjectDescriptor,
+                &vec![0xa5; size],
+                &limits,
+            )
+            .unwrap();
+            let encoded = encode_character_string_cer(&value, &limits).unwrap();
+            assert_eq!(encoded.bytes.len(), encoded_len);
+            let decoded = decode_character_string_cer(
+                &encoded.bytes,
+                CharacterStringKind::ObjectDescriptor,
+                &limits,
+            )
+            .unwrap();
+            assert_eq!(decoded.value.as_bytes(), value.as_bytes());
+            assert_eq!(decoded.consumed_bytes, encoded_len);
+        }
+        let value_127 = CharacterString::try_from_bytes(
+            CharacterStringKind::ObjectDescriptor,
+            &[0x41; 127],
+            &limits,
+        )
+        .unwrap();
+        assert_eq!(
+            &encode_character_string_cer(&value_127, &limits)
+                .unwrap()
+                .bytes[..2],
+            &[7, 127]
+        );
+        let value_128 = CharacterString::try_from_bytes(
+            CharacterStringKind::ObjectDescriptor,
+            &[0x41; 128],
+            &limits,
+        )
+        .unwrap();
+        assert_eq!(
+            &encode_character_string_cer(&value_128, &limits)
+                .unwrap()
+                .bytes[..3],
+            &[7, 0x81, 0x80]
+        );
+
+        let alias = [0x1f, 18, 1, b'1', 0xff];
+        let decoded =
+            decode_character_string_ber(&alias, CharacterStringKind::NumericString, &limits)
+                .unwrap();
+        assert_eq!(decoded.value.as_bytes(), b"1");
+        assert_eq!(decoded.consumed_bytes, 4);
+        assert!(
+            decode_character_string_cer(&alias, CharacterStringKind::NumericString, &limits)
+                .is_err()
+        );
+
+        let wrong_fragment = [0x32, 0x80, 0x12, 1, b'1', 0, 0];
+        let missing_eoc = [0x32, 0x80, 4, 1, b'1'];
+        let malformed: &[&[u8]] = &[
+            &wrong_fragment,
+            &missing_eoc,
+            &[0x13, 0],
+            &[0x12, 0x80, 0, 0],
+            &[0x12, 2, b'1'],
+            &[0x32, 0x80, 0, 1],
+        ];
+        for input in malformed {
+            assert!(decode_character_string_ber(
+                input,
+                CharacterStringKind::NumericString,
+                &limits
+            )
+            .is_err());
+        }
+    }
+
+    /// Enforce generic constructor, BER, DER, and strict CER resource ceilings.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks input/output/work exactness and shared CER accounting.
+    ///
+    /// # Errors
+    /// Panics on incorrect consumption, work, or limit handling.
+    ///
+    /// # Source, version, history, example
+    /// Source: runtime character-string resource policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: restricted-string runtime gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn character_string_resource_limits_and_strict_work_are_exact() {
+        let kind = CharacterStringKind::ObjectDescriptor;
+        let exact = Limits {
+            max_input_bytes: 1,
+            max_output_bytes: 1,
+            max_work_bits: 8,
+        };
+        let value = CharacterString::try_from_bytes(kind, b"A", &exact).unwrap();
+        assert_eq!(value.as_bytes(), b"A");
+        assert!(CharacterString::try_from_bytes(
+            kind,
+            b"A",
+            &Limits {
+                max_input_bytes: 0,
+                ..exact
+            }
+        )
+        .is_err());
+        assert!(CharacterString::try_from_bytes(
+            kind,
+            b"A",
+            &Limits {
+                max_output_bytes: 0,
+                ..exact
+            }
+        )
+        .is_err());
+        assert!(CharacterString::try_from_bytes(
+            kind,
+            b"A",
+            &Limits {
+                max_work_bits: 7,
+                ..exact
+            }
+        )
+        .is_err());
+
+        let default = Limits::default();
+        let value = CharacterString::try_from_bytes(kind, b"A", &default).unwrap();
+        let der_exact = Limits {
+            max_output_bytes: 3,
+            max_work_bits: 24,
+            ..default
+        };
+        assert!(encode_character_string_der(&value, &der_exact).is_ok());
+        assert!(encode_character_string_der(
+            &value,
+            &Limits {
+                max_output_bytes: 2,
+                ..der_exact
+            }
+        )
+        .is_err());
+        assert!(encode_character_string_der(
+            &value,
+            &Limits {
+                max_work_bits: 23,
+                ..der_exact
+            }
+        )
+        .is_err());
+
+        let encoded = [7, 1, b'A'];
+        let work_bits = minimum_character_string_cer_work(&encoded, kind);
+        assert_eq!(work_bits, 88);
+        assert!(decode_character_string_cer(
+            &encoded,
+            kind,
+            &Limits {
+                max_work_bits: work_bits,
+                ..default
+            }
+        )
+        .is_ok());
+        assert!(decode_character_string_cer(
+            &encoded,
+            kind,
+            &Limits {
+                max_work_bits: work_bits - 1,
+                ..default
+            }
+        )
+        .is_err());
+    }
+
+    /// Check generic CER encoding's complete-output and validation work ceilings.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Encodes one valid `ObjectDescriptor` at exact and lower limits.
+    ///
+    /// # Errors
+    /// Panics if exact output/work fails or a one-below ceiling passes.
+    ///
+    /// # Source, version, history, example
+    /// Source: runtime character-string limits. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: restricted-string runtime gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn character_string_cer_encoder_checks_exact_resources() {
+        let kind = CharacterStringKind::ObjectDescriptor;
+        let value = CharacterString::try_from_bytes(kind, b"A", &Limits::default()).unwrap();
+        let exact = Limits {
+            max_output_bytes: 3,
+            max_work_bits: 32,
+            ..Limits::default()
+        };
+        assert_eq!(
+            encode_character_string_cer(&value, &exact).unwrap().bytes,
+            [7, 1, b'A']
+        );
+        assert!(encode_character_string_cer(
+            &value,
+            &Limits {
+                max_output_bytes: 2,
+                ..exact
+            }
+        )
+        .is_err());
+        assert!(encode_character_string_cer(
+            &value,
+            &Limits {
+                max_work_bits: 31,
+                ..exact
+            }
+        )
+        .is_err());
+    }
+
+    /// Apply whole-slice input limits while returning generic BER prefixes.
+    ///
+    /// # Parameters and returns
+    /// No parameters. The decoded TLV is followed by a suffix byte.
+    ///
+    /// # Errors
+    /// Panics if the full input slice is not charged or prefix consumption changes.
+    ///
+    /// # Source, version, history, example
+    /// Source: runtime decoder limits. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: restricted-string runtime gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn character_string_ber_prefix_checks_whole_input_limit() {
+        let kind = CharacterStringKind::ObjectDescriptor;
+        let input = [7, 1, b'A', 0xff];
+        let default = Limits::default();
+        let exact = Limits {
+            max_input_bytes: input.len(),
+            max_output_bytes: 1,
+            ..default
+        };
+        let decoded = decode_character_string_ber(&input, kind, &exact).unwrap();
+        assert_eq!(decoded.value.as_bytes(), b"A");
+        assert_eq!(decoded.consumed_bytes, 3);
+        assert!(decode_character_string_ber(
+            &input,
+            kind,
+            &Limits {
+                max_input_bytes: input.len() - 1,
+                ..exact
+            }
+        )
+        .is_err());
+        let strict_limits = Limits {
+            max_input_bytes: input.len(),
+            ..default
+        };
+        let strict = decode_character_string_cer(&input, kind, &strict_limits).unwrap();
+        assert_eq!(strict.consumed_bytes, 3);
+        assert!(decode_character_string_cer(
+            &input,
+            kind,
+            &Limits {
+                max_input_bytes: input.len() - 1,
+                ..strict_limits
+            }
+        )
+        .is_err());
+    }
+
+    /// Check generic retained-plus-canonical scratch preflight at both boundaries.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Uses a tiny payload with synthetic live retained capacity.
+    ///
+    /// # Errors
+    /// Panics if exact capacity fails or one byte over the fixed cap passes.
+    ///
+    /// # Source, version, history, example
+    /// Source: character-string scratch policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: restricted-string runtime gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn character_string_encoder_scratch_preflight_is_exact() {
+        let kind = CharacterStringKind::ObjectDescriptor;
+        let limits = Limits {
+            max_output_bytes: 3,
+            ..Limits::default()
+        };
+        let exact_capacity = MAX_CHARACTER_STRING_SCRATCH_BYTES - 3;
+        let above_capacity = exact_capacity + 1;
+        assert_eq!(
+            encode_character_string_der_bytes(kind, &[0xa5], exact_capacity, &limits)
+                .unwrap()
+                .bytes,
+            [7, 1, 0xa5]
+        );
+        assert!(encode_character_string_der_bytes(kind, &[0xa5], above_capacity, &limits).is_err());
+        assert_eq!(
+            encode_character_string_cer_precharged(kind, &[0xa5], exact_capacity, &limits)
+                .unwrap()
+                .bytes,
+            [7, 1, 0xa5]
+        );
+        assert!(
+            encode_character_string_cer_precharged(kind, &[0xa5], above_capacity, &limits).is_err()
+        );
+    }
+
+    /// Find the exact cumulative strict CER work threshold for one kind.
+    ///
+    /// # Parameters and returns
+    /// `input` is canonical CER; `kind` selects the tag and validator. Returns
+    /// the least passing work limit.
+    ///
+    /// # Errors
+    /// Panics if default limits reject canonical test input.
+    ///
+    /// # Source, version, history, example
+    /// Source: scalar codec resource tests. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: restricted-string runtime gate.
+    /// Example: called by `character_string_resource_limits_and_strict_work_are_exact`.
+    fn minimum_character_string_cer_work(input: &[u8], kind: CharacterStringKind) -> usize {
+        let decode = |limits: &Limits| decode_character_string_cer(input, kind, limits).map(|_| ());
+        let mut low = 0;
+        let mut high = Limits::default().max_work_bits;
+        assert!(decode(&Limits::default()).is_ok());
+        while low < high {
+            let middle = low + (high - low) / 2;
+            let limits = Limits {
+                max_work_bits: middle,
+                ..Limits::default()
+            };
+            if decode(&limits).is_ok() {
+                high = middle;
+            } else {
+                low = middle + 1;
+            }
+        }
+        low
+    }
+
+    /// Mutate generic string tags, lengths, content, and prefixes without panics.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Exercises every selected kind with one-byte mutations.
+    ///
+    /// # Errors
+    /// Panics only if a decoder unwinds on mutated untrusted input.
+    ///
+    /// # Source, version, history, example
+    /// Source: BER parser mutation hardening. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: restricted-string runtime gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn character_string_mutations_and_truncations_do_not_panic() {
+        let kinds = [
+            CharacterStringKind::ObjectDescriptor,
+            CharacterStringKind::Utf8String,
+            CharacterStringKind::NumericString,
+            CharacterStringKind::PrintableString,
+            CharacterStringKind::TeletexString,
+            CharacterStringKind::T61String,
+            CharacterStringKind::VideotexString,
+            CharacterStringKind::Ia5String,
+            CharacterStringKind::GraphicString,
+            CharacterStringKind::VisibleString,
+            CharacterStringKind::Iso646String,
+            CharacterStringKind::GeneralString,
+            CharacterStringKind::UniversalString,
+            CharacterStringKind::BmpString,
+        ];
+        let limits = Limits::default();
+        for kind in kinds {
+            let value = CharacterString::try_from_bytes(kind, b"A", &limits).unwrap();
+            let wire = encode_character_string_der(&value, &limits).unwrap().bytes;
+            for end in 0..wire.len() {
+                let truncated = &wire[..end];
+                let _ = decode_character_string_ber(truncated, kind, &limits);
+                let _ = decode_character_string_cer(truncated, kind, &limits);
+            }
+            for index in 0..wire.len() {
+                for replacement in 0_u8..=u8::MAX {
+                    let mut mutated = wire.clone();
+                    mutated[index] = replacement;
+                    let _ = decode_character_string_ber(&mutated, kind, &limits);
+                    let _ = decode_character_string_cer(&mutated, kind, &limits);
                 }
             }
         }

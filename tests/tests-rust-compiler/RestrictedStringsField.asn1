@@ -1,0 +1,3 @@
+RestrictedStringsField DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { text UTF8String }
+END

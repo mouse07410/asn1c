@@ -1,0 +1,4 @@
+RestrictedStringsAlias DEFINITIONS ::= BEGIN
+Base ::= UTF8String
+Alias ::= Base
+END

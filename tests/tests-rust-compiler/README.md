@@ -372,8 +372,8 @@ top-level `IA5String` with BER/CER-only selection. Its wrapper owns private raw
 bytes, exposes a borrowed view, and does not derive infallible `Clone`. BER and
 DER preserve arbitrary content bytes; CER encode and strict CER decode require
 every byte to be at most `0x7f`, including the valid NUL, ESC, and DEL values.
-Other restricted character strings, tags, constraints, aliases, imports,
-fields, and mixed or non-BER/CER selections fail before publication.
+The separate restricted-string stage below uses a generic runtime value while
+leaving this source-compatible IA5 API unchanged.
 
 `Ia5Values.asn1`, `ia5_conformance.rs`, and `c_ia5.c` compare empty content,
 127/128 and 999/1000/1001/2001-byte CER boundaries, constructed BER with OCTET STRING
@@ -383,3 +383,26 @@ mutations, and limits. The vectors also confirm that C and Rust BER/DER retain
 empty byte vector in Rust and re-encodes as primitive `16 00`; C BER also
 decodes it, but its null-buffer representation cannot be passed directly to
 the C CER encoder without first providing valid in-memory storage.
+
+`RestrictedStrings.asn1`, `restricted_strings_conformance.rs`, and
+`c_restricted_strings.c` cover direct untagged unconstrained ObjectDescriptor,
+UTF8String, NumericString, PrintableString, TeletexString/T61String,
+VideotexString, GraphicString, VisibleString/ISO646String, GeneralString,
+UniversalString, and BMPString roots under BER/CER-only selection. T61 and
+Teletex, and ISO646 and Visible, keep separate generated type names even when
+their universal tags and runtime validation are shared. Wrappers own private
+raw bytes without infallible `Clone`; each generated wrapper fixes its runtime
+kind and tag. DER and BER preserve raw content, while CER applies the matching
+C descriptor constraint after reassembly. UTF8 validation follows the C
+descriptor's minimal one- through six-byte form, including its accepted
+surrogates and values above U+10FFFF. BMP and UniversalString CER checks enforce
+two- and four-byte alignment while matching C's acceptance of surrogate and
+out-of-range code units. Character-string content uses universal OCTET STRING
+tag-4 children for constructed BER and CER fragments.
+
+The live vectors cover all tags, empty values, 127/128 and 999/1000/1001-byte
+boundaries, aligned BMP/UniversalString boundaries, UTF8 legacy forms and a
+sequence split across a CER fragment, nested definite/indefinite BER, malformed
+children and EOCs, prefix consumption, repertoire failures, truncation, and
+limits. Aliases, tags, constraints, fields, imports, CHARACTER STRING, and
+mixed or non-BER/CER codec selection fail before output publication.

@@ -1,5 +1,0 @@
-Ia5OtherRestrictedString DEFINITIONS ::= BEGIN
-
-OtherText ::= PrintableString
-
-END
