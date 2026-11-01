@@ -1,4 +1,17 @@
 Changes since v1.5.3:
+	* Correct C CER inline OBJECT IDENTIFIER and RELATIVE-OID member-size
+	  validation for required SEQUENCE/SET fields; retain bounds rejection
+	  and add generated-style canonical vectors.
+	* Extend one natural inline primitive CHOICE child to Rust BER/DER/CER
+	  SET records. DER orders by the selected arm tag, while CER orders by
+	  the minimum declared arm tag. Preserve one logical presence slot,
+	  shared record limits, and fail-closed schema validation.
+	* Compose one direct primitive CHOICE child into Rust BER/DER/CER
+	  SEQUENCE or SET records under BER/CER-only selection. Natural or
+	  EXPLICIT CHOICE is supported in SEQUENCE; SET accepts EXPLICIT CHOICE.
+	  Keep all alternatives in one logical presence slot, share the parent
+	  record budget, and reject ambiguous or unsupported schemas before
+	  publishing output.
 	* Extend Rust BER/DER/CER nested records with one inline SET child in an
 	  untagged SEQUENCE or SET under BER/CER-only selection. Share the parent
 	  operation context, sort child SET fields by effective tag for DER/CER,

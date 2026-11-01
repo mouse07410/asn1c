@@ -226,6 +226,48 @@
       "evidence": "PrimitiveChoice.asn1; choice_conformance.rs; c_primitive_choice.c"
     },
     {
+      "asn1_type": "inline CHOICE in SEQUENCE or SET",
+      "feature": "required or OPTIONAL natural/EXPLICIT CHOICE with unique BOOLEAN, NULL, or bounded INTEGER arms",
+      "codec": "BER/DER and CER only",
+      "variants": [
+        "natural CHOICE uses one logical presence slot in SEQUENCE or top-level SET",
+        "one-tag EXPLICIT CHOICE in SEQUENCE or SET; IMPLICIT CHOICE is rejected",
+        "DER SET order uses the selected arm tag; CER SET order uses the minimum declared arm tag",
+        "exact C DER/CER parity for each arm and optional presence state",
+        "C-compatible empty/multi-octet BOOLEAN BER and high-tag alias normalize under DER; strict CER rejects",
+        "required-choice absence, duplicate natural alternatives, malformed wrapper children, suffixes, and limits",
+        "single- and two-arm inline enums pass strict Clippy in combined and codec-only output",
+        "unsupported codecs, aliases/imports, extensions/nesting, collisions, and invalid forms fail before publication"
+      ],
+      "directions": [
+        "DER and CER encode",
+        "BER prefix decode",
+        "strict CER prefix decode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "InlineChoiceChildren.asn1; inline_choice_conformance.rs; c_inline_choice.c"
+    },
+    {
+      "asn1_type": "natural primitive CHOICE in top-level SET",
+      "feature": "one optional natural CHOICE with unique BOOLEAN, NULL, or bounded i64 INTEGER arms",
+      "codec": "BER/DER and CER only",
+      "variants": [
+        "one logical presence slot; every arm tag is checked against all siblings",
+        "DER ordering uses the selected arm tag and CER ordering uses the minimum arm tag",
+        "exact C DER/CER parity for all alternatives and optional absence",
+        "unordered BER members and a high-tag alias decode; strict CER rejects each",
+        "canonical CER suffix prefix consumption and decoded values",
+        "sibling collisions, malformed input, bounds, and limits are rejected"
+      ],
+      "directions": [
+        "DER and CER encode",
+        "BER prefix decode",
+        "strict CER prefix decode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "NaturalChoiceSet.asn1; natural_choice_set_conformance.rs; c_natural_choice_set.c"
+    },
+    {
       "asn1_type": "BIT STRING, OCTET STRING",
       "feature": "direct untagged unconstrained root values",
       "codec": "BER/DER and CER only",
@@ -817,7 +859,9 @@
       "direct restricted character strings with tags, constraints, aliases, fields, imports, CHARACTER STRING, or non-BER/CER-only codec selection",
       "direct UTCTime with tags, constraints, aliases, fields, imports, or non-BER/CER-only codec selection",
       "direct GeneralizedTime with tags, constraints, aliases, fields, imports, or non-BER/CER-only codec selection",
-      "direct SEQUENCE OF/SET OF with SIZE constraints, root/element tags, aliases, imports, fields, nesting, unsupported element types, disjoint or extended constraints, or non-BER/CER-only codec selection"
+      "direct collections with unsupported SIZE/tags/references/imports/nesting/elements/constraints/codecs",
+      "inline CHOICE with unsupported tagging/arms, collisions, or codecs",
+      "natural top-level SET CHOICE with any sibling tag colliding with one of its arms"
     ],
     "output_safety": [
       "unowned destination preservation",
@@ -831,7 +875,7 @@
     ]
   },
   "observed_counts": {
-    "generated_rust_test_functions": 190,
+    "generated_rust_test_functions": 198,
     "generated_choice_test_functions": 4,
     "live_C_choice_canonical_vectors_each_direction": 5,
     "live_C_choice_BER_alias_vectors": 9,
@@ -873,6 +917,15 @@
     "live_C_collection_decode_vectors_each_direction": 18,
     "live_C_collection_invalid_CER_vectors": 6,
     "live_C_collection_invalid_BER_vectors": 2,
-    "collection_mutation_inputs": 30
+    "collection_mutation_inputs": 30,
+    "generated_inline_choice_test_functions": 5,
+    "live_C_inline_choice_canonical_vectors_each_direction": 11,
+    "live_C_inline_choice_noncanonical_BER_forms": 3,
+    "inline_choice_compile_only_arm_counts": 2,
+    "inline_choice_negative_schema_fixtures": 10,
+    "generated_natural_choice_set_test_functions": 3,
+    "live_C_natural_choice_set_canonical_vectors_each_direction": 4,
+    "live_C_natural_choice_set_noncanonical_BER_forms": 2,
+    "natural_choice_set_collision_fixtures": 1
   }
 }

@@ -1,0 +1,14 @@
+NaturalChoiceSet DEFINITIONS ::= BEGIN
+
+Values ::= SET {
+    choice CHOICE {
+        flag BOOLEAN,
+        nothing NULL,
+        count INTEGER (0..5)
+    } OPTIONAL,
+    octets OCTET STRING (SIZE(1)),
+    marker ENUMERATED { one(1) },
+    after [0] IMPLICIT BOOLEAN
+}
+
+END

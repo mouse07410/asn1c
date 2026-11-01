@@ -255,6 +255,15 @@ Its BER fields may arrive in any order; DER/CER sorts the child fields by
 effective tag independently of any parent SET sort. Empty inline SET children
 remain gated because the unmodified C generator does not compile that schema.
 Both child kinds share the parent record budget and exact nested boundary checks.
+One inline primitive CHOICE child with unique BOOLEAN, NULL, or bounded `i64`
+INTEGER alternatives is supported under BER/CER-only selection. An untagged
+SEQUENCE parent accepts a natural or one context-specific EXPLICIT CHOICE;
+an untagged SET parent accepts natural or one EXPLICIT CHOICE. Required and OPTIONAL
+presence share one logical field slot across all alternatives. BER reads the
+selected primitive with the parent's budget; strict CER compares the canonical
+parent prefix. For a natural CHOICE in SET, DER orders by the selected arm tag
+and CER by the lowest declared arm tag. The writer tracks that ordering key
+separately from the selected wire tag used to detect duplicates.
 One resolved context-specific IMPLICIT tag on a direct flat SEQUENCE or SET
 root is also supported under BER/CER-only selection, with a tag number through
 `0x3fff_ffff`. BER accepts a C-compatible nonminimal high-tag alias; strict

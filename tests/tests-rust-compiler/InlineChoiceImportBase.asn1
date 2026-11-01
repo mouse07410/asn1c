@@ -1,0 +1,3 @@
+InlineChoiceImportBase DEFINITIONS ::= BEGIN
+Alias ::= CHOICE { flag BOOLEAN, count INTEGER (0..5) }
+END

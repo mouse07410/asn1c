@@ -1,0 +1,4 @@
+InlineChoiceAlias DEFINITIONS ::= BEGIN
+Alias ::= CHOICE { flag BOOLEAN, count INTEGER (0..5) }
+Bad ::= SEQUENCE { choice Alias }
+END

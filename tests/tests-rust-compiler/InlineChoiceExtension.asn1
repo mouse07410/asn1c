@@ -1,0 +1,5 @@
+InlineChoiceExtension DEFINITIONS ::= BEGIN
+Bad ::= SEQUENCE {
+    choice CHOICE { flag BOOLEAN, ..., count INTEGER (0..5) }
+}
+END

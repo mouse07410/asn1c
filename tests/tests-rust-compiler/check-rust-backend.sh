@@ -3644,4 +3644,232 @@ if ! "$test_tmp/c-of-collections"; then
     exit 1
 fi
 
+# Inline primitive CHOICE fields keep one logical presence slot and one context.
+inline_choice_rust="$test_tmp/inline-choice-rust"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$inline_choice_rust" "$test_srcdir/InlineChoiceChildren.asn1"
+mkdir "$inline_choice_rust/tests"
+cp "$test_srcdir/inline_choice_conformance.rs" "$inline_choice_rust/tests/"
+if ! (cd "$inline_choice_rust" && \
+    CARGO_TARGET_DIR="$test_tmp/target-inline-choice" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-inline-choice" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/inline-choice-rust.log" 2>&1; then
+    cat "$test_tmp/inline-choice-rust.log"
+    echo "FAIL: inline CHOICE generated vectors or strict Clippy"
+    exit 1
+fi
+
+# Every selector-only shape is compiled with the same strict lint groups.
+for codec in BER CER; do
+    inline_choice_codec="$test_tmp/inline-choice-$codec-only"
+    if [ "$codec" = BER ]; then
+        unwanted='encode_cer|decode_cer'
+        "$asn1c_bin" --rust -gen-BER -no-gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$inline_choice_codec" "$test_srcdir/InlineChoiceChildren.asn1"
+    else
+        unwanted='encode_der|decode_ber'
+        "$asn1c_bin" --rust -no-gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$inline_choice_codec" "$test_srcdir/InlineChoiceChildren.asn1"
+    fi
+    if ! (cd "$inline_choice_codec" && \
+        cargo check --offline --manifest-path Cargo.toml && \
+        cargo clippy --offline --all-targets --all-features -- \
+        -W clippy::pedantic -W clippy::nursery -D warnings) \
+        >"$test_tmp/inline-choice-$codec-only.log" 2>&1; then
+        cat "$test_tmp/inline-choice-$codec-only.log"
+        echo "FAIL: inline CHOICE $codec-only strict Clippy"
+        exit 1
+    fi
+    if grep -E "pub fn ($unwanted)" \
+        "$inline_choice_codec/src/inline_choice_children.rs" >/dev/null; then
+        echo "FAIL: inline CHOICE $codec-only crate has unselected methods"
+        exit 1
+    fi
+done
+
+# One- and two-arm inline enums compile warning-free in every selected mode.
+for fixture in InlineChoiceBooleanOnly InlineChoicePair InlineChoiceNaturalSet; do
+    for codec in combined BER CER; do
+        inline_choice_small="$test_tmp/$fixture-$codec"
+        case "$codec" in
+            combined)
+                "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+                    -D "$inline_choice_small" "$test_srcdir/$fixture.asn1"
+                ;;
+            BER)
+                "$asn1c_bin" --rust -gen-BER -no-gen-CER -no-gen-UPER -S "$skeletons" \
+                    -D "$inline_choice_small" "$test_srcdir/$fixture.asn1"
+                ;;
+            CER)
+                "$asn1c_bin" --rust -no-gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+                    -D "$inline_choice_small" "$test_srcdir/$fixture.asn1"
+                ;;
+        esac
+        if ! (cd "$inline_choice_small" && \
+            cargo clippy --offline --all-targets --all-features -- \
+            -W clippy::pedantic -W clippy::nursery -D warnings) \
+            >"$test_tmp/$fixture-$codec.log" 2>&1; then
+            cat "$test_tmp/$fixture-$codec.log"
+            echo "FAIL: $fixture $codec strict Clippy"
+            exit 1
+        fi
+    done
+done
+
+# Unsupported child layouts must fail before a destination crate appears.
+for fixture in InlineChoiceAlias InlineChoiceExplicitCollision InlineChoiceExtension \
+    InlineChoiceImplicit InlineChoiceMultiple InlineChoiceNameCollision \
+    InlineChoiceNaturalCollision InlineChoiceNested; do
+    inline_choice_rejected="$test_tmp/rejected-$fixture"
+    if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$inline_choice_rejected" "$test_srcdir/$fixture.asn1" \
+        >"$test_tmp/$fixture.log" 2>&1; then
+        echo "FAIL: inline CHOICE gate accepted unsupported $fixture"
+        exit 1
+    fi
+    test ! -e "$inline_choice_rejected"
+done
+natural_choice_rejected="$test_tmp/rejected-NaturalChoiceSetCollision"
+if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$natural_choice_rejected" "$test_srcdir/NaturalChoiceSetCollision.asn1" \
+    >"$test_tmp/NaturalChoiceSetCollision.log" 2>&1; then
+    echo "FAIL: natural SET CHOICE gate accepted a sibling tag collision"
+    exit 1
+fi
+test ! -e "$natural_choice_rejected"
+inline_choice_rejected="$test_tmp/rejected-InlineChoiceImport"
+if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$inline_choice_rejected" "$test_srcdir/InlineChoiceImportBase.asn1" \
+    "$test_srcdir/InlineChoiceImport.asn1" >"$test_tmp/InlineChoiceImport.log" 2>&1; then
+    echo "FAIL: inline CHOICE gate accepted an imported alias"
+    exit 1
+fi
+test ! -e "$inline_choice_rejected"
+for selection in mixed uper; do
+    inline_choice_rejected="$test_tmp/rejected-inline-choice-codecs-$selection"
+    if [ "$selection" = mixed ]; then
+        if "$asn1c_bin" --rust -gen-BER -gen-UPER -gen-CER -S "$skeletons" \
+            -D "$inline_choice_rejected" "$test_srcdir/InlineChoiceChildren.asn1" \
+            >"$test_tmp/inline-choice-codecs-$selection.log" 2>&1; then
+            echo "FAIL: inline CHOICE accepted mixed codecs"
+            exit 1
+        fi
+    else
+        if "$asn1c_bin" --rust -gen-UPER -no-gen-BER -no-gen-CER -S "$skeletons" \
+            -D "$inline_choice_rejected" "$test_srcdir/InlineChoiceChildren.asn1" \
+            >"$test_tmp/inline-choice-codecs-$selection.log" 2>&1; then
+            echo "FAIL: inline CHOICE accepted UPER-only selection"
+            exit 1
+        fi
+    fi
+    test ! -e "$inline_choice_rejected"
+done
+
+# The independent C descriptor checks exact bytes and semantic values.
+inline_choice_c="$test_tmp/inline-choice-c"
+mkdir "$inline_choice_c"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$inline_choice_c" "$test_srcdir/InlineChoiceChildren.asn1" \
+    >"$test_tmp/inline-choice-c-generate.log" 2>&1
+inline_choice_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$inline_choice_c/Makefile.am.libasncodec")
+rm -f "$inline_choice_c/converter-example.c" "$inline_choice_c/pdu_collection.c"
+if ! cc $inline_choice_cflags -I"$inline_choice_c" "$inline_choice_c"/*.c \
+    "$test_srcdir/c_inline_choice.c" -lm -o "$test_tmp/c-inline-choice" \
+    >"$test_tmp/inline-choice-c-compile.log" 2>&1; then
+    cat "$test_tmp/inline-choice-c-compile.log"
+    echo "FAIL: inline CHOICE C differential fixture did not compile"
+    exit 1
+fi
+if ! "$test_tmp/c-inline-choice"; then
+    echo "FAIL: C inline CHOICE BER/DER/CER vectors failed"
+    exit 1
+fi
+
+# Natural SET CHOICE derives separate DER selected-tag and CER minimum-tag orders.
+natural_choice_rust="$test_tmp/natural-choice-set-rust"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$natural_choice_rust" "$test_srcdir/NaturalChoiceSet.asn1"
+mkdir "$natural_choice_rust/tests"
+cp "$test_srcdir/natural_choice_set_conformance.rs" "$natural_choice_rust/tests/"
+if ! (cd "$natural_choice_rust" && \
+    CARGO_TARGET_DIR="$test_tmp/target-natural-choice-set" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-natural-choice-set" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/natural-choice-set-rust.log" 2>&1; then
+    cat "$test_tmp/natural-choice-set-rust.log"
+    echo "FAIL: natural SET CHOICE vectors or strict Clippy"
+    exit 1
+fi
+
+# Codec-only SET CHOICE output must retain only methods selected for that crate.
+for codec in BER CER; do
+    natural_choice_codec="$test_tmp/natural-choice-set-$codec"
+    if [ "$codec" = BER ]; then
+        "$asn1c_bin" --rust -gen-BER -no-gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$natural_choice_codec" "$test_srcdir/NaturalChoiceSet.asn1"
+    else
+        "$asn1c_bin" --rust -no-gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$natural_choice_codec" "$test_srcdir/NaturalChoiceSet.asn1"
+    fi
+    if ! (cd "$natural_choice_codec" && \
+        cargo clippy --offline --all-targets --all-features -- \
+        -W clippy::pedantic -W clippy::nursery -D warnings) \
+        >"$test_tmp/natural-choice-set-$codec.log" 2>&1; then
+        cat "$test_tmp/natural-choice-set-$codec.log"
+        echo "FAIL: natural SET CHOICE $codec-only strict Clippy"
+        exit 1
+    fi
+done
+
+# Natural SET CHOICE rejects unselected codec families before publication.
+for selection in mixed uper; do
+    natural_choice_rejected="$test_tmp/rejected-natural-choice-set-$selection"
+    if [ "$selection" = mixed ]; then
+        if "$asn1c_bin" --rust -gen-BER -gen-CER -gen-UPER -S "$skeletons" \
+            -D "$natural_choice_rejected" "$test_srcdir/NaturalChoiceSet.asn1" \
+            >"$test_tmp/natural-choice-set-$selection.log" 2>&1; then
+            echo "FAIL: natural SET CHOICE accepted mixed codecs"
+            exit 1
+        fi
+    else
+        if "$asn1c_bin" --rust -gen-UPER -no-gen-BER -no-gen-CER -S "$skeletons" \
+            -D "$natural_choice_rejected" "$test_srcdir/NaturalChoiceSet.asn1" \
+            >"$test_tmp/natural-choice-set-$selection.log" 2>&1; then
+            echo "FAIL: natural SET CHOICE accepted UPER-only selection"
+            exit 1
+        fi
+    fi
+    test ! -e "$natural_choice_rejected"
+done
+
+natural_choice_c="$test_tmp/natural-choice-set-c"
+mkdir "$natural_choice_c"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$natural_choice_c" "$test_srcdir/NaturalChoiceSet.asn1" \
+    >"$test_tmp/natural-choice-set-c-generate.log" 2>&1
+natural_choice_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$natural_choice_c/Makefile.am.libasncodec")
+rm -f "$natural_choice_c/converter-example.c" "$natural_choice_c/pdu_collection.c"
+if ! cc $natural_choice_cflags -I"$natural_choice_c" "$natural_choice_c"/*.c \
+    "$test_srcdir/c_natural_choice_set.c" -lm -o "$test_tmp/c-natural-choice-set" \
+    >"$test_tmp/natural-choice-set-c-compile.log" 2>&1; then
+    cat "$test_tmp/natural-choice-set-c-compile.log"
+    echo "FAIL: natural SET CHOICE C differential fixture did not compile"
+    exit 1
+fi
+if ! "$test_tmp/c-natural-choice-set"; then
+    echo "FAIL: C natural SET CHOICE BER/DER/CER vectors failed"
+    exit 1
+fi
+
 echo "PASS: generated Rust UPER/CER/BER-DER primitive slice"

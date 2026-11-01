@@ -114,6 +114,16 @@ static int rust_check_ber_cer_choice_member_shape(asn1p_module_t *, asn1p_expr_t
 static int rust_check_ber_cer_choice_member_kind(asn1p_module_t *, asn1p_expr_t *, unsigned *);
 static int rust_check_ber_cer_choice_integer(asn1p_module_t *, asn1p_expr_t *);
 static int rust_check_ber_cer_choice_name(asn1p_module_t *, asn1p_expr_t *, asn1p_expr_t *);
+static int rust_check_inline_ber_cer_choice(asn1p_module_t *, asn1p_expr_t *,
+                                           asn1p_expr_t *, int, uint64_t);
+static int rust_inline_choice_shape_valid(asn1p_module_t *, asn1p_expr_t *);
+static int rust_inline_choice_tagging_valid(asn1p_module_t *, asn1p_expr_t *);
+static int rust_inline_choice_metadata_valid(asn1p_module_t *, asn1p_expr_t *);
+static int rust_inline_choice_members_valid(asn1p_module_t *, asn1p_expr_t *);
+static int rust_inline_choice_is_unique(asn1p_module_t *, asn1p_expr_t *,
+                                        asn1p_expr_t *);
+static int rust_check_inline_choice_collisions(asn1p_module_t *, asn1p_expr_t *,
+                                               asn1p_expr_t *, int);
 static int rust_check_sequence_tree(asn1p_module_t *, asn1p_expr_t *,
                                    asn1p_expr_t **, size_t, size_t *, size_t *, uint64_t);
 static int rust_check_module_nested_names(asn1p_module_t *);
@@ -123,8 +133,12 @@ static int rust_check_sequence_member(asn1p_module_t *, asn1p_expr_t *);
 static int rust_sequence_member_shape_valid(const asn1p_expr_t *);
 static int rust_ber_cer_member_tag(const asn1p_expr_t *, int *, uint32_t *);
 static int rust_ber_cer_member_explicit(const asn1p_expr_t *);
+static int rust_ber_cer_choice_has_tag(asn1p_expr_t *, uint32_t);
+static uint32_t rust_ber_cer_choice_min_tag(asn1p_expr_t *);
+static uint32_t rust_ber_cer_choice_arm_tag(asn1p_expr_t *);
 static int rust_ber_cer_has_tagged_members(asn1p_expr_t *);
 static int rust_ber_cer_has_nested_record(asn1p_expr_t *);
+static asn1p_expr_t *rust_ber_cer_choice_member(asn1p_expr_t *, size_t *);
 static int rust_ber_cer_has_empty_nested_record(asn1p_expr_t *);
 static int rust_ber_cer_tag_compare(const asn1p_expr_t *, const asn1p_expr_t *);
 static int rust_ber_cer_duplicate_tag(asn1p_expr_t *, asn1p_expr_t *);
@@ -136,6 +150,28 @@ static int rust_check_ber_cer_nested_record(asn1p_module_t *, asn1p_expr_t *,
 static int rust_ber_cer_nested_record_shape_valid(asn1p_expr_t *);
 static int rust_ber_cer_sort_set_fields(asn1p_expr_t *, asn1p_expr_t **,
                                         size_t, size_t *);
+static int rust_ber_cer_sort_set_fields_for_choice(asn1p_expr_t *, asn1p_expr_t *,
+                                                    uint32_t, asn1p_expr_t **,
+                                                    size_t, size_t *);
+static int rust_ber_cer_set_choice_tag_compare(asn1p_expr_t *, asn1p_expr_t *,
+                                                asn1p_expr_t *, uint32_t, int *);
+static int rust_ber_cer_set_order_equal(asn1p_expr_t **, size_t,
+                                        asn1p_expr_t **, size_t);
+static int rust_write_set_ber_cer_choice_order(FILE *, const char *, asn1p_expr_t *);
+static int rust_write_set_ber_cer_choice_der_group(
+    FILE *, const char *, asn1p_expr_t *, const char *, int, size_t,
+    asn1p_expr_t **, asn1p_expr_t **, size_t *, unsigned char *, size_t);
+static int rust_write_set_ber_cer_choice_der_arms(FILE *, const char *,
+                                                   asn1p_expr_t *,
+                                                   const char *, int);
+static int rust_write_set_ber_cer_choice_variant_order(FILE *, const char *,
+                                                        asn1p_expr_t *, uint32_t,
+                                                        const char *);
+static int rust_write_set_ber_cer_encode_fields(
+    FILE *, const char *, asn1p_expr_t *, asn1p_expr_t **, size_t,
+    asn1p_expr_t *);
+static int rust_write_set_ber_cer_dispatch_choice(FILE *, asn1p_expr_t *,
+                                                   const char *);
 static const char *rust_ber_cer_field_kind(const asn1p_expr_t *);
 static const char *rust_ber_cer_tag_class(int);
 static int rust_format_tag_number(char *, size_t, uint32_t);
@@ -218,18 +254,22 @@ static int rust_write_sequence(FILE *, const char *, asn1p_expr_t *, int, uint64
 static int rust_write_sequence_ber_cer(FILE *, const char *, asn1p_expr_t *, int,
                                        uint64_t);
 static int rust_write_set_ber_cer(FILE *, const char *, asn1p_expr_t *, int, uint64_t);
-static int rust_write_set_ber_cer_decode_method(FILE *, asn1p_expr_t *, int);
+static int rust_write_set_ber_cer_decode_method(FILE *, const char *, asn1p_expr_t *, int);
 static int rust_write_set_ber_cer_decode_helper(FILE *, const char *, asn1p_expr_t *);
 static int rust_write_set(FILE *, const char *, asn1p_expr_t *, int, uint64_t);
-static int rust_write_ber_cer_choice(FILE *, const char *, asn1p_expr_t *, uint64_t);
+static int rust_write_ber_cer_choice(FILE *, const char *, asn1p_expr_t *, uint64_t, int);
 static int rust_write_choice_value_conversions(FILE *, asn1p_expr_t *);
+static int rust_write_inline_choice_descriptor(FILE *, const char *, asn1p_expr_t *);
 static int rust_write_choice_descriptors(FILE *, asn1p_expr_t *);
 static int rust_write_choice_to_runtime(FILE *, asn1p_expr_t *);
 static int rust_write_choice_from_runtime(FILE *, asn1p_expr_t *);
 static int rust_write_choice_absent_arm(FILE *, const asn1p_expr_t *const [3]);
 static int rust_write_sequence_ber_cer_encode_field(FILE *, const char *, asn1p_expr_t *);
 static int rust_write_sequence_ber_cer_decode_field(FILE *, const char *, asn1p_expr_t *, int);
-static int rust_write_sequence_ber_cer_decode_method(FILE *, asn1p_expr_t *, int);
+static int rust_write_sequence_ber_cer_choice_field(FILE *, const char *, asn1p_expr_t *,
+                                                    int);
+static int rust_write_inline_choice_tag_condition(FILE *, asn1p_expr_t *, int);
+static int rust_write_sequence_ber_cer_decode_method(FILE *, const char *, asn1p_expr_t *, int);
 static int rust_write_sequence_ber_cer_decode_fields(FILE *, const char *, asn1p_expr_t *);
 static int rust_write_nested_ber_cer_fields(FILE *, asn1p_expr_t *, const char *, int);
 static int rust_write_nested_ber_cer_decode_value(FILE *, const char *, asn1p_expr_t *,
@@ -1484,7 +1524,13 @@ rust_check_set_ber_cer(asn1p_module_t *module, asn1p_expr_t *expr,
                             "tagged BER/CER SET roots require direct primitive fields");
             return -1;
         }
-        if((member->expr_type == ASN_CONSTR_SEQUENCE || member->expr_type == ASN_CONSTR_SET)
+        if(tagged_root && member->expr_type == ASN_CONSTR_CHOICE) {
+            rust_diagnostic(module, member,
+                            "tagged BER/CER SET roots require direct primitive fields");
+            return -1;
+        }
+        if((member->expr_type == ASN_CONSTR_SEQUENCE || member->expr_type == ASN_CONSTR_SET
+            || member->expr_type == ASN_CONSTR_CHOICE)
            && ++nodes > RUST_BER_CER_NODE_LIMIT) {
             rust_diagnostic(module, member, "BER/CER SET nesting exceeds the supported depth");
             return -1;
@@ -1538,7 +1584,13 @@ rust_check_sequence_ber_cer(asn1p_module_t *module, asn1p_expr_t *expr,
                             "tagged BER/CER SEQUENCE roots require direct primitive fields");
             return -1;
         }
-        if((member->expr_type == ASN_CONSTR_SEQUENCE || member->expr_type == ASN_CONSTR_SET)
+        if(tagged_root && member->expr_type == ASN_CONSTR_CHOICE) {
+            rust_diagnostic(module, member,
+                            "tagged BER/CER SEQUENCE roots require direct primitive fields");
+            return -1;
+        }
+        if((member->expr_type == ASN_CONSTR_SEQUENCE || member->expr_type == ASN_CONSTR_SET
+            || member->expr_type == ASN_CONSTR_CHOICE)
            && ++nodes > RUST_BER_CER_NODE_LIMIT) {
             rust_diagnostic(module, member,
                             "BER/CER SEQUENCE nesting exceeds the supported depth");
@@ -1583,6 +1635,18 @@ static int
 rust_check_ber_cer_member(asn1p_module_t *module, asn1p_expr_t *expr,
                           asn1p_expr_t *member, int set, size_t *work,
                           uint64_t codecs) {
+    if(member->expr_type == ASN_CONSTR_CHOICE) {
+        if((set && rust_check_sequence_name(module, expr, member))
+           || rust_check_inline_ber_cer_choice(module, expr, member, set, codecs))
+            return -1;
+        if(member->tag.tag_class == TC_CONTEXT_SPECIFIC
+           && rust_ber_cer_duplicate_tag(expr, member)) {
+            rust_diagnostic(module, member,
+                            "BER/CER record fields must have unique effective tags");
+            return -1;
+        }
+        return 0;
+    }
     if(!rust_ber_cer_member_shape_valid(member)
        || (set && rust_check_sequence_name(module, expr, member))) {
         rust_diagnostic(module, member,
@@ -1717,6 +1781,15 @@ rust_ber_cer_member_tag(const asn1p_expr_t *member, int *class_out,
                         uint32_t *number_out) {
     uint64_t universal;
     if(!member || !class_out || !number_out) return -1;
+    if(member->expr_type == ASN_CONSTR_CHOICE) {
+        if(member->tag.tag_class != TC_CONTEXT_SPECIFIC
+           || member->tag.tag_mode != TM_EXPLICIT || member->tag.tag_value < 0
+           || member->tag.tag_value
+              > (asn1c_integer_t)UINT32_C(0x3fffffff)) return -1;
+        *class_out = TC_CONTEXT_SPECIFIC;
+        *number_out = (uint32_t)member->tag.tag_value;
+        return 0;
+    }
     universal = rust_sequence_ber_cer_tag(member);
     if(!universal) return -1;
     if(member->tag.tag_class == TC_NOCLASS) {
@@ -1748,6 +1821,61 @@ rust_ber_cer_member_explicit(const asn1p_expr_t *member) {
 }
 
 /*
+ * Purpose: test whether a natural CHOICE contains one universal tag number.
+ * Input: choice is validated; number is a supported intrinsic universal tag.
+ * Returns one on a match, zero otherwise. Errors: none.
+ * Source: intrinsic BOOLEAN/NULL/INTEGER tag mapping. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: logical CHOICE collisions.
+ * Example: a natural BOOLEAN/NULL CHOICE contains tag 5.
+ */
+static int
+rust_ber_cer_choice_has_tag(asn1p_expr_t *choice, uint32_t number) {
+    asn1p_expr_t *alternative;
+    TQ_FOR(alternative, &choice->members, next) {
+        if(rust_ber_cer_choice_arm_tag(alternative) == number) return 1;
+    }
+    return 0;
+}
+
+/*
+ * Map a prevalidated primitive CHOICE arm to its intrinsic universal tag.
+ * Inputs: alternative is BOOLEAN, NULL, or bounded INTEGER after gate checks.
+ * Returns its tag number. Errors: unsupported kinds return zero.
+ * Source: X.680 primitive assignments. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: natural CHOICE SET ordering.
+ * Example: INTEGER maps to universal tag 2.
+ */
+static uint32_t
+rust_ber_cer_choice_arm_tag(asn1p_expr_t *alternative) {
+    if(!alternative) return 0;
+    if(alternative->expr_type == ASN_BASIC_BOOLEAN) return 1;
+    if(alternative->expr_type == ASN_BASIC_NULL) return 5;
+    if(alternative->expr_type == ASN_BASIC_INTEGER) return 2;
+    return 0;
+}
+
+/*
+ * Return the minimum intrinsic tag number among validated CHOICE arms.
+ * Inputs: choice contains one through three supported alternatives.
+ * Returns the minimum tag, or zero if no valid arm is present.
+ * Errors: none; schema validation owns malformed alternatives.
+ * Source: X.690 CER SET ordering key. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: natural CHOICE in SET.
+ * Example: BOOLEAN/NULL/INTEGER has CER order key 1.
+ */
+static uint32_t
+rust_ber_cer_choice_min_tag(asn1p_expr_t *choice) {
+    asn1p_expr_t *alternative;
+    uint32_t minimum = UINT32_MAX;
+    if(!choice) return 0;
+    TQ_FOR(alternative, &choice->members, next) {
+        uint32_t number = rust_ber_cer_choice_arm_tag(alternative);
+        if(number && number < minimum) minimum = number;
+    }
+    return minimum == UINT32_MAX ? 0 : minimum;
+}
+
+/*
  * Report whether a checked record contains any context-specific field tag.
  * Parameters: expr owns the direct fields. Returns one for tagged fields and
  * zero otherwise. Source: resolved ASN.1 member tags. Version/date: 2026-11-01.
@@ -1774,9 +1902,33 @@ rust_ber_cer_has_nested_record(asn1p_expr_t *expr) {
     asn1p_expr_t *member;
     if(!expr) return 0;
     TQ_FOR(member, &expr->members, next) {
-        if(member->expr_type == ASN_CONSTR_SEQUENCE || member->expr_type == ASN_CONSTR_SET) return 1;
+        if(member->expr_type == ASN_CONSTR_SEQUENCE || member->expr_type == ASN_CONSTR_SET
+           || member->expr_type == ASN_CONSTR_CHOICE) return 1;
     }
     return 0;
+}
+
+/*
+ * Purpose: locate the one validated inline CHOICE and its logical field index.
+ * Input: expr owns a record; index receives declaration position when present.
+ * Returns the CHOICE member or NULL. Errors: none; preflight limits count to one.
+ * Source: fixed record tree. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: inline CHOICE generation.
+ * Example: locate an OPTIONAL CHOICE at logical index one.
+ */
+static asn1p_expr_t *
+rust_ber_cer_choice_member(asn1p_expr_t *expr, size_t *index) {
+    asn1p_expr_t *member;
+    size_t current = 0;
+    if(!expr) return NULL;
+    TQ_FOR(member, &expr->members, next) {
+        if(member->expr_type == ASN_CONSTR_CHOICE) {
+            if(index) *index = current;
+            return member;
+        }
+        current++;
+    }
+    return NULL;
 }
 
 /*
@@ -1832,6 +1984,12 @@ rust_ber_cer_duplicate_tag(asn1p_expr_t *expr, asn1p_expr_t *member) {
         int prior_class;
         uint32_t prior_number;
         if(prior == member) break;
+        if(prior->expr_type == ASN_CONSTR_CHOICE
+           && prior->tag.tag_class == TC_NOCLASS) {
+            if(member_class == TC_UNIVERSAL
+               && rust_ber_cer_choice_has_tag(prior, member_number)) return 1;
+            continue;
+        }
         if(rust_ber_cer_member_tag(prior, &prior_class, &prior_number)) return 1;
         if(member_class == prior_class && member_number == prior_number) return 1;
     }
@@ -1944,6 +2102,7 @@ rust_write_ber_cer_tag_locals(FILE *stream, asn1p_expr_t *expr) {
         char local[48];
         char formatted_number[16];
         const char *class_name;
+        if(member->expr_type == ASN_CONSTR_CHOICE) continue;
         if(rust_ber_cer_member_tag(member, &class_code, &number)) return -1;
         if(class_code != TC_CONTEXT_SPECIFIC) continue;
         class_name = rust_ber_cer_tag_class(class_code);
@@ -1974,6 +2133,7 @@ rust_write_ber_cer_reader_tag_locals(FILE *stream, asn1p_expr_t *expr) {
         char local[48];
         char formatted_number[16];
         const char *class_name;
+        if(member->expr_type == ASN_CONSTR_CHOICE) continue;
         if(rust_ber_cer_member_tag(member, &class_code, &number)
            || rust_ber_cer_tag_local(member, local, sizeof(local))
            || rust_format_tag_number(formatted_number, sizeof(formatted_number), number))
@@ -2022,7 +2182,11 @@ static int
 rust_write_ber_cer_field_descriptors(FILE *stream, asn1p_expr_t *expr,
                                      const char *indent) {
     asn1p_expr_t *member;
-    if(expr->members.tq_head && fprintf(stream,
+    int has_descriptor = 0;
+    TQ_FOR(member, &expr->members, next) {
+        if(member->expr_type != ASN_CONSTR_CHOICE) has_descriptor = 1;
+    }
+    if(has_descriptor && fprintf(stream,
         "%suse ::asn1c_runtime::ber::{FieldKind, RecordField};\n", indent) < 0)
         return -1;
     TQ_FOR(member, &expr->members, next) {
@@ -2031,6 +2195,7 @@ rust_write_ber_cer_field_descriptors(FILE *stream, asn1p_expr_t *expr,
         char local[48];
         char formatted_number[16];
         const char *class_name;
+        if(member->expr_type == ASN_CONSTR_CHOICE) continue;
         if(rust_ber_cer_member_tag(member, &class_code, &number)) return -1;
         class_name = rust_ber_cer_tag_class(class_code);
         if(!class_name || rust_format_tag_number(formatted_number,
@@ -2043,6 +2208,7 @@ rust_write_ber_cer_field_descriptors(FILE *stream, asn1p_expr_t *expr,
     }
     if(fprintf(stream, "%slet __asn1c_expected_fields = [\n", indent) < 0) return -1;
     TQ_FOR(member, &expr->members, next) {
+        if(member->expr_type == ASN_CONSTR_CHOICE) continue;
         const char *kind = rust_ber_cer_field_kind(member);
         const char *constructor = rust_ber_cer_member_explicit(member)
                                 ? "new_explicit" : "new";
@@ -2392,6 +2558,182 @@ rust_check_ber_cer_choice_name(asn1p_module_t *module, asn1p_expr_t *expr,
 }
 
 /*
+ * Purpose: validate one inline primitive CHOICE field under a record.
+ * Inputs: module/parent/choice identify source; set selects the parent kind;
+ * codecs is the selected mask. Returns zero or -1 with a located diagnostic.
+ * Errors: unsupported wrappers, arms, codecs, and sibling collisions reject.
+ * Source: approved one-inline-CHOICE gate. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: inline primitive CHOICE.
+ * Example: an OPTIONAL natural CHOICE in a SET passes absent tag collisions.
+ */
+static int
+rust_check_inline_ber_cer_choice(asn1p_module_t *module, asn1p_expr_t *parent,
+                                 asn1p_expr_t *choice, int set, uint64_t codecs) {
+    const uint64_t supported = RUST_CODEC_BER | RUST_CODEC_CER;
+    if(codecs & ~supported) {
+        rust_diagnostic(module, choice,
+                        "inline CHOICE children require BER/CER-only selection");
+        return -1;
+    }
+    if(rust_inline_choice_shape_valid(module, choice)
+       || rust_inline_choice_is_unique(module, parent, choice)
+       || rust_inline_choice_members_valid(module, choice)) return -1;
+    if(choice->tag.tag_class == TC_NOCLASS
+       && rust_check_inline_choice_collisions(module, parent, choice, set))
+        return -1;
+    return 0;
+}
+
+/*
+ * Purpose: validate inline CHOICE root metadata and one supported tagging form.
+ * Inputs: module/choice identify the fixed AST node under validation.
+ * Returns zero or -1 with a source-located diagnostic. Errors: tags, aliases,
+ * constraints, extensions, and defaults are rejected. Source: fixed ASN.1 AST.
+ * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
+ * History: inline primitive CHOICE. Example: explicit SET CHOICE passes.
+ */
+static int
+rust_inline_choice_shape_valid(asn1p_module_t *module, asn1p_expr_t *choice) {
+    return rust_inline_choice_tagging_valid(module, choice)
+        || rust_inline_choice_metadata_valid(module, choice) ? -1 : 0;
+}
+
+/*
+ * Purpose: validate natural or context-specific EXPLICIT CHOICE tagging.
+ * Inputs: module/choice identify source; parent-kind policy is checked later.
+ * Returns zero or -1 with a diagnostic. Errors: IMPLICIT/classes/range reject.
+ * Source: approved inline CHOICE tagging modes. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: inline CHOICE gate.
+ * Example: natural tagging is valid in a top-level SET.
+ */
+static int
+rust_inline_choice_tagging_valid(asn1p_module_t *module, asn1p_expr_t *choice) {
+    int natural = choice->tag.tag_class == TC_NOCLASS
+               && choice->tag.tag_mode == TM_DEFAULT;
+    int explicit_tag = choice->tag.tag_class == TC_CONTEXT_SPECIFIC
+                    && choice->tag.tag_mode == TM_EXPLICIT
+                    && choice->tag.tag_value >= 0
+                    && choice->tag.tag_value
+                       <= (asn1c_integer_t)UINT32_C(0x3fffffff);
+    if(natural || explicit_tag) return 0;
+    rust_diagnostic(module, choice,
+                    "inline CHOICE needs natural tagging or one context-specific "
+                    "EXPLICIT tag in SET/SEQUENCE");
+    return -1;
+}
+
+/*
+ * Purpose: reject aliases, constraints, extensions, and unsupported markers.
+ * Inputs: module/choice identify the inline source node. Returns zero or -1.
+ * Errors: references and malformed/fixed-tree metadata fail closed.
+ * Source: approved inline CHOICE root shape. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: inline CHOICE gate.
+ * Example: an unconstrained inline CHOICE with OPTIONAL presence is valid.
+ */
+static int
+rust_inline_choice_metadata_valid(asn1p_module_t *module, asn1p_expr_t *choice) {
+    if(choice->expr_type == ASN_CONSTR_CHOICE && !choice->reference
+       && !choice->constraints && !choice->combined_constraints && !choice->lhs_params
+       && !choice->rhs_pspecs && !choice->ioc_table && !choice->with_syntax
+       && !choice->unique && !choice->marker.default_value
+       && (choice->marker.flags == EM_NOMARK
+           || choice->marker.flags == EM_OPTIONAL)
+       && choice->encoding_control.encoding_type == EC_NONE) return 0;
+    rust_diagnostic(module, choice,
+                    "inline CHOICE cannot be an alias, constrained, extended, or defaulted");
+    return -1;
+}
+
+/*
+ * Purpose: ensure a parent has exactly one inline CHOICE logical field.
+ * Inputs: module/parent/choice identify the record and selected child.
+ * Returns zero when unique or -1 with a diagnostic. Errors: second CHOICE fails.
+ * Source: logical parent presence model. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: inline CHOICE gate.
+ * Example: one natural CHOICE is accepted among ordinary sibling fields.
+ */
+static int
+rust_inline_choice_is_unique(asn1p_module_t *module, asn1p_expr_t *parent,
+                              asn1p_expr_t *choice) {
+    asn1p_expr_t *sibling;
+    TQ_FOR(sibling, &parent->members, next) {
+        if(sibling != choice && sibling->expr_type == ASN_CONSTR_CHOICE) {
+            rust_diagnostic(module, sibling,
+                            "a record may contain only one inline CHOICE child");
+            return -1;
+        }
+    }
+    return 0;
+}
+
+/*
+ * Purpose: validate each inline CHOICE arm and its generated Rust variant name.
+ * Inputs: module/choice identify the source subtree. Returns zero or -1.
+ * Errors: empty, excess, duplicate-tag, malformed, or colliding arms reject.
+ * Source: approved primitive CHOICE arm set. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: inline CHOICE gate.
+ * Example: BOOLEAN and bounded INTEGER alternatives pass.
+ */
+static int
+rust_inline_choice_members_valid(asn1p_module_t *module, asn1p_expr_t *choice) {
+    asn1p_expr_t *item;
+    size_t count = 0;
+    unsigned tags_seen = 0;
+    TQ_FOR(item, &choice->members, next) {
+        unsigned tag_bit;
+        if(++count > 3
+           || rust_check_ber_cer_choice_member(module, item, &tag_bit)
+           || rust_check_ber_cer_choice_name(module, choice, item)) return -1;
+        if(tags_seen & tag_bit) {
+            rust_diagnostic(module, item,
+                            "inline CHOICE alternatives have duplicate intrinsic tags");
+            return -1;
+        }
+        tags_seen |= tag_bit;
+    }
+    if(count) return 0;
+    rust_diagnostic(module, choice, "inline CHOICE needs at least one primitive alternative");
+    return -1;
+}
+
+/*
+ * Purpose: reject multiple CHOICE children and natural-arm tag collisions.
+ * Inputs: module/parent/choice identify the record and field; set is parent kind.
+ * Returns zero or -1 with a source diagnostic. Errors: ambiguous tags reject.
+ * Source: logical CHOICE field presence and X.690 component tags.
+ * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
+ * History: inline CHOICE field gate. Example: BOOLEAN arm versus BOOLEAN sibling.
+ */
+static int
+rust_check_inline_choice_collisions(asn1p_module_t *module, asn1p_expr_t *parent,
+                                    asn1p_expr_t *choice, int set) {
+    asn1p_expr_t *sibling;
+    (void)set;
+    TQ_FOR(sibling, &parent->members, next) {
+        int sibling_class;
+        uint32_t sibling_number;
+        if(sibling == choice) continue;
+        if(sibling->expr_type == ASN_CONSTR_CHOICE) {
+            rust_diagnostic(module, sibling,
+                            "a record may contain only one inline CHOICE child");
+            return -1;
+        }
+        if(rust_ber_cer_member_tag(sibling, &sibling_class, &sibling_number)) {
+            rust_diagnostic(module, sibling,
+                            "inline CHOICE sibling has no supported effective tag");
+            return -1;
+        }
+        if(sibling_class == TC_UNIVERSAL
+           && rust_ber_cer_choice_has_tag(choice, sibling_number)) {
+            rust_diagnostic(module, sibling,
+                            "natural CHOICE arm collides with a sibling effective tag");
+            return -1;
+        }
+    }
+    return 0;
+}
+
+/*
  * Check nested type names across every assignment in one generated module.
  * Parameters: module owns all assignments. Returns zero or -1 with a
  * diagnostic. Original source: Rust name-collision preflight. Version/date:
@@ -2441,6 +2783,7 @@ rust_collect_nested_names(asn1p_module_t *module, asn1p_expr_t *sequence,
         size_t i;
         int collision = 0;
         if(member->expr_type != ASN_CONSTR_SEQUENCE && member->expr_type != ASN_CONSTR_SET
+           && member->expr_type != ASN_CONSTR_CHOICE
            && member->expr_type != ASN_BASIC_ENUMERATED) continue;
         name = rust_nested_type_name(parent, member);
         if(!name) {
@@ -2527,6 +2870,13 @@ rust_check_sequence_tree_member(asn1p_module_t *module, asn1p_expr_t *parent,
         return -1;
     }
     if(rust_check_sequence_name(module, parent, member)) return -1;
+    if(member->expr_type == ASN_CONSTR_CHOICE) {
+        if(++*nodes > RUST_SEQUENCE_NODE_LIMIT) {
+            rust_diagnostic(module, member, "nested record node limit exceeded");
+            return -1;
+        }
+        return rust_check_inline_ber_cer_choice(module, parent, member, 0, codecs);
+    }
     if(member->expr_type == ASN_CONSTR_SET) {
         if(!(codecs & (RUST_CODEC_BER | RUST_CODEC_CER))
            || (codecs & (RUST_CODEC_UPER | RUST_CODEC_CBOR))) {
@@ -4127,7 +4477,7 @@ rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
     } else if(expr->expr_type == ASN_CONSTR_CHOICE) {
         ret = codecs == RUST_CODEC_CBOR
             ? rust_write_cbor_choice(stream, name, expr)
-            : rust_write_ber_cer_choice(stream, name, expr, codecs);
+            : rust_write_ber_cer_choice(stream, name, expr, codecs, 1);
     } else if(expr->expr_type == ASN_TYPE_ANY) {
         ret = rust_write_any(stream, name, codecs);
     } else if(expr->expr_type == ASN_BASIC_BOOLEAN) {
@@ -4546,7 +4896,7 @@ rust_write_sequence_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr
             "            ::asn1c_runtime::ber::RecordEncoding::Der, &mut context)\n"
             "    }\n\n",
             rust_ber_cer_has_nested_record(expr) ? "new_nested" : "new") < 0) return -1;
-        if(rust_write_sequence_ber_cer_decode_method(stream, expr, 0)) return -1;
+        if(rust_write_sequence_ber_cer_decode_method(stream, parent, expr, 0)) return -1;
     }
     if(codecs & RUST_CODEC_CER) {
         if(rust_write_method_doc(stream, "Encode this SEQUENCE using CER.",
@@ -4562,7 +4912,7 @@ rust_write_sequence_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr
             "            ::asn1c_runtime::ber::RecordEncoding::Cer, &mut context)\n"
             "    }\n\n",
             rust_ber_cer_has_nested_record(expr) ? "new_nested" : "new") < 0) return -1;
-        if(rust_write_sequence_ber_cer_decode_method(stream, expr, 1)) return -1;
+        if(rust_write_sequence_ber_cer_decode_method(stream, parent, expr, 1)) return -1;
     }
     return 0;
 }
@@ -4643,6 +4993,303 @@ rust_ber_cer_sort_set_fields(asn1p_expr_t *expr, asn1p_expr_t **sorted,
 }
 
 /*
+ * Sort SET fields using one natural CHOICE's rule-specific order key.
+ * Inputs: expr is validated, choice is its natural CHOICE, and choice_tag is
+ * the selected DER arm tag or CER minimum tag. Returns zero or -1.
+ * Errors: unknown sibling tags or insufficient capacity fail closed.
+ * Source: X.690 SET ordering. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: natural CHOICE in SET.
+ * Example: selected tag 5 places universal tag 4 before the CHOICE.
+ */
+static int
+rust_ber_cer_sort_set_fields_for_choice(asn1p_expr_t *expr,
+                                        asn1p_expr_t *choice,
+                                        uint32_t choice_tag,
+                                        asn1p_expr_t **sorted,
+                                        size_t capacity,
+                                        size_t *count_out) {
+    asn1p_expr_t *member;
+    size_t count = 0;
+    TQ_FOR(member, &expr->members, next) {
+        size_t position = count;
+        int tag_class;
+        uint32_t tag_number;
+        if(count >= capacity) return -1;
+        if(member == choice) {
+            if(!choice_tag) return -1;
+        } else if(rust_ber_cer_member_tag(member, &tag_class, &tag_number)) {
+            return -1;
+        }
+        while(position > 0) {
+            int comparison_valid;
+            int comparison = rust_ber_cer_set_choice_tag_compare(
+                sorted[position - 1], member, choice, choice_tag,
+                &comparison_valid);
+            if(!comparison_valid) return -1;
+            if(comparison <= 0) break;
+            sorted[position] = sorted[position - 1];
+            position--;
+        }
+        sorted[position] = member;
+        count++;
+    }
+    *count_out = count;
+    return 0;
+}
+
+/*
+ * Compare fields with a synthetic universal tag for one natural CHOICE.
+ * Inputs: left/right are checked fields; choice/choice_tag define its key.
+ * Returns comparison and stores validity through valid_out; invalid tags fail.
+ * Source: DER selected-tag and CER minimum-tag rules. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: natural CHOICE SET emitter.
+ * Example: compare a natural CHOICE tag 5 with OCTET STRING tag 4.
+ */
+static int
+rust_ber_cer_set_choice_tag_compare(asn1p_expr_t *left,
+                                    asn1p_expr_t *right,
+                                    asn1p_expr_t *choice,
+                                    uint32_t choice_tag,
+                                    int *valid_out) {
+    int left_class, right_class;
+    uint32_t left_number, right_number;
+    if(!valid_out) return 0;
+    *valid_out = 0;
+    if(left == choice) {
+        left_class = TC_UNIVERSAL;
+        left_number = choice_tag;
+    } else if(rust_ber_cer_member_tag(left, &left_class, &left_number)) {
+        return 0;
+    }
+    if(right == choice) {
+        right_class = TC_UNIVERSAL;
+        right_number = choice_tag;
+    } else if(rust_ber_cer_member_tag(right, &right_class, &right_number)) {
+        return 0;
+    }
+    *valid_out = 1;
+    if(left_class != right_class) return left_class < right_class ? -1 : 1;
+    if(left_number == right_number) return 0;
+    return left_number < right_number ? -1 : 1;
+}
+
+/*
+ * Compare two compile-time SET emission orders by member identity.
+ * Inputs: arrays contain the sorted members and their lengths. Returns one
+ * when both orders match, zero otherwise. Errors: none.
+ * Source: fixed schema field sorting. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: selected CHOICE DER order.
+ * Example: two selected tags before the same siblings share one match arm.
+ */
+static int
+rust_ber_cer_set_order_equal(asn1p_expr_t **left, size_t left_count,
+                             asn1p_expr_t **right, size_t right_count) {
+    size_t index;
+    if(left_count != right_count) return 0;
+    for(index = 0; index < left_count; index++) {
+        if(left[index] != right[index]) return 0;
+    }
+    return 1;
+}
+
+/*
+ * Emit one branch's SET writes using the supplied natural-CHOICE ordering key.
+ * Inputs: stream/parent/expr identify generated output; choice_tag is its key;
+ * pattern is an optional match arm. Returns zero or -1.
+ * Errors: allocation, sorting, and output failures abort generation.
+ * Source: selected DER tag or minimum CER alternative tag. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: natural CHOICE SET order.
+ * Example: emit fields with the selected NULL tag as the CHOICE's key.
+ */
+static int
+rust_write_set_ber_cer_choice_variant_order(FILE *stream, const char *parent,
+                                             asn1p_expr_t *expr,
+                                             uint32_t choice_tag,
+                                             const char *pattern) {
+    asn1p_expr_t *choice = rust_ber_cer_choice_member(expr, NULL);
+    asn1p_expr_t *sorted[RUST_BER_CER_FIELD_LIMIT];
+    size_t count;
+    size_t index;
+    if(!choice || rust_ber_cer_sort_set_fields_for_choice(expr, choice, choice_tag,
+        sorted, sizeof(sorted) / sizeof(sorted[0]), &count)) return -1;
+    if(pattern && fprintf(stream, "                    %s => {\n", pattern) < 0) return -1;
+    for(index = 0; index < count; index++) {
+        if(rust_write_sequence_ber_cer_encode_field(stream, parent, sorted[index]))
+            return -1;
+    }
+    if(pattern && fputs("                    }\n", stream) == EOF) return -1;
+    return 0;
+}
+
+/*
+ * Emit one DER match arm for alternatives whose SET sort order is identical.
+ * Parameters: stream/parent/expr identify output; choice_type names the enum;
+ * optional controls Option wrapping; alternative_count bounds alternatives;
+ * alternatives names arms; orders contains flattened sorted-field rows;
+ * order_counts gives row lengths; emitted tracks completed arms; index selects
+ * the group. Returns zero or -1. Errors: formatting or output failure.
+ * Source: DER orders by selected alternative tag. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: natural CHOICE in SET.
+ * Example: selected BOOLEAN and INTEGER may share one precomputed field order.
+ */
+static int
+rust_write_set_ber_cer_choice_der_group(FILE *stream, const char *parent,
+                                        asn1p_expr_t *expr,
+                                        const char *choice_type, int optional,
+                                        size_t alternative_count,
+                                        asn1p_expr_t **alternatives,
+                                        asn1p_expr_t **orders,
+                                        size_t *order_counts,
+                                        unsigned char *emitted, size_t index) {
+    char variants[1536] = {0};
+    char pattern[2048];
+    size_t variants_length = 0;
+    size_t other;
+    int written;
+    if(emitted[index]) return 0;
+    for(other = index; other < alternative_count; other++) {
+        char *variant;
+        char item_pattern[512];
+        const char *suffix;
+        if(emitted[other] || !rust_ber_cer_set_order_equal(
+            &orders[index * RUST_BER_CER_FIELD_LIMIT], order_counts[index],
+            &orders[other * RUST_BER_CER_FIELD_LIMIT], order_counts[other]))
+            continue;
+        variant = rust_enum_variant(alternatives[other]->Identifier);
+        if(!variant) return -1;
+        suffix = alternatives[other]->expr_type == ASN_BASIC_NULL ? "" : "(_)";
+        written = snprintf(item_pattern, sizeof(item_pattern), "%s::%s%s",
+            choice_type, variant, suffix);
+        if(written >= 0 && (size_t)written < sizeof(item_pattern)) {
+            int appended = snprintf(variants + variants_length,
+                sizeof(variants) - variants_length, "%s%s",
+                variants_length ? " | " : "", item_pattern);
+            if(appended < 0
+               || (size_t)appended >= sizeof(variants) - variants_length)
+                written = -1;
+            else variants_length += (size_t)appended;
+        }
+        free(variant);
+        if(written < 0 || (size_t)written >= sizeof(item_pattern)) return -1;
+        emitted[other] = 1;
+    }
+    if(optional && index == 0)
+        written = snprintf(pattern, sizeof(pattern), "None | Some(%s)", variants);
+    else if(optional)
+        written = snprintf(pattern, sizeof(pattern), "Some(%s)", variants);
+    else
+        written = snprintf(pattern, sizeof(pattern), "%s", variants);
+    if(written < 0 || (size_t)written >= sizeof(pattern)) return -1;
+    return rust_write_set_ber_cer_choice_variant_order(stream, parent, expr,
+        rust_ber_cer_choice_arm_tag(alternatives[index]), pattern);
+}
+
+/*
+ * Emit all DER selected-tag groups for a natural CHOICE in SET.
+ * Inputs: alternatives and flattened order rows are validated; emitted tracks
+ * groups already written. Returns zero or -1. Errors: formatting/sort failure.
+ * Source: X.690 DER SET order. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: natural CHOICE SET.
+ * Example: group arms whose selected tag yields the same sibling order.
+ */
+static int
+rust_write_set_ber_cer_choice_der_arms(FILE *stream, const char *parent,
+                                       asn1p_expr_t *expr,
+                                       const char *choice_type, int optional) {
+    asn1p_expr_t *choice = rust_ber_cer_choice_member(expr, NULL);
+    asn1p_expr_t *alternatives[3] = {0};
+    asn1p_expr_t *orders[3 * RUST_BER_CER_FIELD_LIMIT];
+    size_t order_counts[3] = {0};
+    size_t alternative_count = 0;
+    unsigned char emitted[3] = {0};
+    asn1p_expr_t *alternative;
+    size_t index;
+    if(!choice || !choice_type) return -1;
+    TQ_FOR(alternative, &choice->members, next) {
+        if(alternative_count >= 3) return -1;
+        alternatives[alternative_count] = alternative;
+        if(rust_ber_cer_sort_set_fields_for_choice(expr, choice,
+            rust_ber_cer_choice_arm_tag(alternative),
+            &orders[alternative_count * RUST_BER_CER_FIELD_LIMIT],
+            RUST_BER_CER_FIELD_LIMIT, &order_counts[alternative_count])) return -1;
+        alternative_count++;
+    }
+    for(index = 0; index < alternative_count; index++) {
+        if(rust_write_set_ber_cer_choice_der_group(stream, parent, expr,
+            choice_type, optional, alternative_count, alternatives, orders,
+            order_counts, emitted, index)) return -1;
+    }
+    return 0;
+}
+
+/*
+ * Emit a SET's fields under natural CHOICE-specific or ordinary tag sorting.
+ * Inputs: sorted/count come from validated fields; choice may be natural.
+ * Returns zero or -1. Errors: invalid choice order or source write failure.
+ * Source: DER/CER SET ordering. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: selected CHOICE SET orders.
+ * Example: emit DER's selected-arm order and CER's minimum-arm order.
+ */
+static int
+rust_write_set_ber_cer_encode_fields(FILE *stream, const char *parent,
+                                     asn1p_expr_t *expr,
+                                     asn1p_expr_t **sorted, size_t count,
+                                     asn1p_expr_t *choice) {
+    size_t index;
+    if(choice && choice->tag.tag_class == TC_NOCLASS)
+        return rust_write_set_ber_cer_choice_order(stream, parent, expr);
+    for(index = 0; index < count; index++) {
+        if(rust_write_sequence_ber_cer_encode_field(stream, parent, sorted[index]))
+            return -1;
+    }
+    return 0;
+}
+
+/*
+ * Emit DER's selected-arm order and CER's minimum-arm order for a SET.
+ * Inputs: stream receives Rust; parent/expr identify a validated SET with one
+ * natural CHOICE. Returns zero or -1. Errors: invalid names/tags or output fail.
+ * Source: X.690 SET ordering keys. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: natural CHOICE in SET.
+ * Example: NULL sorts after OCTET STRING in DER but before it in CER.
+ */
+static int
+rust_write_set_ber_cer_choice_order(FILE *stream, const char *parent,
+                                    asn1p_expr_t *expr) {
+    asn1p_expr_t *choice = rust_ber_cer_choice_member(expr, NULL);
+    char *field_name;
+    char *choice_type;
+    uint32_t minimum;
+    int optional;
+    int result = -1;
+    if(!choice || !(field_name = rust_identifier(choice->Identifier, 1))) return -1;
+    choice_type = rust_nested_type_name(parent, choice);
+    minimum = rust_ber_cer_choice_min_tag(choice);
+    optional = choice->marker.flags == EM_OPTIONAL;
+    if(!choice_type || !minimum
+       || fprintf(stream,
+           "        match rule {\n"
+           "            ::asn1c_runtime::ber::RecordEncoding::Der => {\n"
+           "                match &self.%s {\n", field_name) < 0) goto cleanup;
+    if(rust_write_set_ber_cer_choice_der_arms(stream, parent, expr, choice_type,
+                                               optional)) goto cleanup;
+    if(fputs(
+        "                }\n"
+        "            }\n"
+        "            ::asn1c_runtime::ber::RecordEncoding::Cer => {\n", stream) == EOF
+       || rust_write_set_ber_cer_choice_variant_order(stream, parent, expr,
+                                                       minimum, NULL)
+       || fputs(
+        "            }\n"
+        "        }\n", stream) == EOF) goto cleanup;
+    result = 0;
+cleanup:
+    free(choice_type);
+    free(field_name);
+    return result;
+}
+
+/*
  * Emit DER/CER methods for a validated direct-field SET.
  * Parameters: stream receives Rust; parent names inline enums; expr owns
  * unique-tag fields; codecs selects BER/DER and/or CER. Returns zero or -1.
@@ -4655,12 +5302,13 @@ static int
 rust_write_set_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr,
                        int top_level, uint64_t codecs) {
     asn1p_expr_t *sorted[6];
+    asn1p_expr_t *choice;
     size_t count;
-    size_t i;
     asn1p_expr_t *member;
     int has_members = expr->members.tq_head != 0;
     int tagged_root = expr->tag.tag_class == TC_CONTEXT_SPECIFIC
                    && expr->tag.tag_mode == TM_IMPLICIT;
+    choice = rust_ber_cer_choice_member(expr, NULL);
     const char *context_constructor = rust_ber_cer_has_nested_record(expr)
                                     ? "new_nested" : "new";
     if(rust_ber_cer_sort_set_fields(expr, sorted,
@@ -4686,10 +5334,8 @@ rust_write_set_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr,
         has_members ? "mut " : "") < 0) return -1;
     if(rust_write_ber_cer_tag_locals(stream, expr)) return -1;
     if(!has_members && fputs("        let _ = self;\n", stream) == EOF) return -1;
-    for(i = 0; i < count; i++) {
-        if(rust_write_sequence_ber_cer_encode_field(stream, parent, sorted[i]))
-            return -1;
-    }
+    if(rust_write_set_ber_cer_encode_fields(stream, parent, expr, sorted, count,
+                                             choice)) return -1;
     if(tagged_root) {
         if(fprintf(stream,
             "        writer.finish_tagged_root("
@@ -4713,7 +5359,7 @@ rust_write_set_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr,
             "        self.encode_record_with_rule(\n"
             "            ::asn1c_runtime::ber::RecordEncoding::Der, &mut context)\n"
             "    }\n\n", context_constructor) < 0) return -1;
-        if(rust_write_set_ber_cer_decode_method(stream, expr, 0)) return -1;
+        if(rust_write_set_ber_cer_decode_method(stream, parent, expr, 0)) return -1;
     }
     if(codecs & RUST_CODEC_CER) {
         if(rust_write_method_doc(stream, "Encode this SET using CER.",
@@ -4728,7 +5374,7 @@ rust_write_set_ber_cer(FILE *stream, const char *parent, asn1p_expr_t *expr,
             "        self.encode_record_with_rule(\n"
             "            ::asn1c_runtime::ber::RecordEncoding::Cer, &mut context)\n"
             "    }\n\n", context_constructor) < 0) return -1;
-        if(rust_write_set_ber_cer_decode_method(stream, expr, 1)) return -1;
+        if(rust_write_set_ber_cer_decode_method(stream, parent, expr, 1)) return -1;
     }
     return 0;
 }
@@ -4747,6 +5393,7 @@ rust_write_set_ber_cer_decode_helper(FILE *stream, const char *parent,
     char *name = rust_identifier(member->Identifier, 1);
     char *nested_type = member->expr_type == ASN_BASIC_ENUMERATED
         || member->expr_type == ASN_CONSTR_SEQUENCE || member->expr_type == ASN_CONSTR_SET
+        || member->expr_type == ASN_CONSTR_CHOICE
         ? rust_nested_type_name(parent, member) : NULL;
     const char *type = member->expr_type == ASN_BASIC_BOOLEAN ? "bool"
         : member->expr_type == ASN_BASIC_NULL ? "()"
@@ -4789,12 +5436,22 @@ rust_write_set_ber_cer_decode_helper(FILE *stream, const char *parent,
  * Example: build a descriptor-backed reader for context-specific fields.
  */
 static int
-rust_write_set_ber_cer_reader(FILE *stream, asn1p_expr_t *expr, int tagged,
-                              int tagged_root) {
+rust_write_set_ber_cer_reader(FILE *stream, const char *parent,
+                              asn1p_expr_t *expr, int tagged, int tagged_root) {
     asn1p_expr_t *member;
+    size_t choice_index = 0;
+    asn1p_expr_t *choice = rust_ber_cer_choice_member(expr, &choice_index);
     if(tagged) {
         if(rust_write_ber_cer_field_descriptors(stream, expr, "            ")) return -1;
-        if(tagged_root) {
+        if(choice) {
+            if(fputs("            let __asn1c_choice = ", stream) == EOF
+               || rust_write_inline_choice_descriptor(stream, parent, choice)
+               || fprintf(stream, ";\n"
+                   "            let mut reader = ::asn1c_runtime::ber::SetReader::"
+                   "new_tagged_with_choice(\n"
+                   "                input, &__asn1c_expected_fields, __asn1c_choice, %zu, "
+                   "&mut context)?;\n", choice_index) < 0) return -1;
+        } else if(tagged_root) {
             if(fprintf(stream,
                 "            let mut reader = ::asn1c_runtime::ber::SetReader::"
                 "new_tagged_root(\n"
@@ -4887,6 +5544,50 @@ rust_write_set_ber_cer_dispatch_arm(FILE *stream, asn1p_expr_t *member, int tagg
 }
 
 /*
+ * Emit one SET dispatch arm for every intrinsic tag of a natural CHOICE.
+ * Inputs: stream receives Rust; choice and reader_arg identify the checked field.
+ * Returns zero or -1. Errors: identifier allocation or output failures abort.
+ * Source: logical CHOICE field dispatch. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: natural CHOICE in SET.
+ * Example: BOOLEAN, NULL, and INTEGER tags all assign the same CHOICE slot.
+ */
+static int
+rust_write_set_ber_cer_dispatch_choice(FILE *stream, asn1p_expr_t *choice,
+                                       const char *reader_arg) {
+    asn1p_expr_t *alternative;
+    char *name = rust_identifier(choice->Identifier, 1);
+    int first = 1;
+    if(!name) return -1;
+    if(fputs(
+        "                    (\n"
+        "                        ::asn1c_runtime::ber::TagClass::Universal,\n"
+        "                        ", stream) == EOF) {
+        free(name);
+        return -1;
+    }
+    TQ_FOR(alternative, &choice->members, next) {
+        uint32_t number = rust_ber_cer_choice_arm_tag(alternative);
+        if(fprintf(stream, "%s%u", first ? "" : " | ", number) < 0) {
+            free(name);
+            return -1;
+        }
+        first = 0;
+    }
+    if(fprintf(stream,
+        ",\n"
+        "                    ) => {\n"
+        "                        __asn1c_%s = Some(\n"
+        "                            Self::__asn1c_decode_set_field_%s(\n"
+        "                                %s)?);\n"
+        "                    }\n", name, name, reader_arg) < 0) {
+        free(name);
+        return -1;
+    }
+    free(name);
+    return 0;
+}
+
+/*
  * Emit the loop that dispatches arbitrary BER SET component order.
  * Parameters: stream receives Rust; expr owns fields; tagged selects Tag API.
  * Returns zero or -1. Source: X.690 SET ordering rules. Version/date: 2026-11-01.
@@ -4910,7 +5611,14 @@ rust_write_set_ber_cer_dispatch(FILE *stream, asn1p_expr_t *expr, int tagged,
         tagged ? "next_tagged_field" : "next_field",
         tagged ? "(__asn1c_tag.class(), __asn1c_tag.number())" : "__asn1c_tag") < 0) return -1;
     TQ_FOR(member, &expr->members, next) {
-        if(rust_write_set_ber_cer_dispatch_arm(stream, member, tagged, reader_arg)) return -1;
+        int natural_choice = member->expr_type == ASN_CONSTR_CHOICE
+                          && member->tag.tag_class == TC_NOCLASS;
+        if(natural_choice) {
+            if(rust_write_set_ber_cer_dispatch_choice(stream, member, reader_arg))
+                return -1;
+        } else if(rust_write_set_ber_cer_dispatch_arm(stream, member, tagged, reader_arg)) {
+            return -1;
+        }
     }
     return fputs(
         "                    _ => {\n"
@@ -5003,11 +5711,13 @@ rust_write_set_ber_cer_decode_fields(FILE *stream, asn1p_expr_t *expr) {
  * Example: decode_cer rejects a reordered SET even when BER accepts it.
  */
 static int
-rust_write_set_ber_cer_decode_method(FILE *stream, asn1p_expr_t *expr, int cer) {
+rust_write_set_ber_cer_decode_method(FILE *stream, const char *parent,
+                                     asn1p_expr_t *expr, int cer) {
     const char *suffix = cer ? "cer" : "ber";
     int tagged_root = expr->tag.tag_class == TC_CONTEXT_SPECIFIC
                    && expr->tag.tag_mode == TM_IMPLICIT;
-    int tagged = tagged_root || rust_ber_cer_has_tagged_members(expr);
+    int tagged = tagged_root || rust_ber_cer_has_tagged_members(expr)
+              || rust_ber_cer_choice_member(expr, NULL) != NULL;
     const char *context_constructor = rust_ber_cer_has_nested_record(expr)
                                     ? "new_nested" : "new";
     if(rust_write_method_doc(stream, cer
@@ -5024,7 +5734,7 @@ rust_write_set_ber_cer_decode_method(FILE *stream, asn1p_expr_t *expr, int cer) 
         "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, ::asn1c_runtime::Error> {\n"
         "        let mut context = ::asn1c_runtime::ber::RecordContext::%s(limits);\n"
         "        let (value, consumed) = {\n", suffix, context_constructor) < 0) return -1;
-    if(rust_write_set_ber_cer_reader(stream, expr, tagged, tagged_root)
+    if(rust_write_set_ber_cer_reader(stream, parent, expr, tagged, tagged_root)
        || rust_write_set_ber_cer_decode_slots(stream, expr)
        || rust_write_set_ber_cer_dispatch(stream, expr, tagged, "&mut reader")
        || fputs("            let consumed = reader.finish()?;\n", stream) == EOF
@@ -5063,6 +5773,12 @@ rust_write_set(FILE *stream, const char *name, asn1p_expr_t *expr,
                 ? rust_write_all_sequences(stream, nested_name, member, 0, codecs)
                 : rust_write_set(stream, nested_name, member, 0, codecs);
             free(nested_name);
+            if(ret) return -1;
+        } else if(member->expr_type == ASN_CONSTR_CHOICE) {
+            char *choice_name = rust_nested_type_name(name, member);
+            int ret = choice_name
+                ? rust_write_ber_cer_choice(stream, choice_name, member, codecs, 0) : -1;
+            free(choice_name);
             if(ret) return -1;
         } else if(member->expr_type == ASN_BASIC_ENUMERATED) {
             char *enum_name = rust_nested_type_name(name, member);
@@ -5326,6 +6042,13 @@ rust_write_sequence_ber_cer_encode_value(FILE *stream, const char *parent,
         tag_argument = tag_local;
     }
     switch(member->expr_type) {
+    case ASN_CONSTR_CHOICE: {
+        int ret = fputs("writer.write_choice(\n            ", stream) == EOF ? -1 : 0;
+        if(ret >= 0) ret = rust_write_inline_choice_descriptor(stream, parent, member);
+        if(ret >= 0) ret = fprintf(stream,
+            ",\n            (%s).runtime_value())?;\n", value);
+        return ret < 0 ? -1 : 0;
+    }
     case ASN_CONSTR_SEQUENCE: {
         char *nested_type = rust_nested_type_name(parent, member);
         const char *constructor = explicit_tag ? "new_explicit" : "new";
@@ -5418,6 +6141,8 @@ rust_write_sequence_ber_cer_encode_optional(FILE *stream, const char *parent,
         strcpy(value, "value");
     else if(member->expr_type == ASN_CONSTR_SEQUENCE || member->expr_type == ASN_CONSTR_SET)
         strcpy(value, "value");
+    else if(member->expr_type == ASN_CONSTR_CHOICE)
+        strcpy(value, "*value");
     else
         strcpy(value, "*value");
     ret = rust_write_sequence_ber_cer_encode_value(stream, parent, member, value);
@@ -5511,9 +6236,11 @@ rust_write_sequence_ber_cer_encode_field(FILE *stream, const char *parent,
  * Example: decode_ber accepts one prefix and reports consumed bytes.
  */
 static int
-rust_write_sequence_ber_cer_decode_method(FILE *stream, asn1p_expr_t *expr,
-                                          int cer) {
+rust_write_sequence_ber_cer_decode_method(FILE *stream, const char *parent,
+                                          asn1p_expr_t *expr, int cer) {
     const char *suffix = cer ? "cer" : "ber";
+    size_t choice_index = 0;
+    asn1p_expr_t *choice = rust_ber_cer_choice_member(expr, &choice_index);
     const char *context_constructor = rust_ber_cer_has_nested_record(expr)
                                     ? "new_nested" : "new";
     int tagged_root = expr->tag.tag_class == TC_CONTEXT_SPECIFIC
@@ -5533,7 +6260,19 @@ rust_write_sequence_ber_cer_decode_method(FILE *stream, asn1p_expr_t *expr,
         "        let mut context = ::asn1c_runtime::ber::RecordContext::%s(limits);\n"
         "        let (value, consumed) = {\n", suffix, context_constructor) < 0) return -1;
     if(rust_write_ber_cer_field_descriptors(stream, expr, "            ")) return -1;
-    if(tagged_root) {
+    if(choice) {
+        if(fputs("            let __asn1c_choice = ", stream) == EOF
+           || rust_write_inline_choice_descriptor(stream, parent, choice)
+           || fprintf(stream, ";\n"
+               "            let mut reader = ::asn1c_runtime::ber::SequenceReader::"
+               "new_tagged_with_choice(\n"
+               "                input, &__asn1c_expected_fields, __asn1c_choice, %zu, "
+               "&mut context)?;\n"
+               "            let value = Self::decode_record_fields(&mut reader)?;\n"
+               "            let consumed = reader.finish()?;\n"
+               "            (value, consumed)\n"
+               "        };\n", choice_index) < 0) return -1;
+    } else if(tagged_root) {
         if(fprintf(stream,
             "            let mut reader = ::asn1c_runtime::ber::SequenceReader::"
             "new_tagged_root(\n"
@@ -5598,8 +6337,10 @@ rust_write_sequence_ber_cer_decode_fields(FILE *stream, const char *parent,
                 "        let value = Self {\n",
                expr->members.tq_head ? "mut " : "") < 0) return -1;
     TQ_FOR(member, &expr->members, next) {
-        if(rust_write_sequence_ber_cer_decode_field(stream, parent, member, 1))
-            return -1;
+        int ret = member->expr_type == ASN_CONSTR_CHOICE
+            ? rust_write_sequence_ber_cer_choice_field(stream, parent, member, 1)
+            : rust_write_sequence_ber_cer_decode_field(stream, parent, member, 1);
+        if(ret) return -1;
     }
     if(fputs(
         "        };\n"
@@ -5694,6 +6435,19 @@ static int
 rust_write_sequence_ber_cer_decode_value(FILE *stream, const char *parent,
                                          asn1p_expr_t *member, const char *indent) {
     switch(member->expr_type) {
+    case ASN_CONSTR_CHOICE: {
+        asn1p_expr_t *alternative;
+        char *nested_type = rust_nested_type_name(parent, member);
+        size_t count = 0;
+        int ret;
+        TQ_FOR(alternative, &member->members, next) count++;
+        if(!nested_type) return -1;
+        ret = fprintf(stream, "%slet value = %s::from_runtime_value(\n"
+            "%s    reader.read_choice()?)%s;\n", indent, nested_type, indent,
+            count == 3 ? "" : "?");
+        free(nested_type);
+        return ret < 0 ? -1 : 0;
+    }
     case ASN_CONSTR_SEQUENCE:
     case ASN_CONSTR_SET:
         return rust_write_nested_ber_cer_decode_value(stream, parent, member, indent);
@@ -5829,6 +6583,89 @@ rust_write_sequence_ber_cer_decode_field(FILE *stream, const char *parent,
             ? fputs("                },\n", stream)
             : fputs("                    value\n                },\n", stream);
     }
+    return ret < 0 ? -1 : 0;
+}
+
+/*
+ * Purpose: emit a tag predicate for a natural or EXPLICIT CHOICE field.
+ * Input: stream receives Rust; member is the validated CHOICE field.
+ * Returns zero or -1. Errors: invalid fixed tags and output failures abort.
+ * Source: intrinsic arm tags and the resolved EXPLICIT wrapper tag.
+ * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
+ * History: inline CHOICE sequence dispatch. Example: match universal tag 5.
+ */
+static int
+rust_write_inline_choice_tag_condition(FILE *stream, asn1p_expr_t *member, int mismatch) {
+    asn1p_expr_t *alternative;
+    int first = 1;
+    if(member->tag.tag_class == TC_CONTEXT_SPECIFIC) {
+        char number[16];
+        if(rust_format_tag_number(number, sizeof(number),
+                                  (uint32_t)member->tag.tag_value)) return -1;
+        return fprintf(stream,
+            "__asn1c_next_tag %s Some(::asn1c_runtime::ber::Tag::context_specific(%s))",
+            mismatch ? "!=" : "==", number) < 0 ? -1 : 0;
+    }
+    TQ_FOR(alternative, &member->members, next) {
+        uint32_t number = alternative->expr_type == ASN_BASIC_BOOLEAN ? 1
+                        : alternative->expr_type == ASN_BASIC_NULL ? 5 : 2;
+        if(fprintf(stream, "%s__asn1c_next_tag %s Some("
+                    "::asn1c_runtime::ber::Tag::universal(%u))",
+                   first ? "" : mismatch ? " && " : " || ",
+                   mismatch ? "!=" : "==", number) < 0) return -1;
+        first = 0;
+    }
+    return first ? -1 : 0;
+}
+
+/*
+ * Purpose: emit one required or OPTIONAL CHOICE field in a SEQUENCE decoder.
+ * Inputs: stream/parent/member identify output and the validated field.
+ * Returns zero or -1. Errors: allocation and output failures abort generation.
+ * Source: logical CHOICE presence over intrinsic X.690 alternative tags.
+ * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
+ * History: inline CHOICE. Example: a selected arm consumes one logical slot.
+ */
+static int
+rust_write_sequence_ber_cer_choice_field(FILE *stream, const char *parent,
+                                         asn1p_expr_t *member, int tagged) {
+    char *name = rust_identifier(member->Identifier, 1);
+    char *nested_type = rust_nested_type_name(parent, member);
+    asn1p_expr_t *alternative;
+    size_t count = 0;
+    int optional = member->marker.flags == EM_OPTIONAL;
+    int ret;
+    (void)tagged;
+    TQ_FOR(alternative, &member->members, next) count++;
+    if(!name || !nested_type) {
+        free(name);
+        free(nested_type);
+        return -1;
+    }
+    ret = fprintf(stream, "                %s: ", name);
+    if(ret >= 0 && optional) {
+        ret = fputs("if ", stream) == EOF ? -1 : 0;
+        if(ret >= 0) ret = rust_write_inline_choice_tag_condition(stream, member, 0);
+        if(ret >= 0) ret = fputs(" {\n", stream) == EOF ? -1 : 0;
+    }
+    if(ret >= 0 && !optional) ret = fputs(" {\n"
+        "                    if ", stream) == EOF ? -1 : 0;
+    if(ret >= 0 && !optional)
+        ret = rust_write_inline_choice_tag_condition(stream, member, 1);
+    if(ret >= 0 && !optional) ret = fputs(" {\n"
+        "                        return Err(::asn1c_runtime::Error::InvalidEncoding {\n"
+        "                            reason: \"missing required SEQUENCE CHOICE\",\n"
+        "                        });\n                    }\n", stream) == EOF ? -1 : 0;
+    if(ret >= 0) ret = fprintf(stream,
+        "                    let value = %s::from_runtime_value(\n"
+        "                        reader.read_choice()?)%s;\n"
+        "                    __asn1c_next_tag = reader.next_tagged_field()?;\n",
+        nested_type, count == 3 ? "" : "?");
+    if(ret >= 0) ret = optional
+        ? fputs("                    Some(value)\n                } else { None },\n", stream)
+        : fputs("                    value\n                },\n", stream);
+    free(name);
+    free(nested_type);
     return ret < 0 ? -1 : 0;
 }
 
@@ -6228,6 +7065,38 @@ rust_write_choice_value_conversions(FILE *stream, asn1p_expr_t *expr) {
 }
 
 /*
+ * Purpose: emit a validated natural or EXPLICIT runtime CHOICE descriptor.
+ * Inputs: stream receives Rust; parent and member identify the nested enum.
+ * Returns zero or -1. Errors: invalid names/tags and output failures abort.
+ * Source: shared-context runtime ChoiceField API. Version/date: 2026-11-01.
+ * Responsible party: asn1c maintainers. History: inline CHOICE support.
+ * Example: ChoiceField::explicit(tag, &Child::choice_alternatives()).
+ */
+static int
+rust_write_inline_choice_descriptor(FILE *stream, const char *parent,
+                                    asn1p_expr_t *member) {
+    char *nested_type = rust_nested_type_name(parent, member);
+    int explicit_tag = member->tag.tag_class == TC_CONTEXT_SPECIFIC;
+    int ret;
+    if(!nested_type) return -1;
+    if(!explicit_tag) {
+        ret = fprintf(stream,
+            "::asn1c_runtime::ber::ChoiceField::natural(\n"
+            "            &%s::choice_alternatives())?", nested_type);
+        free(nested_type);
+        return ret < 0 ? -1 : 0;
+    }
+    ret = fprintf(stream,
+        "::asn1c_runtime::ber::ChoiceField::explicit(\n"
+        "            ");
+    if(ret >= 0) ret = rust_write_ber_cer_tag(stream, member);
+    if(ret >= 0) ret = fprintf(stream,
+        ",\n            &%s::choice_alternatives())?", nested_type);
+    free(nested_type);
+    return ret < 0 ? -1 : 0;
+}
+
+/*
  * Purpose: emit the allocation-free array of runtime tag and bound descriptors.
  * Source: approved runtime ChoiceAlternative API. Version/date: 2026-11-01.
  * Inputs: stream receives Rust source; expr owns validated alternatives.
@@ -6401,7 +7270,7 @@ rust_write_choice_absent_arm(FILE *stream, const asn1p_expr_t *const items[3]) {
  */
 static int
 rust_write_ber_cer_choice(FILE *stream, const char *name, asn1p_expr_t *expr,
-                          uint64_t codecs) {
+                          uint64_t codecs, int top_level) {
     asn1p_expr_t *item;
     size_t alternative_count = 0;
     int full_choice;
@@ -6427,6 +7296,7 @@ rust_write_ber_cer_choice(FILE *stream, const char *name, asn1p_expr_t *expr,
     }
     if(fprintf(stream, "}\n\nimpl %s {\n", name) < 0
        || rust_write_choice_value_conversions(stream, expr)) return -1;
+    if(!top_level) return fputs("}\n\n", stream) == EOF ? -1 : 0;
     if(codecs & RUST_CODEC_BER) {
         if(rust_write_method_doc(stream, "Encode the selected alternative using DER.",
             "`self` selects the primitive; `limits` bounds the operation.",
@@ -6504,6 +7374,7 @@ rust_write_all_sequences(FILE *stream, const char *name, asn1p_expr_t *expr,
     TQ_FOR(member, &expr->members, next) {
         char *nested_name;
         if(member->expr_type != ASN_CONSTR_SEQUENCE && member->expr_type != ASN_CONSTR_SET
+           && member->expr_type != ASN_CONSTR_CHOICE
            && member->expr_type != ASN_BASIC_ENUMERATED) continue;
         nested_name = rust_nested_type_name(name, member);
         if(!nested_name) return -1;
@@ -6511,7 +7382,9 @@ rust_write_all_sequences(FILE *stream, const char *name, asn1p_expr_t *expr,
             ? rust_write_all_sequences(stream, nested_name, member, 0, codecs)
             : member->expr_type == ASN_CONSTR_SET
               ? rust_write_set(stream, nested_name, member, 0, codecs)
-              : rust_write_inline_enum(stream, nested_name, member, codecs))) {
+              : member->expr_type == ASN_CONSTR_CHOICE
+                ? rust_write_ber_cer_choice(stream, nested_name, member, codecs, 0)
+                : rust_write_inline_enum(stream, nested_name, member, codecs))) {
             free(nested_name);
             return -1;
         }
@@ -6533,6 +7406,7 @@ rust_write_sequence_field(FILE *stream, const char *parent,
     char *name = rust_identifier(member->Identifier, 1);
     char *nested_type = (member->expr_type == ASN_CONSTR_SEQUENCE
                          || member->expr_type == ASN_CONSTR_SET
+                         || member->expr_type == ASN_CONSTR_CHOICE
                          || member->expr_type == ASN_BASIC_ENUMERATED)
         ? rust_nested_type_name(parent, member) : NULL;
     asn1p_expr_t *contained = rust_containing_node(member->combined_constraints, 0)
@@ -6551,6 +7425,7 @@ rust_write_sequence_field(FILE *stream, const char *parent,
     int ret = -1;
     if(name) {
         if((member->expr_type == ASN_CONSTR_SEQUENCE || member->expr_type == ASN_CONSTR_SET
+            || member->expr_type == ASN_CONSTR_CHOICE
             || member->expr_type == ASN_BASIC_ENUMERATED) && !nested_type) {
             ret = -1;
         } else ret = member->marker.flags == EM_OPTIONAL

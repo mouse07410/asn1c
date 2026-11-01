@@ -1,0 +1,6 @@
+InlineChoicePair DEFINITIONS ::= BEGIN
+Pair ::= SEQUENCE {
+    choice CHOICE { flag BOOLEAN, nothing NULL },
+    after [4] IMPLICIT BOOLEAN
+}
+END

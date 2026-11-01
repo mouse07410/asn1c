@@ -1,0 +1,6 @@
+InlineChoiceNaturalCollision DEFINITIONS ::= BEGIN
+Bad ::= SEQUENCE {
+    flag BOOLEAN,
+    choice CHOICE { selected BOOLEAN, count INTEGER (0..5) }
+}
+END

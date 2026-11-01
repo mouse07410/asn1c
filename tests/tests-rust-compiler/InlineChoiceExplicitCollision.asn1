@@ -1,0 +1,6 @@
+InlineChoiceExplicitCollision DEFINITIONS ::= BEGIN
+Bad ::= SEQUENCE {
+    choice [3] EXPLICIT CHOICE { flag BOOLEAN, count INTEGER (0..5) },
+    other [3] IMPLICIT BOOLEAN
+}
+END

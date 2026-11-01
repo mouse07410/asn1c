@@ -17,6 +17,26 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/CborSequenceStrings.asn1 \
     $(srcdir)/CborChoice.asn1 \
     $(srcdir)/PrimitiveChoice.asn1 \
+    $(srcdir)/InlineChoiceChildren.asn1 \
+    $(srcdir)/InlineChoiceBooleanOnly.asn1 \
+    $(srcdir)/InlineChoicePair.asn1 \
+    $(srcdir)/NaturalChoiceSet.asn1 \
+    $(srcdir)/NaturalChoiceSetCollision.asn1 \
+    $(srcdir)/InlineChoiceAlias.asn1 \
+    $(srcdir)/InlineChoiceExplicitCollision.asn1 \
+    $(srcdir)/InlineChoiceExtension.asn1 \
+    $(srcdir)/InlineChoiceImplicit.asn1 \
+    $(srcdir)/InlineChoiceImport.asn1 \
+    $(srcdir)/InlineChoiceImportBase.asn1 \
+    $(srcdir)/InlineChoiceMultiple.asn1 \
+    $(srcdir)/InlineChoiceNameCollision.asn1 \
+    $(srcdir)/InlineChoiceNaturalCollision.asn1 \
+    $(srcdir)/InlineChoiceNaturalSet.asn1 \
+    $(srcdir)/InlineChoiceNested.asn1 \
+    $(srcdir)/inline_choice_conformance.rs \
+    $(srcdir)/c_inline_choice.c \
+    $(srcdir)/natural_choice_set_conformance.rs \
+    $(srcdir)/c_natural_choice_set.c \
     $(srcdir)/ChoiceBooleanOnly.asn1 \
     $(srcdir)/ChoiceNullOnly.asn1 \
     $(srcdir)/ChoiceIntegerOnly.asn1 \

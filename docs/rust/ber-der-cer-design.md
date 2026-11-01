@@ -22,9 +22,10 @@ NULL, bounded INTEGER, ENUMERATED, and finite bounded BIT/OCTET STRING fields.
 Required and OPTIONAL members and literal BOOLEAN/INTEGER DEFAULT members
 share one operation budget. Resolved context-specific IMPLICIT and AUTOMATIC
 member tags and one context-specific EXPLICIT wrapper per direct member are
-supported. One nonrecursive inline SEQUENCE or nonempty SET child is also
-qualified below; broader nested records and primitive members remain in the
-parity matrix.
+supported. One nonrecursive inline SEQUENCE or nonempty SET child and one
+primitive CHOICE child in the qualified parent/tag combinations are also
+supported below; broader nested records and members remain in the parity
+matrix.
 
 The flat SET slice uses the same six direct field kinds under BER/CER-only
 selection. Its BER reader accepts arbitrary member order;
@@ -168,7 +169,7 @@ EOCs, child lengths crossing a parent boundary, duplicate or unknown fields,
 trailing child bytes, and cumulative resource exhaustion. Check exact prefix
 consumption and strict CER comparison at each outer boundary.
 
-### Inline nested SET (next qualified gate)
+### Inline nested SET (qualified slice)
 
 Extend the existing one-child, nonrecursive inline record gate to a SET child
 within an untagged top-level SEQUENCE or SET under BER/CER-only selection.
@@ -683,18 +684,18 @@ every byte, mutations, exact resource limits, live C vectors in both
 directions, and negative schema gates. IMPLICIT or EXPLICIT CHOICE tagging
 remains a separate design stage because it changes dispatch or adds a wrapper.
 
-### One inline primitive CHOICE child (next qualified gate)
+### One inline primitive CHOICE child (qualified slice)
 
 Compose the direct primitive CHOICE value model into one untagged SEQUENCE
-parent with a natural or one context-specific EXPLICIT child tag, or one
-untagged SET parent with one context-specific EXPLICIT child tag. Select only
+or SET parent with a natural or one context-specific EXPLICIT child tag. Select only
 BER and/or CER. The child has one through three unique intrinsic BOOLEAN,
 NULL, or finite nonextensible bounded `i64` INTEGER alternatives, and is
 required or OPTIONAL. Reject an IMPLICIT CHOICE child: the C parser/fixer
 requires EXPLICIT tagging because CHOICE has no single intrinsic outer tag.
-Reject a natural CHOICE child in SET until DER and CER ordering are represented
-separately, along with references, extensions, nested alternatives, multiple
-CHOICE children, and other codec selections.
+The initial inline gate qualified EXPLICIT CHOICE in SET; the following
+natural SET gate supplies its separate DER and CER ordering. References,
+extensions, nested alternatives, multiple CHOICE children, and other codec
+selections remain gated.
 
 Use one logical presence slot for the CHOICE even though a natural child may
 match several alternative tags. A second alternative in one parent must be a
@@ -717,6 +718,10 @@ IMPLICIT BOOLEAN is declared before `[3] EXPLICIT CHOICE`, C DER emits
 `31 08 a3 03 02 01 02 84 01 ff`; C CER emits
 `31 80 a3 80 02 01 02 00 00 84 01 ff 00 00`. C BER accepts these values;
 strict CER accepts the CER prefixes and rejects the DER forms.
+For an OPTIONAL `[3] EXPLICIT CHOICE` in a SET with `[4] IMPLICIT BOOLEAN
+TRUE`, C DER omits the absent field as `31 03 84 01 ff` and emits selected
+NULL as `31 07 a3 02 05 00 84 01 ff`; the CER forms use an indefinite SET
+and, when present, an indefinite `a3` wrapper.
 
 The later natural-CHOICE-in-SET gate must implement two ordering keys. X.690
 section 9.3 uses the minimum possible alternative tag for CER SET ordering;
@@ -732,6 +737,73 @@ multiple wrapper children, duplicate CHOICE alternatives on input, unknown
 tags, truncated lengths/EOCs, suffix preservation, strict CER comparison,
 exact resource limits, live C vectors in both directions, and fail-closed
 negative schema gates.
+
+### Natural primitive CHOICE in SET (qualified slice)
+
+Extend the one-inline-CHOICE gate to an untagged SET parent whose child has
+natural tagging. Keep one through three unique intrinsic primitive arms, one
+logical presence slot, the existing six-field record limit, and BER/CER codec
+selection. All sibling effective tags must be distinct from every possible
+CHOICE arm, including arms not selected in a particular value. Reject aliases,
+extensions, nested arms, and unsupported forms before generating any files.
+
+DER orders a natural CHOICE field by the tag of its selected arm. CER orders
+that field by the minimum tag among all its declared alternatives, regardless
+of which arm was selected. The writer must track the wire tag separately from
+the SET ordering key. Duplicate detection uses the wire tag and the CHOICE's
+single logical presence slot; ordering checks use the rule-specific key. The
+CHOICE scalar append must pass both keys through the same transactional field
+preparation and commit path as ordinary fields, preserving work, output,
+retained-storage, and rollback behavior. Generated SET encoders can select one
+of at most three fixed emission orders for DER; CER uses one fixed order based
+on the minimum arm tag. OPTIONAL absence omits the field from either order.
+This bounded approach needs no encode-to-sort scratch allocation.
+
+The BER SET reader maps every arm tag to one logical slot, accepts arbitrary
+field order, and rejects a second arm even if its tag differs. Strict CER
+decoding re-encodes the selected value using the same context and compares
+only the consumed prefix. With `[4] IMPLICIT OCTET STRING (SIZE(1))` equal to
+`aa` and an OPTIONAL natural CHOICE of BOOLEAN, NULL, and bounded INTEGER,
+live C output for a selected NULL is DER `31 05 04 01 aa 05 00` and CER
+`31 80 05 00 04 01 aa 00 00`. The absent forms are DER
+`31 03 04 01 aa` and CER `31 80 04 01 aa 00 00`. C BER accepts the reversed
+NULL order in CER framing, while strict CER rejects it. Acceptance must cover
+all arms, absence, sibling tags on either side of the selected and minimum
+tags, collisions with unselected arms, duplicate distinct arms, exact limits,
+transactional writer failures, suffixes, truncation, C vectors, and negative
+schema gates.
+
+### IA5String fields in flat records (next qualified gate)
+
+The next record-field gate adds a direct, unconstrained IA5String member to
+an untagged, nonrecursive top-level SEQUENCE or SET under BER/CER-only
+selection. Begin with natural tag 22 and required/OPTIONAL presence. Keep
+IMPLICIT/EXPLICIT member tags, DEFAULT, references, constraints, nested
+records, multiple semantic string fields, and mixed codecs gated until each
+form has checked metadata and C differential tests. The public generated
+value uses the direct `Ia5String` byte wrapper so BER and DER can preserve
+arbitrary content bytes, including bytes outside the CER repertoire.
+
+Extend the shared record field kind, writer, and reader with tag-22 IA5
+semantics. BER accepts primitive and constructed definite or indefinite
+content; constructed fragments retain universal OCTET STRING tag 4. Reuse
+the bounded TLV fragment walker and move its decoded buffer into the wrapper
+without copying. DER emits the primitive tag-22 value. CER validates the
+7-bit repertoire before committing output and uses a primitive value through
+1000 content octets or constructed tag-22 framing with 1000-octet tag-4
+fragments beyond that point. The parent's `RecordContext` covers all parsing,
+encoding, canonical comparison, and retained storage. Opt IA5-containing
+record operations into aggregate scratch accounting even when the optional
+member is absent, while preserving the existing flat scalar-record contract.
+
+Acceptance includes empty, ASCII boundary, invalid CER byte, lengths 999,
+1000, 1001, and 2001, definite/indefinite constructed BER, wrong fragment
+tags, SET reversal, duplicate fields, suffixes, every truncation boundary,
+exact work/output/scratch limits, and fail-closed negative schemas. Live C
+vectors for SEQUENCE with IA5String `A` are DER `30 03 16 01 41` and CER
+`30 80 16 01 41 00 00`; SET with that member and `[4] IMPLICIT BOOLEAN
+TRUE` is DER `31 06 16 01 41 84 01 ff` and CER
+`31 80 16 01 41 84 01 ff 00 00`.
 
 ## Decisions still required
 

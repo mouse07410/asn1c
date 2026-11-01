@@ -25,6 +25,7 @@
 #include <NULL.h>
 #include <NumericString.h>
 #include <OBJECT_IDENTIFIER.h>
+#include <RELATIVE-OID.h>
 #include <OCTET_STRING.h>
 #include <PrintableString.h>
 #include <REAL.h>
@@ -88,6 +89,18 @@ typedef struct cer_test_set_s {
     BOOLEAN_t boolean_value; /* Universal BOOLEAN member with tag 1. */
     BOOLEAN_t explicit_boolean; /* Explicit context tag 0 member. */
 } cer_test_set_t;
+
+/* Generated-style SEQUENCE with required inline OID primitive values. */
+typedef struct cer_oid_sequence_s {
+    OBJECT_IDENTIFIER_t oid; /* state variable: required universal OID value. */
+    RELATIVE_OID_t relative_oid; /* state variable: required relative OID value. */
+} cer_oid_sequence_t;
+
+/* Generated-style SET reverses OID declaration order to test canonical ordering. */
+typedef struct cer_oid_set_s {
+    RELATIVE_OID_t relative_oid; /* state variable: required relative OID value. */
+    OBJECT_IDENTIFIER_t oid; /* state variable: required universal OID value. */
+} cer_oid_set_t;
 
 /* Explicit OCTET STRING SEQUENCE target for CER wrapper-decoding tests. */
 typedef struct cer_test_explicit_octets_s {
@@ -375,6 +388,103 @@ static asn_TYPE_descriptor_t asn_DEF_CER_TestSet = {
     .elements_count = sizeof(cer_test_set_members) /
                       sizeof(cer_test_set_members[0]),
     .specifics = &cer_test_set_specifics,
+};
+
+/* The inline OID SEQUENCE members use their primitive universal tags. */
+static asn_TYPE_member_t cer_oid_sequence_members[] = {
+    {
+        .flags = 0,
+        .optional = 0,
+        .memb_offset = offsetof(cer_oid_sequence_t, oid),
+        .tag_mode = 0,
+        .type = &asn_DEF_OBJECT_IDENTIFIER,
+        .name = "oid",
+    },
+    {
+        .flags = 0,
+        .optional = 0,
+        .memb_offset = offsetof(cer_oid_sequence_t, relative_oid),
+        .tag_mode = 0,
+        .type = &asn_DEF_RELATIVE_OID,
+        .name = "relativeOid",
+    },
+};
+
+/* SEQUENCE specifics bound each inline OID member to the generated layout. */
+static asn_SEQUENCE_specifics_t cer_oid_sequence_specifics = {
+    .struct_size = sizeof(cer_oid_sequence_t),
+    .ctx_offset = 0,
+    .tag2el = NULL,
+    .tag2el_count = 0,
+    .oms = NULL,
+    .roms_count = 0,
+    .aoms_count = 0,
+    .first_extension = -1,
+};
+
+/* Universal SEQUENCE descriptor for the generated-style inline OID value. */
+static const ber_tlv_tag_t cer_oid_sequence_tags[] = {CER_UNIVERSAL_TAG(16)};
+static asn_TYPE_descriptor_t asn_DEF_CER_OIDSequence = {
+    .name = "CER-OIDSequence",
+    .xml_tag = "CER-OIDSequence",
+    .op = &asn_OP_SEQUENCE,
+    .tags = cer_oid_sequence_tags,
+    .tags_count = 1,
+    .all_tags = cer_oid_sequence_tags,
+    .all_tags_count = 1,
+    .elements = cer_oid_sequence_members,
+    .elements_count = sizeof(cer_oid_sequence_members) /
+                      sizeof(cer_oid_sequence_members[0]),
+    .specifics = &cer_oid_sequence_specifics,
+};
+
+/* SET declaration order is RELATIVE-OID then OID; CER sorts by tag number. */
+static asn_TYPE_member_t cer_oid_set_members[] = {
+    {
+        .flags = 0,
+        .optional = 0,
+        .memb_offset = offsetof(cer_oid_set_t, relative_oid),
+        .tag_mode = 0,
+        .type = &asn_DEF_RELATIVE_OID,
+        .name = "relativeOid",
+    },
+    {
+        .flags = 0,
+        .optional = 0,
+        .memb_offset = offsetof(cer_oid_set_t, oid),
+        .tag_mode = 0,
+        .type = &asn_DEF_OBJECT_IDENTIFIER,
+        .name = "oid",
+    },
+};
+
+/* Required inline SET values need no presence-map storage. */
+static asn_SET_specifics_t cer_oid_set_specifics = {
+    .struct_size = sizeof(cer_oid_set_t),
+    .ctx_offset = 0,
+    .pres_offset = 0,
+    .tag2el = NULL,
+    .tag2el_count = 0,
+    .tag2el_cxer = NULL,
+    .tag2el_cxer_count = 0,
+    .extensible = 0,
+    ._mandatory_elements = NULL,
+};
+
+/* Universal SET descriptor for generated-style inline OID values. */
+static const ber_tlv_tag_t cer_oid_set_tags[] = {CER_UNIVERSAL_TAG(17)};
+static asn_TYPE_descriptor_t asn_DEF_CER_OIDSet = {
+    .name = "CER-OIDSet",
+    .xml_tag = "CER-OIDSet",
+    .op = &asn_OP_SET,
+    .tags = cer_oid_set_tags,
+    .tags_count = 1,
+    .all_tags = cer_oid_set_tags,
+    .all_tags_count = 1,
+    .elements = cer_oid_set_members,
+    .elements_count = sizeof(cer_oid_set_members) /
+                      sizeof(cer_oid_set_members[0]),
+    .specifics = &cer_oid_set_specifics,
 };
 
 /* Required pointer metadata rejects absent non-optional components. */
@@ -952,6 +1062,69 @@ cer_check_wrapped_string_fragments(void) {
                                  sizeof(content)) == 0,
                           "long wrapped OCTET fragments BER-redecode");
     if(decoded_ptr) td.op->free_struct(&td, decoded_ptr, ASFM_FREE_EVERYTHING);
+    return failed;
+}
+
+/*
+ * Encode required inline OBJECT IDENTIFIER and RELATIVE-OID members.
+ * Original source: Generated-style CER record descriptors and fixed X.690 TLVs.
+ * Version/date: 1.0, 2026-11-01.
+ * Parameters: None; stack records use fixed valid base-128 content octets.
+ * Returns: Zero when SEQUENCE/SET vectors match and bad offsets fail with EBADF.
+ * Errors: No exceptions; unexpected encoder results are reported by cer_require.
+ * Responsible party: asn1c maintainers. History: Added for OID inline widths.
+ * Example: the SET declares RELATIVE-OID first but encodes universal tag 6 first.
+ */
+static int
+cer_check_inline_oid_records(void) {
+    static uint8_t oid_content[] = {0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d};
+    static uint8_t relative_content[] = {
+        0x01, 0x02, 0x86, 0x48, 0x86, 0xf7, 0x0d
+    };
+    static const uint8_t sequence_bytes[] = {
+        0x30, 0x80,
+        0x06, 0x06, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d,
+        0x0d, 0x07, 0x01, 0x02, 0x86, 0x48, 0x86, 0xf7, 0x0d,
+        0x00, 0x00
+    };
+    static const uint8_t set_bytes[] = {
+        0x31, 0x80,
+        0x06, 0x06, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d,
+        0x0d, 0x07, 0x01, 0x02, 0x86, 0x48, 0x86, 0xf7, 0x0d,
+        0x00, 0x00
+    };
+    cer_oid_sequence_t sequence = {
+        .oid = {oid_content, sizeof(oid_content)},
+        .relative_oid = {relative_content, sizeof(relative_content)},
+    };
+    cer_oid_set_t set = {
+        .relative_oid = {relative_content, sizeof(relative_content)},
+        .oid = {oid_content, sizeof(oid_content)},
+    };
+    asn_TYPE_descriptor_t broken = asn_DEF_CER_OIDSequence;
+    asn_TYPE_member_t broken_member = cer_oid_sequence_members[0];
+    asn_SEQUENCE_specifics_t broken_specifics = cer_oid_sequence_specifics;
+    asn_enc_rval_t encoded;
+    int failed = 0;
+
+    failed |= cer_check_vector(&asn_DEF_CER_OIDSequence, &sequence,
+                               sequence_bytes, sizeof(sequence_bytes),
+                               "required inline OIDs in SEQUENCE");
+    failed |= cer_check_vector(&asn_DEF_CER_OIDSet, &set, set_bytes,
+                               sizeof(set_bytes),
+                               "required inline OIDs in canonical SET order");
+
+    /* An offset leaving less than one OID value must fail before access. */
+    broken_member.memb_offset = sizeof(sequence) - 1;
+    broken.elements = &broken_member;
+    broken_specifics.struct_size = sizeof(sequence);
+    broken.specifics = &broken_specifics;
+    errno = 0;
+    encoded = cer_encode_to_buffer(NULL, &broken, &sequence,
+                                   (uint8_t[64]){0}, 64);
+    failed |= cer_require(encoded.encoded == -1 && errno == EBADF &&
+                          encoded.failed_type == &broken,
+                          "inline OID member rejects an out-of-bounds offset");
     return failed;
 }
 
@@ -2933,6 +3106,7 @@ main(void) {
     int failed = 0;
 
     failed |= cer_check_small_primitive_vectors();
+    failed |= cer_check_inline_oid_records();
     failed |= cer_check_long_tag_chains();
     failed |= cer_check_generalized_time_vectors();
     failed |= cer_check_string_boundaries();

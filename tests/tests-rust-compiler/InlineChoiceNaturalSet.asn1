@@ -1,0 +1,5 @@
+InlineChoiceNaturalSet DEFINITIONS ::= BEGIN
+Bad ::= SET {
+    choice CHOICE { flag BOOLEAN, count INTEGER (0..5) }
+}
+END

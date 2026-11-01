@@ -473,6 +473,43 @@ BER-only and CER-only selection.
 Tagged, constrained, aliased, imported, nested, optional/default, extended,
 duplicate-tag, sanitized-name-collision, and mixed-codec CHOICE schemas fail
 before an output crate is published.
+
+One inline primitive CHOICE child is supported in an untagged top-level
+SEQUENCE, or as a one-tag EXPLICIT child in an untagged SET. Natural CHOICE is
+also supported in SEQUENCE and top-level SET. In SET, DER ordering uses the
+selected arm's intrinsic tag, while CER ordering uses the lowest tag among all
+declared arms; this keeps field ordering valid for each encoding rule. The
+child has one to three uniquely tagged
+BOOLEAN, NULL, or finite bounded-`i64` INTEGER alternatives; it may be required
+or OPTIONAL. The generated enum represents the selected arm, and the parent
+record keeps one logical presence slot. Natural arm tags are checked against
+every sibling tag, so a later alternative cannot be mistaken for a second
+field. Parent record encoding and decoding share one BER/CER operation
+context; strict CER re-encodes and compares the consumed prefix with that same
+context.
+
+`InlineChoiceChildren.asn1`, `inline_choice_conformance.rs`, and
+`c_inline_choice.c` compare exact C and Rust DER/CER bytes and decoded values
+for natural, EXPLICIT, required, and OPTIONAL alternatives in SEQUENCE and SET.
+They cover all supported arms, SET tag sorting, C-compatible empty and
+multi-octet BOOLEAN BER forms, a high-tag alias, suffix consumption, duplicate
+logical alternatives, missing required choice, malformed EXPLICIT wrappers,
+and input/output limits. Ten negative schema fixtures exercise aliases,
+imports, IMPLICIT tagging, arm/sibling tag collisions, extensions,
+nested/multiple choices, and generated-name collisions. Mixed UPER/BER/CER and
+UPER-only selection fail before output publication. Combined, BER-only, and
+CER-only generated crates run strict Clippy.
+The single-arm `InlineChoiceBooleanOnly.asn1` and two-arm
+`InlineChoicePair.asn1` forms also compile under combined and codec-only
+selection with the same strict lint settings.
+
+`NaturalChoiceSet.asn1`, `natural_choice_set_conformance.rs`, and
+`c_natural_choice_set.c` compare exact C and Rust SET encodings for each
+selected alternative and the absent OPTIONAL state. They verify BER accepts
+unordered members and a high-tag alias, while strict CER rejects both, and
+check canonical CER prefix consumption. A sibling tag colliding with any
+natural CHOICE arm fails before output publication.
+
 Root SIZE constraints, root or element tags, aliases, imports, fields, nested
 types, extensions, unsupported constraints, and mixed or non-BER/CER codecs
 fail before output publication.

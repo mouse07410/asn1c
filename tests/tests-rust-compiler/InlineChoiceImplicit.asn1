@@ -1,0 +1,5 @@
+InlineChoiceImplicit DEFINITIONS ::= BEGIN
+Bad ::= SEQUENCE {
+    choice [3] IMPLICIT CHOICE { flag BOOLEAN, count INTEGER (0..5) }
+}
+END

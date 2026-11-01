@@ -1,0 +1,6 @@
+InlineChoiceMultiple DEFINITIONS ::= BEGIN
+Bad ::= SEQUENCE {
+    first [3] EXPLICIT CHOICE { flag BOOLEAN, count INTEGER (0..5) },
+    second [4] EXPLICIT CHOICE { nothing NULL, other INTEGER (0..5) }
+}
+END

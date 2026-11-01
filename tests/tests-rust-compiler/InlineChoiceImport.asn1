@@ -1,0 +1,4 @@
+InlineChoiceImport DEFINITIONS ::= BEGIN
+IMPORTS Alias FROM InlineChoiceImportBase;
+Bad ::= SEQUENCE { choice Alias }
+END

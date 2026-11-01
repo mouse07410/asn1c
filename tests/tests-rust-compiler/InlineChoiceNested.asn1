@@ -1,0 +1,8 @@
+InlineChoiceNested DEFINITIONS ::= BEGIN
+Bad ::= SEQUENCE {
+    choice CHOICE {
+        flag BOOLEAN,
+        record SEQUENCE { value BOOLEAN }
+    }
+}
+END

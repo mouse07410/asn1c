@@ -1,0 +1,6 @@
+InlineChoiceBooleanOnly DEFINITIONS ::= BEGIN
+Only ::= SEQUENCE {
+    choice CHOICE { flag BOOLEAN },
+    after [4] IMPLICIT BOOLEAN
+}
+END

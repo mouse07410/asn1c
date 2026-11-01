@@ -1,0 +1,6 @@
+NaturalChoiceSetCollision DEFINITIONS ::= BEGIN
+Bad ::= SET {
+    choice CHOICE { flag BOOLEAN, nothing NULL, count INTEGER (0..5) },
+    other INTEGER (0..5)
+}
+END

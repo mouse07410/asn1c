@@ -1,0 +1,6 @@
+InlineChoiceNameCollision DEFINITIONS ::= BEGIN
+Parent ::= SEQUENCE {
+    item CHOICE { flag BOOLEAN, count INTEGER (0..5) }
+}
+ParentItem ::= BOOLEAN
+END

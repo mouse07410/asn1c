@@ -903,6 +903,115 @@ pub enum ChoiceValue {
     Integer(i64),
 }
 
+/// Tagging mode for one inline primitive CHOICE field.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ChoiceTagging {
+    /// The selected alternative retains its intrinsic universal identifier.
+    Natural,
+    /// One context-specific constructed identifier wraps the selected TLV.
+    Explicit(Tag),
+}
+
+/// Expected member form for one EXPLICIT wrapper child scan.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ExplicitMember {
+    /// One known fixed field kind.
+    Fixed(FieldKind),
+    /// One selected primitive arm among the declared alternatives.
+    Choice(ChoiceField),
+}
+
+/// Validated alternatives and tagging for one logical record CHOICE slot.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ChoiceField {
+    /// Natural dispatch or the single EXPLICIT wrapper; state variable.
+    tagging: ChoiceTagging,
+    /// Up to three supported alternatives in schema order; state variable.
+    alternatives: [ChoiceAlternative; 3],
+    /// Number of valid entries at the start of `alternatives`; state variable.
+    alternative_count: u8,
+}
+
+impl ChoiceField {
+    /// Describe a natural-tag CHOICE child of a SEQUENCE.
+    ///
+    /// # Parameters and returns
+    /// `alternatives` is the 1–3 unique supported arm slice. Returns a copied,
+    /// validated descriptor without allocating.
+    ///
+    /// # Errors
+    /// Returns invalid alternative count/tags or invalid INTEGER bounds.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 natural CHOICE tagging. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: inline CHOICE gate.
+    /// Example: `ChoiceField::natural(&arms)?`.
+    pub fn natural(alternatives: &[ChoiceAlternative]) -> Result<Self, Error> {
+        Self::build(ChoiceTagging::Natural, alternatives)
+    }
+
+    /// Describe a context-specific EXPLICIT CHOICE child.
+    ///
+    /// # Parameters and returns
+    /// `tag` is the context-specific wrapper; `alternatives` contains 1–3 unique
+    /// supported arms. Returns a copied, validated descriptor.
+    ///
+    /// # Errors
+    /// Returns invalid wrapper tag/class, alternatives, or INTEGER bounds.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 EXPLICIT CHOICE tagging. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: inline CHOICE gate.
+    /// Example: `ChoiceField::explicit(Tag::context_specific(3), &arms)?`.
+    pub fn explicit(tag: Tag, alternatives: &[ChoiceAlternative]) -> Result<Self, Error> {
+        tag.validate()?;
+        if tag.class != TagClass::ContextSpecific {
+            return Err(invalid("CHOICE EXPLICIT tag must be context-specific"));
+        }
+        Self::build(ChoiceTagging::Explicit(tag), alternatives)
+    }
+
+    /// Copy and validate bounded alternatives into this fixed-size descriptor.
+    ///
+    /// # Parameters and returns
+    /// `tagging` selects natural or explicit framing; `alternatives` are the
+    /// supported arms. Returns a descriptor without heap allocation.
+    ///
+    /// # Errors
+    /// Returns invalid alternative count, duplicate intrinsic tags, or bounds.
+    ///
+    /// # Source, version, history, example
+    /// Source: checked inline CHOICE descriptor. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: inline CHOICE gate.
+    /// Example: called by both public constructors.
+    fn build(tagging: ChoiceTagging, alternatives: &[ChoiceAlternative]) -> Result<Self, Error> {
+        validate_choice_alternatives(alternatives)?;
+        let mut copied = [ChoiceAlternative::Boolean; 3];
+        copied[..alternatives.len()].copy_from_slice(alternatives);
+        Ok(Self {
+            tagging,
+            alternatives: copied,
+            alternative_count: u8::try_from(alternatives.len()).map_err(|_| Error::SizeOverflow)?,
+        })
+    }
+
+    /// Borrow the initialized alternatives.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns the nonempty initialized prefix.
+    ///
+    /// # Errors
+    /// This accessor cannot fail because constructors establish the count.
+    ///
+    /// # Source, version, history, example
+    /// Source: bounded inline CHOICE descriptor. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: inline CHOICE gate.
+    /// Example: used by the shared reader and writer paths.
+    fn alternatives(&self) -> &[ChoiceAlternative] {
+        &self.alternatives[..usize::from(self.alternative_count)]
+    }
+}
+
 /// Encode the selected primitive CHOICE alternative as DER.
 ///
 /// # Parameters and returns
@@ -1217,8 +1326,10 @@ pub struct SequenceWriter<'context> {
     seen_tags: [Option<Tag>; MAX_SEQUENCE_FIELDS],
     /// Number of used slots in `seen_tags`; this is a state variable.
     field_count: usize,
-    /// Last tag for canonical SET component order; state variable.
+    /// Last SET ordering key; may differ from CHOICE wire tag; state variable.
     last_tag: Option<Tag>,
+    /// Successfully emitted logical CHOICE descriptor; state variable.
+    choice_field: Option<ChoiceField>,
     /// Parent buffer capacity retained while this nested writer is active.
     parent_capacity: Option<usize>,
 }
@@ -1237,6 +1348,10 @@ pub struct SequenceReader<'input, 'tags, 'context> {
     expected_tags: &'tags [u64],
     /// Optional effective tags and semantic kinds for tagged schemas.
     tagged_fields: Option<&'tags [RecordField]>,
+    /// Optional logical CHOICE and its inserted schema index; state variable.
+    choice: Option<ChoiceField>,
+    /// Index of the CHOICE slot among logical parent members; state variable.
+    choice_index: Option<usize>,
     /// Container tag and BER component ordering rule.
     kind: RecordKind,
     /// Shared operation limits and work budget.
@@ -1591,6 +1706,7 @@ impl SequenceWriter<'_> {
             seen_tags: [None; MAX_SEQUENCE_FIELDS],
             field_count: 0,
             last_tag: None,
+            choice_field: None,
             parent_capacity: None,
         })
     }
@@ -2033,6 +2149,162 @@ impl SequenceWriter<'_> {
         let full = value.to_be_bytes();
         let first = minimal_signed_start(full);
         self.write_explicit_primitive(tag, FieldKind::Integer, &full[first..])
+    }
+
+    /// Append one selected primitive CHOICE child with shared record budgets.
+    ///
+    /// # Parameters and returns
+    /// `field` contains the natural or EXPLICIT mode and supported alternatives;
+    /// `value` selects the encoded arm. Returns after one logical field commits.
+    ///
+    /// # Errors
+    /// Returns duplicate/collision, wrong parent/tagging, range, output/work,
+    /// size, or allocation errors. No field is committed on failure.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 inline CHOICE writer. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: record CHOICE gate.
+    /// Example: `writer.write_choice(choice, ChoiceValue::Integer(2))?`.
+    pub fn write_choice(&mut self, field: ChoiceField, value: ChoiceValue) -> Result<(), Error> {
+        if self.choice_field.is_some() {
+            return Err(invalid("record writer already emitted its CHOICE field"));
+        }
+        let (element, item) = choice_item_for_value(field.alternatives(), value)?;
+        match field.tagging {
+            ChoiceTagging::Natural => {
+                for alternative in field.alternatives() {
+                    self.context.charge(1)?;
+                    if self.seen_tags[..self.field_count]
+                        .contains(&Some(choice_alternative_tag(*alternative)))
+                    {
+                        return Err(invalid(
+                            "CHOICE alternative tag collides with a sibling field",
+                        ));
+                    }
+                }
+                if self.kind == RecordKind::Set {
+                    self.write_natural_set_choice(field, element, item)?;
+                } else {
+                    self.write_choice_scalar(field.tagging, element, item)?;
+                }
+            }
+            ChoiceTagging::Explicit(tag) => {
+                self.context.charge(1)?;
+                if self.seen_tags[..self.field_count].contains(&Some(tag)) {
+                    return Err(invalid("CHOICE wrapper tag collides with a sibling field"));
+                }
+                self.write_choice_scalar(field.tagging, element, item)?;
+            }
+        }
+        self.choice_field = Some(field);
+        Ok(())
+    }
+
+    /// Encode the chosen scalar through this record's existing writer methods.
+    ///
+    /// # Parameters and returns
+    /// `tagging` selects natural or EXPLICIT framing; `element` and `item` are
+    /// the checked selected arm. Returns success after append.
+    ///
+    /// # Errors
+    /// Returns resource, tag/order, output/work, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: shared record scalar encoders. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: record CHOICE gate.
+    /// Example: called only after the selected arm and bounds are validated.
+    fn write_choice_scalar(
+        &mut self,
+        tagging: ChoiceTagging,
+        element: CollectionElementKind,
+        item: CollectionItem,
+    ) -> Result<(), Error> {
+        match (tagging, element, item) {
+            (
+                ChoiceTagging::Natural,
+                CollectionElementKind::Boolean,
+                CollectionItem::Boolean(v),
+            ) => self.write_boolean(v),
+            (ChoiceTagging::Natural, CollectionElementKind::Null, CollectionItem::Null) => {
+                self.write_null()
+            }
+            (
+                ChoiceTagging::Natural,
+                CollectionElementKind::BoundedInteger { lower, upper },
+                CollectionItem::Integer(v),
+            ) => self.write_integer(v, lower, upper),
+            (
+                ChoiceTagging::Explicit(tag),
+                CollectionElementKind::Boolean,
+                CollectionItem::Boolean(v),
+            ) => self.write_boolean_explicit(tag, v),
+            (ChoiceTagging::Explicit(tag), CollectionElementKind::Null, CollectionItem::Null) => {
+                self.write_null_explicit(tag)
+            }
+            (
+                ChoiceTagging::Explicit(tag),
+                CollectionElementKind::BoundedInteger { lower, upper },
+                CollectionItem::Integer(v),
+            ) => self.write_integer_explicit(tag, v, lower, upper),
+            _ => Err(invalid("CHOICE selected arm does not match its descriptor")),
+        }
+    }
+
+    /// Append a natural SET CHOICE using separate wire and ordering tags.
+    ///
+    /// # Parameters and returns
+    /// `choice` is the declared set of natural arms; `element` and `item` are
+    /// the selected scalar. Returns after the field bytes and state commit.
+    ///
+    /// # Errors
+    /// Returns invalid mode/tag, order, output/work, size, or allocation errors.
+    /// Failure restores the parent byte length and does not remember a tag.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET ordering rules 9.3 and 10.3. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: natural SET CHOICE gate.
+    /// Example: called from `write_choice` only for a natural SET arm.
+    fn write_natural_set_choice(
+        &mut self,
+        choice: ChoiceField,
+        element: CollectionElementKind,
+        item: CollectionItem,
+    ) -> Result<(), Error> {
+        if self.kind != RecordKind::Set || choice.tagging != ChoiceTagging::Natural {
+            return Err(invalid("natural SET CHOICE requires a SET writer"));
+        }
+        let wire_number = collection_element_tag(element);
+        let wire_tag = Tag::universal(u32::try_from(wire_number).map_err(|_| Error::SizeOverflow)?);
+        let alternative = choice_alternative_for_tag(choice.alternatives(), 0, wire_number)?;
+        validate_field_descriptor(wire_tag, choice_field_kind(alternative))?;
+        let encoded = encode_collection_item(element, item)?;
+        let field_size = usize::from(encoded.len);
+        let ordering_key = match self.rule {
+            RecordEncoding::Der => wire_tag,
+            RecordEncoding::Cer => choice
+                .alternatives()
+                .iter()
+                .copied()
+                .map(choice_alternative_tag)
+                .min()
+                .ok_or_else(|| invalid("natural CHOICE has no alternatives"))?,
+        };
+        let original_len = self.bytes.len();
+        let result = (|| {
+            self.prepare_field_with_order(wire_tag, ordering_key, field_size)?;
+            push(
+                &mut self.bytes,
+                &encoded.bytes[..field_size],
+                &self.context.limits,
+            )?;
+            self.remember_tag(wire_tag)?;
+            self.last_tag = Some(ordering_key);
+            Ok(())
+        })();
+        if result.is_err() {
+            self.bytes.truncate(original_len);
+        }
+        result
     }
 
     /// Append one minimally encoded numeric ENUMERATED field.
@@ -2584,14 +2856,50 @@ impl SequenceWriter<'_> {
     /// Responsible: asn1c maintainers. History: direct string support.
     /// Example: called by each typed `write_*` method.
     fn prepare_field(&mut self, tag: Tag, field_size: usize) -> Result<(), Error> {
-        tag.validate()?;
+        self.prepare_field_with_order(tag, tag, field_size)
+    }
+
+    /// Check one wire tag and its possibly distinct SET ordering key.
+    ///
+    /// # Parameters and returns
+    /// `wire_tag` identifies the encoded field and detects duplicates;
+    /// `ordering_key` drives SET monotonicity; `field_size` is its full TLV.
+    /// Returns success after output, scratch, and work preflight.
+    ///
+    /// # Errors
+    /// Returns invalid/duplicate tags, order, size, output, scratch, or work errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: natural CHOICE SET ordering. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: separate wire/order keys.
+    /// Example: called with selected and minimum tags for a natural SET CHOICE.
+    fn prepare_field_with_order(
+        &mut self,
+        wire_tag: Tag,
+        ordering_key: Tag,
+        field_size: usize,
+    ) -> Result<(), Error> {
+        wire_tag.validate()?;
+        ordering_key.validate()?;
         if self.field_count >= MAX_SEQUENCE_FIELDS {
             return Err(invalid("record writer supports at most six fields"));
         }
-        if self.seen_tags[..self.field_count].contains(&Some(tag)) {
+        if let Some(choice) = self.choice_field {
+            if choice.tagging == ChoiceTagging::Natural
+                && choice
+                    .alternatives()
+                    .iter()
+                    .any(|alternative| choice_alternative_tag(*alternative) == wire_tag)
+            {
+                return Err(invalid(
+                    "sibling tag collides with a natural CHOICE alternative",
+                ));
+            }
+        }
+        if self.seen_tags[..self.field_count].contains(&Some(wire_tag)) {
             return Err(invalid("record writer received a duplicate effective tag"));
         }
-        if self.kind == RecordKind::Set && self.last_tag.is_some_and(|last| tag <= last) {
+        if self.kind == RecordKind::Set && self.last_tag.is_some_and(|last| ordering_key <= last) {
             return Err(invalid(
                 "SET writer fields must use increasing class and tag order",
             ));
@@ -2672,6 +2980,26 @@ impl<'context> SetWriter<'context> {
         F: FnOnce(&mut SetWriter<'_>) -> Result<(), Error>,
     {
         self.inner.write_nested_set(field, encode)
+    }
+
+    /// Append one natural or EXPLICIT primitive CHOICE member to this SET.
+    ///
+    /// # Parameters and returns
+    /// `field` describes the supported arms and tagging; `value` selects one.
+    /// Natural choices write their intrinsic wire tag. DER ordering uses that
+    /// selected tag, while CER ordering uses the minimum possible arm tag.
+    /// Returns after the field is committed in the active rule's order.
+    ///
+    /// # Errors
+    /// Returns duplicate/collision, order, range, resource, or allocation
+    /// errors. Failed field bytes/state roll back; charged work remains used.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET CHOICE ordering rules 9.3 and 10.3. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: record CHOICE gate.
+    /// Example: `writer.write_choice(choice, ChoiceValue::Null)?`.
+    pub fn write_choice(&mut self, field: ChoiceField, value: ChoiceValue) -> Result<(), Error> {
+        self.inner.write_choice(field, value)
     }
 
     /// Append one BOOLEAN member in increasing universal-tag order.
@@ -3111,6 +3439,36 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
         Self::new_with_kind(input, &[], Some(fields), context, RecordKind::Sequence)
     }
 
+    /// Start a SEQUENCE reader with one logical natural or EXPLICIT CHOICE slot.
+    ///
+    /// # Parameters and returns
+    /// `input` is the available BER prefix; `fields` are normal siblings;
+    /// `choice` describes its 1–3 alternatives and tagging; `choice_index`
+    /// inserts one logical slot among siblings; `context` shares all budgets.
+    /// Returns a reader that maps every natural arm tag to that one slot.
+    ///
+    /// # Errors
+    /// Returns invalid descriptor/index/collision, framing, input, size, or work.
+    ///
+    /// # Source, version, history, example
+    /// Source: inline primitive CHOICE dispatch. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: record CHOICE gate.
+    /// Example: `SequenceReader::new_tagged_with_choice(input, &fields, choice, 1, context)?`.
+    pub fn new_tagged_with_choice(
+        input: &'input [u8],
+        fields: &'tags [RecordField],
+        choice: ChoiceField,
+        choice_index: usize,
+        context: &'context mut RecordContext,
+    ) -> Result<Self, Error> {
+        validate_record_choice(choice, fields, choice_index, context)?;
+        let mut reader =
+            Self::new_with_kind(input, &[], Some(fields), context, RecordKind::Sequence)?;
+        reader.choice = Some(choice);
+        reader.choice_index = Some(choice_index);
+        Ok(reader)
+    }
+
     /// Start decoding a context-specific IMPLICIT SEQUENCE root.
     ///
     /// # Parameters
@@ -3280,6 +3638,8 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
             input,
             expected_tags,
             tagged_fields,
+            choice: None,
+            choice_index: None,
             kind,
             context,
             content_bound,
@@ -3390,15 +3750,21 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
                 )?;
                 (field_span(header, start, end, effective_tag, kind)?, end)
             }
-            TaggingMode::Explicit => scan_explicit_member(
-                self.input,
-                start,
-                self.content_bound,
-                header,
-                kind,
-                &mut self.context.work_used,
-                &self.context.limits,
-            )?,
+            TaggingMode::Explicit => {
+                let choice = self.choice.filter(|descriptor| {
+                    self.choice_index == Some(index)
+                        && matches!(descriptor.tagging, ChoiceTagging::Explicit(_))
+                });
+                scan_explicit_member(
+                    self.input,
+                    start,
+                    self.content_bound,
+                    header,
+                    choice.map_or(ExplicitMember::Fixed(kind), ExplicitMember::Choice),
+                    &mut self.context.work_used,
+                    &self.context.limits,
+                )?
+            }
         };
         field.field_start = start;
         field.tagging = field_tagging;
@@ -3547,6 +3913,58 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
             };
             self.context.leave_nested(layers);
             child_result
+        })();
+        match result {
+            Ok(value) => {
+                self.current = None;
+                self.current_index = None;
+                self.current_previous_index = None;
+                Ok(value)
+            }
+            Err(error) => {
+                if let Some(field) = pending {
+                    self.rollback_nested_field(field);
+                }
+                Err(error)
+            }
+        }
+    }
+
+    /// Decode the selected scalar in the current logical CHOICE field.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns the selected BOOLEAN, NULL, or bounded INTEGER
+    /// from the descriptor attached to this reader.
+    ///
+    /// # Errors
+    /// Returns wrong slot/tag, malformed content, range, resource, size, or
+    /// work errors. A failure restores parent traversal to the CHOICE start.
+    ///
+    /// # Source, version, history, example
+    /// Source: C BER CHOICE dispatch with shared record context.
+    /// Version: 2026-11-01. Responsible: runtime maintainers.
+    /// History: inline CHOICE gate. Example: `let value = reader.read_choice()?`.
+    pub fn read_choice(&mut self) -> Result<ChoiceValue, Error> {
+        let pending = self.current;
+        let result = (|| {
+            let field = self
+                .current
+                .ok_or_else(|| invalid("record reader has no current CHOICE field"))?;
+            let choice = self
+                .choice
+                .ok_or_else(|| invalid("record reader has no CHOICE descriptor"))?;
+            if self.current_index != self.choice_index {
+                return Err(invalid("current record field is not the CHOICE slot"));
+            }
+            let alternative = choice_alternative_for_tag(
+                choice.alternatives(),
+                field.tag.class as u8,
+                u64::from(field.tag.number),
+            )?;
+            if field.kind != choice_field_kind(alternative) || field.constructed {
+                return Err(invalid("CHOICE alternative must use its primitive form"));
+            }
+            read_choice_record_scalar(self.input, field, alternative, self.context)
         })();
         match result {
             Ok(value) => {
@@ -3846,11 +4264,47 @@ impl<'input, 'tags, 'context> SequenceReader<'input, 'tags, 'context> {
     /// Responsible: asn1c maintainers. History: explicit field mode.
     /// Example: called by `next_tagged_field`.
     fn field_descriptor(&mut self, tag: Tag) -> Result<(usize, FieldKind, TaggingMode), Error> {
+        if let Some(choice) = self.choice {
+            let choice_index = self
+                .choice_index
+                .ok_or_else(|| invalid("record CHOICE slot has no schema index"))?;
+            match choice.tagging {
+                ChoiceTagging::Natural => {
+                    for alternative in choice.alternatives() {
+                        self.context.charge(1)?;
+                        if choice_alternative_tag(*alternative) == tag {
+                            return Ok((
+                                choice_index,
+                                choice_field_kind(*alternative),
+                                TaggingMode::Implicit,
+                            ));
+                        }
+                    }
+                }
+                ChoiceTagging::Explicit(wrapper) => {
+                    self.context.charge(1)?;
+                    if wrapper == tag {
+                        let first = choice.alternatives()[0];
+                        return Ok((
+                            choice_index,
+                            choice_field_kind(first),
+                            TaggingMode::Explicit,
+                        ));
+                    }
+                }
+            }
+        }
         if let Some(fields) = self.tagged_fields {
             for (index, field) in fields.iter().enumerate() {
                 self.context.charge(1)?;
                 if field.tag == tag {
-                    return Ok((index, field.kind, field.tagging));
+                    let logical_index = match self.choice_index {
+                        Some(choice_index) if index >= choice_index => {
+                            index.checked_add(1).ok_or(Error::SizeOverflow)?
+                        }
+                        _ => index,
+                    };
+                    return Ok((logical_index, field.kind, field.tagging));
                 }
             }
         } else {
@@ -3904,6 +4358,36 @@ impl<'input, 'tags, 'context> SetReader<'input, 'tags, 'context> {
                 RecordKind::Set,
             )?,
         })
+    }
+
+    /// Start a SET reader with one natural or EXPLICIT CHOICE slot.
+    ///
+    /// # Parameters and returns
+    /// `input` is the BER prefix; `fields` are normal siblings; `choice` has
+    /// 1–3 alternatives and natural or EXPLICIT tagging; `choice_index` inserts
+    /// its logical presence slot; `context` shares all operation budgets.
+    /// Returns a reader accepting any SET component order.
+    ///
+    /// # Errors
+    /// Returns descriptor/index/collision, framing, input, or work errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: inline primitive CHOICE in SET. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: record CHOICE gate.
+    /// Example: `SetReader::new_tagged_with_choice(input, &fields, choice, 0, context)?`.
+    pub fn new_tagged_with_choice(
+        input: &'input [u8],
+        fields: &'tags [RecordField],
+        choice: ChoiceField,
+        choice_index: usize,
+        context: &'context mut RecordContext,
+    ) -> Result<Self, Error> {
+        validate_record_choice(choice, fields, choice_index, context)?;
+        let mut inner =
+            SequenceReader::new_with_kind(input, &[], Some(fields), context, RecordKind::Set)?;
+        inner.choice = Some(choice);
+        inner.choice_index = Some(choice_index);
+        Ok(Self { inner })
     }
 
     /// Start decoding a BER SET with effective tags and separate field kinds.
@@ -4063,6 +4547,23 @@ impl<'input, 'tags, 'context> SetReader<'input, 'tags, 'context> {
     /// Example: `while let Some(tag) = reader.next_tagged_field()? { ... }`.
     pub fn next_tagged_field(&mut self) -> Result<Option<Tag>, Error> {
         self.inner.next_tagged_field()
+    }
+
+    /// Decode the selected EXPLICIT CHOICE member of this SET.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns the selected BOOLEAN, NULL, or bounded INTEGER.
+    ///
+    /// # Errors
+    /// Returns the same errors as `SequenceReader::read_choice`; failure rolls
+    /// back this member's traversal while keeping the shared budget monotonic.
+    ///
+    /// # Source, version, history, example
+    /// Source: inline EXPLICIT CHOICE in SET. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: record CHOICE gate.
+    /// Example: `let selected = reader.read_choice()?`.
+    pub fn read_choice(&mut self) -> Result<ChoiceValue, Error> {
+        self.inner.read_choice()
     }
 
     /// Decode the current BOOLEAN SET member and consume it.
@@ -7489,9 +7990,9 @@ fn field_span(
 ///
 /// # Parameters and returns
 /// `input`, `start`, and `bound` identify the containing bytes; `outer` is the
-/// already parsed wrapper; `kind` specifies its universal child; `work` and
-/// `limits` are the shared operation budget. Returns the child span and wrapper
-/// end offset.
+/// parsed wrapper; `kind` specifies a fixed child; `choice` optionally supplies
+/// allowed primitive alternatives. `work` and `limits` are shared. Returns the
+/// child span and wrapper end offset.
 ///
 /// # Errors
 /// Returns malformed wrapper form, child tag, EOC, parent-boundary, depth,
@@ -7506,7 +8007,7 @@ fn scan_explicit_member(
     start: usize,
     bound: usize,
     outer: Header,
-    kind: FieldKind,
+    member: ExplicitMember,
     work: &mut usize,
     limits: &Limits,
 ) -> Result<(FieldSpan, usize), Error> {
@@ -7528,17 +8029,27 @@ fn scan_explicit_member(
     let child_bound = definite_end.unwrap_or(bound);
     let child_start = outer.content;
     let child = parse_header(input, child_start, child_bound, work, true, limits)?;
-    let expected_tag = intrinsic_tag(kind);
+    let (expected_tag, child_kind) = match member {
+        ExplicitMember::Choice(choice) => {
+            let alternative =
+                choice_alternative_for_tag(choice.alternatives(), child.class, child.tag)?;
+            (
+                choice_alternative_tag(alternative),
+                choice_field_kind(alternative),
+            )
+        }
+        ExplicitMember::Fixed(kind) => (intrinsic_tag(kind), kind),
+    };
     if child.class != TagClass::Universal as u8 || child.tag != u64::from(expected_tag.number) {
         return Err(invalid(
             "EXPLICIT wrapper child has the wrong universal tag",
         ));
     }
-    if matches!(kind, FieldKind::Sequence | FieldKind::Set) && !child.constructed {
+    if matches!(child_kind, FieldKind::Sequence | FieldKind::Set) && !child.constructed {
         return Err(invalid("EXPLICIT record child must use constructed form"));
     }
     if !matches!(
-        kind,
+        child_kind,
         FieldKind::BitString | FieldKind::OctetString | FieldKind::Sequence | FieldKind::Set
     ) && child.constructed
     {
@@ -7556,7 +8067,7 @@ fn scan_explicit_member(
             child_end.checked_add(2).ok_or(Error::SizeOverflow)?
         }
     };
-    let field = field_span(child, child_start, child_end, expected_tag, kind)?;
+    let field = field_span(child, child_start, child_end, expected_tag, child_kind)?;
     Ok((field, wrapper_end))
 }
 
@@ -10152,6 +10663,135 @@ const fn choice_element_kind(alternative: ChoiceAlternative) -> CollectionElemen
             CollectionElementKind::BoundedInteger { lower, upper }
         }
     }
+}
+
+/// Return the universal tag for one CHOICE alternative.
+///
+/// # Parameters and returns
+/// `alternative` selects a validated supported arm. Returns its intrinsic tag.
+///
+/// # Errors
+/// This total mapping cannot fail.
+///
+/// # Source, version, history, example
+/// Source: X.690 primitive identifiers. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: inline CHOICE gate.
+/// Example: `choice_alternative_tag(ChoiceAlternative::Boolean)` is tag 1.
+const fn choice_alternative_tag(alternative: ChoiceAlternative) -> Tag {
+    match alternative {
+        ChoiceAlternative::Boolean => Tag::universal(1),
+        ChoiceAlternative::Null => Tag::universal(5),
+        ChoiceAlternative::BoundedInteger { .. } => Tag::universal(2),
+    }
+}
+
+/// Return the scalar field kind for one CHOICE alternative.
+///
+/// # Parameters and returns
+/// `alternative` selects a validated supported arm. Returns its primitive kind.
+///
+/// # Errors
+/// This total mapping cannot fail.
+///
+/// # Source, version, history, example
+/// Source: shared record scalar parser. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: inline CHOICE gate.
+/// Example: `choice_field_kind(ChoiceAlternative::Null) == FieldKind::Null`.
+const fn choice_field_kind(alternative: ChoiceAlternative) -> FieldKind {
+    match alternative {
+        ChoiceAlternative::Boolean => FieldKind::Boolean,
+        ChoiceAlternative::Null => FieldKind::Null,
+        ChoiceAlternative::BoundedInteger { .. } => FieldKind::Integer,
+    }
+}
+
+/// Decode one selected CHOICE scalar using the parent's operation context.
+///
+/// # Parameters and returns
+/// `input` and `field` locate the scanned primitive; `alternative` supplies
+/// its semantics/bounds; `context` carries cumulative work. Returns the value.
+///
+/// # Errors
+/// Returns malformed content, range, work, or span errors. No panic.
+///
+/// # Source, version, history, example
+/// Source: shared record scalar decoding. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: inline CHOICE gate.
+/// Example: called by `SequenceReader::read_choice` after wrapper dispatch.
+fn read_choice_record_scalar(
+    input: &[u8],
+    field: FieldSpan,
+    alternative: ChoiceAlternative,
+    context: &mut RecordContext,
+) -> Result<ChoiceValue, Error> {
+    let scalar_contents = input
+        .get(field.content_start..field.content_end)
+        .ok_or(Error::SizeOverflow)?;
+    match alternative {
+        ChoiceAlternative::Boolean => {
+            context.charge(scalar_contents.len().max(1))?;
+            Ok(ChoiceValue::Boolean(
+                scalar_contents.iter().any(|octet| *octet != 0),
+            ))
+        }
+        ChoiceAlternative::Null => {
+            if !scalar_contents.is_empty() {
+                return Err(invalid("BER CHOICE NULL content must be empty"));
+            }
+            context.charge(1)?;
+            Ok(ChoiceValue::Null)
+        }
+        ChoiceAlternative::BoundedInteger { lower, upper } => {
+            context.charge(scalar_contents.len())?;
+            let value = signed_value(scalar_contents)?;
+            validate_integer(value, lower, upper)?;
+            Ok(ChoiceValue::Integer(value))
+        }
+    }
+}
+
+/// Validate a CHOICE slot against its parent's bounded descriptor list.
+///
+/// # Parameters and returns
+/// `choice` is the checked logical field; `fields` are its normal siblings;
+/// `choice_index` inserts the slot; `context` charges descriptor validation.
+/// Returns success before parent input parsing.
+///
+/// # Errors
+/// Returns invalid mode, count, index, alternative/sibling collision, or work.
+///
+/// # Source, version, history, example
+/// Source: inline CHOICE schema validation. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: record CHOICE gate.
+/// Example: called by `new_tagged_with_choice` constructors.
+fn validate_record_choice(
+    choice: ChoiceField,
+    fields: &[RecordField],
+    choice_index: usize,
+    context: &mut RecordContext,
+) -> Result<(), Error> {
+    validate_choice_alternatives(choice.alternatives())?;
+    let logical_count = fields.len().checked_add(1).ok_or(Error::SizeOverflow)?;
+    if logical_count > MAX_SEQUENCE_FIELDS || choice_index > fields.len() {
+        return Err(invalid(
+            "record CHOICE slot exceeds the six-field schema limit",
+        ));
+    }
+    for (alt_index, alternative) in choice.alternatives().iter().enumerate() {
+        context.charge(1)?;
+        let choice_tag = match choice.tagging {
+            ChoiceTagging::Natural => choice_alternative_tag(*alternative),
+            ChoiceTagging::Explicit(tag) if alt_index == 0 => tag,
+            ChoiceTagging::Explicit(_) => continue,
+        };
+        for sibling in fields {
+            context.charge(1)?;
+            if sibling.tag == choice_tag {
+                return Err(invalid("CHOICE tag collides with a sibling record field"));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Encode one selected primitive arm through the shared operation work counter.
@@ -18485,6 +19125,1394 @@ mod tests {
                     let mut changed = wire.to_vec();
                     changed[offset] = byte;
                     assert!(decode_without_panic(&changed));
+                }
+            }
+        }
+    }
+
+    /// Encode an inline explicit CHOICE and its tagged BOOLEAN sibling.
+    ///
+    /// # Parameters and returns
+    /// `set_parent` selects parent ordering; `rule` selects DER/CER; `choice`
+    /// describes the logical arm; `value` is selected. Returns the complete TLV.
+    ///
+    /// # Errors
+    /// Returns writer, descriptor, resource, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 inline EXPLICIT CHOICE. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: record CHOICE gate.
+    /// Example: called by the SEQUENCE and SET arm-vector regressions.
+    fn encode_record_choice(
+        set_parent: bool,
+        rule: RecordEncoding,
+        choice: ChoiceField,
+        value: ChoiceValue,
+    ) -> Result<Encoded, Error> {
+        let limits = Limits::default();
+        let mut context = RecordContext::new(&limits);
+        if set_parent {
+            let mut writer = SetWriter::new(rule, &mut context)?;
+            writer.write_choice(choice, value)?;
+            writer.write_boolean_tagged(Tag::context_specific(4), true)?;
+            writer.finish()
+        } else {
+            let mut writer = SequenceWriter::new(rule, &mut context)?;
+            writer.write_choice(choice, value)?;
+            writer.write_boolean_tagged(Tag::context_specific(4), true)?;
+            writer.finish()
+        }
+    }
+
+    /// Decode an inline explicit CHOICE and its tagged BOOLEAN sibling.
+    ///
+    /// # Parameters and returns
+    /// `set_parent` selects unordered SET traversal; `input` is a BER prefix;
+    /// `choice` and `fields` describe the parent; returns arm, sibling, and span.
+    ///
+    /// # Errors
+    /// Returns descriptor, framing, dispatch, scalar, work, or size errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: shared-context BER record decoding. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: record CHOICE gate.
+    /// Example: called by the SEQUENCE and SET arm-vector regressions.
+    fn decode_record_choice(
+        set_parent: bool,
+        input: &[u8],
+        choice: ChoiceField,
+        fields: &[RecordField],
+    ) -> Result<(ChoiceValue, bool, usize), Error> {
+        let limits = Limits::default();
+        let mut context = RecordContext::new(&limits);
+        if set_parent {
+            let mut reader =
+                SetReader::new_tagged_with_choice(input, fields, choice, 0, &mut context)?;
+            if reader.next_tagged_field()? != Some(Tag::context_specific(3)) {
+                return Err(invalid("SET CHOICE wrapper is missing"));
+            }
+            let selected = reader.read_choice()?;
+            if reader.next_tagged_field()? != Some(Tag::context_specific(4)) {
+                return Err(invalid("SET CHOICE sibling is missing"));
+            }
+            let sibling = reader.read_boolean()?;
+            if reader.next_tagged_field()?.is_some() {
+                return Err(invalid("SET CHOICE record has an extra field"));
+            }
+            let span = reader.finish()?;
+            Ok((selected, sibling, span.consumed_bytes))
+        } else {
+            let mut reader =
+                SequenceReader::new_tagged_with_choice(input, fields, choice, 0, &mut context)?;
+            if reader.next_tagged_field()? != Some(Tag::context_specific(3)) {
+                return Err(invalid("SEQUENCE CHOICE wrapper is missing"));
+            }
+            let selected = reader.read_choice()?;
+            if reader.next_tagged_field()? != Some(Tag::context_specific(4)) {
+                return Err(invalid("SEQUENCE CHOICE sibling is missing"));
+            }
+            let sibling = reader.read_boolean()?;
+            if reader.next_tagged_field()?.is_some() {
+                return Err(invalid("SEQUENCE CHOICE record has an extra field"));
+            }
+            let span = reader.finish()?;
+            Ok((selected, sibling, span.consumed_bytes))
+        }
+    }
+
+    /// Decode and compare an inline CHOICE record with one shared CER context.
+    ///
+    /// # Parameters and returns
+    /// `set_parent`, `input`, `choice`, and `fields` describe the record. Returns
+    /// the selected arm only when its consumed prefix is canonical CER.
+    ///
+    /// # Errors
+    /// Returns BER/schema/resource errors or `InvalidEncoding` on CER mismatch.
+    ///
+    /// # Source, version, history, example
+    /// Source: strict CER record contract. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: record CHOICE gate.
+    /// Example: used to assert CER acceptance and DER rejection.
+    fn strict_decode_record_choice(
+        set_parent: bool,
+        input: &[u8],
+        choice: ChoiceField,
+        fields: &[RecordField],
+        limits: &Limits,
+    ) -> Result<(ChoiceValue, usize), Error> {
+        let mut context = RecordContext::new(limits);
+        let (selected, consumed) = if set_parent {
+            let mut reader =
+                SetReader::new_tagged_with_choice(input, fields, choice, 0, &mut context)?;
+            if reader.next_tagged_field()? != Some(Tag::context_specific(3)) {
+                return Err(invalid("SET CHOICE wrapper is missing"));
+            }
+            let selected = reader.read_choice()?;
+            if reader.next_tagged_field()? != Some(Tag::context_specific(4))
+                || !reader.read_boolean()?
+                || reader.next_tagged_field()?.is_some()
+            {
+                return Err(invalid("SET CHOICE record is not the expected value"));
+            }
+            (selected, reader.finish()?.consumed_bytes)
+        } else {
+            let mut reader =
+                SequenceReader::new_tagged_with_choice(input, fields, choice, 0, &mut context)?;
+            if reader.next_tagged_field()? != Some(Tag::context_specific(3)) {
+                return Err(invalid("SEQUENCE CHOICE wrapper is missing"));
+            }
+            let selected = reader.read_choice()?;
+            if reader.next_tagged_field()? != Some(Tag::context_specific(4))
+                || !reader.read_boolean()?
+                || reader.next_tagged_field()?.is_some()
+            {
+                return Err(invalid("SEQUENCE CHOICE record is not the expected value"));
+            }
+            (selected, reader.finish()?.consumed_bytes)
+        };
+        let canonical = encode_record_choice_in_context(
+            set_parent,
+            RecordEncoding::Cer,
+            choice,
+            selected,
+            &mut context,
+        )?;
+        context.verify_canonical(input, consumed, &canonical.bytes)?;
+        Ok((selected, context.work_used))
+    }
+
+    /// Encode a record choice using an existing shared operation context.
+    ///
+    /// # Parameters and returns
+    /// `set_parent`, `rule`, `choice`, and `value` select the record; `context`
+    /// is shared with earlier decode work. Returns the complete encoded record.
+    ///
+    /// # Errors
+    /// Returns writer, resource, schema, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: shared-context strict CER re-encoding. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: record CHOICE gate.
+    /// Example: called by `strict_decode_record_choice`.
+    fn encode_record_choice_in_context(
+        set_parent: bool,
+        rule: RecordEncoding,
+        choice: ChoiceField,
+        value: ChoiceValue,
+        context: &mut RecordContext,
+    ) -> Result<Encoded, Error> {
+        if set_parent {
+            let mut writer = SetWriter::new(rule, context)?;
+            writer.write_choice(choice, value)?;
+            writer.write_boolean_tagged(Tag::context_specific(4), true)?;
+            writer.finish()
+        } else {
+            let mut writer = SequenceWriter::new(rule, context)?;
+            writer.write_choice(choice, value)?;
+            writer.write_boolean_tagged(Tag::context_specific(4), true)?;
+            writer.finish()
+        }
+    }
+
+    /// Encode a natural SET choice and one OCTET STRING in canonical order.
+    ///
+    /// # Parameters and returns
+    /// `rule`, `choice`, and optional `value` select the SET choice; `octets`
+    /// is the sibling payload; `context` shares resource accounting. Returns
+    /// the complete encoded SET.
+    ///
+    /// # Errors
+    /// Returns descriptor, ordering, output/work, size, or allocation errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET ordering keys. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: natural SET CHOICE gate.
+    /// Example: used by strict CER re-encoding tests.
+    fn encode_natural_set_with_octet(
+        rule: RecordEncoding,
+        choice: ChoiceField,
+        value: Option<ChoiceValue>,
+        octets: &[u8],
+        context: &mut RecordContext,
+    ) -> Result<Encoded, Error> {
+        let mut writer = SetWriter::new(rule, context)?;
+        let choice_first = if let Some(value) = value {
+            let (element, _) = choice_item_for_value(choice.alternatives(), value)?;
+            let wire_number = collection_element_tag(element);
+            let wire_tag =
+                Tag::universal(u32::try_from(wire_number).map_err(|_| Error::SizeOverflow)?);
+            let ordering_key = match rule {
+                RecordEncoding::Der => wire_tag,
+                RecordEncoding::Cer => choice
+                    .alternatives()
+                    .iter()
+                    .copied()
+                    .map(choice_alternative_tag)
+                    .min()
+                    .ok_or_else(|| invalid("natural CHOICE has no alternatives"))?,
+            };
+            ordering_key < Tag::universal(4)
+        } else {
+            false
+        };
+        if choice_first {
+            let selected = value.ok_or_else(|| invalid("SET CHOICE is missing"))?;
+            writer.write_choice(choice, selected)?;
+        }
+        writer.write_octet_string(octets, 1, 1)?;
+        if !choice_first {
+            if let Some(selected) = value {
+                writer.write_choice(choice, selected)?;
+            }
+        }
+        writer.finish()
+    }
+
+    /// Decode one natural SET CHOICE record with a caller's shared context.
+    ///
+    /// # Parameters and returns
+    /// `input` is a BER prefix; `choice`, `fields`, and `choice_index` describe
+    /// one logical natural slot and its normal siblings; `context` shares its
+    /// input, output, retained-storage, and work ceilings. Returns selection,
+    /// sibling bytes, and consumed prefix size.
+    ///
+    /// # Errors
+    /// Returns malformed/duplicate fields, size, or budget errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: natural SET CHOICE BER. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: natural SET CHOICE gate.
+    /// Example: used by BER and strict CER choice tests.
+    fn decode_natural_set_with_octet(
+        input: &[u8],
+        choice: ChoiceField,
+        fields: &[RecordField],
+        choice_index: usize,
+        context: &mut RecordContext,
+    ) -> Result<(Option<ChoiceValue>, Vec<u8>, usize), Error> {
+        let (selected, octets, consumed) = {
+            let mut reader =
+                SetReader::new_tagged_with_choice(input, fields, choice, choice_index, context)?;
+            let mut selected = None;
+            let mut octets = None;
+            while let Some(tag) = reader.next_tagged_field()? {
+                if tag == Tag::universal(4) {
+                    if octets.is_some() {
+                        return Err(invalid("SET has duplicate OCTET STRING fields"));
+                    }
+                    octets = Some(reader.read_octet_string(1, 1)?);
+                } else {
+                    if selected.is_some() {
+                        return Err(invalid("SET has duplicate CHOICE arms"));
+                    }
+                    selected = Some(reader.read_choice()?);
+                }
+            }
+            (
+                selected,
+                octets.unwrap_or_default(),
+                reader.finish()?.consumed_bytes,
+            )
+        };
+        Ok((selected, octets, consumed))
+    }
+
+    /// Strictly decode and re-encode one natural SET CHOICE with shared work.
+    ///
+    /// # Parameters and returns
+    /// `input`, `choice`, `fields`, `choice_index`, and `limits` describe a
+    /// bounded strict operation. Returns selection, sibling bytes, and prefix.
+    ///
+    /// # Errors
+    /// Returns BER/schema/resource errors or `InvalidEncoding` on CER mismatch.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 strict CER SET ordering. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: natural SET CHOICE gate.
+    /// Example: called for canonical and reversed-order vectors.
+    fn strict_decode_natural_set_with_octet(
+        input: &[u8],
+        choice: ChoiceField,
+        fields: &[RecordField],
+        choice_index: usize,
+        limits: &Limits,
+    ) -> Result<(Option<ChoiceValue>, Vec<u8>, usize, usize), Error> {
+        let mut context = RecordContext::new(limits);
+        let (selected, octets, consumed) =
+            decode_natural_set_with_octet(input, choice, fields, choice_index, &mut context)?;
+        let canonical = encode_natural_set_with_octet(
+            RecordEncoding::Cer,
+            choice,
+            selected,
+            &octets,
+            &mut context,
+        )?;
+        context.verify_canonical(input, consumed, &canonical.bytes)?;
+        Ok((selected, octets, consumed, context.work_used))
+    }
+
+    /// Exercise all explicit CHOICE arms under SEQUENCE and SET parents.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks C DER/CER vectors and selected-arm dispatch.
+    ///
+    /// # Errors
+    /// Panics if any arm is encoded or dispatched incorrectly.
+    ///
+    /// # Source, version, history, example
+    /// Source: approved inline CHOICE C vectors. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: record CHOICE gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn explicit_record_choice_dispatches_every_arm_in_sequence_and_set() {
+        let alternatives = [
+            ChoiceAlternative::Boolean,
+            ChoiceAlternative::Null,
+            ChoiceAlternative::BoundedInteger { lower: 0, upper: 2 },
+        ];
+        let choice = ChoiceField::explicit(Tag::context_specific(3), &alternatives).unwrap();
+        let fields = [RecordField::new(Tag::context_specific(4), FieldKind::Boolean).unwrap()];
+        let cases: &[(ChoiceValue, &[u8], &[u8])] = &[
+            (
+                ChoiceValue::Boolean(true),
+                &[0x30, 8, 0xa3, 3, 1, 1, 0xff, 0x84, 1, 0xff],
+                &[
+                    0x30, 0x80, 0xa3, 0x80, 1, 1, 0xff, 0, 0, 0x84, 1, 0xff, 0, 0,
+                ],
+            ),
+            (
+                ChoiceValue::Null,
+                &[0x30, 7, 0xa3, 2, 5, 0, 0x84, 1, 0xff],
+                &[0x30, 0x80, 0xa3, 0x80, 5, 0, 0, 0, 0x84, 1, 0xff, 0, 0],
+            ),
+            (
+                ChoiceValue::Integer(2),
+                &[0x30, 8, 0xa3, 3, 2, 1, 2, 0x84, 1, 0xff],
+                &[0x30, 0x80, 0xa3, 0x80, 2, 1, 2, 0, 0, 0x84, 1, 0xff, 0, 0],
+            ),
+        ];
+        for (set_parent, root) in [(false, 0x30), (true, 0x31)] {
+            for (value, sequence_der, sequence_cer) in cases {
+                let der =
+                    encode_record_choice(set_parent, RecordEncoding::Der, choice, *value).unwrap();
+                let cer =
+                    encode_record_choice(set_parent, RecordEncoding::Cer, choice, *value).unwrap();
+                let mut der_vector = sequence_der.to_vec();
+                let mut cer_vector = sequence_cer.to_vec();
+                der_vector[0] = root;
+                cer_vector[0] = root;
+                assert_eq!(der.bytes, der_vector);
+                assert_eq!(cer.bytes, cer_vector);
+                for wire in [&der.bytes, &cer.bytes] {
+                    let (selected, sibling, consumed) =
+                        decode_record_choice(set_parent, wire, choice, &fields).unwrap();
+                    assert_eq!(selected, *value);
+                    assert!(sibling);
+                    assert_eq!(consumed, wire.len());
+                }
+                assert_eq!(
+                    strict_decode_record_choice(
+                        set_parent,
+                        &cer.bytes,
+                        choice,
+                        &fields,
+                        &Limits::default(),
+                    )
+                    .unwrap()
+                    .0,
+                    *value
+                );
+                assert!(strict_decode_record_choice(
+                    set_parent,
+                    &der.bytes,
+                    choice,
+                    &fields,
+                    &Limits::default(),
+                )
+                .is_err());
+            }
+        }
+    }
+
+    /// Pin shared strict CER input, output, and work limits for inline CHOICE.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Uses an EXPLICIT INTEGER arm and its CER record vector.
+    ///
+    /// # Errors
+    /// Panics if exact ceilings fail or one-below ceilings pass.
+    ///
+    /// # Source, version, history, example
+    /// Source: shared `RecordContext` budget contract. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: record CHOICE gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn explicit_record_choice_shared_context_limits_are_exact() {
+        let alternatives = [ChoiceAlternative::BoundedInteger { lower: 0, upper: 2 }];
+        let choice = ChoiceField::explicit(Tag::context_specific(3), &alternatives).unwrap();
+        let fields = [RecordField::new(Tag::context_specific(4), FieldKind::Boolean).unwrap()];
+        let input_tlv = [0x30, 0x80, 0xa3, 0x80, 2, 1, 2, 0, 0, 0x84, 1, 0xff, 0, 0];
+        let broad_limits = Limits {
+            max_input_bytes: input_tlv.len(),
+            max_output_bytes: input_tlv.len(),
+            ..Limits::default()
+        };
+        let (_, work) =
+            strict_decode_record_choice(false, &input_tlv, choice, &fields, &broad_limits).unwrap();
+        // The fixed path costs 24 parse/dispatch, 17 encode, and 14 compare octets.
+        assert_eq!(work, 55 * 8);
+        let exact = Limits {
+            max_work_bits: work,
+            ..broad_limits
+        };
+        assert_eq!(
+            strict_decode_record_choice(false, &input_tlv, choice, &fields, &exact)
+                .unwrap()
+                .1,
+            work
+        );
+        assert!(strict_decode_record_choice(
+            false,
+            &input_tlv,
+            choice,
+            &fields,
+            &Limits {
+                max_work_bits: work - 1,
+                ..broad_limits
+            },
+        )
+        .is_err());
+        assert!(strict_decode_record_choice(
+            false,
+            &input_tlv,
+            choice,
+            &fields,
+            &Limits {
+                max_input_bytes: input_tlv.len() - 1,
+                ..broad_limits
+            },
+        )
+        .is_err());
+        assert!(strict_decode_record_choice(
+            false,
+            &input_tlv,
+            choice,
+            &fields,
+            &Limits {
+                max_output_bytes: input_tlv.len() - 1,
+                ..broad_limits
+            },
+        )
+        .is_err());
+        let mut suffixed = input_tlv.to_vec();
+        suffixed.push(0x55);
+        assert_eq!(
+            strict_decode_record_choice(
+                false,
+                &suffixed,
+                choice,
+                &fields,
+                &Limits {
+                    max_input_bytes: suffixed.len(),
+                    ..broad_limits
+                },
+            )
+            .unwrap()
+            .0,
+            ChoiceValue::Integer(2)
+        );
+    }
+
+    /// Map several natural alternative tags to one SEQUENCE presence slot.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks writer/reader ordering and duplicate-arm rejection.
+    ///
+    /// # Errors
+    /// Panics if natural dispatch, logical duplicate tracking, or vectors differ.
+    ///
+    /// # Source, version, history, example
+    /// Source: C natural CHOICE record vector. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: record CHOICE gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn natural_record_choice_uses_one_logical_sequence_slot() {
+        let alternatives = [
+            ChoiceAlternative::Null,
+            ChoiceAlternative::BoundedInteger { lower: 0, upper: 2 },
+        ];
+        let choice = ChoiceField::natural(&alternatives).unwrap();
+        let sibling = RecordField::new(Tag::context_specific(4), FieldKind::Boolean).unwrap();
+        let fields = [sibling];
+        let expected = [0x30, 6, 2, 1, 2, 0x84, 1, 0xff];
+        let limits = Limits::default();
+        let mut context = RecordContext::new(&limits);
+        let mut writer = SequenceWriter::new(RecordEncoding::Der, &mut context).unwrap();
+        writer
+            .write_choice(choice, ChoiceValue::Integer(2))
+            .unwrap();
+        writer
+            .write_boolean_tagged(Tag::context_specific(4), true)
+            .unwrap();
+        assert_eq!(writer.finish().unwrap().bytes, expected);
+
+        let mut context = RecordContext::new(&limits);
+        let mut reader =
+            SequenceReader::new_tagged_with_choice(&expected, &fields, choice, 0, &mut context)
+                .unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(Tag::universal(2)));
+        assert_eq!(reader.read_choice().unwrap(), ChoiceValue::Integer(2));
+        assert_eq!(
+            reader.next_tagged_field().unwrap(),
+            Some(Tag::context_specific(4))
+        );
+        assert!(reader.read_boolean().unwrap());
+        assert!(reader.next_tagged_field().unwrap().is_none());
+        assert_eq!(reader.finish().unwrap().consumed_bytes, expected.len());
+
+        let duplicate = [0x30, 5, 2, 1, 2, 5, 0];
+        let duplicate_alternatives = [
+            ChoiceAlternative::BoundedInteger { lower: 0, upper: 2 },
+            ChoiceAlternative::Null,
+        ];
+        let duplicate_choice = ChoiceField::natural(&duplicate_alternatives).unwrap();
+        let mut context = RecordContext::new(&limits);
+        let mut reader = SequenceReader::new_tagged_with_choice(
+            &duplicate,
+            &[],
+            duplicate_choice,
+            0,
+            &mut context,
+        )
+        .unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(Tag::universal(2)));
+        assert_eq!(reader.read_choice().unwrap(), ChoiceValue::Integer(2));
+        assert!(reader.next_tagged_field().is_err());
+    }
+
+    /// Decode natural CHOICE slots at each position around normal siblings.
+    ///
+    /// # Parameters and returns
+    /// `input`, `fields`, and `choice_index` describe a record. Returns success
+    /// after all children are visited in logical declaration order.
+    ///
+    /// # Errors
+    /// Returns unknown/out-of-order tags, wrong values, framing, or work errors.
+    ///
+    /// # Source, version, history, example
+    /// Source: natural CHOICE logical slot semantics. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: record CHOICE tests.
+    /// Example: called for choice-at-start/middle/end fixtures.
+    fn check_natural_choice_position(
+        input: &[u8],
+        fields: &[RecordField],
+        choice_index: usize,
+    ) -> Result<(), Error> {
+        let alternatives = [
+            ChoiceAlternative::Boolean,
+            ChoiceAlternative::BoundedInteger { lower: 0, upper: 2 },
+        ];
+        let choice = ChoiceField::natural(&alternatives)?;
+        let mut context = RecordContext::new(&Limits::default());
+        let mut reader = SequenceReader::new_tagged_with_choice(
+            input,
+            fields,
+            choice,
+            choice_index,
+            &mut context,
+        )?;
+        let mut count = 0_usize;
+        while let Some(tag) = reader.next_tagged_field()? {
+            if tag == Tag::universal(2) {
+                if reader.read_choice()? != ChoiceValue::Integer(2) {
+                    return Err(invalid("natural CHOICE selected the wrong arm"));
+                }
+            } else if !reader.read_boolean()? {
+                return Err(invalid("natural CHOICE sibling has the wrong value"));
+            }
+            count = count.checked_add(1).ok_or(Error::SizeOverflow)?;
+        }
+        if count != fields.len() + 1 {
+            return Err(invalid("natural CHOICE record has the wrong field count"));
+        }
+        reader.finish()?;
+        Ok(())
+    }
+
+    /// Cover natural CHOICE at the first, middle, and last SEQUENCE positions.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Also verifies sibling collisions fail before malformed
+    /// parent input is parsed.
+    ///
+    /// # Errors
+    /// Panics if position mapping or early collision validation is incorrect.
+    ///
+    /// # Source, version, history, example
+    /// Source: record CHOICE schema dispatch. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: record CHOICE gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn natural_record_choice_positions_and_early_collisions() {
+        let context0 = RecordField::new(Tag::context_specific(0), FieldKind::Boolean).unwrap();
+        let context4 = RecordField::new(Tag::context_specific(4), FieldKind::Boolean).unwrap();
+        let context6 = RecordField::new(Tag::context_specific(6), FieldKind::Boolean).unwrap();
+        let fields_start = [context4, context6];
+        let fields_middle = [context0, context6];
+        let fields_end = [context0, context4];
+        let vectors: &[(&[u8], &[RecordField], usize)] = &[
+            (
+                &[0x30, 9, 2, 1, 2, 0x84, 1, 0xff, 0x86, 1, 0xff],
+                &fields_start,
+                0,
+            ),
+            (
+                &[0x30, 9, 0x80, 1, 0xff, 2, 1, 2, 0x86, 1, 0xff],
+                &fields_middle,
+                1,
+            ),
+            (
+                &[0x30, 9, 0x80, 1, 0xff, 0x84, 1, 0xff, 2, 1, 2],
+                &fields_end,
+                2,
+            ),
+        ];
+        for (input, fields, choice_index) in vectors {
+            check_natural_choice_position(input, fields, *choice_index).unwrap();
+        }
+
+        let collision = [RecordField::new(Tag::universal(2), FieldKind::Integer).unwrap()];
+        let alternatives = [
+            ChoiceAlternative::Boolean,
+            ChoiceAlternative::BoundedInteger { lower: 0, upper: 2 },
+        ];
+        let choice = ChoiceField::natural(&alternatives).unwrap();
+        let mut context = RecordContext::new(&Limits::default());
+        assert!(matches!(
+            SequenceReader::new_tagged_with_choice(&[], &collision, choice, 0, &mut context),
+            Err(Error::InvalidEncoding {
+                reason: "CHOICE tag collides with a sibling record field"
+            })
+        ));
+    }
+
+    /// Check DER selected-tag and CER minimum-tag ordering for natural SET arms.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Covers all supported arms, BER order, strict CER, absence,
+    /// prefix suffixes, and the live C SET vectors.
+    ///
+    /// # Errors
+    /// Panics if encoding, unordered BER dispatch, or canonical comparison differs.
+    ///
+    /// # Source, version, history, example
+    /// Source: natural SET CHOICE C vectors and X.690 9.3/10.3. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: natural SET CHOICE gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn natural_set_choice_orders_all_arms_by_der_and_cer_rule() {
+        let alternatives = [
+            ChoiceAlternative::Boolean,
+            ChoiceAlternative::Null,
+            ChoiceAlternative::BoundedInteger { lower: 0, upper: 2 },
+        ];
+        let choice = ChoiceField::natural(&alternatives).unwrap();
+        let fields = [RecordField::new(Tag::universal(4), FieldKind::OctetString).unwrap()];
+        let cases: &[(ChoiceValue, &[u8], &[u8])] = &[
+            (
+                ChoiceValue::Boolean(true),
+                &[0x31, 6, 1, 1, 0xff, 4, 1, 0xaa],
+                &[0x31, 0x80, 1, 1, 0xff, 4, 1, 0xaa, 0, 0],
+            ),
+            (
+                ChoiceValue::Integer(2),
+                &[0x31, 6, 2, 1, 2, 4, 1, 0xaa],
+                &[0x31, 0x80, 2, 1, 2, 4, 1, 0xaa, 0, 0],
+            ),
+            (
+                ChoiceValue::Null,
+                &[0x31, 5, 4, 1, 0xaa, 5, 0],
+                &[0x31, 0x80, 5, 0, 4, 1, 0xaa, 0, 0],
+            ),
+        ];
+        for (index, (value, expected_der, expected_cer)) in cases.iter().enumerate() {
+            let limits = Limits::default();
+            let mut der_context = RecordContext::new(&limits);
+            let der = encode_natural_set_with_octet(
+                RecordEncoding::Der,
+                choice,
+                Some(*value),
+                &[0xaa],
+                &mut der_context,
+            )
+            .unwrap();
+            assert_eq!(der.bytes, *expected_der);
+            let mut cer_context = RecordContext::new(&limits);
+            let cer = encode_natural_set_with_octet(
+                RecordEncoding::Cer,
+                choice,
+                Some(*value),
+                &[0xaa],
+                &mut cer_context,
+            )
+            .unwrap();
+            assert_eq!(cer.bytes, *expected_cer);
+            for wire in [&der.bytes, &cer.bytes] {
+                let mut decode_context = RecordContext::new(&limits);
+                let (selected, octets, consumed) = decode_natural_set_with_octet(
+                    wire,
+                    choice,
+                    &fields,
+                    index % 2,
+                    &mut decode_context,
+                )
+                .unwrap();
+                assert_eq!(selected, Some(*value));
+                assert_eq!(octets, [0xaa]);
+                assert_eq!(consumed, wire.len());
+            }
+            assert_eq!(
+                strict_decode_natural_set_with_octet(
+                    &cer.bytes,
+                    choice,
+                    &fields,
+                    index % 2,
+                    &limits,
+                )
+                .unwrap()
+                .0,
+                Some(*value)
+            );
+            assert!(strict_decode_natural_set_with_octet(
+                &der.bytes,
+                choice,
+                &fields,
+                index % 2,
+                &limits,
+            )
+            .is_err());
+        }
+    }
+
+    /// Check BER aliases, canonical suffixes, and absent natural SET choices.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Covers unordered BER aliases, strict CER rejection,
+    /// empty logical choice state, and exact consumed-prefix behavior.
+    ///
+    /// # Errors
+    /// Panics if alias dispatch, canonical checking, or empty-choice handling differs.
+    ///
+    /// # Source, version, history, example
+    /// Source: C-compatible BER and X.690 CER. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: natural SET CHOICE gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn natural_set_choice_aliases_and_absence() {
+        let alternatives = [
+            ChoiceAlternative::Boolean,
+            ChoiceAlternative::Null,
+            ChoiceAlternative::BoundedInteger { lower: 0, upper: 2 },
+        ];
+        let choice = ChoiceField::natural(&alternatives).unwrap();
+        let fields = [RecordField::new(Tag::universal(4), FieldKind::OctetString).unwrap()];
+        let reversed_cer = [0x31, 0x80, 4, 1, 0xaa, 5, 0, 0, 0];
+        let limits = Limits::default();
+        let mut decode_context = RecordContext::new(&limits);
+        assert_eq!(
+            decode_natural_set_with_octet(&reversed_cer, choice, &fields, 0, &mut decode_context,)
+                .unwrap()
+                .0,
+            Some(ChoiceValue::Null)
+        );
+        assert!(
+            strict_decode_natural_set_with_octet(&reversed_cer, choice, &fields, 0, &limits,)
+                .is_err()
+        );
+
+        let high_tag_alias = [0x31, 8, 0x1f, 0x80, 2, 1, 2, 4, 1, 0xaa];
+        let mut alias_context = RecordContext::new(&limits);
+        assert_eq!(
+            decode_natural_set_with_octet(&high_tag_alias, choice, &fields, 0, &mut alias_context,)
+                .unwrap()
+                .0,
+            Some(ChoiceValue::Integer(2))
+        );
+        assert!(
+            strict_decode_natural_set_with_octet(&high_tag_alias, choice, &fields, 0, &limits,)
+                .is_err()
+        );
+
+        for (rule, expected) in [
+            (RecordEncoding::Der, &[0x31, 3, 4, 1, 0xaa][..]),
+            (RecordEncoding::Cer, &[0x31, 0x80, 4, 1, 0xaa, 0, 0][..]),
+        ] {
+            let mut context = RecordContext::new(&limits);
+            let encoded =
+                encode_natural_set_with_octet(rule, choice, None, &[0xaa], &mut context).unwrap();
+            assert_eq!(encoded.bytes, expected);
+            if rule == RecordEncoding::Cer {
+                assert_eq!(
+                    strict_decode_natural_set_with_octet(
+                        &encoded.bytes,
+                        choice,
+                        &fields,
+                        0,
+                        &limits,
+                    )
+                    .unwrap()
+                    .0,
+                    None
+                );
+            }
+        }
+    }
+
+    /// Reject natural SET collisions, duplicate arms, and rollback failures.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Covers unselected-arm sibling collisions before/after the
+    /// choice, malformed range rollback, and duplicate distinct wire tags.
+    ///
+    /// # Errors
+    /// Panics if collisions, duplicates, rollback, or work monotonicity differ.
+    ///
+    /// # Source, version, history, example
+    /// Source: natural SET CHOICE validation and transactional writing.
+    /// Version: 2026-11-01. Responsible: runtime maintainers.
+    /// History: natural SET CHOICE gate. Example: run with `cargo test`.
+    #[test]
+    fn natural_set_choice_collisions_duplicates_and_failures() {
+        let alternatives = [
+            ChoiceAlternative::Boolean,
+            ChoiceAlternative::Null,
+            ChoiceAlternative::BoundedInteger { lower: 0, upper: 2 },
+        ];
+        let choice = ChoiceField::natural(&alternatives).unwrap();
+        let collision_fields = [RecordField::new(Tag::universal(1), FieldKind::Boolean).unwrap()];
+        let mut context = RecordContext::new(&Limits::default());
+        assert!(matches!(
+            SetReader::new_tagged_with_choice(&[], &collision_fields, choice, 0, &mut context,),
+            Err(Error::InvalidEncoding {
+                reason: "CHOICE tag collides with a sibling record field"
+            })
+        ));
+
+        let limits = Limits::default();
+        let mut before_context = RecordContext::new(&limits);
+        let mut before = SetWriter::new(RecordEncoding::Der, &mut before_context).unwrap();
+        before.write_boolean(false).unwrap();
+        assert!(before.write_choice(choice, ChoiceValue::Null).is_err());
+        assert_eq!(before.finish().unwrap().bytes, [0x31, 3, 1, 1, 0]);
+
+        let mut after_context = RecordContext::new(&limits);
+        let mut after = SetWriter::new(RecordEncoding::Der, &mut after_context).unwrap();
+        after.write_choice(choice, ChoiceValue::Null).unwrap();
+        assert!(after.write_boolean(false).is_err());
+        assert_eq!(after.finish().unwrap().bytes, [0x31, 2, 5, 0]);
+
+        let duplicate = [0x31, 0x80, 1, 1, 0xff, 5, 0, 0, 0];
+        let mut context = RecordContext::new(&limits);
+        let mut reader =
+            SetReader::new_tagged_with_choice(&duplicate, &[], choice, 0, &mut context).unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(Tag::universal(1)));
+        assert_eq!(reader.read_choice().unwrap(), ChoiceValue::Boolean(true));
+        assert!(reader.next_tagged_field().is_err());
+
+        let narrow = [ChoiceAlternative::BoundedInteger { lower: 0, upper: 2 }];
+        let integer_choice = ChoiceField::natural(&narrow).unwrap();
+        let out_of_range = [0x31, 3, 2, 1, 3];
+        let mut context = RecordContext::new(&limits);
+        let mut reader =
+            SetReader::new_tagged_with_choice(&out_of_range, &[], integer_choice, 0, &mut context)
+                .unwrap();
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(Tag::universal(2)));
+        let prior_work = reader.inner.context.work_used;
+        assert!(reader.read_choice().is_err());
+        assert!(reader.inner.context.work_used > prior_work);
+        assert_eq!(reader.next_tagged_field().unwrap(), Some(Tag::universal(2)));
+    }
+
+    /// Require callers to supply the selected or minimum-key SET field order.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Pins selected-tag DER order, minimum-tag CER order, and
+    /// verifies a failed field append does not alter bytes or committed tags.
+    ///
+    /// # Errors
+    /// Panics if invalid caller order commits the CHOICE or sibling bytes.
+    ///
+    /// # Source, version, history, example
+    /// Source: natural SET CHOICE ordering and transactional append.
+    /// Version: 2026-11-01. Responsible: runtime maintainers.
+    /// History: natural SET CHOICE gate. Example: run with `cargo test`.
+    #[test]
+    fn natural_set_choice_requires_rule_specific_caller_order() {
+        let alternatives = [
+            ChoiceAlternative::Boolean,
+            ChoiceAlternative::Null,
+            ChoiceAlternative::BoundedInteger { lower: 0, upper: 2 },
+        ];
+        let choice = ChoiceField::natural(&alternatives).unwrap();
+        let limits = Limits::default();
+
+        let mut der_context = RecordContext::new(&limits);
+        let mut der = SetWriter::new(RecordEncoding::Der, &mut der_context).unwrap();
+        der.write_choice(choice, ChoiceValue::Null).unwrap();
+        assert!(der.write_octet_string(&[0xaa], 1, 1).is_err());
+        assert_eq!(der.finish().unwrap().bytes, [0x31, 2, 5, 0]);
+
+        let mut cer_context = RecordContext::new(&limits);
+        let mut cer = SetWriter::new(RecordEncoding::Cer, &mut cer_context).unwrap();
+        cer.write_octet_string(&[0xaa], 1, 1).unwrap();
+        let work_before = cer.inner.context.work_used;
+        assert!(cer.write_choice(choice, ChoiceValue::Null).is_err());
+        assert!(cer.inner.context.work_used > work_before);
+        assert_eq!(cer.finish().unwrap().bytes, [0x31, 0x80, 4, 1, 0xaa, 0, 0]);
+    }
+
+    /// Pin exact input, output, and cumulative work for natural SET choices.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Uses the canonical CER SET containing NULL and OCTET STRING.
+    ///
+    /// # Errors
+    /// Panics if exact boundaries fail or one-below boundaries pass.
+    ///
+    /// # Source, version, history, example
+    /// Source: shared `RecordContext` SET budgets. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: natural SET CHOICE gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn natural_set_choice_limits_are_exact() {
+        let alternatives = [
+            ChoiceAlternative::Boolean,
+            ChoiceAlternative::Null,
+            ChoiceAlternative::BoundedInteger { lower: 0, upper: 2 },
+        ];
+        let choice = ChoiceField::natural(&alternatives).unwrap();
+        let fields = [RecordField::new(Tag::universal(4), FieldKind::OctetString).unwrap()];
+        let wire = [0x31, 0x80, 5, 0, 4, 1, 0xaa, 0, 0];
+        let generous = Limits {
+            max_input_bytes: wire.len(),
+            max_output_bytes: wire.len(),
+            ..Limits::default()
+        };
+        let (_, _, _, work) =
+            strict_decode_natural_set_with_octet(&wire, choice, &fields, 0, &generous).unwrap();
+        // Fixed total: 9 setup, 20 BER traversal, 14 CER encoding, and 9 compare octets.
+        assert_eq!(work, 52 * 8);
+        assert!(work > 0);
+        let exact = Limits {
+            max_work_bits: work,
+            ..generous
+        };
+        assert_eq!(
+            strict_decode_natural_set_with_octet(&wire, choice, &fields, 0, &exact)
+                .unwrap()
+                .3,
+            work
+        );
+        assert!(strict_decode_natural_set_with_octet(
+            &wire,
+            choice,
+            &fields,
+            0,
+            &Limits {
+                max_input_bytes: wire.len() - 1,
+                ..generous
+            },
+        )
+        .is_err());
+        assert!(strict_decode_natural_set_with_octet(
+            &wire,
+            choice,
+            &fields,
+            0,
+            &Limits {
+                max_output_bytes: wire.len() - 1,
+                ..generous
+            },
+        )
+        .is_err());
+        assert!(strict_decode_natural_set_with_octet(
+            &wire,
+            choice,
+            &fields,
+            0,
+            &Limits {
+                max_work_bits: work - 1,
+                ..generous
+            },
+        )
+        .is_err());
+        let mut suffixed = wire.to_vec();
+        suffixed.push(0x55);
+        assert_eq!(
+            strict_decode_natural_set_with_octet(
+                &suffixed,
+                choice,
+                &fields,
+                0,
+                &Limits {
+                    max_input_bytes: suffixed.len(),
+                    ..generous
+                },
+            )
+            .unwrap()
+            .2,
+            wire.len()
+        );
+    }
+
+    /// Place SET siblings around both a natural CHOICE's minimum and selected tag.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Uses INTEGER/NULL alternatives (minimum tag 2), selected
+    /// NULL (wire tag 5), and normal universal tags 1, 3, 4, and 10.
+    ///
+    /// # Errors
+    /// Panics if DER or CER uses the wrong independent ordering key.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 SET component ordering. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: natural SET CHOICE gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn natural_set_choice_handles_siblings_on_both_sides_of_keys() {
+        let alternatives = [
+            ChoiceAlternative::BoundedInteger { lower: 0, upper: 2 },
+            ChoiceAlternative::Null,
+        ];
+        let choice = ChoiceField::natural(&alternatives).unwrap();
+        let der_expected = [0x31, 15, 1, 1, 0, 3, 2, 7, 0x80, 4, 1, 0xaa, 5, 0, 10, 1, 2];
+        let cer_expected = [
+            0x31, 0x80, 1, 1, 0, 5, 0, 3, 2, 7, 0x80, 4, 1, 0xaa, 10, 1, 2, 0, 0,
+        ];
+        for (rule, expected) in [
+            (RecordEncoding::Der, der_expected.as_slice()),
+            (RecordEncoding::Cer, cer_expected.as_slice()),
+        ] {
+            let limits = Limits::default();
+            let mut context = RecordContext::new(&limits);
+            let mut writer = SetWriter::new(rule, &mut context).unwrap();
+            writer.write_boolean(false).unwrap();
+            if rule == RecordEncoding::Cer {
+                writer.write_choice(choice, ChoiceValue::Null).unwrap();
+                writer.write_bit_string(&[0x80], 1, 1, 1).unwrap();
+                writer.write_octet_string(&[0xaa], 1, 1).unwrap();
+            } else {
+                writer.write_bit_string(&[0x80], 1, 1, 1).unwrap();
+                writer.write_octet_string(&[0xaa], 1, 1).unwrap();
+                writer.write_choice(choice, ChoiceValue::Null).unwrap();
+            }
+            writer.write_enumerated(2).unwrap();
+            assert_eq!(writer.finish().unwrap().bytes, expected);
+        }
+
+        let fields = [
+            RecordField::new(Tag::universal(1), FieldKind::Boolean).unwrap(),
+            RecordField::new(Tag::universal(3), FieldKind::BitString).unwrap(),
+            RecordField::new(Tag::universal(4), FieldKind::OctetString).unwrap(),
+            RecordField::new(Tag::universal(10), FieldKind::Enumerated).unwrap(),
+        ];
+        let mut context = RecordContext::new(&Limits::default());
+        let mut reader =
+            SetReader::new_tagged_with_choice(&cer_expected, &fields, choice, 1, &mut context)
+                .unwrap();
+        let mut selected = None;
+        while let Some(tag) = reader.next_tagged_field().unwrap() {
+            match tag.number {
+                1 => assert!(!reader.read_boolean().unwrap()),
+                5 => selected = Some(reader.read_choice().unwrap()),
+                3 => assert_eq!(reader.read_bit_string(1, 1).unwrap().as_bytes(), &[0x80]),
+                4 => assert_eq!(reader.read_octet_string(1, 1).unwrap(), [0xaa]),
+                10 => assert_eq!(reader.read_enumerated().unwrap(), 2),
+                _ => panic!("unexpected SET tag"),
+            }
+        }
+        assert_eq!(selected, Some(ChoiceValue::Null));
+        let consumed = reader.finish().unwrap().consumed_bytes;
+        let mut writer = SetWriter::new(RecordEncoding::Cer, &mut context).unwrap();
+        writer.write_boolean(false).unwrap();
+        writer.write_choice(choice, ChoiceValue::Null).unwrap();
+        writer.write_bit_string(&[0x80], 1, 1, 1).unwrap();
+        writer.write_octet_string(&[0xaa], 1, 1).unwrap();
+        writer.write_enumerated(2).unwrap();
+        let canonical = writer.finish().unwrap();
+        context
+            .verify_canonical(&cer_expected, consumed, &canonical.bytes)
+            .unwrap();
+    }
+
+    /// Mutate and truncate natural SET CHOICE records without any panics.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Covers canonical and reversed CER order, root/EOC framing,
+    /// identifiers, primitive content, and every prefix boundary.
+    ///
+    /// # Errors
+    /// Panics only if a bounded BER or strict CER decoder unwinds.
+    ///
+    /// # Source, version, history, example
+    /// Source: natural SET CHOICE mutation hardening. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: natural SET CHOICE gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn natural_set_choice_mutations_and_truncations_do_not_panic() {
+        let alternatives = [
+            ChoiceAlternative::Boolean,
+            ChoiceAlternative::Null,
+            ChoiceAlternative::BoundedInteger { lower: 0, upper: 2 },
+        ];
+        let choice = ChoiceField::natural(&alternatives).unwrap();
+        let fields = [RecordField::new(Tag::universal(4), FieldKind::OctetString).unwrap()];
+        let wires: &[&[u8]] = &[
+            &[0x31, 0x80, 5, 0, 4, 1, 0xaa, 0, 0],
+            &[0x31, 0x80, 4, 1, 0xaa, 5, 0, 0, 0],
+            &[0x31, 8, 0x1f, 0x80, 2, 1, 2, 4, 1, 0xaa],
+        ];
+        for wire in wires {
+            for end in 0..wire.len() {
+                assert!(std::panic::catch_unwind(|| {
+                    let mut context = RecordContext::new(&Limits::default());
+                    let _ = decode_natural_set_with_octet(
+                        &wire[..end],
+                        choice,
+                        &fields,
+                        0,
+                        &mut context,
+                    );
+                    let _ = strict_decode_natural_set_with_octet(
+                        &wire[..end],
+                        choice,
+                        &fields,
+                        0,
+                        &Limits::default(),
+                    );
+                })
+                .is_ok());
+            }
+            for offset in 0..wire.len() {
+                for byte in [0, 1, 0x31, 0x80, 0xff] {
+                    let mut changed = wire.to_vec();
+                    changed[offset] = byte;
+                    assert!(std::panic::catch_unwind(|| {
+                        let mut context = RecordContext::new(&Limits::default());
+                        let _ = decode_natural_set_with_octet(
+                            &changed,
+                            choice,
+                            &fields,
+                            0,
+                            &mut context,
+                        );
+                        let _ = strict_decode_natural_set_with_octet(
+                            &changed,
+                            choice,
+                            &fields,
+                            0,
+                            &Limits::default(),
+                        );
+                    })
+                    .is_ok());
+                }
+            }
+        }
+    }
+
+    /// Reject malformed EXPLICIT choice wrappers and restore failed scalar reads.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Covers wrong/extra children, primitive wrappers, EOCs,
+    /// range failure rollback, and SET acceptance of a natural CHOICE schema.
+    ///
+    /// # Errors
+    /// Panics if malformed wrappers are accepted or traversal rollback fails.
+    ///
+    /// # Source, version, history, example
+    /// Source: X.690 EXPLICIT framing and parent rollback. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: record CHOICE gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn explicit_record_choice_rejects_bad_wrappers_and_rolls_back() {
+        let alternatives = [
+            ChoiceAlternative::Boolean,
+            ChoiceAlternative::BoundedInteger { lower: 0, upper: 2 },
+        ];
+        let choice = ChoiceField::explicit(Tag::context_specific(3), &alternatives).unwrap();
+        assert!(ChoiceField::explicit(Tag::universal(3), &alternatives).is_err());
+        assert!(
+            ChoiceField::explicit(Tag::context_specific(MAX_TAG_NUMBER + 1), &alternatives,)
+                .is_err()
+        );
+        let malformed: &[&[u8]] = &[
+            &[0x30, 4, 0xa3, 2, 5, 0],
+            &[0x30, 7, 0xa3, 5, 1, 1, 0xff, 5, 0],
+            &[0x30, 5, 0x83, 3, 2, 1, 2],
+            &[0x30, 0x80, 0xa3, 0x80, 2, 1, 2],
+            &[0x30, 0x80, 0xa3, 0x80, 0, 0, 0, 0, 0, 0],
+        ];
+        for input in malformed {
+            let mut context = RecordContext::new(&Limits::default());
+            let mut reader =
+                SequenceReader::new_tagged_with_choice(input, &[], choice, 0, &mut context);
+            if let Ok(reader) = reader.as_mut() {
+                assert!(reader.next_tagged_field().is_err());
+            }
+        }
+
+        let out_of_range = [0x30, 5, 0xa3, 3, 2, 1, 3];
+        let mut context = RecordContext::new(&Limits::default());
+        let mut reader =
+            SequenceReader::new_tagged_with_choice(&out_of_range, &[], choice, 0, &mut context)
+                .unwrap();
+        assert_eq!(
+            reader.next_tagged_field().unwrap(),
+            Some(Tag::context_specific(3))
+        );
+        let before = reader.context.work_used;
+        assert!(reader.read_choice().is_err());
+        assert!(reader.context.work_used > before);
+        assert_eq!(
+            reader.next_tagged_field().unwrap(),
+            Some(Tag::context_specific(3))
+        );
+
+        let natural = ChoiceField::natural(&alternatives).unwrap();
+        let mut context = RecordContext::new(&Limits::default());
+        let empty_set =
+            SetReader::new_tagged_with_choice(&[0x31, 0], &[], natural, 0, &mut context);
+        assert!(empty_set.is_ok());
+    }
+
+    /// Accept C-compatible BER aliases and reject their strict CER encodings.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Covers nonminimal wrapper tags and BOOLEAN normalization.
+    ///
+    /// # Errors
+    /// Panics if BER rejects the aliases or strict CER accepts them.
+    ///
+    /// # Source, version, history, example
+    /// Source: C BER aliases and CER canonical comparison. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: record CHOICE gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn explicit_record_choice_accepts_aliases_only_in_ber() {
+        let alternatives = [
+            ChoiceAlternative::Boolean,
+            ChoiceAlternative::BoundedInteger { lower: 0, upper: 2 },
+        ];
+        let choice = ChoiceField::explicit(Tag::context_specific(3), &alternatives).unwrap();
+        let fields = [RecordField::new(Tag::context_specific(4), FieldKind::Boolean).unwrap()];
+        let aliases: &[(&[u8], ChoiceValue)] = &[
+            (
+                &[0x30, 10, 0xbf, 0x80, 3, 3, 2, 1, 2, 0x84, 1, 0xff],
+                ChoiceValue::Integer(2),
+            ),
+            (
+                &[0x30, 10, 0xa3, 5, 0x1f, 0x80, 2, 1, 2, 0x84, 1, 0xff],
+                ChoiceValue::Integer(2),
+            ),
+            (
+                &[0x30, 9, 0xa3, 4, 1, 2, 0, 0xff, 0x84, 1, 0xff],
+                ChoiceValue::Boolean(true),
+            ),
+        ];
+        for (wire, expected) in aliases {
+            assert_eq!(
+                decode_record_choice(false, wire, choice, &fields)
+                    .unwrap()
+                    .0,
+                *expected
+            );
+            assert!(
+                strict_decode_record_choice(false, wire, choice, &fields, &Limits::default(),)
+                    .is_err()
+            );
+        }
+        let cer_alias = [
+            0x30, 0x80, 0xbf, 0x80, 3, 0x80, 2, 1, 2, 0, 0, 0x84, 1, 0xff, 0, 0,
+        ];
+        assert_eq!(
+            decode_record_choice(false, &cer_alias, choice, &fields)
+                .unwrap()
+                .0,
+            ChoiceValue::Integer(2)
+        );
+        assert!(strict_decode_record_choice(
+            false,
+            &cer_alias,
+            choice,
+            &fields,
+            &Limits::default(),
+        )
+        .is_err());
+    }
+
+    /// Mutate and truncate inline CHOICE records without allowing panics.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Covers DER/CER SEQUENCE and SET prefixes, wrappers, and
+    /// selected scalar content.
+    ///
+    /// # Errors
+    /// Panics only if a bounded reader unwinds on malformed input.
+    ///
+    /// # Source, version, history, example
+    /// Source: record CHOICE mutation hardening. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: inline CHOICE gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn record_choice_mutations_and_truncations_do_not_panic() {
+        let alternatives = [
+            ChoiceAlternative::Boolean,
+            ChoiceAlternative::Null,
+            ChoiceAlternative::BoundedInteger { lower: 0, upper: 2 },
+        ];
+        let choice = ChoiceField::explicit(Tag::context_specific(3), &alternatives).unwrap();
+        let fields = [RecordField::new(Tag::context_specific(4), FieldKind::Boolean).unwrap()];
+        let wires: &[(&[u8], bool)] = &[
+            (&[0x30, 8, 0xa3, 3, 2, 1, 2, 0x84, 1, 0xff], false),
+            (&[0x31, 8, 0xa3, 3, 2, 1, 2, 0x84, 1, 0xff], true),
+            (
+                &[0x30, 0x80, 0xa3, 0x80, 2, 1, 2, 0, 0, 0x84, 1, 0xff, 0, 0],
+                false,
+            ),
+            (
+                &[0x31, 0x80, 0xa3, 0x80, 2, 1, 2, 0, 0, 0x84, 1, 0xff, 0, 0],
+                true,
+            ),
+        ];
+        for (wire, set_parent) in wires {
+            for end in 0..wire.len() {
+                assert!(std::panic::catch_unwind(|| {
+                    let _ = decode_record_choice(*set_parent, &wire[..end], choice, &fields);
+                    let _ = strict_decode_record_choice(
+                        *set_parent,
+                        &wire[..end],
+                        choice,
+                        &fields,
+                        &Limits::default(),
+                    );
+                })
+                .is_ok());
+            }
+            for offset in 0..wire.len() {
+                for byte in [0, 1, 0x30, 0x31, 0x80, 0xff] {
+                    let mut changed = wire.to_vec();
+                    changed[offset] = byte;
+                    assert!(std::panic::catch_unwind(|| {
+                        let _ = decode_record_choice(*set_parent, &changed, choice, &fields);
+                        let _ = strict_decode_record_choice(
+                            *set_parent,
+                            &changed,
+                            choice,
+                            &fields,
+                            &Limits::default(),
+                        );
+                    })
+                    .is_ok());
                 }
             }
         }

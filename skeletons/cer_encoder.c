@@ -1313,8 +1313,15 @@ cer_primitive_storage_size(cer_context_t *ctx,
         *size = sizeof(BIT_STRING_t);
         return 0;
     }
-    if(number == 4 || number == 6 || number == 7 || number == 13 ||
-       (number >= 12 && number <= 30)) {
+    /* OID adapters use raw primitive storage, without OCTET STRING decoder state. */
+    if(number == 6 || number == 13) {
+        if(!td->op || td->op->der_encoder != der_encode_primitive) {
+            return cer_fail(ctx, EBADF, td, NULL);
+        }
+        *size = sizeof(ASN__PRIMITIVE_TYPE_t);
+        return 0;
+    }
+    if(number == 4 || number == 7 || (number >= 12 && number <= 30)) {
         *size = sizeof(OCTET_STRING_t);
         return 0;
     }

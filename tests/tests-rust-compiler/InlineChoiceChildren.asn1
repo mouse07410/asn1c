@@ -1,0 +1,49 @@
+InlineChoiceChildren DEFINITIONS ::= BEGIN
+
+SequenceNatural ::= SEQUENCE {
+    choice CHOICE {
+        flag BOOLEAN,
+        nothing NULL,
+        count INTEGER (0..5)
+    },
+    after [4] IMPLICIT BOOLEAN
+}
+
+SequenceOptional ::= SEQUENCE {
+    before [0] IMPLICIT INTEGER (0..10),
+    choice CHOICE {
+        flag BOOLEAN,
+        nothing NULL,
+        count INTEGER (0..5)
+    } OPTIONAL,
+    after [4] IMPLICIT BOOLEAN
+}
+
+SequenceExplicit ::= SEQUENCE {
+    choice [3] EXPLICIT CHOICE {
+        flag BOOLEAN,
+        nothing NULL,
+        count INTEGER (0..5)
+    },
+    after [4] IMPLICIT BOOLEAN
+}
+
+SetExplicit ::= SET {
+    after [4] IMPLICIT BOOLEAN,
+    choice [3] EXPLICIT CHOICE {
+        flag BOOLEAN,
+        nothing NULL,
+        count INTEGER (0..5)
+    }
+}
+
+SetOptional ::= SET {
+    after [4] IMPLICIT BOOLEAN,
+    choice [3] EXPLICIT CHOICE {
+        flag BOOLEAN,
+        nothing NULL,
+        count INTEGER (0..5)
+    } OPTIONAL
+}
+
+END

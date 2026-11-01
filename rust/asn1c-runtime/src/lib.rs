@@ -55,11 +55,11 @@ pub use ber::{
     encode_generalized_time_der, encode_ia5_string_cer, encode_ia5_string_der,
     encode_object_identifier_cer, encode_object_identifier_der, encode_octet_string_cer,
     encode_octet_string_der, encode_relative_oid_cer, encode_relative_oid_der, encode_utc_time_cer,
-    encode_utc_time_der, CharacterString, CharacterStringKind, ChoiceAlternative, ChoiceValue,
-    CollectionElementKind, CollectionInput, CollectionRootKind, CollectionValues, FieldKind,
-    GeneralizedTime, Ia5String, ObjectIdentifier, RecordContext, RecordEncoding, RecordField,
-    RelativeOid, SequenceReader, SequenceWriter, SetReader, SetWriter, Tag, TagClass, UtcTime,
-    MAX_TAG_NUMBER,
+    encode_utc_time_der, CharacterString, CharacterStringKind, ChoiceAlternative, ChoiceField,
+    ChoiceValue, CollectionElementKind, CollectionInput, CollectionRootKind, CollectionValues,
+    FieldKind, GeneralizedTime, Ia5String, ObjectIdentifier, RecordContext, RecordEncoding,
+    RecordField, RelativeOid, SequenceReader, SequenceWriter, SetReader, SetWriter, Tag, TagClass,
+    UtcTime, MAX_TAG_NUMBER,
 };
 pub use big_integer::{
     decode_big_integer_ber, decode_big_integer_cer, encode_big_integer_cer, encode_big_integer_der,

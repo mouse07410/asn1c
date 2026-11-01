@@ -252,6 +252,23 @@ or allocation. Bounded INTEGER values are range-checked during Rust BER decode,
 which may occur earlier than C's later constraint check. Tagging, extensions,
 and constructed CHOICE alternatives are outside this direct gate.
 
+`ChoiceField`, `ChoiceAlternative`, and `ChoiceValue` support one inline
+primitive CHOICE slot in an untagged flat SEQUENCE or SET. Natural SEQUENCE and
+SET choices map all distinct BOOLEAN, NULL, or bounded INTEGER tags to one
+logical field index; receiving two alternatives in one record is a duplicate.
+`SequenceWriter::write_choice` and `SetWriter::write_choice` write the selected
+value through the parent's shared record context. Readers use
+`new_tagged_with_choice` and `read_choice`, accepting arbitrary SET member order.
+For a natural CHOICE in SET, DER ordering uses the selected arm's wire tag, while
+CER ordering uses the minimum tag among declared arms; the wire tag still
+controls collisions and duplicate detection. EXPLICIT wrappers contain exactly
+one declared primitive child and use definite DER or indefinite CER framing.
+Schema collisions are rejected before parent parsing, and strict CER callers
+re-encode with the same `RecordContext` before calling `verify_canonical` on
+the consumed prefix. Required/OPTIONAL presence remains the generated wrapper's
+responsibility. Nested alternatives and multiple CHOICE slots remain outside
+this gate.
+
 `RecordContext`, `SequenceReader`, `SequenceWriter`, `SetReader`, and `SetWriter`
 compose flat SEQUENCE and SET values with direct BOOLEAN, NULL,
 ENUMERATED, bounded INTEGER, and bounded BIT/OCTET STRING fields under one
