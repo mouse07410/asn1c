@@ -42,22 +42,26 @@ OCTET_STRING__random_char(unsigned long lb, unsigned long ub) {
 /*
  * Select one character accepted by the applicable PER alphabet map.
  * Original source: issue #582 bounded random-fill regression fix.
- * Version/date: 1.0, 2026-10-21.
+ * Version/date: 1.1, 2026-11-01.
  * Inputs: map callbacks and bits describe an optional PER map; lb/ub are the
- *         allowed character bounds; output receives the selected character.
+ *         allowed character bounds; unit_bytes selects string storage width;
+ *         output receives the selected character.
  * Returns: zero on success or -1 when no valid character is found.
  * Errors: A sparse or malformed map is bounded to 128 attempts.
- * Responsible party: asn1c maintainers. History: added for #582.
+ * Responsible party: asn1c maintainers. History: added for #582; exclude
+ * surrogate code points from wide strings for JER, 2026-11-01.
  * Example: select a character from the NumericString PER alphabet.
  */
 static int
 OCTET_STRING__random_valid_char(int (*value2code)(unsigned int),
                                 int (*code2value)(unsigned int), int bits,
                                 unsigned long lb, unsigned long ub,
+                                unsigned int unit_bytes,
                                 uint32_t *output) {
     int attempt;
 
-    if(!output || lb > ub) return -1;
+    if(!output || lb > ub || (unit_bytes != 1 && unit_bytes != 2
+                              && unit_bytes != 4)) return -1;
 
     /* Generated standard alphabet maps contain at most 256 code ordinals. */
     if(value2code && code2value && bits >= 0 && bits <= 8) {
@@ -70,6 +74,8 @@ OCTET_STRING__random_valid_char(int (*value2code)(unsigned int),
             if(mapped < 0 || (unsigned long)mapped < lb
                || (unsigned long)mapped > ub)
                 continue;
+            if(unit_bytes > 1 && mapped >= 0xd800 && mapped <= 0xdfff)
+                continue;
             if(value2code((unsigned int)mapped) != (int)code) continue;
             *output = (uint32_t)mapped;
             return 0;
@@ -81,6 +87,8 @@ OCTET_STRING__random_valid_char(int (*value2code)(unsigned int),
     for(attempt = 0; attempt < OCTET_STRING_RFILL_ATTEMPTS; attempt++) {
         uint32_t value = OCTET_STRING__random_char(lb, ub);
 
+        if(unit_bytes > 1 && value >= 0xd800 && value <= 0xdfff)
+            continue;
         if(value2code && value2code(value) < 0) continue;
         *output = value;
         return 0;
@@ -123,12 +131,13 @@ OCTET_STRING__store_char(uint8_t *target, unsigned int unit_bytes,
 /*
  * Fill a temporary string with characters valid in the PER alphabet map.
  * Original source: issue #582 bounded random-fill regression fix.
- * Version/date: 1.0, 2026-10-21.
+ * Version/date: 1.1, 2026-11-01.
  * Inputs: buf has room for length units plus a terminator; unit_bytes is 1,
  *         2, or 4; remaining arguments describe the map and codepoint range.
  * Returns: zero when every character is valid; -1 after a bounded map miss.
  * Errors: None; the caller owns buf and frees it on any failure.
- * Responsible party: asn1c maintainers. History: added for #582.
+ * Responsible party: asn1c maintainers. History: added for #582; wide-string
+ * scalar validation added for randomized JER round trips, 2026-11-01.
  * Example: fill a temporary NumericString candidate before validation.
  */
 static int
@@ -142,7 +151,7 @@ OCTET_STRING__fill_candidate(uint8_t *buf, size_t length,
     for(index = 0; index < length; index++) {
         uint32_t value;
         if(OCTET_STRING__random_valid_char(value2code, code2value, bits, lb,
-                                           ub, &value))
+                                           ub, unit_bytes, &value))
             return -1;
         OCTET_STRING__store_char(buf + index * unit_bytes, unit_bytes, value);
     }
@@ -308,12 +317,13 @@ OCTET_STRING__configure_per_constraints(
  * Configure the unit size, character range, PER map, and length constraints.
  * Original source: asn1c OCTET STRING random-fill implementation, hardened
  * for issue #582 alphabet-map validation.
- * Version/date: 1.0, 2026-10-21.
+ * Version/date: 1.1, 2026-11-01.
  * Inputs: td and constraints select metadata; output pointers receive the
  *         active PER constraints and validated character-generation settings.
  * Returns: zero for usable metadata or -1 for malformed ranges.
  * Errors: Invalid bounds are rejected before any allocation or random range.
- * Responsible party: asn1c maintainers. History: added for #582.
+ * Responsible party: asn1c maintainers. History: added for #582; cap UCS-4
+ * samples to Unicode scalar range for JER, 2026-11-01.
  * Example: configure NumericString's map and one-byte storage range.
  */
 static int
@@ -351,6 +361,10 @@ OCTET_STRING__configure_random_fill(
            td, constraints, unit_max, clb, cub, value2code, code2value,
            value_bits))
         return -1;
+
+    /* UCS-4 PER metadata permits values above Unicode's scalar ceiling. */
+    if(specs->subvariant == ASN_OSUBV_U32 && *cub > 0x10ffff)
+        *cub = 0x10ffff;
 
     return *clb <= *cub && *cub <= unit_max ? 0 : -1;
 }

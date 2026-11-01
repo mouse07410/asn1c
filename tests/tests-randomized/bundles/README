@@ -25,3 +25,10 @@ driver invocation has a 300-second wall-clock limit. Override the limit with
 `make check RANDOM_TEST_TIMEOUT=<seconds>` when investigating a slow system.
 A timeout fails the bundle and prints the command to reproduce it in the log.
 
+Wide-string random filling excludes Unicode surrogate code points and limits
+UniversalString samples to U+10FFFF. Values outside that scalar range cannot
+be represented as Unicode scalar values in JER JSON strings.
+The BMPString and UniversalString bundles exercise this rule through normal
+round trips; `check-Unicode-rfill` also covers surrogate-only and boundary
+alphabets.
+

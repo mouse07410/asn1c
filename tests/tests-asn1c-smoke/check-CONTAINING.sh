@@ -40,7 +40,9 @@ done
 
 # Adding CONTAINING must not reprocess unrelated IOC specializations.
 ioc_fixture="$(path_from_workdir "${top_srcdir}")/tests/tests-asn1c-compiler/170-private-ie-field-OK.asn1"
-cp "$ioc_fixture" mixed-ioc.asn
+# A distcheck source tree is read-only; redirection gives the new fixture a
+# writable mode even when the packaged source file cannot be modified.
+cat "$ioc_fixture" > mixed-ioc.asn
 cat >> mixed-ioc.asn <<'EOF'
 Additional DEFINITIONS ::= BEGIN
 Extra ::= OCTET STRING (CONTAINING INTEGER (0..2))
