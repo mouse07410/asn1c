@@ -450,20 +450,84 @@ if grep -F 'pub fn decode_cer' "$uper_only/src/first_slice.rs" >/dev/null; then
     exit 1
 fi
 
-# Unsupported codec requests must fail without publishing any Rust output.
-for codec in XER; do
-    rejected_out="$test_tmp/rejected-$codec"
-    if "$asn1c_bin" --rust "-gen-$codec" -S "$skeletons" \
-        -D "$rejected_out" "$test_srcdir/FirstSlice.asn1" \
-        >"$test_tmp/rejected-$codec.log" 2>&1; then
-        echo "FAIL: Rust backend accepted unsupported -gen-$codec"
-        exit 1
-    fi
-    if [ -e "$rejected_out" ]; then
-        echo "FAIL: unsupported -gen-$codec created output before rejection"
-        exit 1
-    fi
-done
+# Flat SET and SEQUENCE basic XER encoders share formatting and defaults.
+cat >"$test_tmp/XerSlice.asn1" <<'EOF'
+XerSlice DEFINITIONS ::= BEGIN
+S ::= SET { flag BOOLEAN DEFAULT TRUE, count INTEGER (0..5) DEFAULT 2,
+            text IA5String OPTIONAL, ratio REAL DEFAULT 0.5 }
+Q ::= SEQUENCE { flag BOOLEAN DEFAULT TRUE, count INTEGER (0..5) DEFAULT 2,
+                 text IA5String OPTIONAL, ratio REAL DEFAULT 0.5 }
+Empty ::= SEQUENCE { text IA5String OPTIONAL }
+END
+EOF
+"$asn1c_bin" --rust -gen-XER -no-gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/xer-rust" "$test_tmp/XerSlice.asn1"
+mkdir -p "$test_tmp/xer-rust/tests"
+cp "$test_srcdir/xer_conformance.rs" "$test_tmp/xer-rust/tests/"
+cargo test --offline --manifest-path "$test_tmp/xer-rust/Cargo.toml"
+cargo clippy --offline --manifest-path "$test_tmp/xer-rust/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings
+
+# Compare both default and present REAL output against the C encoder.
+mkdir -p "$test_tmp/xer-c"
+"$asn1c_bin" -S "$skeletons" -D "$test_tmp/xer-c" "$test_tmp/XerSlice.asn1"
+rm -f "$test_tmp/xer-c/converter-example.c" "$test_tmp/xer-c/pdu_collection.c"
+cc -I"$test_tmp/xer-c" "$test_tmp/xer-c"/*.c "$test_srcdir/c_xer_record.c" \
+    -lm -o "$test_tmp/c-xer-record"
+"$test_tmp/c-xer-record"
+
+# Automatic context tags put SET fields in declaration order, unlike the
+# universal tag ordering of the untagged SET above.
+sed 's/DEFINITIONS ::= BEGIN/DEFINITIONS AUTOMATIC TAGS ::= BEGIN/' \
+    "$test_tmp/XerSlice.asn1" >"$test_tmp/XerAutomatic.asn1"
+"$asn1c_bin" --rust -gen-XER -no-gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/xer-automatic" "$test_tmp/XerAutomatic.asn1"
+mkdir -p "$test_tmp/xer-automatic/tests" "$test_tmp/xer-automatic-c"
+cp "$test_srcdir/xer_conformance.rs" "$test_tmp/xer-automatic/tests/"
+ASN1C_XER_AUTOMATIC=1 cargo test --offline --manifest-path "$test_tmp/xer-automatic/Cargo.toml"
+cargo clippy --offline --manifest-path "$test_tmp/xer-automatic/Cargo.toml" \
+    --all-targets --all-features -- -W clippy::pedantic -W clippy::nursery -D warnings
+"$asn1c_bin" -no-gen-JER -S "$skeletons" -D "$test_tmp/xer-automatic-c" \
+    "$test_tmp/XerAutomatic.asn1"
+rm -f "$test_tmp/xer-automatic-c/converter-example.c" "$test_tmp/xer-automatic-c/pdu_collection.c"
+cc -DXER_AUTOMATIC -I"$test_tmp/xer-automatic-c" "$test_tmp/xer-automatic-c"/*.c \
+    "$test_srcdir/c_xer_record.c" -lm -o "$test_tmp/c-xer-automatic"
+"$test_tmp/c-xer-automatic"
+
+# REAL and mixed codec requests are rejected before publishing output.
+cat >"$test_tmp/XerUnsupported.asn1" <<'EOF'
+XerUnsupported DEFINITIONS ::= BEGIN
+S ::= SET { ratio REAL DEFAULT 1.5 }
+END
+EOF
+if "$asn1c_bin" --rust -gen-XER -no-gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/rejected-xer" "$test_tmp/XerUnsupported.asn1" \
+    >"$test_tmp/rejected-xer.log" 2>&1; then
+    echo "FAIL: Rust XER accepted unsupported REAL"
+    exit 1
+fi
+grep -F 'unsupported flat XER record field or DEFAULT' \
+    "$test_tmp/rejected-xer.log" >/dev/null
+test ! -e "$test_tmp/rejected-xer"
+cat >"$test_tmp/XerExplicit.asn1" <<'EOF'
+XerExplicit DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+S ::= SET { flag [0] IMPLICIT BOOLEAN }
+END
+EOF
+if "$asn1c_bin" --rust -gen-XER -no-gen-UPER -no-gen-CER -S "$skeletons" \
+    -D "$test_tmp/rejected-xer-explicit" "$test_tmp/XerExplicit.asn1" \
+    >"$test_tmp/rejected-xer-explicit.log" 2>&1; then
+    echo "FAIL: Rust XER accepted an explicitly tagged field"
+    exit 1
+fi
+test ! -e "$test_tmp/rejected-xer-explicit"
+if "$asn1c_bin" --rust -gen-XER -S "$skeletons" \
+    -D "$test_tmp/rejected-xer-mixed" "$test_tmp/XerSlice.asn1" \
+    >"$test_tmp/rejected-xer-mixed.log" 2>&1; then
+    echo "FAIL: Rust XER accepted a mixed codec selection"
+    exit 1
+fi
+test ! -e "$test_tmp/rejected-xer-mixed"
 
 # CBOR directly encodes primitive values and opaque ANY octets.
 "$asn1c_bin" --rust -gen-CBOR -no-gen-UPER -no-gen-CER -S "$skeletons" \

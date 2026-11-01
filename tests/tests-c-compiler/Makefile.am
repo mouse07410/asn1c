@@ -153,3 +153,5 @@ EXTRA_DIST += data-605
 TESTS += check-src/check-606.-gen-CBOR.c
 EXTRA_DIST += check-src/check-606.-gen-CBOR.c
 EXTRA_DIST += data-606
+TESTS += check-src/check-608.-fcompound-names.-gen-JER.c
+EXTRA_DIST += check-src/check-608.-fcompound-names.-gen-JER.c

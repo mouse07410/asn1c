@@ -8,6 +8,8 @@
 #include <OCTET_STRING.h>
 #include <BIT_STRING.h>
 #include <BOOLEAN.h>
+#include <BMPString.h>
+#include <UniversalString.h>
 #include <jer_decoder.h>
 #include <jer_encoder.h>
 
@@ -293,6 +295,101 @@ capture_jer_bytes(const void *bytes, size_t length, void *key) {
 }
 
 /*
+ * Purpose: force a direct JER encoder callback failure.
+ * Source: asn_app_consume_bytes_f callback contract.
+ * Version/date: 1.0, 2026-10-31. Inputs: bytes/length are ignored; key is unused.
+ * Returns: always -1. Exceptions: none. Author: asn1c maintainers.
+ * History: added for BMPString and UniversalString failure coverage.
+ * Example: the string encoder propagates this callback's failure.
+ */
+static int
+reject_jer_bytes(const void *bytes, size_t length, void *key) {
+    (void)bytes;
+    (void)length;
+    (void)key;
+    return -1;
+}
+
+/*
+ * Verify BMPString and UniversalString emit valid escaped JSON strings.
+ * Original source: issue 594 C JER regression coverage. Version/date: 2026-10-31.
+ * Inputs: none; local UCS-2/UCS-4 values cover escapes and invalid storage.
+ * Returns: no value. Errors: assertions identify encoder regressions.
+ * Author: asn1c maintainers. History: added for JSON string escaping.
+ * Example: quote and backslash code points are escaped in the JSON output.
+ */
+static void
+test_jer_bmp_and_universal_string_escaping(void) {
+    static uint8_t bmp_data[] = {0, 0x22, 0, 0x5c, 0, 1, 0, 0, 0, 0xe9};
+    static const char bmp_expected[] = "\"\\\"\\\\\\u0001\\u0000\xc3\xa9\"";
+    static uint8_t bmp_surrogate[] = {0xd8, 0};
+    static uint8_t bmp_odd[] = {0};
+    static uint8_t universal_data[] = {
+        0, 0, 0, 0x22, 0, 0, 0, 0x5c, 0, 0, 0, 10,
+        0, 1, 0xf6, 0x00
+    };
+    static const char universal_expected[] = "\"\\\"\\\\\\n\xf0\x9f\x98\x80\"";
+    static uint8_t universal_surrogate[] = {0, 0, 0xd8, 0};
+    static uint8_t universal_too_large[] = {0, 0x11, 0, 0};
+    static uint8_t universal_partial[] = {0};
+    BMPString_t bmp = {bmp_data, sizeof(bmp_data), {0}};
+    UniversalString_t universal = {universal_data, sizeof(universal_data), {0}};
+    BMPString_t empty_bmp = {0};
+    UniversalString_t empty_universal = {0};
+    BMPString_t invalid_bmp = {bmp_surrogate, sizeof(bmp_surrogate), {0}};
+    BMPString_t odd_bmp = {bmp_odd, sizeof(bmp_odd), {0}};
+    UniversalString_t invalid_universal = {
+        universal_surrogate, sizeof(universal_surrogate), {0}
+    };
+    UniversalString_t large_universal = {
+        universal_too_large, sizeof(universal_too_large), {0}
+    };
+    UniversalString_t partial_universal = {
+        universal_partial, sizeof(universal_partial), {0}
+    };
+    jer_capture_t capture = {{0}, 0};
+    asn_enc_rval_t encoded;
+
+    encoded = BMPString_encode_jer(&asn_DEF_BMPString, 0, &bmp, 0,
+                                   JER_F_MINIFIED, capture_jer_bytes, &capture);
+    assert(encoded.encoded == (ssize_t)(sizeof(bmp_expected) - 1));
+    assert(strcmp(capture.data, bmp_expected) == 0);
+    capture.length = 0;
+    capture.data[0] = '\0';
+    encoded = UniversalString_encode_jer(&asn_DEF_UniversalString, 0,
+        &universal, 0, JER_F_MINIFIED, capture_jer_bytes, &capture);
+    assert(encoded.encoded == (ssize_t)(sizeof(universal_expected) - 1));
+    assert(strcmp(capture.data, universal_expected) == 0);
+
+    capture.length = 0;
+    capture.data[0] = '\0';
+    assert(BMPString_encode_jer(&asn_DEF_BMPString, 0, &empty_bmp, 0,
+        JER_F_MINIFIED, capture_jer_bytes, &capture).encoded == 2);
+    capture.length = 0;
+    capture.data[0] = '\0';
+    assert(UniversalString_encode_jer(&asn_DEF_UniversalString, 0,
+        &empty_universal, 0, JER_F_MINIFIED, capture_jer_bytes,
+        &capture).encoded == 2);
+    assert(BMPString_encode_jer(&asn_DEF_BMPString, 0, &invalid_bmp, 0,
+        JER_F_MINIFIED, capture_jer_bytes, &capture).encoded == -1);
+    assert(BMPString_encode_jer(&asn_DEF_BMPString, 0, &odd_bmp, 0,
+        JER_F_MINIFIED, capture_jer_bytes, &capture).encoded == -1);
+    assert(UniversalString_encode_jer(&asn_DEF_UniversalString, 0,
+        &invalid_universal, 0, JER_F_MINIFIED, capture_jer_bytes,
+        &capture).encoded == -1);
+    assert(UniversalString_encode_jer(&asn_DEF_UniversalString, 0,
+        &large_universal, 0, JER_F_MINIFIED, capture_jer_bytes,
+        &capture).encoded == -1);
+    assert(UniversalString_encode_jer(&asn_DEF_UniversalString, 0,
+        &partial_universal, 0, JER_F_MINIFIED, capture_jer_bytes,
+        &capture).encoded == -1);
+    assert(BMPString_encode_jer(&asn_DEF_BMPString, 0, &bmp, 0,
+        JER_F_MINIFIED, reject_jer_bytes, 0).encoded == -1);
+    assert(UniversalString_encode_jer(&asn_DEF_UniversalString, 0,
+        &universal, 0, JER_F_MINIFIED, reject_jer_bytes, 0).encoded == -1);
+}
+
+/*
  * Exercise empty, fixed-size, malformed, and transactional BIT STRING JER.
  * Parameters: none; the test owns its descriptors, literals, and values.
  * Returns: no value; assertions report any mismatch. Throws: nothing.
@@ -547,6 +644,7 @@ main(void) {
 
     test_jer_decode_boolean_literals();
     test_jer_decode_small_json();
+    test_jer_bmp_and_universal_string_escaping();
     test_jer_character_escapes();
     test_containing_constraint_depth();
     test_jer_decode_large_json();

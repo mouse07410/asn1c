@@ -101,8 +101,9 @@ fresh directory after adding application code or running Cargo there.
 | Direct fixed OCTET/BIT STRING | Opt-in JER uppercase-hex encoding, case-insensitive complete-input decoding, exact packed size and zero-padding checks, and resource limits |
 | Direct bounded BIT STRING | Opt-in JER minified `{"value":"HEX","length":N}` encoding and complete-input decoding with range, padding, and resource-limit checks |
 | Direct ENUMERATED | Opt-in JER quoted-name encode/decode; complete input, JSON whitespace, unknown-name and resource-limit checks |
+| Flat SET and SEQUENCE | XER-only basic encoder for direct BOOLEAN, bounded INTEGER, unconstrained IA5String and REAL DEFAULT 0.5 fields; OPTIONAL and supported DEFAULT fields use `Option` |
 | XER and CBOR/JER outside the listed slices | Planned; unavailable in Rust mode |
-| SET, collections, CHOICE outside the listed CBOR slice, extensible, unbounded, fragmented or disjoint strings, named-bit strings, extensible ENUMERATED, aliases, imports, top-level tagged types | Planned; rejected in this slice |
+| SET outside the listed XER slice, collections, CHOICE outside the listed CBOR slice, extensible, unbounded, fragmented or disjoint strings, named-bit strings, extensible ENUMERATED, aliases, imports, top-level tagged types | Planned; rejected in this slice |
 | Encoding controls, other information-object forms, parameterized types | Planned; rejected in this slice |
 | IOC-selected OPEN TYPE | UPER, APER, OER, CBOR; one local nonextensible set, bounded INTEGER selector, BOOLEAN or bounded INTEGER rows, and a two-field required SEQUENCE; APER selector 0..255 and row spans <=255 |
 | Other CONTAINING and OPEN TYPE forms | Unsupported; rejected before output publication |
@@ -112,6 +113,18 @@ For CBOR SEQUENCE, an omitted literal DEFAULT decodes to the default value.
 The Rust record does not retain whether that field appeared on the wire, so
 encoding that record includes the value explicitly. Generated C emits a DEFAULT
 member when its pointer is populated and omits it when absent.
+
+The XER slice is selected with `-gen-XER -no-gen-UPER -no-gen-CER` and does
+not provide decoding or canonical XER. Untagged and AUTOMATIC TAGS records
+are supported; explicitly tagged fields are rejected. It emits absent BOOLEAN, INTEGER and
+REAL DEFAULT fields, omits absent OPTIONAL fields, and rejects unsupported
+shapes and mixed codec selections before publication. REAL accepts only DEFAULT
+0.5 and finite values of magnitude at most 1,000,000, with nonzero magnitude
+at least 1e-15; values whose formatted decimal cannot round-trip are rejected.
+IA5 accepts tab, line feed, carriage return, and ASCII 0x20–0x7f; other IA5
+control characters and their XER control elements are unsupported. Carriage
+returns use XML character references to survive line-ending normalization.
+Output and work limits apply to the complete XML value.
 
 BOOLEAN and INTEGER wrappers expose constructors, value getters, and the
 methods selected during generation. UPER methods encode and prefix-decode the
@@ -232,12 +245,12 @@ The generated Rust harness includes primitive, string, ENUMERATED, and flat
 SEQUENCE tests, including C comparisons for selected UPER/CER/APER/OER/JER vectors,
 C decoding of Rust output, codec selection, and negative-schema checks.
 Runtime and generated crates pass pedantic and nursery Clippy with warnings
-denied. `make dist` includes the APER, OER, JER, CBOR, and UPER cursor modules and their
+denied. `make dist` includes the APER, OER, JER, CBOR, XER, and UPER cursor modules and their
 test fixtures; `make install-data` installs the runtime modules. Hosted Rust CI has not yet run
 for this extension. No minimum Rust compiler version is claimed.
 
 These are first-slice gates. The [test migration plan](testing.md) remains the
-stage-wide target; unsupported DEFAULT forms, SET, and open types still need
+stage-wide target; unsupported DEFAULT forms, other SET shapes, and open types still need
 schema and codec support. XER and CBOR/JER for types outside the listed slices remain unimplemented.
 The CER encoder is also only a first slice and does not establish whole-runtime
 parity.

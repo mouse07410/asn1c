@@ -79,7 +79,7 @@ methods and `-no-gen-BER` omits them. APER/OER/JER are opt-in and can be selecte
 independently. CER-only generation is
 also checked with explicit `-gen-CER -no-gen-UPER`; `-no-gen-BER` leaves CER
 selected. Disabling all supported codecs and requesting
-unsupported XER is rejected before output publication. The generated
+unsupported XER shapes are rejected before output publication. The generated
 dual-codec and CER-only APIs are checked to contain `decode_cer`, and the
 `-no-gen-CER` output is checked to omit it.
 
@@ -169,3 +169,16 @@ IOC-selected OPEN TYPE shape. The parent map contains the selector and direct
 selected CBOR primitive. Generated Rust accepts either key order, rejects
 missing, duplicate, or out-of-range fields, skips unique unknown fields, and requires the selected
 primitive to consume its complete map value. Generated C confirms wire parity.
+
+The opt-in BASIC-XER encoder-only slice supports flat SET and SEQUENCE records with
+untagged or AUTOMATIC TAGS fields: direct BOOLEAN, bounded INTEGER,
+unconstrained IA5String, and REAL DEFAULT
+0.5 fields. REAL values must be finite, with magnitude at most 1,000,000 and
+nonzero magnitude at least 1e-15, and their formatted decimal must round-trip.
+BOOLEAN, INTEGER, and REAL DEFAULT fields use `Option`, with `None` emitting the default;
+OPTIONAL fields are omitted when absent. Select XER alone with `-gen-XER
+-no-gen-UPER -no-gen-CER`. Other REAL defaults and shapes, mixed codecs, canonical XER,
+and XER decoding are not supported. Output and work limits apply to the whole
+XML value; IA5 text accepts tab, line feed, carriage return, and ASCII 0x20–0x7f.
+Other IA5 controls and their XER control elements are unsupported. Carriage
+return is emitted as `&#xD;` to preserve it through XML line-ending normalization.

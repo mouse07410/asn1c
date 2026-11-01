@@ -6,6 +6,7 @@
 #include <asn_internal.h>
 #include <BMPString.h>
 #include <UTF8String.h>
+#include <jer_string.h>
 
 asn_dec_rval_t
 BMPString_decode_jer(const asn_codec_ctx_t *opt_codec_ctx,
@@ -73,6 +74,16 @@ BMPString_decode_jer(const asn_codec_ctx_t *opt_codec_ctx,
     return rc;
 }
 
+/*
+ * Purpose: encode BMPString code units as a valid quoted JER JSON string.
+ * Original source: BMPString JER skeleton with JSON scalar escaping.
+ * Version/date: 1.0, 2026-10-31. Inputs: td/constraints describe the type;
+ * sptr is a big-endian UCS-2 value; cb/key receive the JSON bytes.
+ * Returns: encoded size or -1 for invalid storage, scalar, or callback failure.
+ * Exceptions: none. Responsible party: asn1c maintainers.
+ * History: replaced raw UTF-8 dumping with JSON-safe output.
+ * Example: a stored quote is emitted as `\"` inside the JSON string.
+ */
 asn_enc_rval_t
 BMPString_encode_jer(const asn_TYPE_descriptor_t *td,
                      const asn_jer_constraints_t* constraints,
@@ -81,18 +92,22 @@ BMPString_encode_jer(const asn_TYPE_descriptor_t *td,
                      asn_app_consume_bytes_f *cb, void *app_key) {
     const BMPString_t *st = (const BMPString_t *)sptr;
     asn_enc_rval_t er = {0,0,0};
-    ssize_t ro_encoded = 0;
+    size_t offset;
 
     (void)ilevel;
     (void)flags;
 
-    if(!st || !st->buf)
+    if(!st || (!st->buf && st->size) || (st->size & 1) || !cb)
         ASN__ENCODE_FAILED;
 
     ASN__CALLBACK("\"", 1);
-    ro_encoded = BMPString__dump(st, cb, app_key);
-    if(ro_encoded < 0) goto cb_failed;
-    er.encoded += ro_encoded;
+    for(offset = 0; offset < st->size; offset += 2) {
+        uint32_t codepoint = ((uint32_t)st->buf[offset] << 8)
+                           | st->buf[offset + 1];
+        ssize_t written = jer_write_escaped_codepoint(codepoint, cb, app_key);
+        if(written < 0 || written > SSIZE_MAX - er.encoded) goto cb_failed;
+        er.encoded += written;
+    }
     ASN__CALLBACK("\"", 1);
 
     ASN__ENCODED_OK(er);

@@ -27,6 +27,8 @@ pub mod jer;
 pub mod oer;
 /// Composable UPER bit cursors with operation-wide resource accounting.
 pub mod uper_cursor;
+/// Bounded basic XER output for flat generated records.
+pub mod xer;
 
 pub use aper::{
     decode_boolean_aper, decode_integer_aper, decode_null_aper, encode_boolean_aper,

@@ -141,3 +141,9 @@ The narrow IOC-selected OPEN TYPE uses a two-field SEQUENCE map with the
 selector and a direct selected CBOR value. Decoding accepts either field order,
 skips unique unknown keys, rejects duplicates and missing fields, and checks
 the selected value consumes its full encoded span.
+
+The XER writer supports bounded basic XML output for generated flat SET and
+SEQUENCE records. The generator currently accepts BOOLEAN, bounded INTEGER,
+unconstrained IA5String fields, and REAL DEFAULT 0.5 with finite limited values only. XER decoding is not implemented.
+IA5 C0 controls other than tab, line feed, and carriage return are rejected;
+REAL values must survive a round trip through the emitted decimal text.

@@ -39,13 +39,15 @@ TESTS += check-JER-multi-pdu.sh
 TESTS += check-BER-retag.sh
 TESTS += check-issue-588.sh
 TESTS += check-issue-587.sh
+TESTS += check-issue-607.sh
 
 CLEANFILES = Makefile.am.* *.[acho] check-*.log check-*.trs
 
 EXTRA_DIST = README $(srcdir)/check-*.sh $(srcdir)/data/fprefix-link.asn \
 	$(srcdir)/data/fprefix-anon-typedef.asn \
 	$(srcdir)/data/issue-588-template.asn1 $(srcdir)/data/issue-588-use.asn1 \
-	$(srcdir)/data/issue-587-template.asn1 $(srcdir)/data/issue-587-use.asn1
+	$(srcdir)/data/issue-587-template.asn1 $(srcdir)/data/issue-587-use.asn1 \
+	$(srcdir)/data/issue-607-xer.asn1 $(srcdir)/data/issue-607-xer.c
 
 clean-local:
 	rm -rf test-*

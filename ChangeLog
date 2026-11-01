@@ -1,4 +1,14 @@
 Changes since v1.5.3:
+	* Fix issue #594 C XER output: separate SET members with one newline,
+	  materialize absent DEFAULT members in basic as well as canonical XER,
+	  and generate REAL DEFAULT callbacks for native and wide C storage.
+	  Generated regressions cover SET and SEQUENCE XER plus JER REAL defaults.
+	* Escape BMPString and UniversalString JER content as valid JSON and
+	  flatten SEQUENCE extension-addition group members in JER objects.
+	  Add malformed Unicode and generated group regressions.
+	* Add opt-in Rust basic XER encoding for a bounded flat SET/SEQUENCE
+	  subset, including issue #594 DEFAULT values, tag-ordered SET output,
+	  XML escaping, C parity vectors, and strict resource limits.
 	* Extend C CBOR SEQUENCE decoding with duplicate/required-member checks,
 	  deferred direct selected OPEN TYPE resolution, and transactional output.
 	  Flatten SET extension-group leaves into its repository-defined name-keyed

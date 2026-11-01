@@ -318,7 +318,7 @@ jer_decoder.h jer_decoder.c	# JER decoding support
 jer_encoder.h jer_encoder.c	# JER encoding support
 ANY.h ANY_jer.c
 BIT_STRING.h BIT_STRING_jer.c INTEGER.h
-BMPString.h BMPString_jer.c
+BMPString.h BMPString_jer.c jer_string.h
 BOOLEAN.h BOOLEAN_jer.c asn_codecs_prim_jer.c
 ENUMERATED.h ENUMERATED_jer.c asn_codecs_prim_jer.c
 GeneralizedTime.h GeneralizedTime_jer.c
@@ -333,11 +333,11 @@ OPEN_TYPE.h OPEN_TYPE_jer.c
 REAL.h REAL_jer.c asn_codecs_prim_jer.c
 RELATIVE-OID.h RELATIVE-OID_jer.c asn_codecs_prim_jer.c
 UTCTime.h UTCTime_jer.c
-UniversalString.h UniversalString_jer.c
+UniversalString.h UniversalString_jer.c jer_string.h
 asn_codecs_prim.h asn_codecs_prim_jer.c
 constr_CHOICE.h constr_CHOICE_jer.c
 constr_SEQUENCE_OF.h constr_SEQUENCE_OF_jer.c
-constr_SEQUENCE.h constr_SEQUENCE_jer.c
+constr_SEQUENCE.h constr_SEQUENCE_jer.c constr_SET.h constr_SET.c
 constr_SET_OF.h constr_SET_OF_jer.c
 constr_SET.h constr_SET_jer.c OPEN_TYPE.h
 

@@ -87,6 +87,8 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/conformance.rs \
     $(srcdir)/additional_codecs.rs \
     $(srcdir)/jer_conformance.rs \
+    $(srcdir)/xer_conformance.rs \
+    $(srcdir)/c_xer_record.c \
     $(srcdir)/sequence_conformance.rs \
     $(srcdir)/sequence_enum_conformance.rs \
     $(srcdir)/c_sequence_enum.c \

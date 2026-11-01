@@ -1,0 +1,11 @@
+SequenceJerGroups DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+SeqGroups ::= SEQUENCE {
+    root INTEGER (0..255),
+    ...,
+    [[ first INTEGER (0..255), flag BOOLEAN OPTIONAL ]],
+    [[ second INTEGER (0..255) ]],
+    extra INTEGER (0..255) OPTIONAL
+}
+
+END

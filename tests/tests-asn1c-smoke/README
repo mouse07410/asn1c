@@ -19,9 +19,16 @@ inside a `SEQUENCE OF` in both ASN.1 module orders. It checks the generated
 member constraint callbacks and open-type descriptors and then compiles the
 generated C, catching duplicate internal type suffixes.
 
+`check-issue-607.sh` covers GitHub issue #594 using fixture number 607. It
+builds generated descriptors in native and wide storage modes. It checks absent
+INTEGER and BOOLEAN DEFAULTs in SET, absent REAL DEFAULT
+in SEQUENCE, exact pretty/canonical XER output, minified JER REAL DEFAULT output,
+and that encoding leaves the source structure unchanged.
+
 Run it from the smoke-test directory with `make check TESTS=check-CER.sh`.
 Run the order-sensitive object-set regressions with
-`make check TESTS='check-issue-587.sh check-issue-588.sh'`.
+`make check TESTS='check-issue-587.sh check-issue-588.sh'`, and the generated XER
+regression with `make check TESTS=check-issue-607.sh`.
 The script uses Bash, the configured C compiler and make, and standard tools
 such as `awk`, `cmp`, and `mktemp`. Its expected long BIT STRING vector writes
 payload octets with Bash's explicit `printf '\377'` escape so byte values do

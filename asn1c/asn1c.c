@@ -779,7 +779,8 @@ asn1c_validate_options(const asn1c_cli_options_t *options) {
     const uint64_t rust_supported =
         (uint64_t)A1C_GEN_UPER | (uint64_t)A1C_GEN_BER
         | (uint64_t)A1C_GEN_CER | (uint64_t)A1C_GEN_APER
-        | (uint64_t)A1C_GEN_OER | (uint64_t)A1C_GEN_JER | (uint64_t)A1C_GEN_CBOR;
+        | (uint64_t)A1C_GEN_OER | (uint64_t)A1C_GEN_JER | (uint64_t)A1C_GEN_CBOR
+        | (uint64_t)A1C_GEN_XER;
     if(options->print_out) {
         if((options->printer_flags & APF_PRINT_CONSTRAINTS)
            && !options->fix_n_print) {
@@ -806,7 +807,7 @@ asn1c_validate_options(const asn1c_cli_options_t *options) {
         if(!options->rust_codec_flags
            || (options->rust_codec_flags & ~rust_supported)) {
             fprintf(stderr,
-                    "Error: --rust supports UPER, APER, OER, BER, CER, JER, and CBOR; select at least "
+                    "Error: --rust supports UPER, APER, OER, BER, CER, JER, CBOR, and XER; select at least "
                     "one supported codec and no other codec\n");
             return -1;
         }
@@ -1336,8 +1337,8 @@ usage(const char *av0) {
 "ASN.1 Compiler, " VERSION "\n" COPYRIGHT
 "Usage: %s [options] file ...\n"
 "Options:\n"
-"  --rust                Generate Rust codecs for selected types and flat UPER SEQUENCE\n"
-"                        (UPER/CER default; opt-in BER/DER, APER, OER, JER)\n"
+"  --rust                Generate Rust codecs for selected types and flat records\n"
+"                        (UPER/CER default; opt-in BER/DER, APER, OER, JER, CBOR, XER)\n"
 "  -E                    Run only the ASN.1 parser and print out the tree\n"
 "  -F                    During -E operation, also perform tree fixing\n"
 "\n"

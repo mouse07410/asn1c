@@ -11,6 +11,9 @@
 #include "asn1c_ioc.h"
 #include "asn1c_naming.h"
 #include <stdint.h>
+#include <locale.h>
+#include <math.h>
+#include <stdio.h>
 #include <asn1print.h>
 #include <asn1fix_crange.h>	/* constraint groker from libasn1fix */
 #include <asn1fix_export.h>	/* other exportables from libasn1fix */
@@ -4623,6 +4626,154 @@ emit_default_bitstring_value(arg_t *arg, asn1p_value_t *v) {
 }
 
 /*
+ * Purpose: format a REAL DEFAULT as a locale-independent C floating literal.
+ * Original source: ASN.1 REAL values parsed into asn1p_value_t::v_double.
+ * Version/date: 1.0, 2026-10-31.
+ * Inputs: value is the parsed REAL; output and output_size select the buffer.
+ * Returns: Zero on success; -1 for a formatting or buffer failure.
+ * Errors: Non-finite values use C99 math macros; invalid buffers fail.
+ * Responsible party: asn1c maintainers. History: added for REAL DEFAULTs.
+ * Example: 0.5 is emitted as the valid C token "0.5" under any locale.
+ */
+static int
+format_real_default(double value, char *output, size_t output_size) {
+	char formatted[128];
+	const struct lconv *locale;
+	const char *decimal_point;
+	size_t decimal_size;
+	size_t source_pos = 0;
+	size_t output_pos = 0;
+	int formatted_size;
+
+	if(!output || output_size == 0) return -1;
+	if(isnan(value)) {
+		formatted_size = snprintf(output, output_size, "NAN");
+		return formatted_size >= 0 && (size_t)formatted_size < output_size ? 0 : -1;
+	}
+	if(isinf(value)) {
+		const char *literal = signbit(value) ? "-INFINITY" : "INFINITY";
+		formatted_size = snprintf(output, output_size, "%s", literal);
+		return formatted_size >= 0 && (size_t)formatted_size < output_size ? 0 : -1;
+	}
+
+	formatted_size = snprintf(formatted, sizeof(formatted), "%.17g", value);
+	if(formatted_size < 0 || (size_t)formatted_size >= sizeof(formatted)) return -1;
+	locale = localeconv();
+	decimal_point = locale ? locale->decimal_point : 0;
+	if(!decimal_point || !decimal_point[0]) decimal_point = ".";
+	decimal_size = strlen(decimal_point);
+	while(source_pos < (size_t)formatted_size) {
+		if(strncmp(formatted + source_pos, decimal_point, decimal_size) == 0) {
+			if(output_pos + 1 >= output_size) return -1;
+			output[output_pos++] = '.';
+			source_pos += decimal_size;
+		} else {
+			if(output_pos + 1 >= output_size) return -1;
+			output[output_pos++] = formatted[source_pos++];
+		}
+	}
+	output[output_pos] = '\0';
+	if(!strchr(output, '.') && !strchr(output, 'e') && !strchr(output, 'E')) {
+		if(output_pos + 3 > output_size) return -1;
+		output[output_pos++] = '.';
+		output[output_pos++] = '0';
+		output[output_pos] = '\0';
+	}
+	return 0;
+}
+
+/*
+ * Purpose: emit compare and set callbacks for a primitive REAL DEFAULT.
+ * Original source: the generated C DEFAULT callback contract.
+ * Version/date: 1.0, 2026-10-31.
+ * Inputs: arg and expr identify the member; out selects descriptor references.
+ * Returns: One when callbacks are emitted, zero for an unsupported value.
+ * Errors: Generated allocation/conversion failures return -1 at runtime.
+ * Responsible party: asn1c maintainers. History: adds REAL callback support.
+ * Example: REAL DEFAULT 0.5 gains callbacks for native and wide storage.
+ */
+static int
+try_inline_real_default(arg_t *arg, asn1p_expr_t *expr, int out) {
+	char literal[128];
+	const char *ctype;
+	int native_real;
+	int save_target = arg->target->target;
+	int type_index = expr->_type_unique_index;
+
+	if(!expr->marker.default_value
+	|| expr->marker.default_value->type != ATV_REAL
+	|| format_real_default(expr->marker.default_value->value.v_double,
+	                       literal, sizeof(literal))) return 0;
+	ctype = asn1c_type_name(arg, expr, TNF_CTYPE);
+	native_real = !(arg->flags & A1C_USE_WIDE_TYPES)
+	              || asn1c_REAL_fits(arg, expr) != RL_NOTFIT;
+	if(!out) {
+		if(C99_MODE) OUT(".default_value_cmp = ");
+		OUT("&asn_DFL_%d_cmp,\t/* Compare DEFAULT REAL */\n", type_index);
+		if(C99_MODE) OUT(".default_value_set = ");
+		OUT("&asn_DFL_%d_set,\t/* Set DEFAULT REAL */\n", type_index);
+		return 1;
+	}
+
+	REDIR(OT_STAT_DEFS);
+	OUT("#include <math.h>\n");
+	OUT("static int asn_DFL_%d_cmp(const void *sptr) {\n", type_index);
+	INDENT(+1);
+	OUT("if(!sptr) return -1;\n");
+	if(native_real) {
+		OUT("const %s *st = (const %s *)sptr;\n", ctype, ctype);
+		OUT("double value = (double)*st;\n");
+	} else {
+		OUT("double value;\n");
+		OUT("if(asn_REAL2double((const REAL_t *)sptr, &value)) return -1;\n");
+	}
+	if(native_real) {
+		OUT("if(isnan(value)) return isnan((double)(%s)(%s)) ? 0 : 1;\n",
+		    ctype, literal);
+		OUT("return (value != (double)(%s)(%s));\n", ctype, literal);
+	} else {
+		OUT("if(isnan(value)) return isnan((double)(%s)) ? 0 : 1;\n",
+		    literal);
+		OUT("return (value != (double)(%s));\n", literal);
+	}
+	INDENT(-1);
+	OUT("}\n");
+
+	OUT("static int asn_DFL_%d_set(void **sptr) {\n", type_index);
+	INDENT(+1);
+	OUT("%s *st = *sptr;\n", ctype);
+	if(!native_real) OUT("int allocated = 0;\n");
+	OUT("if(!st) {\n");
+	INDENT(+1);
+	OUT("st = (*sptr = CALLOC(1, sizeof(*st)));\n");
+	OUT("if(!st) return -1;\n");
+	if(!native_real) OUT("allocated = 1;\n");
+	INDENT(-1);
+	OUT("}\n");
+	if(native_real) {
+		OUT("*st = (%s)(%s);\n", ctype, literal);
+		OUT("return 0;\n");
+	} else {
+		OUT("if(asn_double2REAL((REAL_t *)st, (double)(%s))) {\n", literal);
+		INDENT(+1);
+		OUT("if(allocated) {\n");
+		INDENT(+1);
+		OUT("ASN_STRUCT_FREE(asn_DEF_REAL, st);\n");
+		OUT("*sptr = 0;\n");
+		INDENT(-1);
+		OUT("}\n");
+		OUT("return -1;\n");
+		INDENT(-1);
+		OUT("}\n");
+		OUT("return 0;\n");
+	}
+	INDENT(-1);
+	OUT("}\n");
+	REDIR(save_target);
+	return 1;
+}
+
+/*
  * Purpose: Emit inline DEFAULT callbacks for primitive ASN.1 members.
  * Original source: The asn1c C code generator; storage selection follows
  *                  asn1c_select_integer_storage().
@@ -4736,6 +4887,8 @@ try_inline_default(arg_t *arg, asn1p_expr_t *expr, int out) {
 
 		REDIR(save_target);
 		return 1;
+	case ASN_BASIC_REAL:
+		return try_inline_real_default(arg, expr, out);
 	case ASN_BASIC_NULL:
 		//expr->marker.flags &= ~EM_INDIRECT;
 		return 0;

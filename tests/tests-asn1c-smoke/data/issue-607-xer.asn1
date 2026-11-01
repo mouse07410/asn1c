@@ -1,0 +1,12 @@
+Issue607 DEFINITIONS ::= BEGIN
+
+SetDefaults ::= SET {
+    number INTEGER DEFAULT 7,
+    enabled BOOLEAN DEFAULT TRUE
+}
+
+SequenceDefault ::= SEQUENCE {
+    ratio REAL DEFAULT 0.5
+}
+
+END

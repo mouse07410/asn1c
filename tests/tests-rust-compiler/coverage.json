@@ -353,9 +353,9 @@
       "note": "Constructed, tagged, extensible, unconstrained, and other primitive types are not qualified."
     },
     {
-      "family": "XER/CBOR and JER outside the primitive slice",
+      "family": "XER and JER outside supported slices",
       "status": "not_implemented",
-      "note": "XER and CBOR are unavailable; JER is qualified for listed primitive, ENUMERATED, direct fixed or bounded OCTET STRING, and direct fixed or bounded BIT STRING types."
+      "note": "XER supports only basic encoding of flat SET and SEQUENCE records with untagged or automatic-tagged direct BOOLEAN, bounded INTEGER, and unconstrained IA5String, and REAL DEFAULT 0.5 fields with finite limited values; decoding and mixed codec selection are unsupported. JER is qualified for listed primitives and strings."
     },
     {
       "family": "constructed outside nested UPER SEQUENCE, extensible, unbounded, fragmented or disjoint strings, named-bit strings, CHOICE, extensible ENUMERATED, REAL, open types",
@@ -386,7 +386,7 @@
       "unsupported DEFAULT forms, constructed DEFAULT, nested extensions, excessive nesting or aggregate field-work, generated nested-name collisions, extensible and otherwise unsupported constructed types",
       "duplicate --rust selectors and disabling all Rust codecs",
       "an incomplete runtime asset set beside explicit skeletons",
-      "unsupported XER/CBOR codecs, unsupported JER type combinations, and C-layout selectors",
+      "unsupported XER shapes and mixed codecs, unsupported JER type combinations, and C-layout selectors",
       "extensible ENUMERATED root values",
       "fixed string SIZE(65536) at the fragmentation boundary",
       "extensible-size, size unions, and named-bit OCTET/BIT STRING forms",

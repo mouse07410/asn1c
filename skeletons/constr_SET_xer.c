@@ -642,8 +642,8 @@ SET_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
  * Purpose: encode one XER SET member with its element-name wrapper.
  * Source: Existing SET XER wrapper behavior and child XER encoder operations.
  * Version: 2026-10-22.
- * Parameters: member/value identify the leaf; ilevel/flags select formatting;
- *             cb/app_key receive the XML bytes.
+ * Parameters: member/value identify the leaf; previous_bytes and ilevel select
+ *             formatting; flags and cb/app_key control encoding and output.
  * Returns: encoded byte count or an encoding failure result.
  * Errors: missing child encoders and callback failures return failure.
  * Author: asn1c maintainers.
@@ -652,7 +652,9 @@ SET_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
  */
 static asn_enc_rval_t
 _SET_xer_encode_leaf(const asn_TYPE_descriptor_t *parent, const void *parent_value,
-                     const asn_TYPE_member_t *member, const void *value, int ilevel, enum xer_encoder_flags_e flags,
+                     const asn_TYPE_member_t *member, const void *value,
+                     ssize_t previous_bytes, int ilevel,
+                     enum xer_encoder_flags_e flags,
                      asn_app_consume_bytes_f *cb, void *app_key) {
     const asn_TYPE_descriptor_t *td = member->type;
     const void *sptr = value;
@@ -663,7 +665,15 @@ _SET_xer_encode_leaf(const asn_TYPE_descriptor_t *parent, const void *parent_val
     int canonical = (flags & XER_F_CANONICAL) != 0;
 
     if(!td || !td->op || !td->op->xer_encoder) ASN__ENCODE_FAILED;
-    if(!canonical) ASN__TEXT_INDENT(1, ilevel);
+    if(!canonical) {
+        if(previous_bytes == 0) {
+            ASN__TEXT_INDENT(1, ilevel);
+        } else {
+            int tmp_i;
+            for(tmp_i = 0; tmp_i < ilevel; tmp_i++)
+                ASN__CALLBACK("    ", 4);
+        }
+    }
     ASN__CALLBACK3("<", 1, name, name_size, ">", 1);
     if(member->flags & ATF_OPEN_TYPE)
         child = OPEN_TYPE_xer_put(parent, parent_value, member, ilevel + 1, flags, cb, app_key);
@@ -708,20 +718,22 @@ _SET_xer_encode_siblings(const asn_TYPE_descriptor_t *td, const void *st,
 
 /*
  * Purpose: encode a resolved SET leaf, synthesizing absent DEFAULT values in
- *          canonical XER without modifying the const input structure.
+ *          XER without modifying the const input structure.
  * Source: SET member default callbacks and X.693 canonical-XER rules.
  * Version: 2026-10-22.
- * Parameters: view selects a leaf; flags, formatting, and callback fields
- *             control its representation.
+ * Parameters: parent/parent_value identify the SET; view selects a leaf;
+ *             previous_bytes and ilevel select formatting; flags/callbacks
+ *             control its representation and output.
  * Returns: encoded count, zero when omitted, or an encoding failure.
  * Errors: default allocation, mandatory absence, child, and callback failures.
  * Author: asn1c maintainers.
- * History: Added canonical DEFAULT materialization for SET leaves.
+ * History: Materializes absent DEFAULT values in both XER modes.
  * Example: a NULL DEFAULT pointer is encoded through a temporary value.
  */
 static asn_enc_rval_t
 _SET_xer_encode_view(const asn_TYPE_descriptor_t *parent, const void *parent_value,
-                     const asn_SET_member_view_t *view, int ilevel,
+                     const asn_SET_member_view_t *view,
+                     ssize_t previous_bytes, int ilevel,
                      enum xer_encoder_flags_e flags,
                      asn_app_consume_bytes_f *cb, void *app_key) {
     const asn_TYPE_member_t *member = view->member;
@@ -733,8 +745,8 @@ _SET_xer_encode_view(const asn_TYPE_descriptor_t *parent, const void *parent_val
 
     if(!td || !td->op || !td->op->xer_encoder) ASN__ENCODE_FAILED;
     if(!view->present) {
-        if((flags & XER_F_CANONICAL) && member->default_value_set) {
-            if(member->default_value_set(&default_value) != 0) {
+        if(member->default_value_set) {
+            if(member->default_value_set(&default_value) != 0 || !default_value) {
                 if(default_value) ASN_STRUCT_FREE(*member->type, default_value);
                 ASN__ENCODE_FAILED;
             }
@@ -754,7 +766,8 @@ _SET_xer_encode_view(const asn_TYPE_descriptor_t *parent, const void *parent_val
             ASN__ENCODE_FAILED;
         }
     }
-    er = _SET_xer_encode_leaf(parent, parent_value, member, value, ilevel, flags, cb, app_key);
+    er = _SET_xer_encode_leaf(parent, parent_value, member, value,
+                              previous_bytes, ilevel, flags, cb, app_key);
     if(default_value) ASN_STRUCT_FREE(*member->type, default_value);
     return er;
 }
@@ -763,8 +776,9 @@ _SET_xer_encode_view(const asn_TYPE_descriptor_t *parent, const void *parent_val
  * Purpose: encode a present synthetic SET group as sibling XER leaves.
  * Source: One-level group descriptors and each child's XER encoder.
  * Version: 2026-10-22.
- * Parameters: td/sptr identify the parent; outer selects the group; remaining
- *             parameters control formatting and deliver encoded bytes.
+ * Parameters: td/sptr identify the parent; outer selects the group;
+ *             previous_bytes/ilevel/flags control formatting; cb/app_key
+ *             receive encoded bytes.
  * Returns: encoded byte count, zero for an absent optional group, or failure.
  * Errors: incomplete mandatory leaves and child or callback errors are returned.
  * Author: asn1c maintainers.
@@ -773,7 +787,7 @@ _SET_xer_encode_view(const asn_TYPE_descriptor_t *parent, const void *parent_val
  */
 static asn_enc_rval_t
 _SET_xer_encode_group(const asn_TYPE_descriptor_t *td, const void *sptr,
-                      unsigned outer, int ilevel,
+                      unsigned outer, ssize_t previous_bytes, int ilevel,
                       enum xer_encoder_flags_e flags,
                       asn_app_consume_bytes_f *cb, void *app_key) {
     const asn_TYPE_member_t *member = &td->elements[outer];
@@ -793,10 +807,13 @@ _SET_xer_encode_group(const asn_TYPE_descriptor_t *td, const void *sptr,
         asn_enc_rval_t child;
         if(SET_member_view(td, sptr, outer, (unsigned)i, &view) != 0)
             ASN__ENCODE_FAILED;
-        child = _SET_xer_encode_view(td, sptr, &view, ilevel, flags, cb, app_key);
+        child = _SET_xer_encode_view(td, sptr, &view, previous_bytes,
+                                     ilevel, flags, cb, app_key);
         if(child.encoded < 0) return child;
         if(child.encoded > SSIZE_MAX - er.encoded) ASN__ENCODE_FAILED;
         er.encoded += child.encoded;
+        if(child.encoded > SSIZE_MAX - previous_bytes) ASN__ENCODE_FAILED;
+        previous_bytes += child.encoded;
     }
     ASN__ENCODED_OK(er);
 }
@@ -806,7 +823,8 @@ _SET_xer_encode_group(const asn_TYPE_descriptor_t *td, const void *sptr,
  * Source: SET member flags and transparent extension-group storage.
  * Version: 2026-10-22.
  * Parameters: td/sptr identify the value; outer selects a parent component;
- *             formatting and callback arguments are passed to the leaf encoder.
+ *             previous_bytes/ilevel/flags control formatting; cb/app_key
+ *             receive encoded bytes.
  * Returns: encoded byte count, zero for an absent optional member, or failure.
  * Errors: invalid member views and child encoders return failure.
  * Author: asn1c maintainers.
@@ -815,17 +833,18 @@ _SET_xer_encode_group(const asn_TYPE_descriptor_t *td, const void *sptr,
  */
 static asn_enc_rval_t
 _SET_xer_encode_member(const asn_TYPE_descriptor_t *td, const void *sptr,
-                       unsigned outer, int ilevel,
+                       unsigned outer, ssize_t previous_bytes, int ilevel,
                        enum xer_encoder_flags_e flags,
                        asn_app_consume_bytes_f *cb, void *app_key) {
     asn_SET_member_view_t view;
 
     if(td->elements[outer].flags & ATF_EXTENSION_GROUP)
-        return _SET_xer_encode_group(td, sptr, outer, ilevel, flags, cb,
-                                     app_key);
+        return _SET_xer_encode_group(td, sptr, outer, previous_bytes, ilevel,
+                                     flags, cb, app_key);
     if(SET_member_view(td, sptr, outer, ASN_SET_DIRECT_MEMBER, &view) != 0)
         ASN__ENCODE_FAILED;
-    return _SET_xer_encode_view(td, sptr, &view, ilevel, flags, cb, app_key);
+    return _SET_xer_encode_view(td, sptr, &view, previous_bytes, ilevel, flags,
+                                cb, app_key);
 }
 
 /*
@@ -875,8 +894,8 @@ SET_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr, int ilevel,
         asn_enc_rval_t child;
 
         if(outer >= td->elements_count) goto failed;
-        child = _SET_xer_encode_member(td, sptr, outer, ilevel, flags,
-                                       cb, app_key);
+        child = _SET_xer_encode_member(td, sptr, outer, er.encoded, ilevel,
+                                       flags, cb, app_key);
         if(child.encoded < 0) {
             XER_ENCODER_RECURSION_DEPTH_DEC();
             return child;

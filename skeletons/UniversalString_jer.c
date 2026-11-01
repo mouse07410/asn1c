@@ -6,6 +6,7 @@
 #include <asn_internal.h>
 #include <UniversalString.h>
 #include <UTF8String.h>
+#include <jer_string.h>
 
 /*
  * Decode a UTF-8 JER string and convert its contents to UCS-4.
@@ -93,18 +94,24 @@ UniversalString_encode_jer(const asn_TYPE_descriptor_t *td,
                            asn_app_consume_bytes_f *cb, void *app_key) {
     const UniversalString_t *st = (const UniversalString_t *)sptr;
     asn_enc_rval_t er = {0,0,0};
-    ssize_t ro_encoded = 0;
+    size_t offset;
 
     (void)ilevel;
     (void)flags;
 
-    if(!st || !st->buf)
+    if(!st || (!st->buf && st->size) || (st->size % 4) || !cb)
         ASN__ENCODE_FAILED;
 
     ASN__CALLBACK("\"", 1);
-    ro_encoded = UniversalString__dump(st, cb, app_key);
-    if(ro_encoded < 0) goto cb_failed;
-    er.encoded += ro_encoded;
+    for(offset = 0; offset < st->size; offset += 4) {
+        uint32_t codepoint = ((uint32_t)st->buf[offset] << 24)
+                           | ((uint32_t)st->buf[offset + 1] << 16)
+                           | ((uint32_t)st->buf[offset + 2] << 8)
+                           | st->buf[offset + 3];
+        ssize_t written = jer_write_escaped_codepoint(codepoint, cb, app_key);
+        if(written < 0 || written > SSIZE_MAX - er.encoded) goto cb_failed;
+        er.encoded += written;
+    }
     ASN__CALLBACK("\"", 1);
 
     ASN__ENCODED_OK(er);

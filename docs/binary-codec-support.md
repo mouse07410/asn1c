@@ -201,6 +201,16 @@ that leave trailing bytes inside their open-type envelopes. Constructed storage 
 layouts and rejects graphs beyond 64 nested levels, 1024 distinct cached types,
 or 16384 descriptor visits.
 
+BMPString and UniversalString JER encoders emit valid JSON strings: quotes,
+backslashes, and C0 controls are escaped, and invalid Unicode scalar values or
+misaligned storage lengths fail encoding. SEQUENCE extension-addition groups
+are represented as flat sibling fields in the outer JER object. Their fields
+are encoded and decoded in declaration order; a present group must include its
+required children. Unknown extension values are skipped only after strict JSON
+value parsing, including nested arrays, objects, and escaped strings. The flat
+group path rejects duplicate and out-of-order known fields. OPEN TYPE leaves
+inside SEQUENCE extension groups remain unsupported by this path.
+
 Direct SET XER OPEN TYPE members support selector-first decoding once every
 other sibling has appeared. This conservative rule also rejects a present
 open value when an unrelated OPTIONAL sibling is absent. The encoder rejects
@@ -295,6 +305,10 @@ SET members, and an absent group contributes no map entries. This is a
 repository-specific CBOR mapping. Duplicate names across direct and grouped
 members fail before encoding or decoder allocation; group OPEN TYPE leaves
 remain unsupported.
+[Check-608](../tests/tests-c-compiler/check-src/check-608.-fcompound-names.-gen-JER.c)
+covers flat SEQUENCE group output, round trips at every input split, missing
+required group children, duplicate and out-of-order keys, unknown JSON values,
+malformed storage offsets, and callback failures.
 
 SET constraint checking visits each present member, including OPTIONAL members,
 and rejects absent mandatory pointers. CER permits an absent OPTIONAL ANY

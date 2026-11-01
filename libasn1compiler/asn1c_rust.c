@@ -24,9 +24,10 @@
 #define RUST_CODEC_APER ((uint64_t)A1C_GEN_APER)
 #define RUST_CODEC_OER ((uint64_t)A1C_GEN_OER)
 #define RUST_CODEC_JER ((uint64_t)A1C_GEN_JER)
+#define RUST_CODEC_XER ((uint64_t)A1C_GEN_XER)
 #define RUST_CODEC_CBOR ((uint64_t)A1C_GEN_CBOR)
 #define RUST_CODEC_MASK (RUST_CODEC_UPER | RUST_CODEC_BER | RUST_CODEC_CER \
-                         | RUST_CODEC_APER | RUST_CODEC_OER | RUST_CODEC_JER | RUST_CODEC_CBOR)
+                         | RUST_CODEC_APER | RUST_CODEC_OER | RUST_CODEC_JER | RUST_CODEC_CBOR | RUST_CODEC_XER)
 #define RUST_CONSTRAINT_DEPTH_LIMIT 128
 #define RUST_IDENTIFIER_LIMIT 80
 #define RUST_MANIFEST_LIMIT (1024 * 1024)
@@ -77,6 +78,8 @@ static int rust_open_write_cbor_decode(FILE *, const rust_open_plan_t *, const c
 static char *rust_identifier(const char *, int);
 static char *rust_enum_variant(const char *);
 static int rust_check_tree(asn1p_t *, uint64_t);
+static int rust_check_xer_record(asn1p_module_t *, asn1p_expr_t *);
+static int rust_write_xer_record(FILE *, const char *, asn1p_expr_t *);
 static int rust_check_module(asn1p_t *, asn1p_module_t *, int *, uint64_t);
 static int rust_check_module_name(asn1p_t *, asn1p_module_t *);
 static int rust_check_module_types(asn1p_module_t *, int *, uint64_t);
@@ -207,7 +210,7 @@ asn1c_rust_compile(asn1p_t *asn, const char *runtime_dir,
     }
     if(!codecs || (codecs & ~RUST_CODEC_MASK)) {
         fprintf(stderr,
-                "asn1c: Rust backend supports UPER, APER, OER, BER, CER, JER, and CBOR only\n");
+                "asn1c: Rust backend supports UPER, APER, OER, BER, CER, JER, CBOR, and XER only\n");
         return -1;
     }
     if(rust_check_tree(asn, codecs)) return -1;
@@ -718,6 +721,13 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
                         "explicit type tags are not supported by the initial Rust slice");
         return -1;
     }
+    if(codecs & RUST_CODEC_XER) {
+        if(codecs == RUST_CODEC_XER
+           && (expr->expr_type == ASN_CONSTR_SEQUENCE || expr->expr_type == ASN_CONSTR_SET))
+            return rust_check_xer_record(module, expr);
+        rust_diagnostic(module, expr, "XER requires an XER-only flat SET or SEQUENCE");
+        return -1;
+    }
     if((expr->expr_type == ASN_BASIC_OCTET_STRING || expr->expr_type == ASN_BASIC_BIT_STRING)
        && rust_containing_node(expr->combined_constraints, 0)) {
         asn1p_expr_t *inner = rust_contained_primitive(module, expr);
@@ -802,6 +812,180 @@ rust_check_type(asn1p_module_t *module, asn1p_expr_t *expr,
     rust_diagnostic(module, expr,
                     "only direct primitives and flat UPER SEQUENCE are supported");
     return -1;
+}
+
+/*
+ * Purpose: validate the type and default of one flat XER field.
+ * Input: member describes a structurally valid ASN.1 field. Returns one if
+ * supported, zero otherwise; no exceptions. Source: new Rust XER slice.
+ * Version/date: 2026-10-31; responsible: asn1c maintainers. History: initial
+ * XER output support. Example: rust_xer_member_type_supported(member).
+ */
+static int
+rust_xer_member_type_supported(asn1p_expr_t *member) {
+    char literal[64];
+    if(member->expr_type == ASN_BASIC_BOOLEAN) {
+        if(member->constraints || member->combined_constraints) return 0;
+    } else if(member->expr_type == ASN_BASIC_INTEGER) {
+        if(!member->combined_constraints
+           || !rust_constraint_supported(member->combined_constraints, 0)
+           || rust_integer_bounds(member, &(int64_t){0}, &(int64_t){0})) return 0;
+    } else if(member->expr_type == ASN_STRING_IA5String) {
+        if(member->constraints || member->combined_constraints || member->marker.flags == EM_DEFAULT)
+            return 0;
+    } else if(member->expr_type == ASN_BASIC_REAL) {
+        return !member->constraints && !member->combined_constraints
+            && member->marker.flags == EM_DEFAULT && member->marker.default_value
+            && member->marker.default_value->type == ATV_REAL
+            && member->marker.default_value->value.v_double == 0.5;
+    } else return 0;
+    return member->marker.flags != EM_DEFAULT
+        || !rust_sequence_default_literal(member, literal, sizeof(literal));
+}
+
+/*
+ * Purpose: accept untagged fields or fixer-assigned automatic tags only.
+ * Inputs: module, record, member and zero-based index identify the field.
+ * Returns one if supported, zero otherwise; no exceptions. Source: ASN.1
+ * automatic tagging. Version/date: 2026-10-31; responsible: asn1c maintainers.
+ * History: initial automatic XER slice. Example: check the first member.
+ */
+static int
+rust_xer_tag_supported(asn1p_module_t *module, asn1p_expr_t *record,
+                       asn1p_expr_t *member, size_t index) {
+    if(member->tag.tag_class == TC_NOCLASS) return 1;
+    return record->auto_tags_OK && (module->module_flags & MSF_AUTOMATIC_TAGS)
+        && member->tag.tag_class == TC_CONTEXT_SPECIFIC
+        && member->tag.tag_mode == TM_IMPLICIT
+        && member->tag.tag_value == (asn1c_integer_t)index;
+}
+
+/*
+ * Purpose: gate the encoder-only flat XER record slice before publication.
+ * Inputs: module and expr identify a fixed ASN.1 record. Returns zero on
+ * success, -1 on unsupported input; no exceptions. Source: new Rust XER slice.
+ * Version/date: 2026-10-31; responsible: asn1c maintainers. History: initial
+ * XER output support. Example: rust_check_xer_record(module, record).
+ */
+static int
+rust_check_xer_record(asn1p_module_t *module, asn1p_expr_t *expr) {
+    asn1p_expr_t *member;
+    size_t count = 0;
+    if(expr->constraints || expr->combined_constraints || expr->lhs_params
+       || expr->ioc_table || expr->marker.flags || expr->rhs_pspecs) goto unsupported;
+    TQ_FOR(member, &expr->members, next) {
+        if(++count > RUST_SEQUENCE_FIELD_LIMIT || !rust_sequence_member_shape_valid(member)
+           || member->members.tq_head || member->reference
+           || !rust_xer_tag_supported(module, expr, member, count - 1)
+           || rust_check_sequence_name(module, expr, member)
+           || !rust_xer_member_type_supported(member))
+            goto unsupported;
+    }
+    return 0;
+unsupported:
+    rust_diagnostic(module, expr, "unsupported flat XER record field or DEFAULT");
+    return -1;
+}
+
+/*
+ * Purpose: emit one checked field and its basic XER element.
+ * Inputs: stream receives generated Rust; member describes a validated field.
+ * Returns zero or -1 on output failure; no exceptions. Source: new Rust XER
+ * slice. Version/date: 2026-10-31; responsible: asn1c maintainers. History:
+ * initial output support. Example: rust_write_xer_field(out, field).
+ */
+static int
+rust_write_xer_field(FILE *stream, asn1p_expr_t *member) {
+    char *name = rust_identifier(member->Identifier, 1);
+    char literal[64];
+    int ret = 0;
+    int optional = member->marker.flags == EM_OPTIONAL;
+    if(!name) return -1;
+    if(optional) {
+        ret = fprintf(stream, "        if let Some(value) = self.%s%s {\n", name,
+                      member->expr_type == ASN_STRING_IA5String ? ".as_deref()" : "");
+    } else if(member->marker.flags == EM_DEFAULT) {
+        if(member->expr_type == ASN_BASIC_REAL) strcpy(literal, "0.5_f64");
+        else if(rust_sequence_default_literal(member, literal, sizeof(literal))) ret = -1;
+        if(ret >= 0) ret = fprintf(stream, "        let value = self.%s.unwrap_or(%s);\n", name, literal);
+    } else {
+        ret = fprintf(stream, "        let value = %sself.%s;\n",
+                      member->expr_type == ASN_STRING_IA5String ? "&" : "", name);
+    }
+    if(ret >= 0) ret = fprintf(stream, "        writer.append(\"\\n    <%s>\")?;\n", member->Identifier);
+    if(ret >= 0 && member->expr_type == ASN_BASIC_BOOLEAN)
+        ret = fputs("        writer.boolean(value)?;\n", stream);
+    else if(ret >= 0 && member->expr_type == ASN_BASIC_INTEGER) {
+        int64_t lower, upper;
+        char low[64], high[64];
+        if(rust_integer_bounds(member, &lower, &upper) || rust_format_bound(low, sizeof(low), lower)
+           || rust_format_bound(high, sizeof(high), upper)) ret = -1;
+        else ret = fprintf(stream, "        writer.integer(value, %s, %s)?;\n", low, high);
+    } else if(ret >= 0 && member->expr_type == ASN_BASIC_REAL)
+        ret = fputs("        writer.real(value)?;\n", stream);
+    else if(ret >= 0) ret = fputs("        writer.ia5(value)?;\n", stream);
+    if(ret >= 0) ret = fprintf(stream, "        writer.append(\"</%s>\")?;\n", member->Identifier);
+    if(ret >= 0 && optional) ret = fputs("        }\n", stream);
+    free(name);
+    return ret < 0 ? -1 : 0;
+}
+
+/*
+ * Purpose: emit a flat record and its basic XER encoder.
+ * Inputs: stream receives Rust; name is its type; expr describes fields.
+ * Returns zero or -1 on output failure; no exceptions. Source: new Rust XER
+ * slice. Version/date: 2026-10-31; responsible: asn1c maintainers. History:
+ * initial output support. Example: rust_write_xer_record(out, "S", record).
+ */
+static int
+rust_write_xer_record(FILE *stream, const char *name, asn1p_expr_t *expr) {
+    asn1p_expr_t *member;
+    int has_real = 0;
+    TQ_FOR(member, &expr->members, next) {
+        if(member->expr_type == ASN_BASIC_REAL) has_real = 1;
+    }
+    if(fprintf(stream, "/// Flat ASN.1 XER record.\n#[derive(Clone, Debug, %sPartialEq)]\n"
+               "pub struct %s {\n", has_real ? "" : "Eq, ", name) < 0) return -1;
+    TQ_FOR(member, &expr->members, next) {
+        char *field = rust_identifier(member->Identifier, 1);
+        const char *type = member->expr_type == ASN_BASIC_BOOLEAN ? "bool"
+                         : member->expr_type == ASN_BASIC_INTEGER ? "i64"
+                         : member->expr_type == ASN_BASIC_REAL ? "f64" : "::std::string::String";
+        int present = member->marker.flags != EM_NOMARK;
+        int ret = field ? fprintf(stream, "    /// ASN.1 field state variable.\n    pub %s: %s%s%s,\n",
+                                  field, present ? "Option<" : "", type, present ? ">" : "") : -1;
+        free(field);
+        if(ret < 0) return -1;
+    }
+    if(fprintf(stream, "}\n\nimpl %s {\n", name) < 0) return -1;
+    if(rust_write_method_doc(stream, "Encode this flat record as basic XER.",
+        "`self` supplies fields; `limits` bounds output and work.", "Returns the complete XML bytes.",
+        "Returns an error for invalid fields or exhausted resources.",
+        "`let xml = value.encode_xer(&Default::default())?;")) return -1;
+    if(fprintf(stream, "    pub fn encode_xer(&self, limits: &::asn1c_runtime::Limits) ->\n"
+        "        ::core::result::Result<::std::vec::Vec<u8>, ::asn1c_runtime::Error> {\n"
+        "        let mut writer = ::asn1c_runtime::xer::XerWriter::new(limits);\n"
+        "        writer.append(\"<%s>\")?;\n", expr->Identifier) < 0) return -1;
+    if(expr->expr_type == ASN_CONSTR_SET && !expr->auto_tags_OK) {
+        static const asn1p_expr_type_e order[] = {
+            ASN_BASIC_BOOLEAN, ASN_BASIC_INTEGER, ASN_BASIC_REAL, ASN_STRING_IA5String
+        };
+        size_t i;
+        /* SET follows the C encoder's ascending universal tag order. */
+        for(i = 0; i < sizeof(order) / sizeof(order[0]); i++) {
+            TQ_FOR(member, &expr->members, next) {
+                if(member->expr_type == order[i] && rust_write_xer_field(stream, member)) return -1;
+            }
+        }
+    } else {
+        TQ_FOR(member, &expr->members, next) {
+            if(rust_write_xer_field(stream, member)) return -1;
+        }
+    }
+    return fprintf(stream, "        if writer.has_content_after(%zu) { writer.append(\"\\n\")?; }\n"
+                   "        writer.append(\"</%s>\\n\")?;\n"
+                   "        Ok(writer.finish())\n    }\n}\n\n", strlen(expr->Identifier) + 2,
+                   expr->Identifier) < 0 ? -1 : 0;
 }
 
 /*
@@ -1974,6 +2158,7 @@ rust_manifest_path_allowed(const char *path) {
        || !strcmp(path, "runtime/src/lib.rs")
        || !strcmp(path, "runtime/src/cbor.rs")
        || !strcmp(path, "runtime/src/jer.rs")
+       || !strcmp(path, "runtime/src/xer.rs")
        || !strcmp(path, "runtime/src/aper.rs")
        || !strcmp(path, "runtime/src/oer.rs")
        || !strcmp(path, "runtime/src/uper_cursor.rs")) return 1;
@@ -2033,7 +2218,7 @@ static int
 rust_copy_runtime(const char *source, const char *destination) {
     static const char *const files[] = {
         "Cargo.toml", "README.md", "LICENSE", "src/lib.rs",
-        "src/cbor.rs", "src/jer.rs", "src/aper.rs", "src/oer.rs", "src/uper_cursor.rs"
+        "src/cbor.rs", "src/jer.rs", "src/xer.rs", "src/aper.rs", "src/oer.rs", "src/uper_cursor.rs"
     };
     struct stat status;
     char source_src[PATH_MAX];
@@ -2465,7 +2650,9 @@ rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
         free(name);
         return -1;
     }
-    if(expr->expr_type == ASN_CONSTR_SEQUENCE) {
+    if(codecs == RUST_CODEC_XER) {
+        ret = rust_write_xer_record(stream, name, expr);
+    } else if(expr->expr_type == ASN_CONSTR_SEQUENCE) {
         ret = rust_write_all_sequences(stream, name, expr, 1, codecs);
     } else if(expr->expr_type == ASN_CONSTR_CHOICE) {
         ret = rust_write_cbor_choice(stream, name, expr);
@@ -4950,7 +5137,7 @@ static int
 rust_write_manifest(asn1p_t *asn, const char *stage) {
     static const char *const fixed[] = {
         "Cargo.toml", "src/lib.rs", "runtime/Cargo.toml", "runtime/README.md",
-        "runtime/LICENSE", "runtime/src/lib.rs", "runtime/src/cbor.rs", "runtime/src/jer.rs",
+        "runtime/LICENSE", "runtime/src/lib.rs", "runtime/src/cbor.rs", "runtime/src/jer.rs", "runtime/src/xer.rs",
         "runtime/src/aper.rs",
         "runtime/src/oer.rs", "runtime/src/uper_cursor.rs"
     };
