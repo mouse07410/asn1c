@@ -65,11 +65,18 @@ EXTRA_DIST = $(srcdir)/CborSlice.asn1 \
     $(srcdir)/UtcTimeAlias.asn1 \
     $(srcdir)/UtcTimeConstrained.asn1 \
     $(srcdir)/UtcTimeField.asn1 \
-    $(srcdir)/UtcTimeGeneralizedUnsupported.asn1 \
     $(srcdir)/UtcTimeImport.asn1 \
     $(srcdir)/UtcTimeTagged.asn1 \
     $(srcdir)/utc_time_conformance.rs \
     $(srcdir)/c_utc_time.c \
+    $(srcdir)/GeneralizedTimeValues.asn1 \
+    $(srcdir)/GeneralizedTimeAlias.asn1 \
+    $(srcdir)/GeneralizedTimeConstrained.asn1 \
+    $(srcdir)/GeneralizedTimeField.asn1 \
+    $(srcdir)/GeneralizedTimeImport.asn1 \
+    $(srcdir)/GeneralizedTimeTagged.asn1 \
+    $(srcdir)/generalized_time_conformance.rs \
+    $(srcdir)/c_generalized_time.c \
     $(srcdir)/FirstSlice.asn1 \
     $(srcdir)/SequenceSlice.asn1 \
     $(srcdir)/StringSlice.asn1 \

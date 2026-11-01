@@ -206,6 +206,23 @@ instant 1969-12-31 23:59:59 is accepted even where the C `time_t == -1` sentinel
 rejects it. Input, output, retained capacity, scratch, and cumulative work limits
 apply to the UTCTime operations.
 
+`GeneralizedTime` owns raw content bytes and exposes them through `as_bytes`;
+its fallible constructor and BER decoder preserve arbitrary bytes. BER accepts
+primitive or nested constructed tag-24 values with universal tag-4 fragments.
+DER and CER encoding require an explicit `Z`, `+hh`, `-hh`, `+hhmm`, or `-hhmm`
+zone, validate year 0001 through 9999 and Gregorian date/clock fields, then
+normalize to UTC primitive tag 24. Optional minute and second pairs are
+completed with zeroes; a fraction is allowed only after seconds, with one to
+nine digits and either `.` or `,`. Canonical output uses full seconds, `Z`, a
+decimal point, and trims trailing fractional zeroes; an all-zero fraction is
+omitted. Strict CER decoding compares the normalized encoding with exactly the
+consumed prefix. The deterministic Rust DER subset rejects local-time input,
+invalid-date normalization, and fractions longer than nine digits; C may
+interpret those using process timezone, normalize fields, or truncate precision.
+Rust also accepts the valid 1969-12-31 23:59:59 UTC instant that C can reject
+through its `time_t == -1` sentinel. GeneralizedTime operations use the shared
+input, output, retained-capacity, scratch, and cumulative work limits.
+
 `RecordContext`, `SequenceReader`, `SequenceWriter`, `SetReader`, and `SetWriter`
 compose flat SEQUENCE and SET values with direct BOOLEAN, NULL,
 ENUMERATED, bounded INTEGER, and bounded BIT/OCTET STRING fields under one

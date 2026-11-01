@@ -1,0 +1,3 @@
+GeneralizedTimeTagged DEFINITIONS ::= BEGIN
+Value ::= [0] IMPLICIT GeneralizedTime
+END

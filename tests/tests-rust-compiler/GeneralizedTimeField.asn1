@@ -1,0 +1,3 @@
+GeneralizedTimeField DEFINITIONS ::= BEGIN
+Packet ::= SEQUENCE { value GeneralizedTime }
+END

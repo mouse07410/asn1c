@@ -1,0 +1,3 @@
+GeneralizedTimeValues DEFINITIONS ::= BEGIN
+GenValue ::= GeneralizedTime
+END

@@ -1,4 +1,8 @@
 Changes since v1.5.3:
+	* Add direct untagged GeneralizedTime Rust BER/DER/CER roots for valid
+	  explicitly zoned values under BER/CER-only selection. BER preserves raw
+	  content; DER/CER normalize to UTC with bounded fractional precision and
+	  strict CER prefix comparison. Document host-local C DER divergences.
 	* Add direct untagged UTCTime Rust BER/DER/CER roots under BER/CER-only
 	  selection. Preserve raw BER/DER content, normalize valid CER values to
 	  seconds and Z using checked Gregorian arithmetic, reject noncanonical

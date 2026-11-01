@@ -367,6 +367,55 @@ impl UtcTime {
     }
 }
 
+/// Raw octets for a direct ASN.1 `GeneralizedTime` value.
+///
+/// BER decoding preserves raw content. DER and CER encoding validate explicit
+/// zoned text and normalize it to UTC. The value has no infallible clone.
+#[derive(Debug, Eq, PartialEq)]
+pub struct GeneralizedTime {
+    /// Owned raw time-content octets; state variable.
+    bytes: Vec<u8>,
+}
+
+impl GeneralizedTime {
+    /// Copy raw `GeneralizedTime` content without applying time validation.
+    ///
+    /// # Parameters and returns
+    /// `bytes` is raw content; `limits` caps input, retained output, and copy
+    /// work. Returns an owned value without cloning.
+    ///
+    /// # Errors
+    /// Returns input/output/work/scratch limits, checked-size errors, or a
+    /// fallible allocation error.
+    ///
+    /// # Source, version, history, example
+    /// Source: C BER callback timing. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct `GeneralizedTime` gate.
+    /// Example: `GeneralizedTime::try_from_bytes(b"20260101000000Z", limits)?`.
+    pub fn try_from_bytes(bytes: &[u8], limits: &Limits) -> Result<Self, Error> {
+        Ok(Self {
+            bytes: copy_character_string_bytes(bytes, limits)?,
+        })
+    }
+
+    /// Borrow the raw `GeneralizedTime` content bytes.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Returns stored bytes without applying time validation.
+    ///
+    /// # Errors
+    /// This accessor cannot fail or panic.
+    ///
+    /// # Source, version, history, example
+    /// Source: C BER callback timing. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct `GeneralizedTime` gate.
+    /// Example: `value.as_bytes() == b"20260101000000Z"`.
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
 /// BER identifier class, ordered by its two wire bits.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
@@ -4300,6 +4349,107 @@ pub fn decode_utc_time_cer(input: &[u8], limits: &Limits) -> Result<Decoded<UtcT
     })
 }
 
+/// Encode explicit zoned `GeneralizedTime` content as canonical DER.
+///
+/// # Parameters and returns
+/// `value` holds raw time text; `limits` caps output, work, and retained/output
+/// scratch. Returns normalized UTC primitive universal tag 24.
+///
+/// # Errors
+/// Returns invalid syntax/calendar/zone, normalized-year, resource, checked-size,
+/// or allocation errors. Local and over-precision forms are rejected.
+///
+/// # Source, version, history, example
+/// Source: C `GeneralizedTime` DER normalization, with deterministic checked dates.
+/// Version: 2026-11-01. Responsible: runtime maintainers.
+/// History: direct `GeneralizedTime` gate. Example: `encode_generalized_time_der(&value, limits)?`.
+pub fn encode_generalized_time_der(
+    value: &GeneralizedTime,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    encode_generalized_time(value, limits)
+}
+
+/// Encode explicit zoned `GeneralizedTime` content as canonical CER.
+///
+/// # Parameters and returns
+/// `value` holds raw time text; `limits` caps output, work, and retained/output
+/// scratch. Returns normalized UTC primitive universal tag 24.
+///
+/// # Errors
+/// Returns invalid syntax/calendar/zone, normalized-year, resource, checked-size,
+/// or allocation errors. Local and over-precision forms are rejected.
+///
+/// # Source, version, history, example
+/// Source: approved C CER `GeneralizedTime` validator and normalizer.
+/// Version: 2026-11-01. Responsible: runtime maintainers.
+/// History: direct `GeneralizedTime` gate. Example: `encode_generalized_time_cer(&value, limits)?`.
+pub fn encode_generalized_time_cer(
+    value: &GeneralizedTime,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    encode_generalized_time(value, limits)
+}
+
+/// Decode one BER `GeneralizedTime` prefix and preserve its raw content bytes.
+///
+/// # Parameters and returns
+/// `input` is the full available slice and may have a suffix; `limits` caps
+/// input, retained value, and work. Returns raw content and exact prefix use.
+/// Constructed tag-24 values use universal tag-4 fragments.
+///
+/// # Errors
+/// Returns malformed framing/fragment, tag, resource, size, or allocation errors.
+/// Time syntax is intentionally not checked by BER decoding.
+///
+/// # Source, version, history, example
+/// Source: C `GeneralizedTime_decode_ber` via `OCTET_STRING_decode_ber`.
+/// Version: 2026-11-01. Responsible: runtime maintainers.
+/// History: direct `GeneralizedTime` gate. Example: `decode_generalized_time_ber(input, limits)?`.
+pub fn decode_generalized_time_ber(
+    input: &[u8],
+    limits: &Limits,
+) -> Result<Decoded<GeneralizedTime>, Error> {
+    let mut work = 0;
+    let decoded = decode_generalized_time_ber_bytes(input, limits, &mut work)?;
+    Ok(Decoded {
+        value: GeneralizedTime {
+            bytes: decoded.value,
+        },
+        consumed_bits: decoded.consumed_bits,
+        consumed_bytes: decoded.consumed_bytes,
+    })
+}
+
+/// Strictly decode one canonical CER `GeneralizedTime` prefix.
+///
+/// # Parameters and returns
+/// `input` is the full available slice and may have a suffix; `limits` caps
+/// input, retained/output scratch, and cumulative work. Returns canonical raw
+/// content and exact prefix consumption.
+///
+/// # Errors
+/// Returns BER/time/canonicality, resource, checked-size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: strict CER re-encoding and comparison.
+/// Version: 2026-11-01. Responsible: runtime maintainers.
+/// History: direct `GeneralizedTime` gate.
+/// Example: `decode_generalized_time_cer(input, limits)?`.
+pub fn decode_generalized_time_cer(
+    input: &[u8],
+    limits: &Limits,
+) -> Result<Decoded<GeneralizedTime>, Error> {
+    let decoded = decode_generalized_time_cer_bytes(input, limits)?;
+    Ok(Decoded {
+        value: GeneralizedTime {
+            bytes: decoded.value,
+        },
+        consumed_bits: decoded.consumed_bits,
+        consumed_bytes: decoded.consumed_bytes,
+    })
+}
+
 /// Encode raw IA5 content as DER under its simultaneous value/output budget.
 ///
 /// # Parameters and returns
@@ -5027,6 +5177,645 @@ fn render_utc_time(fields: &UtcTimeFields) -> Result<[u8; 13], Error> {
     }
     output[12] = b'Z';
     Ok(output)
+}
+
+/// Parsed explicitly zoned `GeneralizedTime` components and fraction span.
+struct GeneralizedTimeFields {
+    /// Four-digit source or normalized year; state variable.
+    year: u32,
+    /// One-based Gregorian month; state variable.
+    month: u32,
+    /// One-based Gregorian day; state variable.
+    day: u32,
+    /// Hour from 0 through 23; state variable.
+    hour: u32,
+    /// Minute from 0 through 59, defaulting to zero; state variable.
+    minute: u32,
+    /// Second from 0 through 59, defaulting to zero; state variable.
+    second: u32,
+    /// Numeric offset sign, or zero for `Z`; state variable.
+    offset_sign: i64,
+    /// Absolute numeric-zone offset in minutes; state variable.
+    offset_minutes: i64,
+    /// Start index of the optional decimal fraction; state variable.
+    fraction_start: usize,
+    /// Number of validated source fraction digits; state variable.
+    fraction_len: usize,
+}
+
+/// Canonical `GeneralizedTime` content in a fixed stack buffer.
+struct CanonicalGeneralizedTime {
+    /// Maximum 25-octet canonical time content; state variable.
+    bytes: [u8; 25],
+    /// Number of populated content octets; state variable.
+    len: usize,
+}
+
+/// Encode explicitly zoned `GeneralizedTime` as its canonical UTC DER/CER TLV.
+///
+/// # Parameters and returns
+/// `value` holds raw time bytes; `limits` caps output, work, and retained/output
+/// scratch. Returns the normalized primitive tag-24 encoding.
+///
+/// # Errors
+/// Returns invalid text/calendar/zone, normalized-year, resource, size, or
+/// allocation errors.
+///
+/// # Source, version, history, example
+/// Source: C `GeneralizedTime` DER normalization, with the approved deterministic
+/// zoned subset. Version: 2026-11-01. Responsible: runtime maintainers.
+/// History: direct `GeneralizedTime` gate. Example: called by both public encoders.
+fn encode_generalized_time(value: &GeneralizedTime, limits: &Limits) -> Result<Encoded, Error> {
+    let mut work = 0;
+    let canonical = normalize_generalized_time_content(&value.bytes, limits, &mut work)?;
+    let content = &canonical.bytes[..canonical.len];
+    let output_len = single_identifier_tlv_len(content.len())?;
+    check(Resource::OutputBytes, output_len, limits.max_output_bytes)?;
+    check_character_string_scratch(
+        value
+            .bytes
+            .capacity()
+            .checked_add(output_len)
+            .ok_or(Error::SizeOverflow)?,
+    )?;
+    charge_work(&mut work, output_len, limits)?;
+    encode_generalized_time_tlv(content, value.bytes.capacity(), limits)
+}
+
+/// Decode one BER `GeneralizedTime` prefix while preserving its unvalidated bytes.
+///
+/// # Parameters and returns
+/// `input` is the complete supplied slice; `limits` caps input and retained
+/// content; `work` shares parse and fragment-copy work. Returns raw bytes and
+/// exact prefix consumption.
+///
+/// # Errors
+/// Returns malformed BER, tag/fragment, output/work/scratch, size, or allocation
+/// errors. Time syntax is intentionally not checked.
+///
+/// # Source, version, history, example
+/// Source: C `GeneralizedTime` BER adapter and shared OCTET STRING runtime.
+/// Version: 2026-11-01. Responsible: runtime maintainers.
+/// History: direct `GeneralizedTime` gate. Example: called by BER and CER decoders.
+fn decode_generalized_time_ber_bytes(
+    input: &[u8],
+    limits: &Limits,
+    work: &mut usize,
+) -> Result<Decoded<Vec<u8>>, Error> {
+    let decode_limits = character_string_decode_limits(limits);
+    let decoded =
+        decode_octet_ber_with_tag_work(input, Tag::universal(24), &decode_limits, work, None)?;
+    check_character_string_scratch(decoded.value.capacity())?;
+    Ok(decoded)
+}
+
+/// Strictly decode, normalize, and compare one consumed CER `GeneralizedTime` prefix.
+///
+/// # Parameters and returns
+/// `input` may have a suffix; `limits` caps parse, retained value, output,
+/// scratch, and cumulative work. Returns the canonical value and prefix use.
+///
+/// # Errors
+/// Returns malformed BER/time, canonicality, resource, size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: strict C CER re-encoding and prefix comparison.
+/// Version: 2026-11-01. Responsible: runtime maintainers.
+/// History: direct `GeneralizedTime` gate. Example: called by public CER decode.
+fn decode_generalized_time_cer_bytes(
+    input: &[u8],
+    limits: &Limits,
+) -> Result<Decoded<Vec<u8>>, Error> {
+    let mut work = 0;
+    let decoded = decode_generalized_time_ber_bytes(input, limits, &mut work)?;
+    let canonical = normalize_generalized_time_content(&decoded.value, limits, &mut work)?;
+    let content = &canonical.bytes[..canonical.len];
+    let output_len = single_identifier_tlv_len(content.len())?;
+    check(Resource::OutputBytes, output_len, limits.max_output_bytes)?;
+    check_character_string_scratch(
+        decoded
+            .value
+            .capacity()
+            .checked_add(output_len)
+            .ok_or(Error::SizeOverflow)?,
+    )?;
+
+    // Precharge canonical output and the complete prefix comparison before allocation.
+    let compare_len = decoded.consumed_bytes.max(output_len);
+    charge_work(
+        &mut work,
+        output_len
+            .checked_add(compare_len)
+            .ok_or(Error::SizeOverflow)?,
+        limits,
+    )?;
+    let canonical_tlv = encode_generalized_time_tlv(content, decoded.value.capacity(), limits)?;
+    if input.get(..decoded.consumed_bytes) != Some(canonical_tlv.bytes.as_slice()) {
+        return Err(invalid(
+            "CER GeneralizedTime differs from canonical re-encoding",
+        ));
+    }
+    Ok(decoded)
+}
+
+/// Encode complete canonical `GeneralizedTime` content under tag 24.
+///
+/// # Parameters and returns
+/// `content` is normalized; `retained_capacity` is live source-value capacity;
+/// `limits` caps output/work/scratch. Returns a primitive TLV.
+///
+/// # Errors
+/// Returns output/work/scratch, checked-size, or allocation errors.
+///
+/// # Source, version, history, example
+/// Source: X.690 primitive `GeneralizedTime` encoding. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct `GeneralizedTime` gate.
+/// Example: called after normalization and operation-wide work preflight.
+fn encode_generalized_time_tlv(
+    content: &[u8],
+    retained_capacity: usize,
+    limits: &Limits,
+) -> Result<Encoded, Error> {
+    let output_len = single_identifier_tlv_len(content.len())?;
+    check(Resource::OutputBytes, output_len, limits.max_output_bytes)?;
+    check_character_string_scratch(
+        retained_capacity
+            .checked_add(output_len)
+            .ok_or(Error::SizeOverflow)?,
+    )?;
+    let encoded = write_primitive(24, content, limits)?;
+    check_character_string_scratch(
+        retained_capacity
+            .checked_add(encoded.bytes.capacity())
+            .ok_or(Error::SizeOverflow)?,
+    )?;
+    Ok(encoded)
+}
+
+/// Validate and canonicalize all raw `GeneralizedTime` content under one work budget.
+///
+/// # Parameters and returns
+/// `bytes` is the complete time text; `limits` caps work; `work` is the shared
+/// operation counter. Returns fixed-buffer UTC text with trimmed fraction.
+///
+/// # Errors
+/// Returns invalid syntax/calendar/zone, year-window, work-limit, or size errors.
+///
+/// # Source, version, history, example
+/// Source: C `GeneralizedTime` CER rules and checked Gregorian arithmetic.
+/// Version: 2026-11-01. Responsible: runtime maintainers.
+/// History: direct `GeneralizedTime` gate. Example: normalizes comma to dot.
+fn normalize_generalized_time_content(
+    bytes: &[u8],
+    limits: &Limits,
+    work: &mut usize,
+) -> Result<CanonicalGeneralizedTime, Error> {
+    charge_work(work, bytes.len(), limits)?;
+    let fields = parse_generalized_time_fields(bytes)?;
+    validate_generalized_time_fields(&fields)?;
+    let normalized = normalize_generalized_time_fields(fields)?;
+    render_generalized_time(&normalized, bytes)
+}
+
+/// Parse the required date/hour and supported optional clock, fraction, and zone.
+///
+/// # Parameters and returns
+/// `bytes` is raw content. Returns parsed fields plus fraction source bounds.
+///
+/// # Errors
+/// Returns `InvalidEncoding` for truncation, nondecimal fields, absent zone,
+/// malformed suffix, or unsupported precision.
+///
+/// # Source, version, history, example
+/// Source: approved deterministic `GeneralizedTime` subset of C CER syntax.
+/// Version: 2026-11-01. Responsible: runtime maintainers.
+/// History: direct `GeneralizedTime` gate. Example: parses `20260101000000Z`.
+fn parse_generalized_time_fields(bytes: &[u8]) -> Result<GeneralizedTimeFields, Error> {
+    if bytes.len() < 11 {
+        return Err(invalid(
+            "GeneralizedTime requires a full hour and explicit zone",
+        ));
+    }
+    let high_year = parse_generalized_pair(bytes, 0)?;
+    let low_year = parse_generalized_pair(bytes, 2)?;
+    let year = high_year
+        .checked_mul(100)
+        .and_then(|n| n.checked_add(low_year))
+        .ok_or(Error::SizeOverflow)?;
+    let mut fields = GeneralizedTimeFields {
+        year,
+        month: parse_generalized_pair(bytes, 4)?,
+        day: parse_generalized_pair(bytes, 6)?,
+        hour: parse_generalized_pair(bytes, 8)?,
+        minute: 0,
+        second: 0,
+        offset_sign: 0,
+        offset_minutes: 0,
+        fraction_start: 0,
+        fraction_len: 0,
+    };
+    let mut cursor = 10;
+
+    // Read optional minute and second pairs in order before any fraction.
+    parse_generalized_optional_clock(bytes, &mut cursor, &mut fields)?;
+    parse_generalized_fraction(bytes, &mut cursor, &mut fields)?;
+    parse_generalized_zone(bytes, cursor, &mut fields)?;
+    Ok(fields)
+}
+
+/// Parse two ASCII decimal digits at a checked byte offset.
+///
+/// # Parameters and returns
+/// `bytes` is the bounded source and `offset` selects the first digit. Returns
+/// the parsed pair as an unsigned value.
+///
+/// # Errors
+/// Returns `InvalidEncoding` for a truncated or nondecimal pair, or `SizeOverflow`.
+///
+/// # Source, version, history, example
+/// Source: `GeneralizedTime` decimal components. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct `GeneralizedTime` gate.
+/// Example: reads the month from offset four.
+fn parse_generalized_pair(bytes: &[u8], offset: usize) -> Result<u32, Error> {
+    let end = offset.checked_add(2).ok_or(Error::SizeOverflow)?;
+    let pair = bytes
+        .get(offset..end)
+        .ok_or_else(|| invalid("GeneralizedTime decimal field is truncated"))?;
+    let first = pair[0];
+    let second = pair[1];
+    if !first.is_ascii_digit() || !second.is_ascii_digit() {
+        return Err(invalid(
+            "GeneralizedTime decimal field contains a non-digit",
+        ));
+    }
+    Ok(u32::from(first - b'0') * 10 + u32::from(second - b'0'))
+}
+
+/// Parse optional two-digit minute and second fields, preserving ordering.
+///
+/// # Parameters and returns
+/// `bytes` is the source; `cursor` is updated; `fields` receives present parts.
+/// Returns success when optional pairs are complete.
+///
+/// # Errors
+/// Returns `InvalidEncoding` for a truncated optional pair.
+///
+/// # Source, version, history, example
+/// Source: C `GeneralizedTime` optional clock grammar. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct `GeneralizedTime` gate.
+/// Example: called after the mandatory hour.
+fn parse_generalized_optional_clock(
+    bytes: &[u8],
+    cursor: &mut usize,
+    fields: &mut GeneralizedTimeFields,
+) -> Result<(), Error> {
+    if bytes.get(*cursor).is_some_and(u8::is_ascii_digit) {
+        fields.minute = parse_generalized_pair(bytes, *cursor)?;
+        *cursor = (*cursor).checked_add(2).ok_or(Error::SizeOverflow)?;
+        if bytes.get(*cursor).is_some_and(u8::is_ascii_digit) {
+            fields.second = parse_generalized_pair(bytes, *cursor)?;
+            *cursor = (*cursor).checked_add(2).ok_or(Error::SizeOverflow)?;
+        }
+    }
+    Ok(())
+}
+
+/// Parse an optional seconds fraction after complete minute and second fields.
+///
+/// # Parameters and returns
+/// `bytes` is the source; `cursor` advances through `.`/`,` and its digits;
+/// `fields` records the fraction span. Returns success when absent or valid.
+///
+/// # Errors
+/// Returns `InvalidEncoding` for fractional hour/minute, empty fraction, or
+/// precision above nine digits.
+///
+/// # Source, version, history, example
+/// Source: approved C CER fraction grammar. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct `GeneralizedTime` gate.
+/// Example: records digits from `20260101000000.125Z`.
+fn parse_generalized_fraction(
+    bytes: &[u8],
+    cursor: &mut usize,
+    fields: &mut GeneralizedTimeFields,
+) -> Result<(), Error> {
+    if !matches!(bytes.get(*cursor), Some(b'.' | b',')) {
+        return Ok(());
+    }
+    if *cursor < 14 {
+        return Err(invalid(
+            "GeneralizedTime fractions require minute and second fields",
+        ));
+    }
+    *cursor = (*cursor).checked_add(1).ok_or(Error::SizeOverflow)?;
+    fields.fraction_start = *cursor;
+    while bytes.get(*cursor).is_some_and(u8::is_ascii_digit) {
+        fields.fraction_len = fields
+            .fraction_len
+            .checked_add(1)
+            .ok_or(Error::SizeOverflow)?;
+        if fields.fraction_len > 9 {
+            return Err(invalid("GeneralizedTime fraction exceeds nine digits"));
+        }
+        *cursor = (*cursor).checked_add(1).ok_or(Error::SizeOverflow)?;
+    }
+    if fields.fraction_len == 0 {
+        return Err(invalid("GeneralizedTime fraction must contain a digit"));
+    }
+    Ok(())
+}
+
+/// Parse a required explicit UTC or numeric zone suffix.
+///
+/// # Parameters and returns
+/// `bytes` is raw content; `cursor` points to the suffix; `fields` receives its
+/// sign and offset minutes. Returns success only at the end of the input.
+///
+/// # Errors
+/// Returns `InvalidEncoding` for missing, malformed, or out-of-range zones.
+///
+/// # Source, version, history, example
+/// Source: approved `GeneralizedTime` `Z`/`+hh[mm]` zone subset.
+/// Version: 2026-11-01. Responsible: runtime maintainers.
+/// History: direct `GeneralizedTime` gate. Example: parses `+0200`.
+fn parse_generalized_zone(
+    bytes: &[u8],
+    cursor: usize,
+    fields: &mut GeneralizedTimeFields,
+) -> Result<(), Error> {
+    let remaining = bytes.len().checked_sub(cursor).ok_or(Error::SizeOverflow)?;
+    if remaining == 1 && bytes.get(cursor) == Some(&b'Z') {
+        return Ok(());
+    }
+    if remaining != 3 && remaining != 5 {
+        return Err(invalid("GeneralizedTime requires a complete explicit zone"));
+    }
+    let sign = match bytes.get(cursor) {
+        Some(b'+') => 1_i64,
+        Some(b'-') => -1_i64,
+        _ => return Err(invalid("GeneralizedTime numeric zone has an invalid sign")),
+    };
+    let hour_start = cursor.checked_add(1).ok_or(Error::SizeOverflow)?;
+    let offset_hour = i64::from(parse_generalized_pair(bytes, hour_start)?);
+    let offset_minute = if remaining == 5 {
+        let minute_start = cursor.checked_add(3).ok_or(Error::SizeOverflow)?;
+        i64::from(parse_generalized_pair(bytes, minute_start)?)
+    } else {
+        0
+    };
+    if offset_hour > 23 || offset_minute > 59 {
+        return Err(invalid("GeneralizedTime numeric zone is out of range"));
+    }
+    fields.offset_sign = sign;
+    fields.offset_minutes = offset_hour
+        .checked_mul(60)
+        .and_then(|n| n.checked_add(offset_minute))
+        .ok_or(Error::SizeOverflow)?;
+    Ok(())
+}
+
+/// Validate year, Gregorian date, and clock components before normalization.
+///
+/// # Parameters and returns
+/// `fields` contains parsed values. Returns success for year 0001 through 9999
+/// and a valid date/time.
+///
+/// # Errors
+/// Returns `InvalidEncoding` for year zero, invalid date, or out-of-range clock.
+///
+/// # Source, version, history, example
+/// Source: C CER `GeneralizedTime` calendar checks. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct `GeneralizedTime` gate.
+/// Example: rejects February 30.
+fn validate_generalized_time_fields(fields: &GeneralizedTimeFields) -> Result<(), Error> {
+    if fields.year == 0
+        || fields.year > 9999
+        || !(1..=12).contains(&fields.month)
+        || fields.hour > 23
+        || fields.minute > 59
+        || fields.second > 59
+    {
+        return Err(invalid(
+            "GeneralizedTime calendar or clock field is out of range",
+        ));
+    }
+    let days = utc_month_days(fields.year, fields.month)?;
+    if fields.day == 0 || fields.day > days {
+        return Err(invalid("GeneralizedTime day is invalid for its month"));
+    }
+    Ok(())
+}
+
+/// Return complete Gregorian days before the first day of `year`.
+///
+/// # Parameters and returns
+/// `year` is in 1 through 10000. Returns days since 0001-01-01.
+///
+/// # Errors
+/// Returns `SizeOverflow` if checked arithmetic cannot represent the day count.
+///
+/// # Source, version, history, example
+/// Source: proleptic Gregorian calendar arithmetic. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct `GeneralizedTime` gate.
+/// Example: year 1 has zero prior days.
+fn generalized_days_before_year(year: u32) -> Result<i64, Error> {
+    let prior = i64::from(year.checked_sub(1).ok_or(Error::SizeOverflow)?);
+    let base = prior.checked_mul(365).ok_or(Error::SizeOverflow)?;
+    let leap_days = prior
+        .checked_div(4)
+        .and_then(|n| n.checked_sub(prior / 100))
+        .and_then(|n| n.checked_add(prior / 400))
+        .ok_or(Error::SizeOverflow)?;
+    base.checked_add(leap_days).ok_or(Error::SizeOverflow)
+}
+
+/// Count Gregorian days from the start of a year to the start of a month.
+///
+/// # Parameters and returns
+/// `year` is the full year and `month` is 1 through 12. Returns prior-month days.
+///
+/// # Errors
+/// Returns month validation or checked-size errors.
+///
+/// # Source, version, history, example
+/// Source: proleptic Gregorian calendar arithmetic. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct `GeneralizedTime` gate.
+/// Example: March includes leap day when applicable.
+fn generalized_days_before_month(year: u32, month: u32) -> Result<i64, Error> {
+    if !(1..=12).contains(&month) {
+        return Err(invalid("GeneralizedTime month is out of range"));
+    }
+    let mut days = 0_i64;
+    let mut current = 1_u32;
+    while current < month {
+        days = days
+            .checked_add(i64::from(utc_month_days(year, current)?))
+            .ok_or(Error::SizeOverflow)?;
+        current = current.checked_add(1).ok_or(Error::SizeOverflow)?;
+    }
+    Ok(days)
+}
+
+/// Convert parsed local time to normalized UTC calendar fields.
+///
+/// # Parameters and returns
+/// `fields` contains a validated date/time and explicit offset. Returns UTC
+/// fields while retaining the original fraction span.
+///
+/// # Errors
+/// Returns `InvalidEncoding` if UTC conversion leaves years 0001 through 9999,
+/// or `SizeOverflow` for arithmetic conversion failures.
+///
+/// # Source, version, history, example
+/// Source: checked Gregorian zone conversion. Version: 2026-11-01.
+/// Responsible: runtime maintainers. History: direct `GeneralizedTime` gate.
+/// Example: `+0200` subtracts two hours from local time.
+fn normalize_generalized_time_fields(
+    mut fields: GeneralizedTimeFields,
+) -> Result<GeneralizedTimeFields, Error> {
+    let days = generalized_days_before_year(fields.year)?
+        .checked_add(generalized_days_before_month(fields.year, fields.month)?)
+        .and_then(|n| n.checked_add(i64::from(fields.day - 1)))
+        .ok_or(Error::SizeOverflow)?;
+    let local_minutes = days
+        .checked_mul(1440)
+        .and_then(|n| {
+            i64::from(fields.hour)
+                .checked_mul(60)
+                .and_then(|h| n.checked_add(h))
+        })
+        .and_then(|n| n.checked_add(i64::from(fields.minute)))
+        .ok_or(Error::SizeOverflow)?;
+    let offset = fields
+        .offset_sign
+        .checked_mul(fields.offset_minutes)
+        .ok_or(Error::SizeOverflow)?;
+    let utc_minutes = local_minutes
+        .checked_sub(offset)
+        .ok_or(Error::SizeOverflow)?;
+    let day_index = utc_minutes / 1440;
+    let days_after_9999 = generalized_days_before_year(10000)?;
+    let max_minutes = days_after_9999
+        .checked_mul(1440)
+        .ok_or(Error::SizeOverflow)?;
+    if utc_minutes < 0 || utc_minutes >= max_minutes {
+        return Err(invalid(
+            "GeneralizedTime zone conversion leaves years 0001 through 9999",
+        ));
+    }
+
+    // Binary-search the year so the bounded calendar conversion is logarithmic.
+    let mut lower = 1_u32;
+    let mut upper = 10000_u32;
+    while upper - lower > 1 {
+        let middle = lower + (upper - lower) / 2;
+        if generalized_days_before_year(middle)? <= day_index {
+            lower = middle;
+        } else {
+            upper = middle;
+        }
+    }
+    let start_of_year = generalized_days_before_year(lower)?;
+    let mut remaining_days = day_index
+        .checked_sub(start_of_year)
+        .ok_or(Error::SizeOverflow)?;
+    let mut month = 1_u32;
+    while month <= 12 {
+        let month_days = i64::from(utc_month_days(lower, month)?);
+        if remaining_days < month_days {
+            break;
+        }
+        remaining_days = remaining_days
+            .checked_sub(month_days)
+            .ok_or(Error::SizeOverflow)?;
+        month = month.checked_add(1).ok_or(Error::SizeOverflow)?;
+    }
+    if month > 12 {
+        return Err(Error::SizeOverflow);
+    }
+    let minute_of_day = utc_minutes % 1440;
+    fields.year = lower;
+    fields.month = month;
+    fields.day = u32::try_from(remaining_days + 1).map_err(|_| Error::SizeOverflow)?;
+    fields.hour = u32::try_from(minute_of_day / 60).map_err(|_| Error::SizeOverflow)?;
+    fields.minute = u32::try_from(minute_of_day % 60).map_err(|_| Error::SizeOverflow)?;
+    fields.offset_sign = 0;
+    fields.offset_minutes = 0;
+    Ok(fields)
+}
+
+/// Render normalized `GeneralizedTime` to fixed-buffer UTC content.
+///
+/// # Parameters and returns
+/// `fields` contains normalized date/time and fraction bounds; `source` owns
+/// the bounded fraction. Returns canonical text and populated length.
+///
+/// # Errors
+/// Returns `SizeOverflow` if checked output sizing or numeric rendering fails.
+///
+/// # Source, version, history, example
+/// Source: C `GeneralizedTime` canonical renderer with fraction trimming.
+/// Version: 2026-11-01. Responsible: runtime maintainers.
+/// History: direct `GeneralizedTime` gate. Example: emits `YYYYMMDDhhmmssZ`.
+fn render_generalized_time(
+    fields: &GeneralizedTimeFields,
+    source: &[u8],
+) -> Result<CanonicalGeneralizedTime, Error> {
+    let mut output = [0_u8; 25];
+    let components = [
+        (fields.year, 4_usize),
+        (fields.month, 2),
+        (fields.day, 2),
+        (fields.hour, 2),
+        (fields.minute, 2),
+        (fields.second, 2),
+    ];
+    let mut cursor = 0_usize;
+    for (component, width) in components {
+        let end = cursor.checked_add(width).ok_or(Error::SizeOverflow)?;
+        let destination = output.get_mut(cursor..end).ok_or(Error::SizeOverflow)?;
+        let mut value = component;
+        for index in (0..width).rev() {
+            destination[index] =
+                b'0' + u8::try_from(value % 10).map_err(|_| Error::SizeOverflow)?;
+            value /= 10;
+        }
+        if value != 0 {
+            return Err(Error::SizeOverflow);
+        }
+        cursor = end;
+    }
+
+    // Omit zero fractions and remove only trailing zeros from nonzero fractions.
+    let fraction_end = fields
+        .fraction_start
+        .checked_add(fields.fraction_len)
+        .ok_or(Error::SizeOverflow)?;
+    let fraction = source
+        .get(fields.fraction_start..fraction_end)
+        .ok_or(Error::SizeOverflow)?;
+    let mut fraction_len = fraction.len();
+    while fraction_len > 0 && fraction.get(fraction_len - 1) == Some(&b'0') {
+        fraction_len -= 1;
+    }
+    if fraction_len > 0 {
+        output[cursor] = b'.';
+        cursor = cursor.checked_add(1).ok_or(Error::SizeOverflow)?;
+        let end = cursor
+            .checked_add(fraction_len)
+            .ok_or(Error::SizeOverflow)?;
+        output
+            .get_mut(cursor..end)
+            .ok_or(Error::SizeOverflow)?
+            .copy_from_slice(&fraction[..fraction_len]);
+        cursor = end;
+    }
+    output[cursor] = b'Z';
+    cursor = cursor.checked_add(1).ok_or(Error::SizeOverflow)?;
+    Ok(CanonicalGeneralizedTime {
+        bytes: output,
+        len: cursor,
+    })
 }
 
 /// Check the full 7-bit IA5 repertoire and meter its byte scan.
@@ -13709,6 +14498,374 @@ mod tests {
             &[0x17, 0x80][..],
         ] {
             assert!(decode_utc_time_ber(malformed, &limits).is_err());
+        }
+    }
+
+    /// Verify raw BER retention, nested tag-4 fragments, and DER normalization.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Exercises raw malformed content, nested BER, and aliases.
+    ///
+    /// # Errors
+    /// Panics if valid BER is rejected or raw bytes change unexpectedly.
+    ///
+    /// # Source, version, history, example
+    /// Source: C `GeneralizedTime` OCTET STRING adapter. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct `GeneralizedTime` gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn generalized_time_ber_preserves_raw_and_constructed_content() {
+        let limits = Limits::default();
+        let raw = decode_generalized_time_ber(&[0x18, 1, 0xff, 0x55], &limits).unwrap();
+        assert_eq!(raw.value.as_bytes(), [0xff]);
+        assert_eq!(raw.consumed_bytes, 3);
+        assert!(encode_generalized_time_der(&raw.value, &limits).is_err());
+
+        // Nested definite/indefinite constructed input flattens tag-4 fragments.
+        let nested = [
+            0x38, 0x80, 0x24, 0x80, 0x04, 7, b'2', b'0', b'2', b'6', b'0', b'1', b'0', 0, 0, 0x04,
+            8, b'1', b'0', b'0', b'0', b'0', b'0', b'0', b'Z', 0, 0, 0x55,
+        ];
+        let decoded = decode_generalized_time_ber(&nested, &limits).unwrap();
+        assert_eq!(decoded.value.as_bytes(), b"20260101000000Z");
+        assert_eq!(decoded.consumed_bytes, nested.len() - 1);
+        assert_eq!(decoded.consumed_bits, (nested.len() - 1) * 8);
+        assert_eq!(
+            encode_generalized_time_der(&decoded.value, &limits)
+                .unwrap()
+                .bytes,
+            [
+                0x18, 15, b'2', b'0', b'2', b'6', b'0', b'1', b'0', b'1', b'0', b'0', b'0', b'0',
+                b'0', b'0', b'Z'
+            ]
+        );
+
+        let empty = decode_generalized_time_ber(&[0x38, 0x80, 0, 0], &limits).unwrap();
+        assert_eq!(empty.value.as_bytes(), []);
+        assert!(encode_generalized_time_der(&empty.value, &limits).is_err());
+        assert!(encode_generalized_time_cer(&empty.value, &limits).is_err());
+        assert_eq!(
+            decode_generalized_time_ber(&[0x1f, 24, 1, 0xff], &limits)
+                .unwrap()
+                .value
+                .as_bytes(),
+            [0xff]
+        );
+        let fragment_alias = [0x38, 0x80, 0x1f, 4, 1, b'A', 0, 0];
+        assert_eq!(
+            decode_generalized_time_ber(&fragment_alias, &limits)
+                .unwrap()
+                .value
+                .as_bytes(),
+            b"A"
+        );
+    }
+
+    /// Cover optional fields, zones, fraction trimming, calendar edges, and epoch handling.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Checks canonical UTC content for every supported form.
+    ///
+    /// # Errors
+    /// Panics if valid input is rejected or normalized content differs.
+    ///
+    /// # Source, version, history, example
+    /// Source: approved C CER `GeneralizedTime` vectors. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct `GeneralizedTime` gate.
+    /// Example: `20261011140000+02` becomes `20261011120000Z`.
+    #[test]
+    fn generalized_time_normalizes_zones_and_fractions() {
+        let limits = Limits::default();
+        let cases: [(&[u8], &[u8]); 16] = [
+            (b"20261011120000Z", b"20261011120000Z"),
+            (b"2026010100Z", b"20260101000000Z"),
+            (b"202601010030Z", b"20260101003000Z"),
+            (b"20261011140000+02", b"20261011120000Z"),
+            (b"20261011140000+0200", b"20261011120000Z"),
+            (b"20260101003000-0800", b"20260101083000Z"),
+            (b"20260101003000+0100", b"20251231233000Z"),
+            (b"20261011120000,123450000Z", b"20261011120000.12345Z"),
+            (b"20261011120000.000000001Z", b"20261011120000.000000001Z"),
+            (b"20261011120000.120000000Z", b"20261011120000.12Z"),
+            (b"20261011120000.000000000Z", b"20261011120000Z"),
+            (b"00010101000000Z", b"00010101000000Z"),
+            (b"99991231235959Z", b"99991231235959Z"),
+            (b"20260101000000+2359", b"20251231000100Z"),
+            (b"20260101000000-2359", b"20260101235900Z"),
+            (b"19700101005959+0100", b"19691231235959Z"),
+        ];
+        for (input, expected) in cases {
+            let value = GeneralizedTime::try_from_bytes(input, &limits).unwrap();
+            let der = encode_generalized_time_der(&value, &limits).unwrap();
+            let cer = encode_generalized_time_cer(&value, &limits).unwrap();
+            assert_eq!(der.bytes, cer.bytes);
+            assert_eq!(der.bytes[0], 0x18);
+            assert_eq!(usize::from(der.bytes[1]), expected.len());
+            assert_eq!(&der.bytes[2..], expected);
+        }
+    }
+
+    /// Reject local times, malformed text, invalid calendars, and unsupported precision.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Verifies both DER and CER reject the qualified-slice exclusions.
+    ///
+    /// # Errors
+    /// Panics if malformed or explicitly excluded time text is encoded.
+    ///
+    /// # Source, version, history, example
+    /// Source: approved deterministic `GeneralizedTime` gate. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct `GeneralizedTime` gate.
+    /// Example: local-zone text has no explicit timezone.
+    #[test]
+    fn generalized_time_rejects_invalid_and_excluded_forms() {
+        let limits = Limits::default();
+        let invalid_values: [&[u8]; 19] = [
+            b"",
+            b"2026010100",
+            b"20260101000000",
+            b"00000101000000Z",
+            b"20261301000000Z",
+            b"20260230000000Z",
+            b"19000229000000Z",
+            b"20260100000000Z",
+            b"20260101240000Z",
+            b"20260101006000Z",
+            b"20260101000060Z",
+            b"20260101000000+2400",
+            b"20260101000000-0060",
+            b"20260101000000+02x",
+            b"2026010100.1Z",
+            b"202601010000.1Z",
+            b"20260101000000.Z",
+            b"20260101000000.1234567890Z",
+            b"20260101000000+02:00",
+        ];
+        for bytes in invalid_values {
+            let value = GeneralizedTime::try_from_bytes(bytes, &limits).unwrap();
+            assert!(
+                encode_generalized_time_der(&value, &limits).is_err(),
+                "{bytes:?}"
+            );
+            assert!(
+                encode_generalized_time_cer(&value, &limits).is_err(),
+                "{bytes:?}"
+            );
+        }
+        for bytes in [
+            b"00010101000000+0001".as_slice(),
+            b"99991231235959-0001".as_slice(),
+        ] {
+            let value = GeneralizedTime::try_from_bytes(bytes, &limits).unwrap();
+            assert!(encode_generalized_time_der(&value, &limits).is_err());
+        }
+    }
+
+    /// Require canonical CER spelling and compare only the consumed prefix.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Tests canonical output, suffixes, aliases, and constructed forms.
+    ///
+    /// # Errors
+    /// Panics if canonical input is rejected or a noncanonical alias is accepted.
+    ///
+    /// # Source, version, history, example
+    /// Source: strict C CER re-encoding. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct `GeneralizedTime` gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn generalized_time_strict_cer_compares_canonical_prefix() {
+        let limits = Limits::default();
+        let source = GeneralizedTime::try_from_bytes(b"20261011140000+0200", &limits).unwrap();
+        let canonical = encode_generalized_time_cer(&source, &limits).unwrap();
+        assert_eq!(&canonical.bytes[..2], &[0x18, 15]);
+        assert_eq!(&canonical.bytes[2..], b"20261011120000Z");
+
+        let mut with_suffix = canonical.bytes.clone();
+        with_suffix.push(0x55);
+        let decoded = decode_generalized_time_cer(&with_suffix, &limits).unwrap();
+        assert_eq!(decoded.value.as_bytes(), b"20261011120000Z");
+        assert_eq!(decoded.consumed_bytes, canonical.bytes.len());
+        assert_eq!(decoded.consumed_bits, canonical.bytes.len() * 8);
+
+        let canonical_content = b"20261011120000Z";
+        let aliases: [&[u8]; 5] = [
+            b"20261011140000+0200",
+            b"20261011120000,1Z",
+            b"20261011120000.123450000Z",
+            b"2026101112Z",
+            b"20261011120000.000Z",
+        ];
+        for content in aliases {
+            let value = GeneralizedTime::try_from_bytes(content, &limits).unwrap();
+            let encoded = encode_generalized_time_cer(&value, &limits).unwrap();
+            assert_ne!(&encoded.bytes[2..], content);
+            assert!(decode_generalized_time_cer(&encoded.bytes, &limits).is_ok());
+        }
+
+        // Valid canonical content under BER aliases is still not strict CER.
+        let mut high_tag = vec![0x1f, 24, 15];
+        high_tag.extend_from_slice(canonical_content);
+        assert_eq!(
+            decode_generalized_time_ber(&high_tag, &limits)
+                .unwrap()
+                .value
+                .as_bytes(),
+            canonical_content
+        );
+        assert!(decode_generalized_time_cer(&high_tag, &limits).is_err());
+        let mut constructed = vec![0x38, 0x80, 4, 15];
+        constructed.extend_from_slice(canonical_content);
+        constructed.extend_from_slice(&[0, 0]);
+        assert_eq!(
+            decode_generalized_time_ber(&constructed, &limits)
+                .unwrap()
+                .value
+                .as_bytes(),
+            canonical_content
+        );
+        assert!(decode_generalized_time_cer(&constructed, &limits).is_err());
+    }
+
+    /// Enforce exact constructor, BER, DER/CER, strict-work, and scratch limits.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Tests the cumulative parse/copy/normalize/encode/compare ceiling.
+    ///
+    /// # Errors
+    /// Panics if an operation crosses a configured resource boundary.
+    ///
+    /// # Source, version, history, example
+    /// Source: shared scalar resource policy. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct `GeneralizedTime` gate.
+    /// Example: the canonical strict CER vector requires 648 work bits.
+    #[test]
+    fn generalized_time_resource_limits_are_exact() {
+        let raw = b"20261011120000Z";
+        let exact_constructor = Limits {
+            max_input_bytes: raw.len(),
+            max_output_bytes: raw.len(),
+            max_work_bits: raw.len() * 8,
+        };
+        let value = GeneralizedTime::try_from_bytes(raw, &exact_constructor).unwrap();
+        assert!(GeneralizedTime::try_from_bytes(
+            raw,
+            &Limits {
+                max_work_bits: raw.len() * 8 - 1,
+                ..exact_constructor
+            }
+        )
+        .is_err());
+
+        let exact_encode = Limits {
+            max_input_bytes: raw.len(),
+            max_output_bytes: 17,
+            max_work_bits: (raw.len() + 17) * 8,
+        };
+        assert!(encode_generalized_time_der(&value, &exact_encode).is_ok());
+        assert!(encode_generalized_time_cer(&value, &exact_encode).is_ok());
+        for encode in [
+            encode_generalized_time_der(
+                &value,
+                &Limits {
+                    max_work_bits: (raw.len() + 17) * 8 - 1,
+                    ..exact_encode
+                },
+            ),
+            encode_generalized_time_cer(
+                &value,
+                &Limits {
+                    max_work_bits: (raw.len() + 17) * 8 - 1,
+                    ..exact_encode
+                },
+            ),
+        ] {
+            assert!(encode.is_err());
+        }
+
+        let ber_wire = [0x18, 1, 0xff];
+        let exact_ber = Limits {
+            max_input_bytes: ber_wire.len(),
+            max_output_bytes: 1,
+            max_work_bits: 4 * 8,
+        };
+        assert!(decode_generalized_time_ber(&ber_wire, &exact_ber).is_ok());
+        assert!(decode_generalized_time_ber(
+            &ber_wire,
+            &Limits {
+                max_work_bits: 4 * 8 - 1,
+                ..exact_ber
+            }
+        )
+        .is_err());
+
+        let canonical = encode_generalized_time_cer(&value, &Limits::default()).unwrap();
+        let exact_strict = Limits {
+            max_input_bytes: canonical.bytes.len(),
+            max_output_bytes: canonical.bytes.len(),
+            max_work_bits: 648,
+        };
+        assert!(decode_generalized_time_cer(&canonical.bytes, &exact_strict).is_ok());
+        assert!(decode_generalized_time_cer(
+            &canonical.bytes,
+            &Limits {
+                max_work_bits: 647,
+                ..exact_strict
+            }
+        )
+        .is_err());
+
+        assert!(encode_generalized_time_tlv(
+            b"A",
+            MAX_CHARACTER_STRING_SCRATCH_BYTES - 3,
+            &Limits::default()
+        )
+        .is_ok());
+        assert!(encode_generalized_time_tlv(
+            b"A",
+            MAX_CHARACTER_STRING_SCRATCH_BYTES - 2,
+            &Limits::default()
+        )
+        .is_err());
+    }
+
+    /// Mutate `GeneralizedTime` BER identifiers, lengths, content, and prefixes safely.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Truncates and changes each byte in a canonical fixture.
+    ///
+    /// # Errors
+    /// Panics only if BER or strict CER decoding unwinds on mutated input.
+    ///
+    /// # Source, version, history, example
+    /// Source: BER parser mutation hardening. Version: 2026-11-01.
+    /// Responsible: runtime maintainers. History: direct `GeneralizedTime` gate.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn generalized_time_mutations_and_truncations_do_not_panic() {
+        let limits = Limits::default();
+        let value = GeneralizedTime::try_from_bytes(b"20261011120000Z", &limits).unwrap();
+        let wire = encode_generalized_time_der(&value, &limits).unwrap().bytes;
+        for end in 0..wire.len() {
+            let prefix = &wire[..end];
+            let _ = decode_generalized_time_ber(prefix, &limits);
+            let _ = decode_generalized_time_cer(prefix, &limits);
+        }
+        for index in 0..wire.len() {
+            for byte in 0_u8..=u8::MAX {
+                let mut mutated = wire.clone();
+                mutated[index] = byte;
+                let _ = decode_generalized_time_ber(&mutated, &limits);
+                let _ = decode_generalized_time_cer(&mutated, &limits);
+            }
+        }
+        for malformed in [
+            &[0x38, 0x80, 0, 1, 0][..],
+            &[0x38, 0x80, 0x18, 0, 0, 0][..],
+            &[0x38, 0x80, 0x04, 1, b'A'][..],
+            &[0x18, 0x80][..],
+        ] {
+            assert!(decode_generalized_time_ber(malformed, &limits).is_err());
         }
     }
 }

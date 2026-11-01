@@ -3153,7 +3153,7 @@ fi
 
 # Direct UTCTime preserves BER/DER content and normalizes only for CER.
 for fixture in UtcTimeAlias UtcTimeConstrained UtcTimeField UtcTimeImport \
-    UtcTimeTagged UtcTimeGeneralizedUnsupported; do
+    UtcTimeTagged; do
     rejected_out="$test_tmp/rejected-$fixture"
     if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
         -D "$rejected_out" "$test_srcdir/$fixture.asn1" \
@@ -3251,6 +3251,112 @@ if ! cc $utc_cflags -I"$utc_c" "$utc_c"/*.c \
 fi
 if ! "$test_tmp/c-utc"; then
     echo "FAIL: C UTCTime BER/DER/CER vectors failed"
+    exit 1
+fi
+
+# Direct GeneralizedTime uses the C adapter's canonical zoned forms.
+for fixture in GeneralizedTimeAlias GeneralizedTimeConstrained \
+    GeneralizedTimeField GeneralizedTimeImport GeneralizedTimeTagged; do
+    rejected_out="$test_tmp/rejected-$fixture"
+    if "$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+        -D "$rejected_out" "$test_srcdir/$fixture.asn1" \
+        >"$test_tmp/$fixture.log" 2>&1; then
+        echo "FAIL: Rust backend accepted unsupported GeneralizedTime shape $fixture"
+        exit 1
+    fi
+    test ! -e "$rejected_out"
+done
+
+generalized_mixed="$test_tmp/rejected-generalized-mixed"
+if "$asn1c_bin" --rust -S "$skeletons" -D "$generalized_mixed" \
+    "$test_srcdir/GeneralizedTimeValues.asn1" \
+    >"$test_tmp/generalized-mixed.log" 2>&1; then
+    echo "FAIL: mixed default codecs accepted direct GeneralizedTime"
+    exit 1
+fi
+test ! -e "$generalized_mixed"
+generalized_uper="$test_tmp/rejected-generalized-uper"
+if "$asn1c_bin" --rust -gen-UPER -no-gen-BER -no-gen-CER -S "$skeletons" \
+    -D "$generalized_uper" "$test_srcdir/GeneralizedTimeValues.asn1" \
+    >"$test_tmp/generalized-uper.log" 2>&1; then
+    echo "FAIL: UPER-only selection accepted direct GeneralizedTime"
+    exit 1
+fi
+test ! -e "$generalized_uper"
+
+generalized_rust="$test_tmp/generalized-rust"
+"$asn1c_bin" --rust -gen-BER -gen-CER -no-gen-UPER -S "$skeletons" \
+    -D "$generalized_rust" "$test_srcdir/GeneralizedTimeValues.asn1"
+mkdir "$generalized_rust/tests"
+cp "$test_srcdir/generalized_time_conformance.rs" "$generalized_rust/tests/"
+generalized_source="$generalized_rust/src/generalized_time_values.rs"
+for method in try_from_bytes as_bytes encode_der decode_ber encode_cer decode_cer; do
+    grep -F "pub fn $method" "$generalized_source" >/dev/null
+done
+if grep -F '#[derive(Clone' "$generalized_source" >/dev/null; then
+    echo "FAIL: GeneralizedTime wrapper derives infallible Clone"
+    exit 1
+fi
+if ! (cd "$generalized_rust" && \
+    CARGO_TARGET_DIR="$test_tmp/target-generalized" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-generalized" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/generalized-rust.log" 2>&1; then
+    cat "$test_tmp/generalized-rust.log"
+    echo "FAIL: GeneralizedTime conformance or strict Clippy"
+    exit 1
+fi
+
+for codec in BER CER; do
+    if [ "$codec" = BER ]; then
+        generalized_unwanted='encode_cer|decode_cer'
+        "$asn1c_bin" --rust -gen-BER -no-gen-CER -no-gen-UPER -S "$skeletons" \
+            -D "$test_tmp/generalized-$codec-only" \
+            "$test_srcdir/GeneralizedTimeValues.asn1"
+    else
+        generalized_unwanted='encode_der|decode_ber'
+        "$asn1c_bin" --rust -gen-CER -no-gen-BER -no-gen-UPER -S "$skeletons" \
+            -D "$test_tmp/generalized-$codec-only" \
+            "$test_srcdir/GeneralizedTimeValues.asn1"
+    fi
+    generalized_codec_out="$test_tmp/generalized-$codec-only"
+    if ! (cd "$generalized_codec_out" && \
+        cargo check --offline --manifest-path Cargo.toml && \
+        cargo clippy --offline --all-targets --all-features -- \
+        -W clippy::pedantic -W clippy::nursery -D warnings) \
+        >"$test_tmp/generalized-$codec-only.log" 2>&1; then
+        cat "$test_tmp/generalized-$codec-only.log"
+        echo "FAIL: GeneralizedTime $codec-only strict Clippy"
+        exit 1
+    fi
+    if grep -E "pub fn ($generalized_unwanted)" \
+        "$generalized_codec_out/src/generalized_time_values.rs" >/dev/null; then
+        echo "FAIL: GeneralizedTime $codec-only output has unselected methods"
+        exit 1
+    fi
+done
+
+generalized_c="$test_tmp/generalized-c"
+mkdir "$generalized_c"
+"$asn1c_bin" -fcompound-names -S "$skeletons" -gen-CER -no-gen-UPER \
+    -no-gen-XER -no-gen-JER -no-gen-CBOR -no-gen-OER -no-gen-APER \
+    -no-gen-print -no-gen-random-fill -pdu=all -fgen-only-pdu-deps \
+    -no-gen-example -D "$generalized_c" "$test_srcdir/GeneralizedTimeValues.asn1" \
+    >"$test_tmp/generalized-c-generate.log" 2>&1
+generalized_cflags=$(sed -n 's/^ASN_MODULE_CFLAGS=//p' \
+    "$generalized_c/Makefile.am.libasncodec")
+rm -f "$generalized_c/converter-example.c" "$generalized_c/pdu_collection.c"
+if ! cc $generalized_cflags -I"$generalized_c" "$generalized_c"/*.c \
+    "$test_srcdir/c_generalized_time.c" -lm -o "$test_tmp/c-generalized" \
+    >"$test_tmp/generalized-c-compile.log" 2>&1; then
+    cat "$test_tmp/generalized-c-compile.log"
+    echo "FAIL: C GeneralizedTime differential fixture did not compile"
+    exit 1
+fi
+if ! "$test_tmp/c-generalized"; then
+    echo "FAIL: C GeneralizedTime BER/DER/CER vectors failed"
     exit 1
 fi
 

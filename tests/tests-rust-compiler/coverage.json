@@ -169,6 +169,25 @@
       "evidence": "UtcTimeValues.asn1; utc_time_conformance.rs; c_utc_time.c"
     },
     {
+      "asn1_type": "GeneralizedTime",
+      "feature": "direct untagged unconstrained root; BER raw bytes and zoned DER/CER normalization",
+      "codec": "BER/DER and CER only",
+      "variants": [
+        "hour/minute/second precision, zone signs and widths, leap dates, and four-digit years",
+        "period/comma fractions, nine-digit precision, zero trimming, and UTC normalization",
+        "constructed BER fragments and valid-content root/fragment aliases rejected by strict CER",
+        "local-zone, invalid-date, excess-fraction, and epoch C adapter divergences isolated from parity"
+      ],
+      "directions": [
+        "canonical DER encode",
+        "BER raw prefix decode",
+        "canonical CER encode",
+        "strict CER prefix decode"
+      ],
+      "status": "tested_with_live_C_comparison",
+      "evidence": "GeneralizedTimeValues.asn1; generalized_time_conformance.rs; c_generalized_time.c"
+    },
+    {
       "asn1_type": "BIT STRING, OCTET STRING",
       "feature": "direct untagged unconstrained root values",
       "codec": "BER/DER and CER only",
@@ -737,7 +756,8 @@
       "direct unbounded OBJECT IDENTIFIER and RELATIVE-OID with tags, constraints, aliases, fields, imports, or non-BER/CER-only codec selection",
       "direct unconstrained IA5String with tags, constraints, aliases, fields, imports, or non-BER/CER-only codec selection",
       "direct restricted character strings with tags, constraints, aliases, fields, imports, CHARACTER STRING, or non-BER/CER-only codec selection",
-      "direct UTCTime with tags, constraints, aliases, fields, imports, or non-BER/CER-only codec selection; GeneralizedTime"
+      "direct UTCTime with tags, constraints, aliases, fields, imports, or non-BER/CER-only codec selection",
+      "direct GeneralizedTime with tags, constraints, aliases, fields, imports, or non-BER/CER-only codec selection"
     ],
     "output_safety": [
       "unowned destination preservation",
@@ -751,7 +771,7 @@
     ]
   },
   "observed_counts": {
-    "generated_rust_test_functions": 170,
+    "generated_rust_test_functions": 175,
     "live_c_rust_vectors_each_direction": 8,
     "single_octet_mutation_inputs": 796,
     "JER_single_octet_mutation_inputs": 256,
@@ -782,6 +802,8 @@
     "live_C_restricted_string_invalid_CER_vectors": 7,
     "restricted_string_constructed_BER_types": 13,
     "live_C_UTCTime_vectors_each_direction": 9,
-    "live_C_UTCTime_invalid_CER_vectors": 5
+    "live_C_UTCTime_invalid_CER_vectors": 5,
+    "live_C_GeneralizedTime_vectors_each_direction": 11,
+    "live_C_GeneralizedTime_adapter_divergence_checks": 4
   }
 }

@@ -1,0 +1,4 @@
+GeneralizedTimeAlias DEFINITIONS ::= BEGIN
+Base ::= GeneralizedTime
+Alias ::= Base
+END

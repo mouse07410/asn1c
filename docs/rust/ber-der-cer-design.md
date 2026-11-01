@@ -8,7 +8,7 @@ strict CER prefix decoding, for BOOLEAN, NULL, finite bounded `i64` INTEGER,
 unconstrained arbitrary-precision INTEGER, direct finite ENUMERATED, direct
 unconstrained OBJECT IDENTIFIER and RELATIVE-OID, and fixed, bounded, or direct
 unconstrained BIT/OCTET STRING values, direct untagged restricted character
-strings, and direct UTCTime. See
+strings, direct UTCTime, and direct qualified GeneralizedTime. See
 `rust/asn1c-runtime/README.md` and
 `libasn1compiler/asn1c_rust.c`. The generator rejects many schemas supported by
 C, including imports, references, most root tags, and multi-tag stacks. These
@@ -538,6 +538,54 @@ valid zoned vectors from these documented divergences and cover raw BER,
 constructed/tag aliases, optional fields, both zone signs and widths,
 fractions and trimming, leap/year edges, invalid text, malformed TLV,
 prefixes, limits, mutations, and negative generator shapes.
+
+### Direct SEQUENCE OF and SET OF primitive elements (qualified initial gate)
+
+Add direct, untagged, unconstrained top-level SEQUENCE OF and SET OF with
+exactly one direct untagged BOOLEAN, NULL, or finite nonextensible bounded
+`i64` INTEGER element under BER/CER-only selection. Reject root SIZE and
+element tags/references, nested types, extensions, defaults, imports,
+parameterization, mixed codecs, and unconstrained INTEGER before publishing
+output. The generated collection owns typed values. A separate runtime
+collection walker is required: the six-distinct-field record reader and
+writer cannot represent repeated members.
+
+Use public root and element kind descriptors, a typed owned decoded-value
+enum, and a typed borrowed-input enum for encoding; use a NULL count variant
+internally to avoid a zero-sized vector's `usize::MAX` capacity. Generated
+wrappers may expose `Vec<()>` after enforcing the count cap. Keep existing
+`Limits` struct literals
+source-compatible. Bound count independently, including `Vec<()>` or a NULL
+count that has no byte allocation; cap it at 1,000,000 before any loop or
+reserve. Charge each element visit, TLV parse/encode, validation, sorting,
+canonical re-encode, and comparison to one cumulative work budget. Count
+retained decoded vector, sort metadata, temporary sort buffers, and final output
+capacities against a fixed aggregate scratch cap, with checked arithmetic
+and fallible allocation. A fixed 11-byte canonical child encoding suffices
+for the three approved element kinds. Sorting SET OF may use a bounded
+fixed-width radix pass over zero-padded complete child TLVs, so sort work
+is linear and can be precharged before allocation; this ordering must not
+be replaced by numeric or field-tag order.
+
+BER accepts definite and indefinite constructed roots, repeated child tags,
+arbitrary SET OF order and duplicates, and C-compatible nonminimal scalar
+representations. Decode one prefix with exact consumption while enforcing
+child bounds and matching EOCs. DER SEQUENCE OF preserves element order and
+uses a definite tag-16 root; DER SET OF sorts complete canonical child TLVs
+under a definite tag-17 root. CER uses indefinite tag-16/tag-17 roots and EOC;
+SET OF sorts complete canonical CER child TLVs under X.690 section 11.6's
+zero-padded octet comparison. Strict CER decodes under the same context,
+re-encodes, and compares only the consumed prefix. This initial Rust value
+model checks bounded INTEGER element ranges at decode; C BER may leave a
+decoded out-of-range value for a later constraint check, so record the
+timing difference as a qualified compatibility limitation.
+
+Acceptance includes empty, singleton, duplicate, reversed, and repeated NULL
+collections; DER/CER root and SET OF ordering vectors; BER definite and
+indefinite forms, nonminimal aliases, malformed children/EOCs, suffixes,
+truncation, mutations, and exact count/input/output/work/scratch boundaries.
+Compare canonical Rust/C output and both decode directions for supported
+values. Every excluded schema shape must fail before crate publication.
 
 ## Decisions still required
 

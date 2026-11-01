@@ -1,0 +1,3 @@
+GeneralizedTimeConstrained DEFINITIONS ::= BEGIN
+Value ::= GeneralizedTime (SIZE(10..25))
+END

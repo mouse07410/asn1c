@@ -415,5 +415,18 @@ constructed BER tag-4 fragments, wire identifier aliases, malformed time text, e
 consumption, and resource limits. Rust uses checked Gregorian arithmetic and
 accepts `691231235959Z`; C's `time_t == -1` sentinel rejects that instant on
 this path, so the vector records an intentional compatibility divergence.
-ASN.1 aliases, fields, imports, tags, constraints, GeneralizedTime, and mixed or
-non-BER/CER codec selections fail before publication.
+ASN.1 aliases, fields, imports, tags, constraints, and mixed or non-BER/CER
+codec selections fail before publication.
+
+`GeneralizedTimeValues.asn1`, `generalized_time_conformance.rs`, and
+`c_generalized_time.c` compare only explicitly zoned valid DER/CER vectors.
+BER preserves arbitrary raw content, including constructed tag-4 fragments;
+DER and CER normalize valid UTC/offset spellings, optional clock fields, and
+fractions to canonical tag-24 content. Valid-content constructed and high-tag
+aliases decode under BER and fail strict CER. The C fixture separately records
+four adapter differences without claiming wire parity: zoneless DER uses the
+process timezone, DER may normalize an invalid calendar date, DER truncates
+fractions beyond nine digits, and C rejects the valid epoch-minus-one instant
+through its `time_t == -1` sentinel. Tagged, constrained, aliased, imported,
+member, mixed-codec, and UPER-only GeneralizedTime schemas fail before output
+publication.

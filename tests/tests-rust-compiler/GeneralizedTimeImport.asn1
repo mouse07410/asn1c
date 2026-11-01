@@ -1,0 +1,8 @@
+GeneralizedTimeImport DEFINITIONS ::= BEGIN
+IMPORTS Remote FROM GeneralizedTimeRemote;
+Value ::= GeneralizedTime
+END
+
+GeneralizedTimeRemote DEFINITIONS ::= BEGIN
+Remote ::= BOOLEAN
+END

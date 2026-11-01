@@ -1,3 +1,0 @@
-UtcTimeGeneralizedUnsupported DEFINITIONS ::= BEGIN
-Value ::= GeneralizedTime
-END

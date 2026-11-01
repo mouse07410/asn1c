@@ -202,7 +202,17 @@ the zone to UTC, and emits primitive `YYMMDDhhmmssZ`. Strict CER rejects
 noncanonical text or framing. Checked calendar arithmetic accepts the valid
 1969-12-31 23:59:59 UTC instant that C rejects through a `time_t == -1`
 sentinel. Tagged, constrained, aliased, imported, and member UTCTime forms
-and GeneralizedTime remain outside this Rust slice.
+remain outside this Rust slice.
+Direct untagged, unconstrained GeneralizedTime roots also support BER prefix
+decoding and DER/CER encoding with strict CER prefix decoding under BER/CER-only
+selection. BER preserves arbitrary raw tag-24 content and constructed tag-4
+fragments. DER and CER normalize valid explicitly zoned forms to primitive
+`YYYYMMDDhhmmss[.fraction]Z`, with up to nine fractional digits and trailing
+zeros removed. This qualified gate rejects zoneless DER input, invalid dates,
+and longer fractions that the C DER adapter may interpret using the host
+timezone, normalize, or truncate. The C `time_t == -1` sentinel also rejects
+one valid epoch-edge instant that checked Rust arithmetic accepts. Tagged,
+constrained, aliased, imported, and member GeneralizedTime forms remain gated.
 Flat SET records with an untagged outer type and the same six direct field kinds are
 available when only BER and/or CER are selected. BER accepts members in any
 order; DER/CER emits them by ascending effective tag class and number, and strict CER rejects
