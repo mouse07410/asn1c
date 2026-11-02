@@ -1,4 +1,7 @@
 Changes since v1.5.3:
+	* Refresh three C compiler output fixtures for truth-normalized BOOLEAN
+	  DEFAULT comparisons. Repair parsing regressions in normal, sanitizer,
+	  and distribution CI without changing codec behavior or test strictness.
 	* Pack generated Rust records with more than three scalar BOOLEAN fields
 	  into private byte arrays, with typed two-argument constructors and BOOLEAN
 	  getters/setters. Preserve OPTIONAL and DEFAULT semantics, small-record

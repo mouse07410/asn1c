@@ -154,7 +154,7 @@ static int asn_DFL_4_cmp_0(const void *sptr) {
 	}
 	
 	/* Test default value 0 */
-	return (*st != 0);
+	return ((*st != 0) != 0);
 }
 static int asn_DFL_4_set_0(void **sptr) {
 	BOOLEAN_t *st = *sptr;

@@ -2916,7 +2916,7 @@ static int asn_DFL_30_cmp_1(const void *sptr) {
 	}
 	
 	/* Test default value 1 */
-	return (*st != 1);
+	return ((*st != 0) != 1);
 }
 static int asn_DFL_30_set_1(void **sptr) {
 	BOOLEAN_t *st = *sptr;

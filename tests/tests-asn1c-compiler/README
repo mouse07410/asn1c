@@ -38,3 +38,12 @@ defined struct tags. It also checks that a long generated tag is not truncated.
 check-standard-module-order.sh creates the two standard modules in opposite
 directory orders and compares the generated output. It guards against the
 filesystem-dependent symbol indexes that caused PR #593 CI failures.
+
+The 2026-11-01 BOOLEAN DEFAULT fixture refresh updates the wide-type and PER
+variants of 50-constraint and the wide-type 84-param-tags output. BOOLEAN
+comparison normalizes every nonzero storage value to true before comparing
+with the DEFAULT. The three stale expressions caused all jobs in CI run
+41362526135 to fail check-parsing.sh. This fixture-only correction preserves
+the canonical omission fix, runtime validation, and every comparison check;
+it introduces no production-code or input-validation change. Validate it with
+make -C tests/tests-asn1c-compiler check, including the full parsing inventory.
