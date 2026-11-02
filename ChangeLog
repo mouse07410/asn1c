@@ -1,4 +1,7 @@
 Changes since v1.5.3:
+	* Limit each basic smoke test's generated converter build to one make job
+	  to reduce compiler concurrency, and document bounded suite runs. External
+	  SIGKILLs still require investigation on the affected host.
 	* Refresh three C compiler output fixtures for truth-normalized BOOLEAN
 	  DEFAULT comparisons. Repair parsing regressions in normal, sanitizer,
 	  and distribution CI without changing codec behavior or test strictness.

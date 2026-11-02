@@ -1,6 +1,18 @@
 Test that the asn1c compiler produces compilable code for basic ASN.1 types,
 while trying to disable different codecs and vary other compiler flags.
 
+The basic type smoke tests build each generated converter with one make job.
+Automake can still run separate tests concurrently, so use a bounded outer job
+count to limit resource use, for example `make -j2 check`. To investigate the
+three tests affected by the 2026-11-02 Intel macOS report, run:
+
+    make -j1 check TESTS='check-SEQUENCE_f_INTEGER.sh check-UTF8String.sh check-REAL.sh'
+
+The reported compiler processes received SIGKILL; the log does not identify
+what sent the signals. Limiting parallelism may reduce resource pressure but
+cannot prevent an external service from terminating a process. If the failures
+continue, check the host's security and system logs around the failing run.
+
 `check-CER.sh` generates real C descriptors and verifies CER encoder and
 decoder behavior for primitive values, constructed strings, tagged values,
 sets, choices, and selected open types. It also checks how CER interacts with

@@ -12,6 +12,7 @@ TESTS += check-BOOLEAN.sh
 TESTS += check-BIT_STRING.sh
 TESTS += check-OBJECT_IDENTIFIER.sh
 TESTS += check-RELATIVE-OID.sh
+TESTS += check-smoke-build-jobs.sh
 TESTS += check-SEQUENCE_f_INTEGER.sh
 TESTS += check-CHOICE_f_INTEGER.sh
 TESTS += check-OCTET_STRING.sh
