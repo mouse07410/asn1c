@@ -1,7 +1,7 @@
 //! Generated BER/DER/CER tests for direct untagged `UTCTime` values.
 
 use asn1c_generated::utc_time_values::UtcValue;
-use asn1c_runtime::Limits;
+use asn1c_runtime::{decode_utc_time_ber_tolerant, Limits};
 
 /// Append a shortest definite length for a fixed independent TLV vector.
 /// Parameters: `output` receives length octets; `length` is content size.
@@ -74,19 +74,20 @@ fn allowed_lengths_and_offsets_normalize_to_seconds_z() {
         (&b"991231235900+0000"[..], &b"991231235900Z"[..]),
         (&b"240101120000+0230"[..], &b"240101093000Z"[..]),
         (&b"240101120000-0230"[..], &b"240101143000Z"[..]),
+        (&b"0001010030+0100"[..], &b"991231233000Z"[..]),
         (&b"000229120000Z"[..], &b"000229120000Z"[..]),
     ] {
         check_time(raw, canonical, &limits);
     }
 }
 
-/// Keep raw BER/DER bytes permissive while applying validity rules in CER.
+/// Require strict default BER time validation while retaining DER passthrough.
 /// Parameters: none. Returns no value. Errors are assertion failures.
 /// Source: C OCTET STRING BER adapter and CER parser. Version/date: 2026-11-01.
 /// Responsible party: asn1c maintainers. History: codec-specific validation.
-/// Example: `junk` survives BER/DER and fails CER.
+/// Example: `junk` survives DER, fails strict BER, and passes tolerant BER.
 #[test]
-fn arbitrary_bytes_are_ber_der_data_but_invalid_for_cer() {
+fn arbitrary_bytes_fail_strict_ber_and_cer() {
     let limits = Limits::default();
     for invalid in [
         &b"junk"[..],
@@ -100,7 +101,8 @@ fn arbitrary_bytes_are_ber_der_data_but_invalid_for_cer() {
         let wire = primitive(invalid);
         assert_eq!(value.encode_der(&limits).unwrap().bytes, wire);
         assert!(value.encode_cer(&limits).is_err());
-        let decoded = UtcValue::decode_ber(&wire, &limits).unwrap();
+        assert!(UtcValue::decode_ber(&wire, &limits).is_err());
+        let decoded = decode_utc_time_ber_tolerant(&wire, &limits).unwrap();
         assert_eq!(decoded.value.as_bytes(), invalid);
         assert!(UtcValue::decode_cer(&wire, &limits).is_err());
     }
@@ -125,25 +127,29 @@ fn pivot_crossings_and_c_time_t_sentinel_are_handled() {
     check_time(b"691231235959Z", b"691231235959Z", &limits);
 }
 
-/// Accept constructed BER tag-23 values with nested universal tag-4 fragments.
+/// Strictly accept constructed BER containing one complete valid time value.
 /// Parameters: none. Returns no value. Errors are assertion failures.
 /// Source: C OCTET STRING decoder probes. Version/date: 2026-11-01.
 /// Responsible party: asn1c maintainers. History: constructed `UTCTime` BER.
-/// Example: nested fragments flatten to the raw content without validating it.
+/// Example: nested fragments flatten without canonicalizing the text.
 #[test]
 fn constructed_ber_is_flattened_and_cer_rejects_it() {
     let limits = Limits::default();
     let canonical_time = b"991231235900Z";
-    let definite = [0x37, 0x08, 0x04, 0x01, b'A', 0x24, 0x03, 0x04, 0x01, b'B'];
+    let definite = [
+        0x37, 0x13, 0x04, 0x06, b'9', b'9', b'1', b'2', b'3', b'1',
+        0x24, 0x09, 0x04, 0x07, b'2', b'3', b'5', b'9', b'0', b'0', b'Z',
+    ];
     let indefinite = [
-        0x37, 0x80, 0x04, 0x01, b'A', 0x24, 0x80, 0x04, 0x01, b'B',
+        0x37, 0x80, 0x04, 0x06, b'9', b'9', b'1', b'2', b'3', b'1',
+        0x24, 0x80, 0x04, 0x07, b'2', b'3', b'5', b'9', b'0', b'0', b'Z',
         0, 0, 0, 0,
     ];
     let decoded = UtcValue::decode_ber(&definite, &limits).unwrap();
-    assert_eq!(decoded.value.as_bytes(), b"AB");
+    assert_eq!(decoded.value.as_bytes(), canonical_time);
     assert_eq!(decoded.consumed_bytes, definite.len());
     let decoded = UtcValue::decode_ber(&indefinite, &limits).unwrap();
-    assert_eq!(decoded.value.as_bytes(), b"AB");
+    assert_eq!(decoded.value.as_bytes(), canonical_time);
     assert_eq!(decoded.consumed_bytes, indefinite.len());
     assert!(UtcValue::decode_cer(&definite, &limits).is_err());
     assert!(UtcValue::decode_cer(&indefinite, &limits).is_err());
@@ -158,7 +164,8 @@ fn constructed_ber_is_flattened_and_cer_rejects_it() {
     assert!(UtcValue::decode_cer(&canonical_constructed, &limits).is_err());
 
     let empty_constructed = [0x37, 0x80, 0, 0];
-    let decoded = UtcValue::decode_ber(&empty_constructed, &limits).unwrap();
+    assert!(UtcValue::decode_ber(&empty_constructed, &limits).is_err());
+    let decoded = decode_utc_time_ber_tolerant(&empty_constructed, &limits).unwrap();
     assert_eq!(decoded.value.as_bytes(), b"");
     assert_eq!(decoded.consumed_bytes, empty_constructed.len());
     assert!(UtcValue::decode_cer(&empty_constructed, &limits).is_err());
@@ -168,7 +175,7 @@ fn constructed_ber_is_flattened_and_cer_rejects_it() {
 /// Parameters: none. Returns no value. Errors are assertion failures.
 /// Source: BER parser robustness and C time probes. Version/date: 2026-11-01.
 /// Responsible party: asn1c maintainers. History: hostile `UTCTime` framing.
-/// Example: BER accepts a high-tag alias; strict CER rejects that prefix.
+/// Example: BER accepts a high-tag alias when the enclosed date is valid.
 #[test]
 fn aliases_malformed_prefixes_and_resource_limits_are_checked() {
     let limits = Limits::default();
@@ -180,7 +187,8 @@ fn aliases_malformed_prefixes_and_resource_limits_are_checked() {
     assert!(UtcValue::decode_cer(&root_alias, &limits).is_err());
 
     let child_alias = [0x37, 0x80, 0x1f, 0x04, 0x01, b'A', 0, 0];
-    let decoded = UtcValue::decode_ber(&child_alias, &limits).unwrap();
+    assert!(UtcValue::decode_ber(&child_alias, &limits).is_err());
+    let decoded = decode_utc_time_ber_tolerant(&child_alias, &limits).unwrap();
     assert_eq!(decoded.value.as_bytes(), b"A");
     assert!(UtcValue::decode_cer(&child_alias, &limits).is_err());
     let wrong_child = [0x37, 0x80, 0x1a, 0x01, b'A', 0, 0];

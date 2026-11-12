@@ -10,6 +10,9 @@ check_PROGRAMS =                \
     check-OCTET_STRING          \
     check-UTF8String            \
     check-UTCTime               \
+    check-UTCTime-tolerant      \
+    check-UTCTime-codecs        \
+    check-UTCTime-codecs-tolerant \
     check-INTEGER               \
     check-BER-NativeInteger-uint64 \
     check-REAL                  \
@@ -65,6 +68,15 @@ check_PROGRAMS =                \
     check-APER-NativeEnumerated \
     check-PER-nsnnwn            \
     check-PER-strict-ext
+
+# Compile a second UTCTime object with the legacy compatibility option enabled.
+check_UTCTime_tolerant_CPPFLAGS = -DASN_ENABLE_TOLERANT_UTCTIME
+check_UTCTime_tolerant_SOURCES = check-UTCTime.c \
+    $(top_srcdir)/skeletons/UTCTime.c
+check_UTCTime_codecs_SOURCES = check-UTCTime-codecs.c
+check_UTCTime_codecs_tolerant_CPPFLAGS = -DASN_ENABLE_TOLERANT_UTCTIME
+check_UTCTime_codecs_tolerant_SOURCES = check-UTCTime-codecs.c \
+    $(top_srcdir)/skeletons/UTCTime.c
 
 check_PER_strict_ext_CFLAGS = -DASN_REJECT_UNKNOWN_EXTENSIONS
 check_PER_strict_ext_SOURCES = check-PER-strict-ext.c

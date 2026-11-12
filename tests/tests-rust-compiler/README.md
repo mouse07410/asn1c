@@ -486,10 +486,16 @@ before output publication.
 BER/DER preservation and canonical CER normalization for the direct untagged
 `UTCTime` root. Coverage includes omitted seconds, all four allowed input
 lengths, positive and negative offsets, leap years, the 1950/2049 pivot,
-constructed BER tag-4 fragments, wire identifier aliases, malformed time text, exact prefix
-consumption, and resource limits. Rust uses checked Gregorian arithmetic and
+constructed BER tag-4 fragments, wire identifier aliases, malformed time text,
+exact prefix consumption, and resource limits. Generated Rust BER decoding
+rejects invalid dates and syntax by default; a separate generated project
+checks that `-ftolerant-utc-time` restores permissive BER decoding while
+canonical CER validation remains strict. Raw constructors and DER encoding
+continue to preserve input bytes. Rust uses checked Gregorian arithmetic and
 accepts `691231235959Z`; C's `time_t == -1` sentinel rejects that instant on
-this path, so the vector records an intentional compatibility divergence.
+this path, so the vector records an intentional compatibility divergence. The
+existing Rust CER 1950/2049 pivot is separate from the C runtime's 1960/2059
+two-digit year mapping.
 ASN.1 aliases, fields, imports, tags, constraints, and mixed or non-BER/CER
 codec selections fail before publication.
 

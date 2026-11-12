@@ -397,6 +397,7 @@ EXTRA_DIST = $(srcdir)/WideMixed.asn1 \
     $(srcdir)/UtcTimeImport.asn1 \
     $(srcdir)/UtcTimeTagged.asn1 \
     $(srcdir)/utc_time_conformance.rs \
+    $(srcdir)/utc_time_tolerant_conformance.rs \
     $(srcdir)/c_utc_time.c \
     $(srcdir)/GeneralizedTimeValues.asn1 \
     $(srcdir)/GeneralizedTimeAlias.asn1 \

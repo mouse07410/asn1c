@@ -157,12 +157,12 @@ check_time(const uint8_t *raw, size_t raw_size, const uint8_t *canonical,
 }
 
 /*
- * Purpose: test raw BER/DER permissiveness and CER time validation failures.
+ * Purpose: test strict BER/CER time validation and raw DER preservation.
  * Parameters: raw/size is arbitrary untrusted text.
- * Returns zero if C preserves raw bytes and rejects CER encoding/decoding.
- * Source: C OCTET STRING BER adapter and UTCTime CER parser.
+ * Returns zero if BER/CER reject malformed time and DER preserves raw bytes.
+ * Source: strict C UTCTime BER adapter and UTCTime CER parser.
  * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
- * History: syntax-specific codec timing. Example: `junk` remains DER data.
+ * History: codec validation policy. Example: `junk` remains DER data.
  */
 static int
 check_invalid_time(const uint8_t *raw, size_t size) {
@@ -179,12 +179,55 @@ check_invalid_time(const uint8_t *raw, size_t size) {
     encoded = asn_encode_to_buffer(NULL, ATS_CER, &asn_DEF_UtcValue,
                                    &value, actual, sizeof(actual));
     if(encoded.encoded >= 0) return 1;
+    return ber_rejects(wire, wire_size) && cer_rejects(wire, wire_size) ? 0 : 1;
+}
+
+/*
+ * Purpose: verify strict BER accepts a valid value at the Unix epoch edge.
+ * Parameters: none. Returns zero when BER validates text without time_t conversion.
+ * Source: strict C UTCTime BER adapter. Version/date: 2026-11-12.
+ * Responsible party: asn1c maintainers. History: epoch sentinel regression.
+ * Example: 1969-12-31 23:59:59Z remains valid ASN.1 UTCTime.
+ */
+static int
+check_epoch_ber(void) {
+    static const uint8_t epoch[] = "691231235959Z";
+    uint8_t wire[WIRE_MAX];
+    size_t wire_size = make_tlv(wire, epoch, sizeof(epoch) - 1);
+    if(!wire_size) return 1;
+    return decode_matches(ATS_BER, wire, wire_size, epoch, sizeof(epoch) - 1,
+                          wire_size);
+}
+
+/*
+ * Purpose: accept valid BER spellings whose CER UTC year crosses the pivot.
+ * Parameters: raw/size is valid text outside CER's normalized year window.
+ * Returns zero when DER and BER preserve bytes and CER rejects normalization.
+ * Source: UTCTime pivot-window rules. Version/date: 2026-11-12.
+ * Responsible party: asn1c maintainers. History: strict BER/CER distinction.
+ * Example: `5001010000+0100` is valid BER but normalizes outside the window.
+ */
+static int
+check_normalization_window(const uint8_t *raw, size_t size) {
+    uint8_t wire[WIRE_MAX];
+    uint8_t actual[WIRE_MAX];
+    UtcValue_t value = {(uint8_t *)raw, size};
+    size_t wire_size = make_tlv(wire, raw, size);
+    asn_enc_rval_t encoded;
+    if(!wire_size) return 1;
+    encoded = asn_encode_to_buffer(NULL, ATS_DER, &asn_DEF_UtcValue,
+                                   &value, actual, sizeof(actual));
+    if(encoded.encoded != (ssize_t)wire_size
+       || memcmp(actual, wire, wire_size)) return 1;
     if(decode_matches(ATS_BER, wire, wire_size, raw, size, wire_size)) return 1;
+    encoded = asn_encode_to_buffer(NULL, ATS_CER, &asn_DEF_UtcValue,
+                                   &value, actual, sizeof(actual));
+    if(encoded.encoded >= 0) return 1;
     return cer_rejects(wire, wire_size) ? 0 : 1;
 }
 
 /*
- * Purpose: check primitive/nested constructed BER and strict CER framing.
+ * Purpose: check valid nested constructed BER and strict CER framing.
  * Parameters: none. Returns zero when C accepts and rejects the fixed inputs.
  * Source: C OCTET STRING BER decoder and time descriptor CER policy.
  * Version/date: 2026-11-01. Responsible party: asn1c maintainers.
@@ -193,11 +236,13 @@ check_invalid_time(const uint8_t *raw, size_t size) {
 static int
 check_constructed_ber(void) {
     static const uint8_t definite[] = {
-        0x37, 0x08, 0x04, 0x01, 'A', 0x24, 0x03, 0x04, 0x01, 'B'
+        0x37, 0x13, 0x04, 0x06, '9', '9', '1', '2', '3', '1',
+        0x24, 0x09, 0x04, 0x07, '2', '3', '5', '9', '0', '0', 'Z'
     };
     static const uint8_t indefinite[] = {
-        0x37, 0x80, 0x04, 0x01, 'A', 0x24, 0x80,
-        0x04, 0x01, 'B', 0, 0, 0, 0
+        0x37, 0x80, 0x04, 0x06, '9', '9', '1', '2', '3', '1',
+        0x24, 0x80, 0x04, 0x07, '2', '3', '5', '9', '0', '0', 'Z',
+        0, 0, 0, 0
     };
     static const uint8_t empty[] = {0x37, 0x80, 0, 0};
     static const uint8_t canonical_time[] = "991231235900Z";
@@ -209,13 +254,11 @@ check_constructed_ber(void) {
     };
     static const uint8_t wrong_child[] = {0x37, 0x03, 0x1a, 0x01, 'A'};
     static const uint8_t truncated_eoc[] = {0x37, 0x80, 0x04, 0x01, 'A', 0};
-    static const uint8_t two[] = {'A', 'B'};
-    static const uint8_t one[] = {'A'};
-    if(decode_matches(ATS_BER, definite, sizeof(definite), two, sizeof(two),
-                      sizeof(definite))) return 1;
-    if(decode_matches(ATS_BER, indefinite, sizeof(indefinite), two, sizeof(two),
-                      sizeof(indefinite))) return 1;
-    if(decode_matches(ATS_BER, empty, sizeof(empty), NULL, 0, sizeof(empty))) return 1;
+    if(decode_matches(ATS_BER, definite, sizeof(definite), canonical_time,
+                      sizeof(canonical_time) - 1, sizeof(definite))) return 1;
+    if(decode_matches(ATS_BER, indefinite, sizeof(indefinite), canonical_time,
+                      sizeof(canonical_time) - 1, sizeof(indefinite))) return 1;
+    if(!ber_rejects(empty, sizeof(empty))) return 1;
     if(decode_matches(ATS_BER, root_alias, sizeof(root_alias),
                       canonical_time, sizeof(canonical_time) - 1,
                       sizeof(root_alias) - 1)) return 1;
@@ -223,8 +266,7 @@ check_constructed_ber(void) {
                       sizeof(canonical_constructed) - 1, canonical_time,
                       sizeof(canonical_time) - 1,
                       sizeof(canonical_constructed) - 1)) return 1;
-    if(decode_matches(ATS_BER, child_alias, sizeof(child_alias), one, sizeof(one),
-                      sizeof(child_alias))) return 1;
+    if(!ber_rejects(child_alias, sizeof(child_alias))) return 1;
     if(!ber_rejects(wrong_child, sizeof(wrong_child))
        || !ber_rejects(truncated_eoc, sizeof(truncated_eoc))) return 1;
     if(cer_rejects(definite, sizeof(definite))
@@ -270,11 +312,12 @@ main(void) {
          (const uint8_t *)"240101093000Z", 13},
         {(const uint8_t *)"240101120000-0230", 17,
          (const uint8_t *)"240101143000Z", 13},
+        {(const uint8_t *)"0001010030+0100", 15,
+         (const uint8_t *)"991231233000Z", 13},
         {(const uint8_t *)"000229120000Z", 13,
          (const uint8_t *)"000229120000Z", 13}
     };
     static const uint8_t invalid[] = "junk";
-    static const uint8_t epoch[] = "691231235959Z";
     size_t index;
     for(index = 0; index < sizeof(vectors) / sizeof(vectors[0]); index++) {
         if(check_time(vectors[index].raw, vectors[index].raw_size,
@@ -282,9 +325,9 @@ main(void) {
             return 1;
     }
     if(check_invalid_time(invalid, sizeof(invalid) - 1)) return 1;
-    if(check_invalid_time(epoch, sizeof(epoch) - 1)) return 1;
-    if(check_invalid_time((const uint8_t *)"5001010000+0100", 15)
-       || check_invalid_time((const uint8_t *)"4912312359-0001", 15)
+    if(check_epoch_ber()) return 1;
+    if(check_normalization_window((const uint8_t *)"5001010000+0100", 15)
+       || check_normalization_window((const uint8_t *)"4912312359-0001", 15)
        || check_invalid_time((const uint8_t *)"010229000000Z", 13)
        || check_constructed_ber()) {
         fprintf(stderr, "C UTCTime invalid-value or BER framing probe failed\n");

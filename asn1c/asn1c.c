@@ -584,6 +584,10 @@ asn1c_handle_simple_f_option(const char *name, asn1c_cli_options_t *options) {
 static int
 asn1c_handle_f_option(const char *arg, asn1c_cli_options_t *options) {
     int handled;
+    if(!strcmp(arg, "tolerant-utc-time")) {
+        options->compiler_flags |= A1C_TOLERANT_UTC_TIME;
+        return 0;
+    }
     if(!strncmp(arg, "complex-threshold=", 18))
         return asn1c_parse_complex_threshold(arg + 18, options);
     if(!strncmp(arg, "long-size=", 10))
@@ -1373,6 +1377,7 @@ usage(const char *av0) {
 "  -fcompound-names      Disambiguate C's struct NAME's inside top-level types\n"
 "  -findirect-choice     Compile members of CHOICE as indirect pointers\n"
 "  -fincludes-quoted     Generate #includes in \"double\" instead of <angle> quotes\n"
+"  -ftolerant-utc-time          Preserve legacy permissive UTCTime handling\n"
 "  -fknown-extern-type=<name>    Pretend the specified type is known\n"
 "  -fline-refs           Include ASN.1 module's line numbers in comments\n"
 "  -fno-constraints      Do not generate the constraint checking code\n"

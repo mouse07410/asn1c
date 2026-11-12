@@ -41,8 +41,9 @@ Other types and codec combinations produce a diagnostic until implemented.
 :   Select the complete Rust output mode, including Rust types, codec methods,
     Cargo metadata, and a copied native Rust runtime. The current default codec
     set is UPER and CER encoding. `-no-gen-UPER` selects CER-only output;
-    `-no-gen-CER` leaves UPER enabled. Explicit requests for unavailable codecs
-    and C-specific output options fail. The default output directory in this
+    `-no-gen-CER` leaves UPER enabled. Unavailable codec requests fail;
+    `-ftolerant-utc-time` is supported and selects legacy UTCTime BER decoding.
+    The default output directory in this
     mode is `asn1c-rust`. Build the generated package with
     `cargo check --offline --manifest-path asn1c-rust/Cargo.toml`.
 
@@ -142,6 +143,30 @@ cargo check --offline --manifest-path generated/Cargo.toml
 -fno-constraints
 :   Do not generate ASN.1 subtype constraint checking code.
     This may make a shorter executable.
+
+-ftolerant-utc-time
+:   Keep legacy permissive `UTCTime` decoding. By default, the C runtime and
+    generated Rust BER decoder validate UTCTime syntax, clock ranges, and
+    calendar dates independently of generated subtype constraint checks;
+    C's `-fno-constraints` does not turn off this validation.
+    Strict mode accepts optional seconds and requires `Z` or a complete
+    `+hhmm` / `-hhmm` offset. The legacy year mapping remains `00..59` to
+    2000..2059 and `60..99` to 1960..1999; it is not an RFC 5280 profile
+    check. For C output, this option emits `ASN_ENABLE_TOLERANT_UTCTIME` in
+    generated `asn_config.h`. When using a separately built C runtime, define
+    the macro while compiling the runtime skeleton objects; defining it only
+    in application code does not affect a prebuilt runtime. With `-R`, build
+    the runtime with the macro directly because runtime support and its
+    configuration header are omitted. For Rust output, the generated type
+    selects a tolerant BER decoder without a Cargo feature; DER encoding
+    remains raw and CER validation remains strict.
+    The strict UTCTime constraint callback checks syntax and calendar fields
+    without converting through `time_t`. `asn_UT2time()` does convert through
+    `time_t`, returns `(time_t)-1` for errors, and may return the same value
+    for the valid UTC instant 1969-12-31 23:59:59; its range also depends on
+    the platform's `time_t` representation. See X.680 47.2 and 47.3 at
+    <https://www.itu.int/rec/T-REC-X.680-202102-I/en>.
+    The option affects UTCTime only; GeneralizedTime behavior is unchanged.
 
 -fno-include-deps
 :   Do not generate courtesy #include lines for non-critical type dependencies.

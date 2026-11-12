@@ -330,8 +330,9 @@ impl Ia5String {
 
 /// Raw octets for a direct ASN.1 `UTCTime` value.
 ///
-/// BER decoding and DER encoding preserve bytes. CER validates and normalizes
-/// the time text. The value has no infallible `Clone` implementation.
+/// Strict BER decoding validates syntax/calendar while preserving bytes; its
+/// explicitly tolerant variant skips that validation. DER preserves bytes,
+/// and CER validates and normalizes. The value has no infallible `Clone`.
 #[derive(Debug, Eq, PartialEq)]
 pub struct UtcTime {
     /// Owned raw time-content octets; state variable.
@@ -6160,7 +6161,7 @@ pub fn encode_utc_time_cer(value: &UtcTime, limits: &Limits) -> Result<Encoded, 
     encode_utc_time_der_bytes(&canonical, value.bytes.capacity(), limits)
 }
 
-/// Decode one BER `UTCTime` prefix and preserve its raw content bytes.
+/// Strictly decode one BER `UTCTime` prefix and preserve its raw content bytes.
 ///
 /// # Parameters and returns
 /// `input` is the full available slice and may have a suffix; `limits` caps
@@ -6169,14 +6170,47 @@ pub fn encode_utc_time_cer(value: &UtcTime, limits: &Limits) -> Result<Encoded, 
 /// accepted.
 ///
 /// # Errors
+/// Returns malformed framing/fragment, tag, time syntax/calendar, resource,
+/// size, or allocation errors. Validation does not normalize the content.
+///
+/// # Source, version, history, example
+/// Source: C strict `UTCTime_decode_ber` policy plus shared BER framing.
+/// Version: 2026-11-12. Responsible: runtime maintainers.
+/// History: issue #596 strict default. Example: `decode_utc_time_ber(input, limits)?`.
+pub fn decode_utc_time_ber(input: &[u8], limits: &Limits) -> Result<Decoded<UtcTime>, Error> {
+    let mut work = 0;
+    let decoded = decode_utc_time_ber_bytes(input, limits, &mut work)?;
+    charge_work(&mut work, decoded.value.len(), limits)?;
+    let fields = parse_utc_time_fields(&decoded.value)?;
+    validate_utc_time_fields(&fields)?;
+    Ok(Decoded {
+        value: UtcTime {
+            bytes: decoded.value,
+        },
+        consumed_bits: decoded.consumed_bits,
+        consumed_bytes: decoded.consumed_bytes,
+    })
+}
+
+/// Decode one BER `UTCTime` prefix and preserve raw bytes without time checks.
+///
+/// # Parameters and returns
+/// `input` is the full available slice and may have a suffix; `limits` caps
+/// input, retained value, and work. Returns raw content and exact prefix use.
+///
+/// # Errors
 /// Returns malformed framing/fragment, tag, resource, size, or allocation errors.
 /// No time syntax check is applied.
 ///
 /// # Source, version, history, example
-/// Source: C `UTCTime_decode_ber` via `OCTET_STRING_decode_ber`.
-/// Version: 2026-11-01. Responsible: runtime maintainers.
-/// History: direct `UTCTime` gate. Example: `decode_utc_time_ber(input, limits)?`.
-pub fn decode_utc_time_ber(input: &[u8], limits: &Limits) -> Result<Decoded<UtcTime>, Error> {
+/// Source: prior `decode_utc_time_ber` raw behavior.
+/// Version: 2026-11-12. Responsible: runtime maintainers.
+/// History: explicit compatibility API for issue #596.
+/// Example: `decode_utc_time_ber_tolerant(input, limits)?`.
+pub fn decode_utc_time_ber_tolerant(
+    input: &[u8],
+    limits: &Limits,
+) -> Result<Decoded<UtcTime>, Error> {
     let mut work = 0;
     let decoded = decode_utc_time_ber_bytes(input, limits, &mut work)?;
     Ok(Decoded {
@@ -20479,63 +20513,79 @@ mod tests {
         }
     }
 
-    /// Verify BER raw preservation, universal tag-4 fragments, and DER passthrough.
+    /// Verify strict BER validation and the legacy raw-content decoder.
     ///
     /// # Parameters and returns
-    /// No parameters. Exercises primitive aliases, constructed values, and suffix use.
+    /// No parameters. Exercises valid and malformed primitive/constructed values.
     ///
     /// # Errors
-    /// Panics if valid BER is rejected or raw bytes change unexpectedly.
+    /// Panics if valid BER is rejected or tolerant raw bytes change unexpectedly.
     ///
     /// # Source, version, history, example
-    /// Source: C `UTCTime` OCTET STRING adapter. Version: 2026-11-01.
-    /// Responsible: runtime maintainers. History: direct `UTCTime` gate.
+    /// Source: issue #596 strict default and compatibility contract.
+    /// Version: 2026-11-12. Responsible: runtime maintainers.
+    /// History: split strict BER from raw-compatible BER.
     /// Example: run with `cargo test`.
     #[test]
     fn utc_time_ber_and_der_preserve_raw_bytes_and_constructed_fragments() {
         let limits = Limits::default();
 
-        // Raw invalid time bytes remain valid BER/DER content by C callback timing.
-        let raw = decode_utc_time_ber(&[0x17, 1, 0xff, 0x55], &limits).unwrap();
+        // The explicit tolerant entry point keeps historical raw-byte behavior.
+        let raw = decode_utc_time_ber_tolerant(&[0x17, 1, 0xff, 0x55], &limits).unwrap();
         assert_eq!(raw.value.as_bytes(), [0xff]);
         assert_eq!(raw.consumed_bytes, 3);
+        assert!(decode_utc_time_ber(&[0x17, 1, 0xff, 0x55], &limits).is_err());
         assert_eq!(
             encode_utc_time_der(&raw.value, &limits).unwrap().bytes,
             [0x17, 1, 0xff]
         );
 
-        // Nested constructed tag-23 uses universal OCTET STRING tag-4 leaves.
+        // Strict BER accepts valid nested tag-4 fragments and preserves their bytes.
+        let valid_constructed = [
+            0x37, 0x80, 0x04, 0x06, b'2', b'4', b'0', b'2', b'2', b'9', 0x04, 0x07, b'1', b'2',
+            b'0', b'0', b'0', b'0', b'Z', 0, 0, 0x55,
+        ];
+        let decoded = decode_utc_time_ber(&valid_constructed, &limits).unwrap();
+        assert_eq!(decoded.value.as_bytes(), b"240229120000Z");
+        assert_eq!(decoded.consumed_bytes, valid_constructed.len() - 1);
+        assert_eq!(decoded.consumed_bits, (valid_constructed.len() - 1) * 8);
+
+        // Invalid nested text remains available only through tolerant BER.
         let nested = [
             0x37, 0x80, 0x24, 0x80, 0x04, 2, b'9', b'9', 0, 0, 0x04, 3, b'1', b'2', b'3', 0, 0,
             0x55,
         ];
-        let decoded = decode_utc_time_ber(&nested, &limits).unwrap();
+        let decoded = decode_utc_time_ber_tolerant(&nested, &limits).unwrap();
         assert_eq!(decoded.value.as_bytes(), b"99123");
         assert_eq!(decoded.consumed_bytes, nested.len() - 1);
         assert_eq!(decoded.consumed_bits, (nested.len() - 1) * 8);
+        assert!(decode_utc_time_ber(&nested, &limits).is_err());
         assert_eq!(
             encode_utc_time_der(&decoded.value, &limits).unwrap().bytes,
             [0x17, 5, b'9', b'9', b'1', b'2', b'3']
         );
 
-        // BER accepts empty constructed content and nonminimal high-tag aliases.
-        let empty = decode_utc_time_ber(&[0x37, 0x80, 0, 0], &limits).unwrap();
+        // Tolerant BER still accepts empty content and nonminimal tag aliases.
+        assert!(decode_utc_time_ber(&[0x37, 0x80, 0, 0], &limits).is_err());
+        let empty = decode_utc_time_ber_tolerant(&[0x37, 0x80, 0, 0], &limits).unwrap();
         assert_eq!(empty.value.as_bytes(), []);
         assert_eq!(
-            decode_utc_time_ber(&[0x1f, 0x17, 1, 0xff], &limits)
+            decode_utc_time_ber_tolerant(&[0x1f, 0x17, 1, 0xff], &limits)
                 .unwrap()
                 .value
                 .as_bytes(),
             [0xff]
         );
+        assert!(decode_utc_time_ber(&[0x1f, 0x17, 1, 0xff], &limits).is_err());
         let child_alias = [0x37, 0x80, 0x1f, 4, 1, b'A', 0, 0];
         assert_eq!(
-            decode_utc_time_ber(&child_alias, &limits)
+            decode_utc_time_ber_tolerant(&child_alias, &limits)
                 .unwrap()
                 .value
                 .as_bytes(),
             b"A"
         );
+        assert!(decode_utc_time_ber(&child_alias, &limits).is_err());
     }
 
     /// Cover UTC normalization, the 1950 pivot, zone arithmetic, and the epoch sentinel.
@@ -20662,20 +20712,21 @@ mod tests {
         }
     }
 
-    /// Check exact input, output, scratch, and cumulative work ceilings.
+    /// Check exact constructor, DER, and CER encoder work ceilings.
     ///
     /// # Parameters and returns
-    /// No parameters. Tests constructor, DER, CER, BER, and strict CER boundaries.
+    /// No parameters. Tests constructor, DER, and CER encoding boundaries.
     ///
     /// # Errors
-    /// Panics if an operation crosses its configured resource boundary.
+    /// Panics if an encoding operation crosses its configured resource boundary.
     ///
     /// # Source, version, history, example
-    /// Source: shared scalar resource policy. Version: 2026-11-01.
-    /// Responsible: runtime maintainers. History: direct `UTCTime` gate.
+    /// Source: scalar resources and issue #596 strict BER validation.
+    /// Version: 2026-11-12. Responsible: runtime maintainers.
+    /// History: pin strict validation's bounded work charge.
     /// Example: run with `cargo test`.
     #[test]
-    fn utc_time_resource_limits_are_exact() {
+    fn utc_time_encoding_resource_limits_are_exact() {
         let raw = b"691231235959Z";
         let constructor_limits = Limits {
             max_input_bytes: raw.len(),
@@ -20721,15 +20772,31 @@ mod tests {
             }
         )
         .is_err());
+    }
 
+    /// Check strict and tolerant BER decoding work ceilings at exact boundaries.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Tests malformed and maximum-length BER resource accounting.
+    ///
+    /// # Errors
+    /// Panics if a decoder crosses its configured work boundary.
+    ///
+    /// # Source, version, history, example
+    /// Source: issue #596 strict BER validation and legacy tolerant BER accounting.
+    /// Version: 2026-11-12. Responsible: runtime maintainers.
+    /// History: pin both strict and compatibility work charges.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn utc_time_ber_resource_limits_are_exact() {
         let wire = [0x17, 1, 0xff];
         let ber_limits = Limits {
             max_input_bytes: wire.len(),
             max_output_bytes: 1,
             max_work_bits: 4 * 8,
         };
-        assert!(decode_utc_time_ber(&wire, &ber_limits).is_ok());
-        assert!(decode_utc_time_ber(
+        assert!(decode_utc_time_ber_tolerant(&wire, &ber_limits).is_ok());
+        assert!(decode_utc_time_ber_tolerant(
             &wire,
             &Limits {
                 max_work_bits: 4 * 8 - 1,
@@ -20737,7 +20804,81 @@ mod tests {
             }
         )
         .is_err());
+        assert!(decode_utc_time_ber(&wire, &ber_limits).is_err());
 
+        // Strict decoding charges framing, the retained copy, and validation.
+        let maximum = b"240229120000+0100";
+        assert_eq!(maximum.len(), 17);
+        let mut maximum_wire = Vec::with_capacity(19);
+        maximum_wire.extend_from_slice(&[0x17, u8::try_from(maximum.len()).unwrap()]);
+        maximum_wire.extend_from_slice(maximum);
+        let strict_work = (maximum_wire.len() + 2 * maximum.len()) * 8;
+        let strict_ber_limits = Limits {
+            max_input_bytes: maximum_wire.len(),
+            max_output_bytes: maximum.len(),
+            max_work_bits: strict_work,
+        };
+        let decoded = decode_utc_time_ber(&maximum_wire, &strict_ber_limits).unwrap();
+        assert_eq!(decoded.value.as_bytes(), maximum);
+        let strict_error = decode_utc_time_ber(
+            &maximum_wire,
+            &Limits {
+                max_work_bits: strict_work - 1,
+                ..strict_ber_limits
+            },
+        )
+        .unwrap_err();
+        assert_eq!(
+            strict_error,
+            Error::LimitExceeded {
+                resource: Resource::WorkBits,
+                limit: strict_work - 1,
+                requested: strict_work,
+            }
+        );
+
+        // Tolerant decoding retains its old framing-plus-copy budget.
+        let tolerant_work = (maximum_wire.len() + maximum.len()) * 8;
+        let tolerant_ber_limits = Limits {
+            max_input_bytes: maximum_wire.len(),
+            max_output_bytes: maximum.len(),
+            max_work_bits: tolerant_work,
+        };
+        assert!(decode_utc_time_ber_tolerant(&maximum_wire, &tolerant_ber_limits).is_ok());
+        let tolerant_error = decode_utc_time_ber_tolerant(
+            &maximum_wire,
+            &Limits {
+                max_work_bits: tolerant_work - 1,
+                ..tolerant_ber_limits
+            },
+        )
+        .unwrap_err();
+        assert_eq!(
+            tolerant_error,
+            Error::LimitExceeded {
+                resource: Resource::WorkBits,
+                limit: tolerant_work - 1,
+                requested: tolerant_work,
+            }
+        );
+    }
+
+    /// Keep CER decoding and DER scratch limits at their exact work ceilings.
+    ///
+    /// # Parameters and returns
+    /// No parameters. Exercises canonical CER decoding and bounded DER scratch.
+    ///
+    /// # Errors
+    /// Panics if an operation crosses its configured resource boundary.
+    ///
+    /// # Source, version, history, example
+    /// Source: scalar resources and issue #596 test organization.
+    /// Version: 2026-11-12. Responsible: runtime maintainers.
+    /// History: keep strict CER and DER scratch boundaries covered.
+    /// Example: run with `cargo test`.
+    #[test]
+    fn utc_time_cer_and_der_scratch_resource_limits_are_exact() {
+        let value = UtcTime::try_from_bytes(b"691231235959Z", &Limits::default()).unwrap();
         let canonical = encode_utc_time_cer(&value, &Limits::default()).unwrap();
         let strict_limits = Limits {
             max_input_bytes: canonical.bytes.len(),
@@ -20767,17 +20908,18 @@ mod tests {
         .is_err());
     }
 
-    /// Mutate `UTCTime` BER headers and truncate valid DER without panicking.
+    /// Mutate `UTCTime` BER under strict and tolerant decoders without panics.
     ///
     /// # Parameters and returns
-    /// No parameters. Exercises every byte mutation and every strict prefix.
+    /// No parameters. Exercises every byte mutation and every truncated prefix.
     ///
     /// # Errors
     /// Panics only if a decoder unwinds on mutated untrusted input.
     ///
     /// # Source, version, history, example
-    /// Source: BER parser mutation hardening. Version: 2026-11-01.
-    /// Responsible: runtime maintainers. History: direct `UTCTime` gate.
+    /// Source: BER mutation hardening and issue #596 compatibility decoder.
+    /// Version: 2026-11-12. Responsible: runtime maintainers.
+    /// History: cover both strict and tolerant `UTCTime` BER paths.
     /// Example: run with `cargo test`.
     #[test]
     fn utc_time_mutations_and_truncations_do_not_panic() {
@@ -20787,6 +20929,7 @@ mod tests {
         for end in 0..wire.len() {
             let prefix = &wire[..end];
             let _ = decode_utc_time_ber(prefix, &limits);
+            let _ = decode_utc_time_ber_tolerant(prefix, &limits);
             let _ = decode_utc_time_cer(prefix, &limits);
         }
         for index in 0..wire.len() {
@@ -20794,6 +20937,7 @@ mod tests {
                 let mut mutated = wire.clone();
                 mutated[index] = byte;
                 let _ = decode_utc_time_ber(&mutated, &limits);
+                let _ = decode_utc_time_ber_tolerant(&mutated, &limits);
                 let _ = decode_utc_time_cer(&mutated, &limits);
             }
         }
@@ -20804,6 +20948,7 @@ mod tests {
             &[0x17, 0x80][..],
         ] {
             assert!(decode_utc_time_ber(malformed, &limits).is_err());
+            assert!(decode_utc_time_ber_tolerant(malformed, &limits).is_err());
         }
     }
 

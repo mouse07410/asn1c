@@ -56,7 +56,8 @@ asn1_compile_with_target(asn1p_t *asn, const char *datadir,
 	                                      argv, target)) return -1;
 	if(target_options && target_options->target == ASN1C_TARGET_RUST) {
 		return asn1c_rust_compile(asn, target_options->rust_runtime_dir,
-		                           destdir, target_options->rust_codecs);
+		                           destdir, target_options->rust_codecs,
+		                           !!(flags & A1C_TOLERANT_UTC_TIME));
 	}
 	return asn1_compile_c(asn, datadir, destdir, flags, argc, optc, argv,
 	                      complex_threshold);

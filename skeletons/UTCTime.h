@@ -50,28 +50,36 @@ asn_struct_compare_f UTCTime_compare;
 asn_constr_check_f UTCTime_constraint;
 
 #if !defined(ASN_DISABLE_BER_SUPPORT)
-#define UTCTime_decode_ber OCTET_STRING_decode_ber
+ber_type_decoder_f UTCTime_decode_ber;
 #define UTCTime_encode_der OCTET_STRING_encode_der
 #endif  /* !defined(ASN_DISABLE_BER_SUPPORT) */
 
 #if !defined(ASN_DISABLE_XER_SUPPORT)
-#define UTCTime_decode_xer OCTET_STRING_decode_xer_utf8
+xer_type_decoder_f UTCTime_decode_xer;
 xer_type_encoder_f UTCTime_encode_xer;
 #endif  /* !defined(ASN_DISABLE_XER_SUPPORT) */
 
 #if !defined(ASN_DISABLE_JER_SUPPORT)
-#define UTCTime_decode_jer OCTET_STRING_decode_jer_utf8
+jer_type_decoder_f UTCTime_decode_jer;
 jer_type_encoder_f UTCTime_encode_jer;
 #endif  /* !defined(ASN_DISABLE_JER_SUPPORT) */
 
+#if !defined(ASN_DISABLE_OER_SUPPORT)
+oer_type_decoder_f UTCTime_decode_oer;
+#endif  /* !defined(ASN_DISABLE_OER_SUPPORT) */
+
 #if !defined(ASN_DISABLE_UPER_SUPPORT)
-#define UTCTime_decode_uper OCTET_STRING_decode_uper
+per_type_decoder_f UTCTime_decode_uper;
 #define UTCTime_encode_uper OCTET_STRING_encode_uper
 #endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) */
 #if !defined(ASN_DISABLE_APER_SUPPORT)
-#define UTCTime_decode_aper OCTET_STRING_decode_aper
+per_type_decoder_f UTCTime_decode_aper;
 #define UTCTime_encode_aper OCTET_STRING_encode_aper
 #endif  /* !defined(ASN_DISABLE_APER_SUPPORT) */
+
+#if !defined(ASN_DISABLE_CBOR_SUPPORT)
+cbor_type_decoder_f UTCTime_decode_cbor;
+#endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
 
 #if !defined(ASN_DISABLE_RFILL_SUPPORT)
 asn_random_fill_f UTCTime_random_fill;

@@ -221,17 +221,26 @@ sequence may cross a fragment boundary. Strict CER re-encoding and comparison
 share cumulative input, output, work, and scratch limits.
 
 `UtcTime` owns raw UTCTime content bytes. Its fallible constructor and
-`as_bytes` accessor do not apply time syntax checks. `decode_utc_time_ber` accepts
-primitive or nested constructed tag-23 values with universal tag-4 fragments,
-preserves the raw content, and reports exact prefix consumption;
-`encode_utc_time_der` preserves those bytes in primitive tag 23. CER encoding
-validates the permitted 11/13/15/17-byte forms, Gregorian date and clock,
-1950/2049 year pivot, and numeric zone, then converts to UTC and writes exactly
-`YYMMDDhhmmssZ`. Strict CER decoding re-encodes and compares only the consumed
-prefix. Calendar conversion uses checked Gregorian arithmetic, so the valid UTC
-instant 1969-12-31 23:59:59 is accepted even where the C `time_t == -1` sentinel
-rejects it. Input, output, retained capacity, scratch, and cumulative work limits
-apply to the UTCTime operations.
+`as_bytes` accessor do not apply time syntax checks. `decode_utc_time_ber`
+accepts primitive or nested constructed tag-23 values with universal tag-4
+fragments, validates decoded UTCTime syntax, clock ranges, and Gregorian
+calendar dates, preserves raw content, and reports exact prefix consumption.
+`decode_utc_time_ber_tolerant` is the explicit legacy raw-content compatibility
+entry point. `encode_utc_time_der` preserves raw bytes in primitive tag 23.
+Generated Rust BER decoding validates UTCTime lexical forms, clock ranges, and
+Gregorian calendar dates by default. The compiler option
+`-ftolerant-utc-time` selects the tolerant BER entry point in generated types
+without a Cargo feature; raw construction and DER encoding are unchanged.
+CER encoding validates the permitted
+11/13/15/17-byte forms, Gregorian date and clock, 1950/2049 year pivot, and
+numeric zone, then converts to UTC and writes exactly `YYMMDDhhmmssZ`. This
+existing Rust CER pivot remains separate from the C runtime's 1960/2059 year
+mapping. Strict
+CER decoding re-encodes and compares only the consumed prefix regardless of
+the tolerant BER option. Calendar conversion uses checked Gregorian arithmetic,
+so the valid UTC instant 1969-12-31 23:59:59 is accepted even where the C
+`time_t == -1` sentinel rejects it. Input, output, retained capacity, scratch,
+and cumulative work limits apply to the UTCTime operations.
 
 `GeneralizedTime` owns raw content bytes and exposes them through `as_bytes`;
 its fallible constructor and BER decoder preserve arbitrary bytes. BER accepts

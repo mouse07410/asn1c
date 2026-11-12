@@ -278,7 +278,8 @@ static int rust_enum_item_valid(const asn1p_expr_t *);
 static int rust_enum_name_safe(const char *);
 static int rust_enum_unique(asn1p_expr_t *, asn1p_expr_t *);
 static size_t rust_enumerated_rank(asn1p_expr_t *, asn1p_expr_t *);
-static int rust_stage_project(asn1p_t *, const char *, rust_output_t *, uint64_t);
+static int rust_stage_project(asn1p_t *, const char *, rust_output_t *, uint64_t,
+                              int);
 static int rust_publish_project(rust_output_t *);
 static int rust_check_existing(const char *);
 static int rust_check_owned_tree(const char *, const char *, const char *);
@@ -290,10 +291,12 @@ static int rust_check_directory_entries(const char *);
 static int rust_remove_tree(const char *);
 static int rust_copy_runtime(const char *, const char *);
 static int rust_make_directory(const char *);
-static int rust_write_project(asn1p_t *, const char *, const char *, uint64_t);
-static int rust_write_module(FILE *, asn1p_module_t *, uint64_t);
-static int rust_write_module_file(asn1p_module_t *, const char *, uint64_t);
-static int rust_write_type(FILE *, asn1p_module_t *, asn1p_expr_t *, uint64_t);
+static int rust_write_project(asn1p_t *, const char *, const char *, uint64_t,
+                              int);
+static int rust_write_module(FILE *, asn1p_module_t *, uint64_t, int);
+static int rust_write_module_file(asn1p_module_t *, const char *, uint64_t, int);
+static int rust_write_type(FILE *, asn1p_module_t *, asn1p_expr_t *, uint64_t,
+                           int);
 static int rust_write_any(FILE *, const char *, uint64_t);
 static int rust_write_any_codec(FILE *, const char *, const char *, const char *);
 static int rust_write_boolean(FILE *, const char *, uint64_t);
@@ -312,8 +315,8 @@ static int rust_write_ia5_string(FILE *, const char *, uint64_t);
 static int rust_write_ia5_string_ber_cer(FILE *, int);
 static int rust_write_character_string(FILE *, const char *, asn1p_expr_t *, uint64_t);
 static int rust_write_character_string_ber_cer(FILE *, const char *, int);
-static int rust_write_utc_time(FILE *, const char *, uint64_t);
-static int rust_write_utc_time_ber_cer(FILE *, int);
+static int rust_write_utc_time(FILE *, const char *, uint64_t, int);
+static int rust_write_utc_time_ber_cer(FILE *, int, int);
 static int rust_write_generalized_time(FILE *, const char *, uint64_t);
 static int rust_write_generalized_time_ber_cer(FILE *, int);
 static int rust_write_collection(FILE *, const char *, asn1p_expr_t *, uint64_t);
@@ -448,19 +451,22 @@ static void rust_diagnostic(asn1p_module_t *, asn1p_expr_t *, const char *);
  * Validate and emit a standalone Cargo project for the first Rust slice.
  * Parameters: asn is the fixed tree; runtime_dir is the matching runtime
  * source directory; destdir is the project path or NULL; codecs is the
- * requested codec mask. Returns zero or -1; does not throw. This
- * function stages all files before publishing. Original source: new backend.
+ * requested codec mask; tolerant_utc_time is zero for strict BER or one for
+ * raw compatibility BER. Returns zero or -1; does not throw. This function
+ * stages all files before publishing. Original source: new backend.
  * Version/date: 0.1.0, 2026-10-11. Responsible party: asn1c maintainers.
  * History: initial primitive codecs. Example: asn1c_rust_compile(tree,
- * runtime_path, output_path, A1C_GEN_UPER | A1C_GEN_CER).
+ * runtime_path, output_path, A1C_GEN_UPER | A1C_GEN_CER, 0).
  */
 int
 asn1c_rust_compile(asn1p_t *asn, const char *runtime_dir,
-                   const char *destdir, uint64_t codecs) {
+                   const char *destdir, uint64_t codecs,
+                   int tolerant_utc_time) {
     rust_output_t output = {{0}, {0}, {0}, 0, 0};
 
-    if(!asn || !runtime_dir || !*runtime_dir) {
-        fprintf(stderr, "asn1c: Rust backend is missing its tree or runtime\n");
+    if(!asn || !runtime_dir || !*runtime_dir
+    || (tolerant_utc_time != 0 && tolerant_utc_time != 1)) {
+        fprintf(stderr, "asn1c: Rust backend received an invalid tree, runtime, or policy\n");
         return -1;
     }
     if(!codecs || (codecs & ~RUST_CODEC_MASK)) {
@@ -479,7 +485,8 @@ asn1c_rust_compile(asn1p_t *asn, const char *runtime_dir,
     } else {
         strcpy(output.target, "asn1c-rust");
     }
-    if(rust_stage_project(asn, runtime_dir, &output, codecs)) return -1;
+    if(rust_stage_project(asn, runtime_dir, &output, codecs,
+                          tolerant_utc_time)) return -1;
     if(rust_publish_project(&output)) {
         if(output.stage_created) rust_remove_tree(output.stage);
         return -1;
@@ -5651,15 +5658,17 @@ rust_diagnostic(asn1p_module_t *module, asn1p_expr_t *expr,
 /*
  * Create a private sibling staging directory and write the complete project.
  * Parameters: asn is validated; runtime_dir supplies assets; output receives
- * transaction paths; codecs selects the generated encoding methods. Returns
+ * transaction paths; codecs selects generated methods and tolerant_utc_time
+ * selects raw compatibility BER time decoding. Returns
  * zero or -1. Original source:
  * new Rust backend. Version/date: 0.1.0, 2026-10-11. Responsible party:
  * asn1c maintainers. History: initial staged writer. Example:
- * rust_stage_project(tree, runtime, &output, A1C_GEN_CER).
+ * rust_stage_project(tree, runtime, &output, A1C_GEN_CER, 0).
  */
 static int
 rust_stage_project(asn1p_t *asn, const char *runtime_dir,
-                   rust_output_t *output, uint64_t codecs) {
+                   rust_output_t *output, uint64_t codecs,
+                   int tolerant_utc_time) {
     unsigned attempt;
     if(!output->target[0]) return -1;
     for(attempt = 0; attempt < 100; attempt++) {
@@ -5678,7 +5687,8 @@ rust_stage_project(asn1p_t *asn, const char *runtime_dir,
         }
     }
     if(!output->stage_created) return -1;
-    if(rust_write_project(asn, runtime_dir, output->stage, codecs)) {
+    if(rust_write_project(asn, runtime_dir, output->stage, codecs,
+                          tolerant_utc_time)) {
         rust_remove_tree(output->stage);
         output->stage_created = 0;
         return -1;
@@ -5936,15 +5946,16 @@ rust_make_directory(const char *path) {
 /*
  * Write the complete staged Cargo project and vendored runtime.
  * Parameters: asn is the fixed tree; runtime_dir is the asset root; stage is a
- * private new directory; codecs selects emitted methods. Returns zero or -1.
+ * private new directory; codecs selects emitted methods and tolerant_utc_time
+ * selects raw compatibility BER time decoding. Returns zero or -1.
  * Original source: new Rust backend.
  * Version/date: 0.1.0, 2026-10-11. Responsible party: asn1c maintainers.
  * History: first generated crate layout. Example: rust_write_project(tree,
- * runtime, stage, A1C_GEN_CER).
+ * runtime, stage, A1C_GEN_CER, 0).
  */
 static int
 rust_write_project(asn1p_t *asn, const char *runtime_dir, const char *stage,
-                   uint64_t codecs) {
+                   uint64_t codecs, int tolerant_utc_time) {
     char path[PATH_MAX];
     char runtime_copy[PATH_MAX];
     FILE *cargo;
@@ -5968,7 +5979,8 @@ rust_write_project(asn1p_t *asn, const char *runtime_dir, const char *stage,
        || rust_copy_runtime(runtime_dir, runtime_copy)) return -1;
     TQ_FOR(module, &asn->modules, mod_next) {
         if(module->_tags & MT_STANDARD_MODULE) continue;
-        if(rust_write_module_file(module, stage, codecs)) return -1;
+        if(rust_write_module_file(module, stage, codecs,
+                                  tolerant_utc_time)) return -1;
     }
     if(rust_write_manifest(asn, stage)) return -1;
     return 0;
@@ -5977,13 +5989,14 @@ rust_write_project(asn1p_t *asn, const char *runtime_dir, const char *stage,
 /*
  * Write one ASN.1 module source file with its generated type wrappers.
  * Parameters: stream receives Rust; module identifies the source; codecs
- * selects emitted methods.
+ * selects emitted methods and tolerant_utc_time selects legacy raw BER time.
  * Returns zero or -1. Original source: new Rust backend. Version/date: 0.1.0,
  * 2026-10-11. Responsible party: asn1c maintainers. History: first module
- * emitter. Example: rust_write_module(stream, module, codecs).
+ * emitter. Example: rust_write_module(stream, module, codecs, 0).
  */
 static int
-rust_write_module(FILE *stream, asn1p_module_t *module, uint64_t codecs) {
+rust_write_module(FILE *stream, asn1p_module_t *module, uint64_t codecs,
+                  int tolerant_utc_time) {
     asn1p_expr_t *expr;
     if(fputs("//! Generated bindings for ASN.1 module.\n\n", stream) == EOF)
         return -1;
@@ -5992,7 +6005,8 @@ rust_write_module(FILE *stream, asn1p_module_t *module, uint64_t codecs) {
         if(!rust_open_module_plan(module, &open_plan)) return rust_write_open_module(stream, &open_plan, codecs);
     }
     TQ_FOR(expr, &module->members, next) {
-        if(rust_write_type(stream, module, expr, codecs)) return -1;
+        if(rust_write_type(stream, module, expr, codecs,
+                           tolerant_utc_time)) return -1;
     }
     return ferror(stream) ? -1 : 0;
 }
@@ -6541,15 +6555,16 @@ rust_write_type_strings(FILE *stream, const char *name, asn1p_module_t *module,
 /*
  * Emit remaining primitive Rust assignments, including the INTEGER fallback.
  * Inputs: stream/name identify output; expr identifies the type; codecs selects
- * methods. Returns zero on success or -1 on error.
+ * methods and tolerant_utc_time selects legacy raw BER decoding. Returns zero
+ * on success or -1 on error.
  * Errors: unsupported bounds and child write failures return -1. Source:
- * Rust backend. Version/date: 2026-11-01. Responsible party: asn1c maintainers.
+ * Rust backend. Version/date: 2026-11-12. Responsible party: asn1c maintainers.
  * History: split from rust_write_type to bound dispatch complexity.
  * Example: a bounded INTEGER uses rust_write_integer.
  */
 static int
 rust_write_type_primitive(FILE *stream, const char *name, asn1p_expr_t *expr,
-                          uint64_t codecs) {
+                          uint64_t codecs, int tolerant_utc_time) {
     if(expr->expr_type == ASN_TYPE_ANY)
         return rust_write_any(stream, name, codecs);
     if(expr->expr_type == ASN_BASIC_BOOLEAN)
@@ -6566,7 +6581,7 @@ rust_write_type_primitive(FILE *stream, const char *name, asn1p_expr_t *expr,
         return rust_write_oid(stream, name,
             expr->expr_type == ASN_BASIC_RELATIVE_OID, codecs);
     if(expr->expr_type == ASN_BASIC_UTCTime)
-        return rust_write_utc_time(stream, name, codecs);
+        return rust_write_utc_time(stream, name, codecs, tolerant_utc_time);
     if(expr->expr_type == ASN_BASIC_GeneralizedTime)
         return rust_write_generalized_time(stream, name, codecs);
     {
@@ -6579,15 +6594,16 @@ rust_write_type_primitive(FILE *stream, const char *name, asn1p_expr_t *expr,
 /*
  * Emit one supported primitive wrapper, collection, or flat record assignment.
  * Inputs: stream receives Rust; module and expr identify the assignment;
- * codecs selects emitted methods. Returns zero or -1.
+ * codecs selects emitted methods and tolerant_utc_time selects legacy raw BER.
+ * Returns zero or -1.
  * Errors: invalid inputs, names, bounds, and writes return -1. Source:
  * Rust backend. Version/date: 2026-11-01. Responsible party: asn1c maintainers.
  * History: initial wrapper generator; dispatch split for bounded complexity.
- * Example: rust_write_type(stream, module, boolean_type, codecs).
+ * Example: rust_write_type(stream, module, boolean_type, codecs, 0).
  */
 static int
 rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
-                uint64_t codecs) {
+                uint64_t codecs, int tolerant_utc_time) {
     char *name;
     int ret; /* Type-dispatch result state variable. */
     if(!stream || !module || !expr) return -1;
@@ -6603,7 +6619,8 @@ rust_write_type(FILE *stream, asn1p_module_t *module, asn1p_expr_t *expr,
     ret = rust_write_type_constructed(stream, name, expr, codecs);
     if(!ret) ret = rust_write_type_strings(stream, name, module, expr, codecs);
     if(!ret) {
-        ret = rust_write_type_primitive(stream, name, expr, codecs);
+        ret = rust_write_type_primitive(stream, name, expr, codecs,
+                                        tolerant_utc_time);
         if(!ret) ret = 1;
     }
     free(name);
@@ -13063,15 +13080,16 @@ rust_write_character_string_ber_cer(FILE *stream, const char *kind, int cer) {
 }
 
 /* Emit a private raw-byte wrapper for one fixed ASN.1 UTCTime root.
- * Inputs: stream receives Rust; name is the generated assignment; codecs is
- * a validated BER/CER selection. Returns zero or -1 on write failure.
+ * Inputs: stream receives Rust; name is the assignment; codecs selects BER/CER;
+ * tolerant_utc_time selects legacy raw BER decoding. Returns zero or -1.
  * Errors: generated methods propagate validation and limit errors.
- * Source: approved UtcTime runtime API. Version/date: 2026-11-01.
+ * Source: approved UtcTime runtime API. Version/date: 2026-11-12.
  * Responsible: asn1c maintainers. History: direct tag 23 root.
- * Example: rust_write_utc_time(stream, "Timestamp", RUST_CODEC_CER).
+ * Example: rust_write_utc_time(stream, "Timestamp", RUST_CODEC_BER, 0).
  */
 static int
-rust_write_utc_time(FILE *stream, const char *name, uint64_t codecs) {
+rust_write_utc_time(FILE *stream, const char *name, uint64_t codecs,
+                    int tolerant_utc_time) {
     if(fprintf(stream,
         "/// Direct ASN.1 `UTCTime` with private raw-byte storage.\n"
         "#[derive(Debug, Eq, PartialEq)]\n"
@@ -13101,34 +13119,43 @@ rust_write_utc_time(FILE *stream, const char *name, uint64_t codecs) {
              "    pub fn as_bytes(&self) -> &[u8] { self.0.as_bytes() }\n",
              stream) == EOF)
         return -1;
-    if((codecs & RUST_CODEC_BER) && rust_write_utc_time_ber_cer(stream, 0)) return -1;
-    if((codecs & RUST_CODEC_CER) && rust_write_utc_time_ber_cer(stream, 1)) return -1;
+    if((codecs & RUST_CODEC_BER)
+    && rust_write_utc_time_ber_cer(stream, 0, tolerant_utc_time)) return -1;
+    if((codecs & RUST_CODEC_CER)
+    && rust_write_utc_time_ber_cer(stream, 1, tolerant_utc_time)) return -1;
     return fputs("}\n\n", stream) == EOF ? -1 : 0;
 }
 
 /* Emit the selected DER/BER or canonical CER method pair for UTCTime.
- * Inputs: stream receives Rust; cer selects CER instead of BER/DER.
- * Returns zero or -1 on output failure. Runtime failures remain typed errors.
- * Source: UtcTime runtime API. Version/date: 2026-11-01.
+ * Inputs: stream receives Rust; cer selects CER; tolerant_utc_time selects raw
+ * BER decoding. Returns zero or -1 on output failure.
+ * Source: UtcTime runtime API. Version/date: 2026-11-12.
  * Responsible: asn1c maintainers. History: codec-selective time output.
- * Example: rust_write_utc_time_ber_cer(stream, 1) emits strict CER methods.
+ * Example: rust_write_utc_time_ber_cer(stream, 0, 1) emits raw BER methods.
  */
 static int
-rust_write_utc_time_ber_cer(FILE *stream, int cer) {
+rust_write_utc_time_ber_cer(FILE *stream, int cer, int tolerant_utc_time) {
     const char *suffix = cer ? "cer" : "ber";
     const char *encode = cer ? "cer" : "der";
+    const char *decode_function = cer ? "decode_utc_time_cer"
+        : tolerant_utc_time ? "decode_utc_time_ber_tolerant"
+                            : "decode_utc_time_ber";
     const char *description = cer
         ? "Encode this value as normalized canonical CER `UTCTime`."
         : "Encode this value as raw DER `UTCTime` without syntax validation.";
     const char *decode_description = cer
         ? "Strictly decode one canonical CER `UTCTime` TLV and report prefix use."
-        : "Decode one BER `UTCTime` TLV and report exact prefix consumption.";
+        : tolerant_utc_time
+            ? "Decode BER `UTCTime` bytes without time syntax validation."
+            : "Strictly validate BER `UTCTime` syntax and date without normalizing.";
     const char *encode_result = cer
         ? "Returns an error for invalid dates, zones, or limits."
         : "Returns an error if output or work exceeds configured limits.";
     const char *decode_result = cer
         ? "Returns an error for invalid/noncanonical time text or exhausted limits."
-        : "Returns an error for malformed BER framing or exhausted limits.";
+        : tolerant_utc_time
+            ? "Returns an error for malformed BER framing or exhausted limits."
+            : "Returns an error for malformed framing, syntax, dates, or limits.";
     const char *decode_value = cer
         ? "Returns normalized time content and exact consumed byte and bit counts."
         : "Returns raw time content and exact consumed byte and bit counts.";
@@ -13157,9 +13184,9 @@ rust_write_utc_time_ber_cer(FILE *stream, int cer) {
         "    pub fn decode_%s(input: &[u8], limits: &::asn1c_runtime::Limits) ->\n"
         "        ::core::result::Result<::asn1c_runtime::Decoded<Self>, "
         "::asn1c_runtime::Error> {\n"
-        "        ::asn1c_runtime::decode_utc_time_%s(input, limits)\n"
+        "        ::asn1c_runtime::%s(input, limits)\n"
         "            .map(|decoded| decoded.map(Self))\n    }\n",
-        suffix, suffix) < 0)
+        suffix, decode_function) < 0)
         return -1;
     return 0;
 }
@@ -14191,14 +14218,15 @@ rust_write_lib(asn1p_t *asn, const char *path) {
 /*
  * Write a source module directly into the staged crate.
  * Parameters: module is the fixed source module; stage is the project root;
- * codecs selects emitted methods. Returns zero
- * or -1. Original source: new Rust backend. Version/date: 0.1.0, 2026-10-11.
- * Responsible party: asn1c maintainers. History: initial module-file writer.
- * Example: called once for each nonstandard ASN.1 module.
+ * codecs selects methods; tolerant_utc_time selects raw BER time decoding.
+ * Returns zero on success or -1 for path, file, or emitter errors. No exception.
+ * Source: new Rust backend. Version/date: 2026-11-12. Responsible party:
+ * asn1c maintainers. History: writer now propagates the BER time policy.
+ * Example: rust_write_module_file(module, stage, RUST_CODEC_BER, 0).
  */
 static int
 rust_write_module_file(asn1p_module_t *module, const char *stage,
-                       uint64_t codecs) {
+                       uint64_t codecs, int tolerant_utc_time) {
     char *name = rust_identifier(module->ModuleName, 1);
     char path[PATH_MAX];
     FILE *stream;
@@ -14214,7 +14242,7 @@ rust_write_module_file(asn1p_module_t *module, const char *stage,
     free(name);
     stream = fopen(path, "wb");
     if(!stream) return -1;
-    ret = rust_write_module(stream, module, codecs);
+    ret = rust_write_module(stream, module, codecs, tolerant_utc_time);
     if(fclose(stream) != 0) ret = -1;
     return ret;
 }

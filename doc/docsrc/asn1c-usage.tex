@@ -569,6 +569,8 @@ manually. }\\
 {\ttfamily -fline-refs} & {\small Include ASN.1 module's line numbers in generated code comments.}\\
 {\ttfamily -fno-constraints} & {\small Do not generate the ASN.1 subtype constraint checking code. This
 may produce a shorter executable.}\\
+{\ttfamily -ftolerant-utc-time} & {\small Preserve legacy permissive UTCTime decoding. See
+\fref{sec:utc-time-validation}.}\\
 {\ttfamily -fno-include-deps} & {\small Do not generate the courtesy \#include lines for non-critical dependencies.}\\
 {\ttfamily -fprefix=\emph{<prefix>}} & {\small Add the specified prefix to all generated type names and filenames. This helps avoid naming conflicts in several scenarios: (1) \textbf{System header conflicts}: On case-insensitive filesystems (macOS HFS+, Windows), ASN.1 types like \texttt{Time} may collide with system header \texttt{<time.h>}. asn1c now automatically disambiguates these generated filenames (for example, \texttt{Time.h} becomes \texttt{asn1c\_time.h} when no explicit prefix is set). Using \texttt{-fprefix=ASN1\_} still generates \texttt{ASN1\_Time.h} when a project-specific namespace is desired. (2) \textbf{Multiple ASN.1 modules}: When generating code for multiple ASN.1 syntaxes with type name clashes, a prefix prevents symbol collisions. (3) \textbf{Integration with existing code}: Prefixes help avoid conflicts with existing types in your codebase. When used with \texttt{-pdu} options, the prefix is automatically applied to PDU definitions in \texttt{converter-example.mk}. For example, \texttt{-fprefix=ASN1\_ -pdu=Certificate} generates \texttt{-DPDU=ASN1\_Certificate}. With \texttt{-pdu=all} or \texttt{-pdu=auto}, the generated \texttt{converter-example.mk} includes instructions for selecting specific prefixed PDU types.}\\
 {\ttfamily -funnamed-unions} & {\small Enable  unnamed  unions in the definitions of target language's structures.}\\
@@ -603,6 +605,37 @@ to explain its internal understanding of subtype constraints.}\\
 in \texttt{-E} output.}\\
 \end{longtable}
 \renewcommand{\arraystretch}{1}
+
+\clearpage
+\subsection{UTCTime validation}\label{sec:utc-time-validation}
+
+The C runtime and generated Rust BER decoder validate UTCTime syntax, clock
+ranges, and real calendar dates by default, independently of generated subtype constraints.
+The C \texttt{-fno-constraints} option does not disable this check. Strict mode
+accepts optional seconds and requires \texttt{Z} or a complete
+\texttt{+hhmm}/\texttt{-hhmm} offset, as described by ITU-T X.680 clauses
+47.2 and 47.3 at \url{https://www.itu.int/rec/T-REC-X.680-202102-I/en}.
+The C runtime's existing year mapping of 00--59 to 2000--2059 and 60--99 to
+1960--1999 is retained; it is not an RFC 5280 profile check. The validation
+change applies only to UTCTime; GeneralizedTime behavior is unchanged.
+
+\texttt{-ftolerant-utc-time} selects the legacy permissive behavior. For C
+output, it defines this macro in generated \texttt{asn\_config.h}:
+\begin{quote}
+\texttt{ASN\_\allowbreak{}ENABLE\_\allowbreak{}TOLERANT\_\allowbreak{}UTCTIME}
+\end{quote}
+When using a separately built runtime, define the macro while compiling all
+runtime skeleton objects. Defining it only in application code cannot change
+a prebuilt runtime. With \texttt{-R}, build the runtime directly with the
+macro because runtime support and its configuration header are omitted. For
+Rust output, it selects the tolerant BER decoder in the generated type without
+a Cargo feature; DER encoding remains raw and CER validation remains strict.
+
+The strict UTCTime constraint callback checks syntax and calendar fields
+without converting through \texttt{time\_t}. \texttt{asn\_UT2time()} uses
+\texttt{time\_t}, returns \texttt{(time\_t)-1} for errors, and may return the
+same value for the valid UTC instant 1969-12-31 23:59:59. Conversion is also
+limited by the platform's \texttt{time\_t} representation.
 
 
 \chapter{API reference}

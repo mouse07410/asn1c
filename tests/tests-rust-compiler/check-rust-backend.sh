@@ -3933,6 +3933,16 @@ if grep -F '#[derive(Clone' "$utc_source" >/dev/null; then
     echo "FAIL: UtcTime wrapper derives infallible Clone"
     exit 1
 fi
+if ! grep -F '::asn1c_runtime::decode_utc_time_ber(input, limits)' \
+    "$utc_source" >/dev/null; then
+    echo "FAIL: unflagged Rust UTCTime BER method is not strict"
+    exit 1
+fi
+if grep -F 'decode_utc_time_ber_tolerant(input, limits)' \
+    "$utc_source" >/dev/null; then
+    echo "FAIL: unflagged Rust UTCTime BER method selects tolerant decode"
+    exit 1
+fi
 if ! (cd "$utc_rust" && \
     CARGO_TARGET_DIR="$test_tmp/target-utc" \
     cargo test --offline --manifest-path Cargo.toml && \
@@ -3942,6 +3952,31 @@ if ! (cd "$utc_rust" && \
     >"$test_tmp/utc-rust.log" 2>&1; then
     cat "$test_tmp/utc-rust.log"
     echo "FAIL: UTCTime conformance or strict Clippy"
+    exit 1
+fi
+
+utc_rust_tolerant="$test_tmp/utc-rust-tolerant"
+"$asn1c_bin" --rust -ftolerant-utc-time -gen-BER -gen-CER -no-gen-UPER \
+    -S "$skeletons" -D "$utc_rust_tolerant" \
+    "$test_srcdir/UtcTimeValues.asn1"
+mkdir "$utc_rust_tolerant/tests"
+cp "$test_srcdir/utc_time_tolerant_conformance.rs" \
+    "$utc_rust_tolerant/tests/"
+utc_tolerant_source="$utc_rust_tolerant/src/utc_time_values.rs"
+if ! grep -F '::asn1c_runtime::decode_utc_time_ber_tolerant(input, limits)' \
+    "$utc_tolerant_source" >/dev/null; then
+    echo "FAIL: tolerant Rust UTCTime BER method is not explicitly selected"
+    exit 1
+fi
+if ! (cd "$utc_rust_tolerant" && \
+    CARGO_TARGET_DIR="$test_tmp/target-utc-tolerant" \
+    cargo test --offline --manifest-path Cargo.toml && \
+    CARGO_TARGET_DIR="$test_tmp/target-utc-tolerant" \
+    cargo clippy --offline --all-targets --all-features -- \
+    -W clippy::pedantic -W clippy::nursery -D warnings) \
+    >"$test_tmp/utc-rust-tolerant.log" 2>&1; then
+    cat "$test_tmp/utc-rust-tolerant.log"
+    echo "FAIL: tolerant UTCTime conformance or strict Clippy"
     exit 1
 fi
 

@@ -1,4 +1,8 @@
 Changes since v1.5.3:
+	* Validate C and Rust BER UTCTime values by default (issue #596), including leap days,
+	  calendar dates, clock ranges, and complete UTC offsets. Add
+	  -ftolerant-utc-time to preserve legacy decode behavior, with Rust's
+	  canonical CER checks remaining strict; document the C time_t limit.
 	* Limit each basic smoke test's generated converter build to one make job
 	  to reduce compiler concurrency, and document bounded suite runs. External
 	  SIGKILLs still require investigation on the affected host.
