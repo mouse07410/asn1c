@@ -1519,7 +1519,7 @@ mod tests {
             let expected_index = usize::try_from(value + 2).expect("small nonnegative offset");
             let expected = [0x00, 0x20, 0x40, 0x60, 0x80][expected_index];
             assert_eq!(encoded.bytes, [expected]);
-            let mut with_suffix = encoded.bytes.clone();
+            let mut with_suffix = encoded.bytes;
             with_suffix.push(0xaa);
             let consumed = decode_integer(&with_suffix, -2, 2, &limits).unwrap();
             assert_eq!(

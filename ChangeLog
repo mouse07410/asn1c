@@ -1,4 +1,10 @@
 Changes since v1.5.3:
+	* Review and integrate PRs #598, #600, and #601: avoid a signed sign-bit
+	  shift in compiler integer bounds, permit module lookups without a current
+	  IMPORTS context, and continue printing after standard modules. Strengthen
+	  integer-boundary and module-identity tests and document lookup semantics.
+	* Remove three unnecessary Rust test-buffer clones flagged by current
+	  strict Clippy; retain all target/feature, pedantic, and nursery checks.
 	* Reject BER constructed BIT STRING values with unused bits in a non-final
 	  fragment (issue #602), including nested and incremental input. Validate
 	  each primitive fragment count before concatenation to prevent silent
