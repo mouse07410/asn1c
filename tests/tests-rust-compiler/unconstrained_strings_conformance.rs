@@ -239,7 +239,7 @@ fn ber_strings_flatten_nested_forms_and_reject_malformed_inputs() {
     assert_eq!(normalized.value.bit_len(), 5);
     assert!(Bits::decode_cer(&[0x03, 0x02, 0x03, 0xa7], &limits).is_err());
 
-    // C accepts the first non-final fragment's padding; Rust follows X.690.
+    // Issue #602 requires C and Rust to reject padding before the final fragment.
     let nonfinal_padding = [0x23, 0x80, 0x03, 0x02, 0x03, 0xa0,
                             0x03, 0x02, 0x00, 0xaa, 0x00, 0x00];
     assert!(Bits::decode_ber(&nonfinal_padding, &limits).is_err());
