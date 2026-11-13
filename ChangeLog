@@ -1,4 +1,6 @@
 Changes since v1.5.3:
+	* Apply rustfmt to the Rust runtime's BER/CER re-exports so the Rust CI
+	  formatting gate passes. This changes no codec behavior or security checks.
 	* Review CBOR against RFC 8949 and serialization draft revision 12. Add
 	  preferred-width C REAL encoding and binary16/32/64 decoding, minimal
 	  negative INTEGER encoding through -2^64, and Rust bounded bignum decoding.
