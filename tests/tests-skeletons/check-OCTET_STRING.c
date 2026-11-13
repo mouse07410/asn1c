@@ -334,18 +334,142 @@ test_octet_string_copy(void) {
 }
 
 /*
+ * Purpose: verify a BER BIT STRING at every two-feed boundary and byte by byte.
+ * Original source: issue #602 regression tests, written for asn1c.
+ * Version/date: 1.0, 2026-11-13.
+ * Inputs: wire/size identify the encoding; valid selects acceptance; expected,
+ *   expected_size and unused describe the decoded value for valid inputs.
+ * Returns: none. Exceptions: assertion failure terminates the test.
+ * Responsible party: asn1c maintainers.
+ * History: covers overwritten fragment padding and incremental parser state.
+ * Example: check_bit_ber(wire, sizeof(wire), 0, NULL, 0, 0).
+ */
+static void
+check_bit_ber(const uint8_t *wire, size_t size, int valid,
+              const uint8_t *expected, size_t expected_size, int unused) {
+    size_t split;
+
+    /* Include a whole-buffer decode and every possible partial header/payload. */
+    for(split = 0; split <= size; split++) {
+        BIT_STRING_t *value = NULL; /* state variable: incrementally decoded value. */
+        asn_dec_rval_t rv;
+        size_t consumed; /* state variable: bytes committed by the decoder. */
+
+        rv = ber_decode(NULL, &asn_DEF_BIT_STRING, (void **)&value, wire, split);
+        assert(rv.consumed <= split);
+        consumed = rv.consumed;
+        if(rv.code == RC_WMORE) {
+            rv = ber_decode(NULL, &asn_DEF_BIT_STRING, (void **)&value,
+                            wire + consumed, size - consumed);
+            assert(rv.consumed <= size - consumed);
+            consumed += rv.consumed;
+        }
+        assert(rv.code == (valid ? RC_OK : RC_FAIL));
+        if(valid) {
+            assert(consumed == size);
+            assert(value && value->size == expected_size);
+            assert(value->bits_unused == unused);
+            if(expected_size) assert(memcmp(value->buf, expected, expected_size) == 0);
+        }
+        ASN_STRUCT_FREE(asn_DEF_BIT_STRING, value);
+    }
+
+    /* Retain unconsumed header bytes while exposing just one new byte per call. */
+    {
+        BIT_STRING_t *value = NULL; /* state variable: bytewise decoded value. */
+        size_t available; /* state variable: exposed prefix length. */
+        size_t consumed = 0; /* state variable: committed prefix length. */
+        asn_dec_rval_t rv = { RC_WMORE, 0 };
+
+        for(available = 1; available <= size && rv.code == RC_WMORE; available++) {
+            rv = ber_decode(NULL, &asn_DEF_BIT_STRING, (void **)&value,
+                            wire + consumed, available - consumed);
+            assert(rv.consumed <= available - consumed);
+            consumed += rv.consumed;
+        }
+        assert(rv.code == (valid ? RC_OK : RC_FAIL));
+        if(valid) {
+            assert(consumed == size);
+            assert(value && value->size == expected_size);
+            assert(value->bits_unused == unused);
+            if(expected_size) assert(memcmp(value->buf, expected, expected_size) == 0);
+        }
+        ASN_STRUCT_FREE(asn_DEF_BIT_STRING, value);
+    }
+}
+
+/*
+ * Purpose: exercise X.690 8.6.4 fragment padding rules and malformed counts.
+ * Original source: issue #602 example and locally derived boundary vectors.
+ * Version/date: 1.0, 2026-11-13.
+ * Inputs: none. Returns: none. Exceptions: assertion failure terminates tests.
+ * Responsible party: asn1c maintainers.
+ * History: adds definite/indefinite, nested, empty and exhaustive count cases.
+ * Example: called once by main before the existing string codec checks.
+ */
+static void
+check_bit_ber_fragments(void) {
+    uint8_t pair[] = {0x23, 8, 3, 2, 0, 0x80, 3, 2, 0, 0xfe};
+    uint8_t only[] = {0x23, 4, 3, 2, 0, 0xff};
+    uint8_t expected[] = {0x80, 0xfe};
+    unsigned count;
+
+#define BIT_BER_BAD(bytes) \
+    check_bit_ber((const uint8_t *)(bytes), sizeof(bytes) - 1, 0, NULL, 0, 0)
+#define BIT_BER_GOOD(bytes, data, unused) \
+    check_bit_ber((const uint8_t *)(bytes), sizeof(bytes) - 1, 1, \
+                  (const uint8_t *)(data), sizeof(data) - 1, unused)
+
+    /* The reported loss also occurs across indefinite and nested boundaries. */
+    BIT_BER_BAD("\x23\x08\x03\x02\x01\x80\x03\x02\x00\xff");
+    BIT_BER_BAD("\x23\x80\x03\x02\x01\x80\x03\x02\x00\xff\x00\x00");
+    BIT_BER_BAD("\x23\x0a\x23\x04\x03\x02\x01\x80\x03\x02\x00\xff");
+    BIT_BER_BAD("\x23\x80\x23\x80\x03\x02\x01\x80\x00\x00"
+                "\x03\x02\x00\xff\x00\x00");
+    BIT_BER_BAD("\x23\x07\x03\x02\x01\x80\x03\x01\x00");
+    BIT_BER_BAD("\x23\x06\x03\x02\x01\x80\x23\x00");
+
+    /* Each primitive fragment needs its own valid unused-bit count octet. */
+    BIT_BER_BAD("\x23\x02\x03\x00");
+    BIT_BER_BAD("\x23\x06\x03\x00\x03\x02\x00\xff");
+    BIT_BER_BAD("\x23\x03\x03\x01\x01");
+    BIT_BER_BAD("\x23\x07\x03\x01\x01\x03\x02\x00\xff");
+
+    /* Empty strings and a padded final leaf remain valid, including nested EOCs. */
+    BIT_BER_GOOD("\x23\x00", "", 0);
+    BIT_BER_GOOD("\x23\x80\x00\x00", "", 0);
+    BIT_BER_GOOD("\x23\x03\x03\x01\x00", "", 0);
+    BIT_BER_GOOD("\x23\x07\x03\x01\x00\x03\x02\x01\x80", "\x80", 1);
+    BIT_BER_GOOD("\x23\x06\x23\x04\x03\x02\x01\x80", "\x80", 1);
+    BIT_BER_GOOD("\x23\x80\x23\x80\x03\x02\x01\x80\x00\x00\x00\x00", "\x80", 1);
+    BIT_BER_GOOD("\x03\x02\x01\x80", "\x80", 1);
+
+    /* Exhaustively mutate counts: only zero is allowed before a later fragment. */
+    for(count = 0; count <= 255; count++) {
+        uint8_t last = (uint8_t)(0xff << (count & 7));
+        pair[4] = (uint8_t)count;
+        only[4] = (uint8_t)count;
+        check_bit_ber(pair, sizeof(pair), count == 0, expected, sizeof(expected), 0);
+        check_bit_ber(only, sizeof(only), count <= 7, &last, 1, (int)count);
+    }
+#undef BIT_BER_BAD
+#undef BIT_BER_GOOD
+}
+
+/*
  * Purpose: run direct OCTET STRING safety tests and text codec regressions.
  * Original source: asn1c OCTET STRING skeleton tests.
- * Version/date: 1.1, 2026-10-21.
+ * Version/date: 1.2, 2026-11-13.
  * Inputs: none.
  * Returns: zero when all assertions pass.
  * Exceptions: none; assertion failures terminate the test process.
  * Responsible party: asn1c maintainers.
- * History: now runs direct empty-value compare/copy regressions before codecs.
+ * History: adds BER BIT STRING fragment checks before existing string tests.
  * Example: invoked by the check-OCTET_STRING test executable.
  */
 int
 main() {
+    check_bit_ber_fragments();
 	test_octet_string_compare();
 	test_octet_string_copy();
 

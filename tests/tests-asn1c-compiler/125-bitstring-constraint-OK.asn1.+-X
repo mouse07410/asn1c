@@ -6,3 +6,5 @@ ModuleBitStringConstraint { iso org(3) dod(6) internet(1) private(4)
 found in ../../tests/tests-asn1c-0.9.29 -->
 
 <!ELEMENT T (flag1?, flag2?, flag3?)>
+<!ELEMENT true EMPTY>
+<!ELEMENT false EMPTY>

@@ -287,6 +287,28 @@ bits_match(const uint8_t *wire, size_t length, const uint8_t *expected,
 }
 
 /*
+ * Purpose: require BER to reject a malformed BIT STRING and free partial data.
+ * Parameters: wire and length are the complete candidate TLV. Returns zero
+ * only for RC_FAIL; RC_WMORE is not sufficient evidence of rejection.
+ * Errors: any status other than RC_FAIL returns one. Original source: C BER
+ * decoder regression probe. Version/date: 2026-11-13. Author: maintainers.
+ * History: issue #602 guards non-final fragment padding against value changes.
+ * Example: a constructed string with unused bits in an earlier fragment fails.
+ */
+static int
+bits_ber_rejects(const uint8_t *wire, size_t length) {
+    void *decoded = NULL;
+    asn_dec_rval_t result = asn_decode(NULL, ATS_BER, &asn_DEF_Bits,
+                                       &decoded, wire, length);
+    if(result.code != RC_FAIL) {
+        fprintf(stderr, "BIT BER accepted malformed vector or returned %d\n",
+                (int)result.code);
+    }
+    if(decoded) ASN_STRUCT_FREE(asn_DEF_Bits, decoded);
+    return result.code != RC_FAIL;
+}
+
+/*
  * Purpose: ensure strict CER rejects an OCTET STRING vector and free partial data.
  * Parameters: wire and length are the complete candidate TLV. Returns zero only
  * when decoding rejects it. Errors: accidental acceptance returns one.
@@ -344,6 +366,10 @@ check_alias_padding_and_prefix(void) {
         0x23, 0x80, 0x03, 0x02, 0x03, 0xa0,
         0x03, 0x02, 0x00, 0xaa, 0x00, 0x00
     };
+    static const uint8_t final_padding[] = {
+        0x23, 0x80, 0x03, 0x02, 0x00, 0xaa,
+        0x03, 0x02, 0x03, 0xa0, 0x00, 0x00
+    };
     static const uint8_t empty_constructed_octets[] = {0x24, 0x80, 0, 0};
     static const uint8_t empty_constructed_bits[] = {0x23, 0x80, 0, 0};
     static const uint8_t nested_definite_octets[] = {
@@ -384,10 +410,11 @@ check_alias_padding_and_prefix(void) {
     if(bits_match(bit_fragment_alias, sizeof(bit_fragment_alias), alias_bit,
                   1, 0, sizeof(bit_fragment_alias))) return 1;
     if(bits_cer_rejects(bit_fragment_alias, sizeof(bit_fragment_alias))) return 1;
-    if(bits_match(nonfinal_padding, sizeof(nonfinal_padding),
-                  (uint8_t[]){0xa0, 0xaa}, 2, 0,
-                  sizeof(nonfinal_padding))) return 1;
+    if(bits_ber_rejects(nonfinal_padding, sizeof(nonfinal_padding))) return 1;
     if(bits_cer_rejects(nonfinal_padding, sizeof(nonfinal_padding))) return 1;
+    if(bits_match(final_padding, sizeof(final_padding),
+                  (uint8_t[]){0xaa, 0xa0}, 2, 3,
+                  sizeof(final_padding))) return 1;
     if(octets_match(prefixed_octets, sizeof(prefixed_octets),
                     five_a_octet, 1, 3)) return 1;
     if(octets_match(empty_constructed_octets, sizeof(empty_constructed_octets),

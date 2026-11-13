@@ -4,6 +4,8 @@
  */
 #include <asn_internal.h>
 #include <cbor_support.h>
+#include <float.h>
+#include <math.h>
 #include <string.h>
 
 /*
@@ -84,6 +86,8 @@ cbor_decode_head(const uint8_t *buf, size_t size,
         return 1;
     } else if(info == CBOR_AI_1BYTE) {
         if(size < 2) return -1;
+        /* RFC 8949 section 3.3 forbids two-byte simple values below 32. */
+        if(major == CBOR_MAJOR_SIMPLE && buf[1] < 32) return -1;
         *argument_out = buf[1];
         return 2;
     } else if(info == CBOR_AI_2BYTE) {
@@ -246,22 +250,189 @@ cbor_skip_tags(const uint8_t *buf, size_t size) {
     }
 }
 
+/*
+ * Purpose: emit a complete one-byte CBOR simple-value encoding.
+ * Source: repository compatibility API. Version: 2026-11-12.
+ * Inputs: simple_val is an encoded octet (e0..f7); cb/app_key receive it.
+ * Returns: 1 or -1 for invalid input/callback failure. No exceptions.
+ * Author: asn1c maintainers. History: validate callback and complete encoding.
+ * Example: CBOR_SV_TRUE emits f5; this API does not take logical value 21.
+ */
 ssize_t
 cbor_encode_simple(uint8_t simple_val,
                    asn_app_consume_bytes_f *cb, void *app_key) {
-    /* Simple values 0..19 and 32..255: encode as single byte with major 7 */
     uint8_t buf = simple_val;
+    if(!cb || simple_val < 0xe0 || simple_val > 0xf7) return -1;
     if(cb(&buf, 1, app_key) < 0) return -1;
     return 1;
 }
 
+/*
+ * Purpose: convert finite binary32 bits to the exact equivalent double.
+ * Source: IEEE 754 binary32 field layout. Version: 2026-11-12.
+ * Inputs: bits is a binary32 bit pattern. Returns: its binary64 value.
+ * Errors: none. Author: asn1c maintainers. History: added CBOR float widths.
+ * Example: 0x3f800000 converts to 1.0.
+ */
+static double
+cbor_binary32_to_double(uint32_t bits) {
+    unsigned exponent = (unsigned)((bits >> 23) & 0xffu);
+    uint32_t fraction = bits & 0x7fffffu;
+    double value;
+    int power;
+
+    if(exponent == 0xffu) {
+        if(fraction) return NAN;
+        return bits >> 31 ? -INFINITY : INFINITY;
+    }
+    if(exponent == 0) {
+        value = (double)fraction;
+        power = -149;
+    } else {
+        value = 1.0 + (double)fraction / 8388608.0;
+        power = (int)exponent - 127;
+    }
+    while(power > 0) { value *= 2.0; power--; }
+    while(power < 0) { value *= 0.5; power++; }
+    return bits >> 31 ? -value : value;
+}
+
+/*
+ * Purpose: convert finite binary16 bits to the exact equivalent double.
+ * Source: IEEE 754 binary16 field layout. Version: 2026-11-12.
+ * Inputs: bits is a binary16 bit pattern. Returns: its binary64 value.
+ * Errors: none. Author: asn1c maintainers. History: added CBOR float widths.
+ * Example: 0x3c00 converts to 1.0.
+ */
+static double
+cbor_binary16_to_double(uint16_t bits) {
+    unsigned exponent = (unsigned)((bits >> 10) & 0x1fu);
+    uint16_t fraction = bits & 0x03ffu;
+    double value;
+    int power;
+
+    if(exponent == 0x1fu) {
+        if(fraction) return NAN;
+        return bits >> 15 ? -INFINITY : INFINITY;
+    }
+    if(exponent == 0) {
+        value = (double)fraction;
+        power = -24;
+    } else {
+        value = 1.0 + (double)fraction / 1024.0;
+        power = (int)exponent - 15;
+    }
+    while(power > 0) { value *= 2.0; power--; }
+    while(power < 0) { value *= 0.5; power++; }
+    return bits >> 15 ? -value : value;
+}
+
+/*
+ * Purpose: verify that host double storage is IEEE 754 binary64.
+ * Source: IEEE 754 binary64 representation. Version: 2026-11-12.
+ * Inputs: none. Returns: 1 when the size, model, and 1.0 bit pattern match.
+ * Errors: none. Author: asn1c maintainers. History: guards bit serialization.
+ * Example: IEEE binary64 stores 1.0 as 0x3ff0000000000000.
+ */
+static int
+cbor_host_binary64_supported(void) {
+#if DBL_MANT_DIG == 53 && DBL_MAX_EXP == 1024
+    double one = 1.0;
+    uint64_t bits;
+    if(sizeof(one) != sizeof(bits)) return 0;
+    memcpy(&bits, &one, sizeof(bits));
+    return bits == UINT64_C(0x3ff0000000000000);
+#else
+    return 0;
+#endif
+}
+
+/*
+ * Purpose: verify that host float storage is IEEE 754 binary32.
+ * Source: IEEE 754 binary32 representation. Version: 2026-11-12.
+ * Inputs: none. Returns: 1 when the size, model, and 1.0 bit pattern match.
+ * Errors: none. Author: asn1c maintainers. History: guards narrowing casts.
+ * Example: IEEE binary32 stores 1.0 as 0x3f800000.
+ */
+static int
+cbor_host_binary32_supported(void) {
+#if FLT_RADIX == 2 && FLT_MANT_DIG == 24 && FLT_MAX_EXP == 128
+    float one = 1.0f;
+    uint32_t bits;
+    if(sizeof(one) != sizeof(bits)) return 0;
+    memcpy(&bits, &one, sizeof(bits));
+    return bits == 0x3f800000u;
+#else
+    return 0;
+#endif
+}
+
+/*
+ * Purpose: identify binary32 values that are exactly representable in binary16.
+ * Source: IEEE 754 binary16/binary32 field layouts. Version: 2026-11-12.
+ * Inputs: bits is a binary32 bit pattern; half_out receives matching bits.
+ * Returns: 1 for exact conversion, 0 otherwise. Errors: none.
+ * Author: asn1c maintainers. History: added preferred-width float encoding.
+ * Example: 0x3f800000 maps to binary16 0x3c00.
+ */
+static int
+cbor_binary32_to_binary16_exact(uint32_t bits, uint16_t *half_out) {
+#if FLT_RADIX == 2 && FLT_MANT_DIG == 24 && FLT_MAX_EXP == 128
+    uint32_t sign = (bits >> 16) & 0x8000u;
+    unsigned exponent = (unsigned)((bits >> 23) & 0xffu);
+    uint32_t fraction = bits & 0x7fffffu;
+    int power;
+
+    if(exponent == 0xffu) {
+        if(fraction) return 0;
+        *half_out = (uint16_t)(sign | 0x7c00u);
+        return 1;
+    }
+    if(exponent == 0) {
+        if(fraction) return 0;
+        *half_out = (uint16_t)sign;
+        return 1;
+    }
+
+    power = (int)exponent - 127;
+    if(power >= -14 && power <= 15) {
+        if(fraction & 0x1fffu) return 0;
+        *half_out = (uint16_t)(sign | (uint32_t)(power + 15) << 10
+                               | (fraction >> 13));
+        return 1;
+    }
+    if(power < -24 || power > -15) return 0;
+    {
+        unsigned shift = (unsigned)(-power - 1);
+        uint32_t significand = 0x800000u | fraction;
+        uint32_t mask = (1u << shift) - 1u;
+        if(significand & mask) return 0;
+        *half_out = (uint16_t)(sign | (significand >> shift));
+        return 1;
+    }
+#else
+    (void)bits;
+    (void)half_out;
+    return 0;
+#endif
+}
+
+/*
+ * Purpose: encode a CBOR IEEE 754 double in its explicit 64-bit form.
+ * Source: RFC 8949 major type 7, additional information 27. Version: 2026-11-12.
+ * Inputs: value is the value; cb/app_key consume its nine encoded bytes.
+ * Returns: 9, or -1 for a null callback or callback failure. Errors: see return.
+ * Author: asn1c maintainers. History: retained as a compatibility API.
+ * Example: 1.0 is emitted with the 0xfb binary64 marker.
+ */
 ssize_t
 cbor_encode_float64(double value, asn_app_consume_bytes_f *cb, void *app_key) {
     uint8_t buf[9];
     uint64_t bits;
 
-    buf[0] = (CBOR_MAJOR_SIMPLE << 5) | CBOR_AI_8BYTE;  /* 0xFB */
-    memcpy(&bits, &value, 8);
+    if(!cb || !cbor_host_binary64_supported()) return -1;
+    buf[0] = 0xfb;
+    memcpy(&bits, &value, sizeof(bits));
     buf[1] = (uint8_t)(bits >> 56);
     buf[2] = (uint8_t)(bits >> 48);
     buf[3] = (uint8_t)(bits >> 40);
@@ -269,119 +440,244 @@ cbor_encode_float64(double value, asn_app_consume_bytes_f *cb, void *app_key) {
     buf[5] = (uint8_t)(bits >> 24);
     buf[6] = (uint8_t)(bits >> 16);
     buf[7] = (uint8_t)(bits >> 8);
-    buf[8] = (uint8_t)(bits);
-
-    if(cb(buf, 9, app_key) < 0) return -1;
-    return 9;
+    buf[8] = (uint8_t)bits;
+    if(cb(buf, sizeof(buf), app_key) < 0) return -1;
+    return (ssize_t)sizeof(buf);
 }
 
+/*
+ * Purpose: decode an explicit CBOR binary64 value.
+ * Source: RFC 8949 major type 7, additional information 27. Version: 2026-11-12.
+ * Inputs: buf/size bound the wire item; value_out receives the decoded number.
+ * Returns: 9 or -1. Errors: null pointers, wrong marker, or truncation fail.
+ * Author: asn1c maintainers. History: retained as a compatibility API.
+ * Example: a 0xfb-prefixed eight-byte payload decodes as binary64.
+ */
 ssize_t
 cbor_decode_float64(const uint8_t *buf, size_t size, double *value_out) {
     uint64_t bits;
 
-    if(size < 9) return -1;
-    if(buf[0] != 0xFB) return -1;  /* Must be 0xFB for float64 */
-
+    if(!buf || !value_out || size < 9 || buf[0] != 0xfb
+       || !cbor_host_binary64_supported()) return -1;
     bits = ((uint64_t)buf[1] << 56) | ((uint64_t)buf[2] << 48)
          | ((uint64_t)buf[3] << 40) | ((uint64_t)buf[4] << 32)
          | ((uint64_t)buf[5] << 24) | ((uint64_t)buf[6] << 16)
          | ((uint64_t)buf[7] << 8)  | (uint64_t)buf[8];
-    memcpy(value_out, &bits, 8);
+    memcpy(value_out, &bits, sizeof(bits));
     return 9;
 }
 
 /*
- * Purpose: skip one complete CBOR item, including nested arrays and maps.
- * Source: repository CBOR extension handling. Version: 2026-10-30.
- * Inputs: opt_codec_ctx bounds recursion; buf/size bound the input.
- * Returns: consumed bytes or -1. Errors: malformed or truncated items,
- * oversized input, and arithmetic overflow fail. Author: asn1c maintainers.
- * History: replaced signed accumulation with bounded size arithmetic.
- * Example: a two-item array skips its head and both nested items.
+ * Purpose: encode a value using its shortest exact CBOR float width.
+ * Source: RFC 8949 preferred serialization for floating-point values.
+ * Version: 2026-11-12. Inputs: value is encoded; cb/app_key consume bytes.
+ * Returns: 3, 5, or 9 bytes, or -1 on invalid callback or callback failure.
+ * Errors: null callbacks and callback errors fail. Author: asn1c maintainers.
+ * History: added preferred-width serialization. Example: 1.5 becomes f9 3e 00.
  */
 ssize_t
-cbor_skip_item_with_ctx(const asn_codec_ctx_t *opt_codec_ctx,
-                        const uint8_t *buf, size_t size) {
+cbor_encode_float(double value, asn_app_consume_bytes_f *cb, void *app_key) {
+    uint8_t buf[9];
+    size_t len;
+    uint64_t bits64;
+    uint32_t bits32;
+    uint16_t bits16;
+
+    if(!cb || !cbor_host_binary64_supported()) return -1;
+    if(value != value) {
+        buf[0] = 0xf9;
+        buf[1] = 0x7e;
+        buf[2] = 0x00;
+        len = 3;
+    } else {
+        int encoded_narrow = 0;
+#if FLT_RADIX == 2 && FLT_MANT_DIG == 24 && FLT_MAX_EXP == 128
+        if(value == INFINITY || value == -INFINITY) {
+            bits16 = signbit(value) ? 0xfc00u : 0x7c00u;
+            buf[0] = 0xf9;
+            buf[1] = (uint8_t)(bits16 >> 8);
+            buf[2] = (uint8_t)bits16;
+            len = 3;
+            encoded_narrow = 1;
+        } else if(cbor_host_binary32_supported()
+                  && value <= FLT_MAX && value >= -FLT_MAX) {
+            float single = (float)value;
+            memcpy(&bits32, &single, sizeof(bits32));
+            if(cbor_binary32_to_double(bits32) == value
+               && (!(value == 0.0)
+                   || ((bits32 >> 31) == (signbit(value) != 0)))) {
+                if(cbor_binary32_to_binary16_exact(bits32, &bits16)) {
+                    buf[0] = 0xf9;
+                    buf[1] = (uint8_t)(bits16 >> 8);
+                    buf[2] = (uint8_t)bits16;
+                    len = 3;
+                } else {
+                    buf[0] = 0xfa;
+                    buf[1] = (uint8_t)(bits32 >> 24);
+                    buf[2] = (uint8_t)(bits32 >> 16);
+                    buf[3] = (uint8_t)(bits32 >> 8);
+                    buf[4] = (uint8_t)bits32;
+                    len = 5;
+                }
+                encoded_narrow = 1;
+            }
+        }
+#endif
+        if(!encoded_narrow) {
+            buf[0] = 0xfb;
+            memcpy(&bits64, &value, sizeof(bits64));
+            buf[1] = (uint8_t)(bits64 >> 56);
+            buf[2] = (uint8_t)(bits64 >> 48);
+            buf[3] = (uint8_t)(bits64 >> 40);
+            buf[4] = (uint8_t)(bits64 >> 32);
+            buf[5] = (uint8_t)(bits64 >> 24);
+            buf[6] = (uint8_t)(bits64 >> 16);
+            buf[7] = (uint8_t)(bits64 >> 8);
+            buf[8] = (uint8_t)bits64;
+            len = 9;
+        }
+    }
+    if(cb(buf, len, app_key) < 0) return -1;
+    return (ssize_t)len;
+}
+
+/*
+ * Purpose: decode one CBOR IEEE 754 value of any supported width.
+ * Source: RFC 8949 major type 7 float16/float32/float64 forms.
+ * Version: 2026-11-12. Inputs: buf/size bound the item; value_out receives it.
+ * Returns: 3, 5, or 9 bytes, or -1 on invalid pointers, marker, or truncation.
+ * Errors: malformed and incomplete float items fail. Author: asn1c maintainers.
+ * History: added binary16 and binary32 decoding. Example: f9 3e 00 is 1.5.
+ */
+ssize_t
+cbor_decode_float(const uint8_t *buf, size_t size, double *value_out) {
+    if(!buf || !value_out || size == 0 || !cbor_host_binary64_supported())
+        return -1;
+    if(buf[0] == 0xf9) {
+        uint16_t bits;
+        if(size < 3) return -1;
+        bits = (uint16_t)(((uint16_t)buf[1] << 8) | buf[2]);
+        *value_out = cbor_binary16_to_double(bits);
+        return 3;
+    }
+    if(buf[0] == 0xfa) {
+        uint32_t bits;
+        if(size < 5) return -1;
+        bits = ((uint32_t)buf[1] << 24) | ((uint32_t)buf[2] << 16)
+             | ((uint32_t)buf[3] << 8) | (uint32_t)buf[4];
+        *value_out = cbor_binary32_to_double(bits);
+        return 5;
+    }
+    return cbor_decode_float64(buf, size, value_out);
+}
+
+/* Internal recursive scanner; the explicit depth bound also applies under ASan. */
+static ssize_t cbor_skip_bounded(const asn_codec_ctx_t *, const uint8_t *, size_t, unsigned);
+
+/*
+ * Purpose: scan the contents of an indefinite string, array, or map.
+ * Source: RFC 8949 section 3.2. Version: 2026-11-12.
+ * Inputs: ctx limits stack; buf/size bound input; major selects container;
+ * depth counts enclosing containers. Returns: bytes through break, or -1.
+ * Errors: wrong chunks, odd maps, missing breaks, and invalid children fail.
+ * Author: asn1c maintainers. History: added extension-value interoperability.
+ * Example: 9f 01 ff consumes three bytes.
+ */
+static ssize_t
+cbor_skip_indefinite(const asn_codec_ctx_t *ctx, const uint8_t *buf,
+                     size_t size, uint8_t major, unsigned depth) {
+    size_t total = 1;
+    int pending_value = 0; /* state variable: an indefinite map needs its value. */
+
+    if(major < CBOR_MAJOR_BYTES || major > CBOR_MAJOR_MAP) return -1;
+    while(total < size) {
+        ssize_t used;
+        if(buf[total] == 0xff) {
+            if(pending_value) return -1;
+            return (ssize_t)(total + 1);
+        }
+        /* String chunks must be definite, untagged, and of the same type. */
+        if(major == CBOR_MAJOR_BYTES || major == CBOR_MAJOR_TEXT) {
+            if((buf[total] >> 5) != major || (buf[total] & 31) == 31) return -1;
+        }
+        used = cbor_skip_bounded(ctx, buf + total, size - total, depth + 1);
+        if(used <= 0 || (size_t)used > size - total) return -1;
+        total += (size_t)used;
+        if(major == CBOR_MAJOR_MAP) pending_value = !pending_value;
+    }
+    return -1;
+}
+
+/*
+ * Purpose: validate and skip one CBOR item without allocating input-sized storage.
+ * Source: RFC 8949 sections 3.1-3.3. Version: 2026-11-12.
+ * Inputs: ctx bounds stack; buf/size bound input; depth counts ancestors.
+ * Returns: consumed bytes or -1 on malformed/truncated input or resource limit.
+ * Author: asn1c maintainers. History: added indefinite forms and hard depth cap.
+ * Example: 82 00 f5 skips a two-element array in three bytes.
+ */
+static ssize_t
+cbor_skip_bounded(const asn_codec_ctx_t *ctx, const uint8_t *buf,
+                  size_t size, unsigned depth) {
     uint8_t major;
-    uint64_t arg;
+    uint64_t arg, count, i;
     ssize_t hlen;
     size_t total;
-    uint64_t i;
 
-    if(!buf || size < 1 || size > (size_t)SSIZE_MAX) return -1;
-    if(ASN__STACK_OVERFLOW_CHECK(opt_codec_ctx)) return -1;
-
+    if(!buf || !size || size > (size_t)SSIZE_MAX || depth > 128) return -1;
+    if(ASN__STACK_OVERFLOW_CHECK(ctx)) return -1;
+    major = buf[0] >> 5;
+    if((buf[0] & 31) == 31)
+        return cbor_skip_indefinite(ctx, buf, size, major, depth);
     hlen = cbor_decode_head(buf, size, &major, &arg);
     if(hlen < 0) return -1;
     total = (size_t)hlen;
 
-    switch(major) {
-    case CBOR_MAJOR_UINT:    /* 0: unsigned integer — header only */
-    case CBOR_MAJOR_NEGINT:  /* 1: negative integer — header only */
-        break;
-
-    case CBOR_MAJOR_BYTES:   /* 2: byte string — arg bytes follow */
-    case CBOR_MAJOR_TEXT:    /* 3: text string — arg bytes follow */
+    /* Definite strings carry bytes, with UTF-8 validity checked per chunk. */
+    if(major == CBOR_MAJOR_BYTES || major == CBOR_MAJOR_TEXT) {
         if(arg > size - total) return -1;
         if(major == CBOR_MAJOR_TEXT && !cbor_utf8_valid(buf + total, (size_t)arg)) return -1;
-        total += (size_t)arg;
-        break;
-
-    case CBOR_MAJOR_ARRAY:   /* 4: array of arg items */
-        for(i = 0; i < arg; i++) {
-            ssize_t n;
-            if(total >= size) return -1;
-            n = cbor_skip_item_with_ctx(opt_codec_ctx, buf + total,
-                                        size - total);
-            if(n <= 0 || (size_t)n > size - total) return -1;
-            total += (size_t)n;
-        }
-        break;
-
-    case CBOR_MAJOR_MAP:     /* 5: map of arg key/value pairs */
-        for(i = 0; i < arg; i++) {
-            ssize_t n;
-            /* key */
-            if(total >= size) return -1;
-            n = cbor_skip_item_with_ctx(opt_codec_ctx, buf + total,
-                                        size - total);
-            if(n <= 0 || (size_t)n > size - total) return -1;
-            total += (size_t)n;
-            /* value */
-            if(total >= size) return -1;
-            n = cbor_skip_item_with_ctx(opt_codec_ctx, buf + total,
-                                        size - total);
-            if(n <= 0 || (size_t)n > size - total) return -1;
-            total += (size_t)n;
-        }
-        break;
-
-    case CBOR_MAJOR_TAG:     /* 6: tag number + one tagged item */
-        {
-            ssize_t n;
-            if(total >= size) return -1;
-            n = cbor_skip_item_with_ctx(opt_codec_ctx, buf + total,
-                                        size - total);
-            if(n <= 0 || (size_t)n > size - total) return -1;
-            total += (size_t)n;
-        }
-        break;
-
-    case CBOR_MAJOR_SIMPLE:  /* 7: floats/simple — header already includes all bytes */
-        /*
-         * cbor_decode_head consumed the AI=24/25/26/27 argument bytes
-         * (which encode the float16/32/64 payload) as part of the header,
-         * so there are no additional bytes to skip here.
-         */
-        break;
-
-    default:
-        return -1;
+        return (ssize_t)(total + (size_t)arg);
     }
+    if(major != CBOR_MAJOR_ARRAY && major != CBOR_MAJOR_MAP && major != CBOR_MAJOR_TAG)
+        return hlen;
 
+    /* Every child consumes at least one byte; bound loops before traversal. */
+    count = (major == CBOR_MAJOR_TAG) ? 1 : arg;
+    if(major == CBOR_MAJOR_MAP) {
+        if(count > (size - total) / 2) return -1;
+        count *= 2;
+    }
+    if(count > size - total) return -1;
+    for(i = 0; i < count; i++) {
+        ssize_t used = cbor_skip_bounded(ctx, buf + total, size - total, depth + 1);
+        if(used <= 0 || (size_t)used > size - total) return -1;
+        total += (size_t)used;
+    }
     return (ssize_t)total;
 }
 
+/*
+ * Purpose: skip one CBOR item with both caller stack and hard nesting limits.
+ * Source: repository extension scanner. Version: 2026-11-12.
+ * Inputs: opt_codec_ctx optionally bounds stack; buf/size bound the item.
+ * Returns: consumed prefix bytes or -1; no allocation or exceptions.
+ * Author: asn1c maintainers. History: unconditional 128-level nesting bound.
+ * Example: cbor_skip_item_with_ctx(NULL, bytes, length).
+ */
+ssize_t
+cbor_skip_item_with_ctx(const asn_codec_ctx_t *opt_codec_ctx,
+                        const uint8_t *buf, size_t size) {
+    return cbor_skip_bounded(opt_codec_ctx, buf, size, 0);
+}
+
+/*
+ * Purpose: skip a raw item when no ASN.1 decoder context is available.
+ * Source: repository CBOR API. Version: 2026-11-12.
+ * Inputs: buf/size bound input. Returns: consumed bytes or -1 on invalid input.
+ * Errors: malformed input or nesting above 128. Author: asn1c maintainers.
+ * History: bounded compatibility wrapper. Example: 00 consumes one byte.
+ */
 ssize_t
 cbor_skip_item(const uint8_t *buf, size_t size) {
     return cbor_skip_item_with_ctx(NULL, buf, size);

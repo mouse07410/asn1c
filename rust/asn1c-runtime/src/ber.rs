@@ -16672,7 +16672,7 @@ mod tests {
             writer.write_relative_oid(&relative).unwrap();
             let encoded = writer.finish().unwrap();
             assert_eq!(encoded.bytes, expected);
-            let mut suffixed = encoded.bytes.clone();
+            let mut suffixed = encoded.bytes;
             suffixed.extend_from_slice(&[0xff]);
             let mut context = RecordContext::new_with_aggregate_scratch(&limits);
             let mut reader = SequenceReader::new_tagged(&suffixed, &fields, &mut context).unwrap();
@@ -17215,7 +17215,7 @@ mod tests {
                 let encoded = writer.finish().unwrap();
                 assert_eq!(encoded.bytes, expected);
 
-                let mut suffixed = encoded.bytes.clone();
+                let mut suffixed = encoded.bytes;
                 suffixed.push(0xff);
                 let mut context = RecordContext::new_with_aggregate_scratch(&limits);
                 let decoded = read_record_big_integer(&suffixed, &mut context).unwrap();

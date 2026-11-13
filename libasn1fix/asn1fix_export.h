@@ -12,7 +12,11 @@ struct asn1_namespace_s;   /* Forward declaration. */
 void asn1f_use_standard_namespaces(asn1p_t *asn);
 
 /*
- * Lookup the module by its oid. oid is mandatory.
+ * Look up a module in a valid parsed tree. asn and module_name must be
+ * non-NULL. If oid is NULL, module_name selects the module by name; otherwise
+ * oid selects it and module_name is not used for matching.
+ * Returns a borrowed module pointer, or NULL with errno set to ENOENT when
+ * no module matches. The returned pointer remains owned by the parsed tree.
  */
 asn1p_module_t *asn1f_lookup_module_ex(asn1p_t *asn, const char *module_name,
                                        const asn1p_oid_t *oid);

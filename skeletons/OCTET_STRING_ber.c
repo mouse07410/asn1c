@@ -749,13 +749,14 @@ octet_string_ber_push_child(struct OCTET_STRING_ber_state *state,
 /*
  * Read one constructed-string child header and update its expectation stack.
  * Original source: New bounded helper extracted from the BER stack loop.
- * Version/date: 1.1, 2026-10-12.
+ * Version/date: 1.2, 2026-11-13.
  * Parameters: state owns the cursor, active frame, and descriptor metadata.
  * Returns: RC_OK after a child/EOC; RC_WMORE or RC_FAIL on input problems.
  * Errors: Rejects malformed tag-zero encodings and EOCs outside active
  *         indefinite frames, plus impossible lengths and bad stack accounting.
  * Responsible party: asn1c maintainers. History: Added strict EOC handling
- * while preserving a bounded legacy ANY zero-pair value.
+ * while preserving a bounded legacy ANY zero-pair value; reject another BIT
+ * STRING child after a fragment marked with unused bits.
  * Example: rejects 00 01 as EOC but retains definite ANY bytes 00 00.
  */
 static asn_dec_rval_t
@@ -770,6 +771,8 @@ octet_string_ber_read_child(struct OCTET_STRING_ber_state *state) {
     consumed_eoc = octet_string_ber_consume_eoc(state, &header);
     if(consumed_eoc < 0) return octet_string_ber_result(state, RC_FAIL);
     if(consumed_eoc) return octet_string_ber_result(state, RC_OK);
+    if(state->variant == ASN_OSUBV_BIT && state->st->bits_unused != 0)
+        return octet_string_ber_result(state, RC_FAIL);
     if(header.tag == 0) {
         /* Keep legacy ANY bytes 00 00 only as a primitive in a definite frame. */
         if(state->variant != ASN_OSUBV_ANY || !state->sel
@@ -821,11 +824,14 @@ octet_string_ber_phase1(struct OCTET_STRING_ber_state *state) {
 /*
  * Copy the current constructed-string payload into the decoded value.
  * Original source: New bounded phase extracted from OCTET_STRING_decode_ber.
- * Version/date: 1.0, 2026-10-11.
- * Parameters: state identifies frame, string storage, and available bytes.
+ * Version/date: 1.1, 2026-11-13.
+ * Parameters: state identifies frame, string storage, and available bytes;
+ *             sel tracks the current primitive fragment content remainder.
  * Returns: RC_OK when the frame closes, RC_WMORE for incomplete content.
  * Errors: Invalid lengths or allocation/accounting failures return RC_FAIL.
- * Responsible party: asn1c maintainers. History/example: handles BIT chunks.
+ * Responsible party: asn1c maintainers. History: Validate every BIT fragment's
+ * unused-bits octet before consuming it. Example: rejects missing metadata,
+ * values above seven, and nonzero unused bits without a payload octet.
  */
 static asn_dec_rval_t
 octet_string_ber_phase2(struct OCTET_STRING_ber_state *state) {
@@ -840,8 +846,13 @@ octet_string_ber_phase2(struct OCTET_STRING_ber_state *state) {
     if(sel->left < 0 || sel->got < 0)
         return octet_string_ber_result(state, RC_FAIL);
     length = (size_t)sel->left;
+    if(state->variant == ASN_OSUBV_BIT && !sel->bits_chopped && !length)
+        return octet_string_ber_result(state, RC_FAIL);
     amount = state->size < length ? state->size : length;
     if(amount) {
+        if(state->variant == ASN_OSUBV_BIT && !sel->bits_chopped
+        && (state->buf_ptr[0] > 7 || (length == 1 && state->buf_ptr[0])))
+            return octet_string_ber_result(state, RC_FAIL);
         if((size_t)sel->got > max_count - amount)
             return octet_string_ber_result(state, RC_FAIL);
         if(state->variant == ASN_OSUBV_BIT && !sel->bits_chopped) {

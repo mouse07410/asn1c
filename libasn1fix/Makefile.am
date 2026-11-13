@@ -39,7 +39,7 @@ LDADD = $(noinst_LTLIBRARIES)   \
     $(top_builddir)/libasn1parser/libasn1parser.la  \
     $(top_builddir)/libasn1common/libasn1common.la
 
-check_PROGRAMS = check_crange check_fixer
+check_PROGRAMS = check_crange check_fixer check_lookup_module
 
 TESTS_ENVIRONMENT = top_srcdir=${top_srcdir}
 TESTS = ${check_PROGRAMS}

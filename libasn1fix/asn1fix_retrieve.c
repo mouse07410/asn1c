@@ -147,9 +147,12 @@ asn1f_lookup_module(arg_t *arg, const char *module_name, const asn1p_oid_t *oid,
 	 * either the real module's name, or the symbol which is the
 	 * result of renaming. Check this first.
 	 */
-	if(oid == 0) {
+	if(oid == 0 && arg->mod) {
 		asn1p_xports_t *xp;
 		/*
+		 * A bare tree built by asn1f_lookup_module_ex() has no current
+		 * module, so there is no IMPORTS context to consult; the normal
+		 * name/OID lookup below still runs.
 		 * Check inside the IMPORTS section for possible renaming.
 		 * Renaming practically means that a module_name is mentioned
 		 * somewhere in the IMPORTS section AND OID is given.
