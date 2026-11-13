@@ -9,9 +9,12 @@
 #include <cbor_support.h>
 
 /*
- * Encode INTEGER as CBOR.
- * Values fitting in int64_t use major type 0 (uint) or 1 (negint).
- * Larger values use bignum tags 2 (positive) or 3 (negative).
+ * Purpose: encode a signed BER-backed INTEGER using preferred CBOR integers.
+ * Source: RFC 8949 integer and bignum representation. Version: 2026-11-12.
+ * Inputs: td identifies the ASN.1 type; sptr holds the value; cb and app_key
+ * receive bytes. Returns: encoded byte count or failure. Errors: invalid value,
+ * allocation failure, or callback failure. Author: asn1c maintainers.
+ * History: major type 1 covers all values down to -2^64. Example: -1 emits 20.
  */
 asn_enc_rval_t
 INTEGER_encode_cbor(const asn_TYPE_descriptor_t *td, const void *sptr,
@@ -50,7 +53,7 @@ INTEGER_encode_cbor(const asn_TYPE_descriptor_t *td, const void *sptr,
         }
 
         /*
-         * Value too small for intmax_t: use CBOR negative bignum (tag 3).
+         * Value too small for intmax_t: compute the unsigned CBOR argument.
          * For negative bignum, the byte string represents the one's
          * complement magnitude: -(n+1) where n is the magnitude.
          * The BER INTEGER bytes are two's complement.
@@ -71,10 +74,23 @@ INTEGER_encode_cbor(const asn_TYPE_descriptor_t *td, const void *sptr,
         size_t len = st->size;
         const uint8_t *p = st->buf;
 
-        /* Strip leading 0xFF bytes from negative BER INTEGER */
-        while(len > 1 && p[0] == 0xFF && (p[1] & 0x80)) {
+        /* Complementing N removes every leading FF, even a BER sign octet. */
+        while(len > 1 && p[0] == 0xFF) {
             p++;
             len--;
+        }
+
+        /* Major type 1 represents all N up to UINT64_MAX, not just INT64_MAX. */
+        if(len <= sizeof(uint64_t)) {
+            uint64_t argument = 0;
+            size_t i;
+            for(i = 0; i < len; i++) {
+                argument = (argument << 8) | (uint8_t)~p[i];
+            }
+            ret = cbor_encode_negint(argument, cb, app_key);
+            if(ret < 0) ASN__ENCODE_FAILED;
+            er.encoded = ret;
+            ASN__ENCODED_OK(er);
         }
 
         /* Build the ones-complement byte string */

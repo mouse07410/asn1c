@@ -185,7 +185,9 @@ decoding with `-gen-APER` and `-gen-OER`.
 Basic/canonical OER, UPER, and APER selectors share each family's decoder;
 CBOR has its own encoder and decoder. Support still depends on the generated
 type's codec operations and enabled codec families. See the
-[binary codec audit](docs/binary-codec-support.md) for dispatch details and limits.
+[binary codec audit](docs/binary-codec-support.md) for dispatch details and limits,
+and the [CBOR standards review](docs/cbor-standards-review.md) for the supported
+profile, IETF references, and interoperability changes.
 
 ## XER and JER Encoding Instructions
 

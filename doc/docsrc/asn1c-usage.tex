@@ -1607,8 +1607,11 @@ The \code{cbor_decode()} function decodes a CBOR-encoded (Concise Binary
 Object Representation, RFC~8949) data stream into the target ASN.1 structure.
 
 CBOR provides a compact, self-describing binary encoding format.
-The decoder follows canonical CBOR rules: only definite-length items are
-accepted. Integer values are decoded from CBOR major type 0 (unsigned) and
+Typed values use the repository's definite-length CBOR profile; the decoder
+also accepts nonminimal integer and length heads. Unknown extension values
+may contain indefinite arrays, maps and chunked strings. REAL accepts
+binary16, binary32 and binary64 encodings. Integer values are decoded from
+CBOR major type 0 (unsigned) and
 major type 1 (negative), with bignum tags (2 and 3) used for values that
 exceed the 64-bit range. SEQUENCE and SET types are decoded from CBOR maps,
 SEQUENCE~OF and SET~OF from CBOR arrays, and CHOICE from a single-entry
@@ -1618,8 +1621,9 @@ The decoder is \emph{tag-transparent}: any number of leading CBOR tag headers
 (major type~6, RFC~8949 \S3.4) are silently skipped before the underlying
 value is decoded. This means that tagged CBOR data items produced by other
 implementations---such as self-described CBOR (tag~55799), epoch-based
-timestamps (tag~1), or URI-annotated byte strings (tag~32)---are accepted
-without changes to the application code.
+timestamps (tag~1), or URI text strings (tag~32)---can be accepted when the
+underlying type matches. Except for INTEGER bignums, registered tag semantics
+are the application's responsibility.
 
 \subsection*{Return values}
 
@@ -1644,13 +1648,15 @@ asn_enc_rval_t cbor_encode(
 \subsection*{Description}
 
 The \code{cbor_encode()} function serializes the given structure into a
-canonical CBOR (Concise Binary Object Representation, RFC~8949) byte stream.
+CBOR (Concise Binary Object Representation, RFC~8949) byte stream.
 
-The encoder produces canonical (DER-like) output: integers use the shortest
-possible CBOR encoding, all lengths are definite, and SEQUENCE fields are
+Integers use shortest heads and minimal bignums; REAL uses the shortest exact
+IEEE~754 width, including subnormals, and emits NaN as f9~7e~00. All lengths
+are definite, and SEQUENCE fields are
 encoded in definition order. Absent optional and default-valued fields are
 skipped so that the CBOR map header count always matches the number of encoded
-key/value pairs.
+key/value pairs. Map definition order is not RFC~8949 core deterministic
+key order; complete deterministic-CBOR conformance is not claimed.
 
 \subsection*{Return values}
 
@@ -1769,9 +1775,11 @@ ssize_t cbor_skip_item(const uint8_t *buf, size_t size);
 CBOR tags~2 and~3 are treated specially by the INTEGER decoder.
 They encode arbitrarily large positive (tag~2) and negative (tag~3)
 integers as byte strings, allowing ASN.1 INTEGER values that exceed the
-64-bit signed range to be represented in CBOR.  These tags are emitted
+ordinary major-type 0/1 range to be represented in CBOR. These tags are emitted
 automatically by the INTEGER encoder when the value requires more than
-64 bits.
+64 magnitude bits. Leading zeros and empty bignum payloads are accepted
+on input. The raw item scanner enforces a hard 128-level nesting limit,
+including builds in which stack checks are disabled.
 
 \chapter{API usage examples}
 

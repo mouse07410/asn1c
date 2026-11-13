@@ -461,17 +461,25 @@ cargo clippy --manifest-path rust/asn1c-runtime/Cargo.toml \
 ```
 
 CBOR primitive APIs encode BOOLEAN, NULL, bounded signed INTEGER and opaque
-ANY. They decode one definite prefix, accept leading semantic tags and
-nonminimal definite heads, and reject INTEGER bignum tags and indefinite byte
-strings. ANY is represented as a definite CBOR byte string and is limited to
-`INT32_MAX` octets for compatibility with the C `ANY_t` size field.
+ANY. They decode one definite prefix and accept leading semantic tags and
+nonminimal definite heads. Bounded INTEGER decoding accepts tagged bignums
+(tags 2 and 3) when the value fits `i64`; redundant leading zero magnitude
+octets are ignored, and empty magnitudes represent zero or negative one.
+Reserved simple values encoded with AI=24 and arguments `0..=31` are rejected,
+while larger simple values and floating-point values can be skipped in map
+values. Typed primitive decoders accept only definite items. Map-value skipping
+also accepts indefinite arrays, maps, byte strings, and text strings; text
+chunks are validated independently as UTF-8, and malformed chunks or maps with
+unmatched keys are rejected. ANY is represented as a definite CBOR byte string
+and is limited to `INT32_MAX` octets for compatibility with the C `ANY_t` size
+field.
 
 `cbor::encode_map` and `cbor::decode_map` support generated flat SEQUENCE
 values as definite text-key maps. The encoder preserves entry order and rejects
 duplicate keys or non-complete CBOR values. The decoder accepts leading tags
 and nonminimal definite heads, rejects duplicate keys, and returns borrowed
-complete value spans. Unknown definite nested values can be skipped up to 64
-levels; indefinite items and invalid UTF-8 text keys remain unsupported. The
+complete value spans. Unknown definite or indefinite nested values can be
+skipped up to 64 levels; invalid UTF-8 text keys remain unsupported. The
 generated decoder validates
 each known value consumes its entire span and checks required members.
 

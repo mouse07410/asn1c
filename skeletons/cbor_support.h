@@ -13,7 +13,7 @@ extern "C" {
 #endif
 
 /*
- * CBOR major types (RFC 7049 section 2.1)
+ * CBOR major types (RFC 8949 section 3.1)
  */
 #define CBOR_MAJOR_UINT     0  /* major type 0: unsigned integer */
 #define CBOR_MAJOR_NEGINT   1  /* major type 1: negative integer */
@@ -128,29 +128,51 @@ ssize_t cbor_encode_tag(uint64_t tag,
 ssize_t cbor_skip_tags(const uint8_t *buf, size_t size);
 
 /*
- * Encode a CBOR simple value (true, false, null, float64, etc.).
- * For float64, use cbor_encode_float64() instead.
+ * Emit a complete single-byte simple encoding (0xe0..0xf7), including
+ * CBOR_SV_TRUE/FALSE/NULL/UNDEF. The argument is an encoded octet, not a
+ * logical simple-value number. For floats use cbor_encode_float().
  */
 ssize_t cbor_encode_simple(uint8_t simple_val,
                            asn_app_consume_bytes_f *cb, void *app_key);
 
 /*
- * Encode a CBOR IEEE 754 double (major type 7, additional info 27).
+ * Encode a CBOR IEEE 754 double in the explicit 64-bit representation.
+ * This compatibility helper always emits nine bytes, including for values
+ * that have exact half- or single-precision representations.
  */
 ssize_t cbor_encode_float64(double value,
                             asn_app_consume_bytes_f *cb, void *app_key);
 
 /*
- * Decode a CBOR IEEE 754 double from buffer (must start with 0xFB).
- * Returns number of bytes consumed (9), or -1 on error/truncation.
+ * Decode an explicit CBOR IEEE 754 double (input must start with 0xFB).
+ * Returns 9 bytes on success or -1 on invalid pointers or truncation.
  */
 ssize_t cbor_decode_float64(const uint8_t *buf, size_t size, double *value_out);
 
 /*
+ * Encode a CBOR IEEE 754 value using the shortest exact width (half, single,
+ * then double). NaNs use the canonical half-precision encoding f9 7e 00.
+ * This is preferred-width serialization and does not canonicalize map keys.
+ * Returns the encoded byte count, or -1 for a null callback or callback error.
+ */
+ssize_t cbor_encode_float(double value,
+                          asn_app_consume_bytes_f *cb, void *app_key);
+
+/*
+ * Decode one CBOR IEEE 754 value in half-, single-, or double-precision form.
+ * Returns the consumed byte count (3, 5, or 9), or -1 for invalid pointers,
+ * non-float input, or truncation. The decoded value is written on success.
+ */
+ssize_t cbor_decode_float(const uint8_t *buf, size_t size, double *value_out);
+
+/*
  * Skip a complete CBOR data item starting at buf[0].
- * Handles all major types recursively (arrays, maps, tags, integers,
- * byte/text strings, floats, simple values).
- * Returns total bytes consumed, or -1 on error/truncation/stack limit.
+ * Handles definite and indefinite arrays, maps and strings, tags, integers,
+ * floats and simple values. Validates UTF-8 per text chunk and rejects
+ * malformed simple values. This is structural validation: duplicate generic
+ * map keys and registered tag semantics remain the application's responsibility.
+ * Returns total bytes consumed, or -1 on error/truncation/stack limit or
+ * nesting beyond 128 levels (also enforced when stack checks are disabled).
  */
 ssize_t cbor_skip_item_with_ctx(const asn_codec_ctx_t *opt_codec_ctx,
                                 const uint8_t *buf, size_t size);

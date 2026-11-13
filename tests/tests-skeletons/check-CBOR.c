@@ -12,9 +12,13 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <limits.h>
+#include <float.h>
+#include <math.h>
 
 #include <asn_application.h>
 #include <INTEGER.h>
+#include <REAL.h>
+#include <NativeReal.h>
 #include <NativeInteger.h>
 #include <OCTET_STRING.h>
 #include <UTF8String.h>
@@ -777,6 +781,13 @@ test_cbor_skip_tags(void) {
     printf("PASSED: test_cbor_skip_tags\n\n");
 }
 
+/*
+ * Purpose: verify the bounded recursion policy for CBOR skip operations.
+ * Source: CBOR recursive item skipping. Version: 2026-11-12.
+ * Inputs: none. Returns: none. Errors: assertions detect accepted deep input.
+ * Author: asn1c maintainers. History: updated for the fixed depth bound.
+ * Example: 512 nested tags fail, while a shallow tagged integer succeeds.
+ */
 static void
 test_cbor_skip_item_stack_limit(void) {
     enum { tag_depth = 512 };
@@ -797,8 +808,13 @@ test_cbor_skip_item_stack_limit(void) {
     nested_tags[tag_depth] = 0x00;
 
     n = cbor_skip_item(nested_tags, sizeof(nested_tags));
-    assert(n == (ssize_t)sizeof(nested_tags));
-    printf("  ✓ compatibility cbor_skip_item skips nested tags\n");
+    assert(n == -1);
+    printf("  ✓ compatibility cbor_skip_item rejects excessive nesting\n");
+    {
+        static const uint8_t shallow_tags[] = {0xc0, 0xc0, 0x00};
+        n = cbor_skip_item(shallow_tags, sizeof(shallow_tags));
+        assert(n == (ssize_t)sizeof(shallow_tags));
+    }
 
 #if !defined(TEST_ASN_STACK_CHECK_DISABLED)
     {
@@ -1595,6 +1611,209 @@ test_cbor_collections(void) {
     printf("PASSED: test_cbor_collections\n");
 }
 
+/*
+ * Purpose: provide a deterministic failing consumer for encoder validation.
+ * Source: CBOR float support tests. Version: 2026-11-12.
+ * Inputs: bytes/size are ignored; key is ignored.
+ * Returns: -1 to report callback failure. Errors: none.
+ * Author: asn1c maintainers. History: added float callback checks.
+ * Example: cbor_encode_float(1.0, reject_bytes, NULL) returns -1.
+ */
+static int
+reject_bytes(const void *bytes, size_t size, void *key) {
+    (void)bytes;
+    (void)size;
+    (void)key;
+    return -1;
+}
+
+/*
+ * Purpose: verify RFC 8949 float width decoding and malformed input handling.
+ * Source: RFC 8949 Appendix A floating-point examples plus edge vectors.
+ * Version: 2026-11-12. Inputs: none. Returns: none.
+ * Errors: assertions fail for wrong values, widths, or truncation handling.
+ * Author: asn1c maintainers. History: added all-width CBOR float coverage.
+ * Example: f9 00 01 decodes to the smallest positive binary16 subnormal.
+ */
+static void
+test_cbor_float_decode(void) {
+    static const struct {
+        uint8_t bytes[9];
+        size_t size;
+        double value;
+        int nan;
+    } vectors[] = {
+        {{0xf9, 0x00, 0x00}, 3, 0.0, 0},
+        {{0xf9, 0x80, 0x00}, 3, -0.0, 0},
+        {{0xf9, 0x00, 0x01}, 3, 0x1p-24, 0},
+        {{0xf9, 0x03, 0xff}, 3, 1023.0 * 0x1p-24, 0},
+        {{0xf9, 0x04, 0x00}, 3, 0x1p-14, 0},
+        {{0xf9, 0x3c, 0x00}, 3, 1.0, 0},
+        {{0xf9, 0xc0, 0x00}, 3, -2.0, 0},
+        {{0xf9, 0x7b, 0xff}, 3, 65504.0, 0},
+        {{0xf9, 0x7c, 0x00}, 3, INFINITY, 0},
+        {{0xf9, 0xfc, 0x00}, 3, -INFINITY, 0},
+        {{0xf9, 0x7e, 0x00}, 3, 0.0, 1},
+        {{0xfa, 0x00, 0x00, 0x00, 0x01}, 5, 0x1p-149, 0},
+        {{0xfa, 0x3f, 0x8c, 0xcc, 0xcd}, 5,
+         1.10000002384185791015625, 0},
+        {{0xfb, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01},
+         9, 0x1p-1074, 0},
+        {{0xfb, 0x3f, 0xf1, 0x99, 0x99, 0x99, 0x99, 0x99, 0x9a},
+         9, 1.1, 0}
+    };
+    size_t i;
+
+    for(i = 0; i < sizeof(vectors) / sizeof(vectors[0]); i++) {
+        double decoded = 42.0;
+        ssize_t used = cbor_decode_float(vectors[i].bytes, vectors[i].size,
+                                         &decoded);
+        assert(used == (ssize_t)vectors[i].size);
+        if(vectors[i].nan) {
+            assert(isnan(decoded));
+        } else {
+            assert(decoded == vectors[i].value);
+            if(vectors[i].value == 0.0) {
+                assert(!!signbit(decoded) == !!signbit(vectors[i].value));
+            }
+        }
+        if(i < 11) {
+            decoded = 42.0;
+            assert(cbor_decode_float(vectors[i].bytes, vectors[i].size - 1,
+                                     &decoded) < 0);
+            assert(decoded == 42.0);
+        }
+    }
+    {
+        double ignored = 0.0;
+        static const uint8_t simple[] = {0xf8};
+        assert(cbor_decode_float(NULL, 3, &ignored) < 0);
+        assert(cbor_decode_float(vectors[0].bytes, 3, NULL) < 0);
+        assert(cbor_decode_float(simple, sizeof(simple), &ignored) < 0);
+        assert(cbor_decode_float64(vectors[0].bytes, 3, &ignored) < 0);
+    }
+    assert(cbor_decode_float64(vectors[0].bytes, 3, NULL) < 0);
+    puts("PASSED: test_cbor_float_decode");
+}
+
+/*
+ * Purpose: verify preferred-width encoding, compatibility, and REAL adapters.
+ * Source: RFC 8949 preferred float serialization. Version: 2026-11-12.
+ * Inputs: none. Returns: none. Errors: assertions detect bytes or value drift.
+ * Author: asn1c maintainers. History: added float encoding regressions.
+ * Example: 1.5 is encoded as f9 3e 00 by both REAL adapters.
+ */
+static void
+test_cbor_float_encode(void) {
+    static const struct {
+        double value;
+        uint8_t bytes[9];
+        size_t size;
+    } vectors[] = {
+        {0.0, {0xf9, 0x00, 0x00}, 3},
+        {-0.0, {0xf9, 0x80, 0x00}, 3},
+        {0x1p-24, {0xf9, 0x00, 0x01}, 3},
+        {0x1p-25, {0xfa, 0x33, 0x00, 0x00, 0x00}, 5},
+        {1.5, {0xf9, 0x3e, 0x00}, 3},
+        {1.00048828125, {0xfa, 0x3f, 0x80, 0x10, 0x00}, 5},
+        {65504.0, {0xf9, 0x7b, 0xff}, 3},
+        {65505.0, {0xfa, 0x47, 0x7f, 0xe1, 0x00}, 5},
+        {INFINITY, {0xf9, 0x7c, 0x00}, 3},
+        {-INFINITY, {0xf9, 0xfc, 0x00}, 3},
+        {DBL_MAX, {0xfb, 0x7f, 0xef, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, 9},
+        {-DBL_MAX, {0xfb, 0xff, 0xef, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, 9},
+        {1.1, {0xfb, 0x3f, 0xf1, 0x99, 0x99, 0x99, 0x99, 0x99, 0x9a}, 9}
+    };
+    size_t i;
+    struct buffer_acc output = {0};
+    uint8_t encoded64[9];
+    double nan_value = NAN;
+    ssize_t length;
+    size_t j;
+
+    for(i = 0; i < sizeof(vectors) / sizeof(vectors[0]); i++) {
+        buf_free(&output);
+        length = cbor_encode_float(vectors[i].value, buf_append, &output);
+        assert(length == (ssize_t)vectors[i].size);
+        assert(output.len == vectors[i].size);
+        assert(memcmp(output.data, vectors[i].bytes, output.len) == 0);
+    }
+    buf_free(&output);
+    assert(cbor_encode_float(nan_value, buf_append, &output) == 3);
+    assert(output.len == 3 && output.data[0] == 0xf9
+           && output.data[1] == 0x7e && output.data[2] == 0x00);
+    assert(cbor_encode_float(1.0, NULL, NULL) < 0);
+    assert(cbor_encode_float(1.0, reject_bytes, NULL) < 0);
+
+    /* The legacy helper keeps its explicit 64-bit wire representation. */
+    buf_free(&output);
+    assert(cbor_encode_float64(1.0, buf_append, &output) == 9);
+    assert(output.len == 9 && output.data[0] == 0xfb);
+    {
+        double legacy_value = 0.0;
+        assert(cbor_decode_float64(output.data, 9, &legacy_value) == 9);
+        assert(legacy_value == 1.0);
+    }
+    assert(cbor_encode_float64(1.0, NULL, NULL) < 0);
+    assert(cbor_encode_float64(1.0, reject_bytes, NULL) < 0);
+    assert(cbor_encode_float64(-0.0, buf_append, &output) == 9);
+    memcpy(encoded64, output.data + 9, sizeof(encoded64));
+    assert(encoded64[0] == 0xfb);
+
+    /* Every byte boundary shorter than each width is a truncation. */
+    for(i = 0; i < sizeof(vectors) / sizeof(vectors[0]); i++) {
+        double decoded = 0.0;
+        for(j = 0; j < vectors[i].size; j++) {
+            assert(cbor_decode_float(vectors[i].bytes, j, &decoded) < 0);
+        }
+    }
+    buf_free(&output);
+    puts("PASSED: test_cbor_float_encode");
+}
+
+/*
+ * Purpose: exercise REAL and NativeReal CBOR dispatch through float helpers.
+ * Source: repository REAL CBOR skeletons. Version: 2026-11-12.
+ * Inputs: none. Returns: none. Errors: assertions detect encoding/decoding drift.
+ * Author: asn1c maintainers. History: added adapter width regression.
+ * Example: REAL and NativeReal values equal to 1.5 use f9 3e 00.
+ */
+static void
+test_cbor_real_float_adapters(void) {
+    static const uint8_t expected[] = {0xf9, 0x3e, 0x00};
+    REAL_t real = {0};
+    REAL_t *real_decoded = NULL;
+    double native = 1.5;
+    double *native_decoded = NULL;
+    double value;
+    struct buffer_acc output = {0};
+    asn_enc_rval_t encoded;
+    asn_dec_rval_t decoded;
+
+    assert(asn_double2REAL(&real, 1.5) == 0);
+    encoded = cbor_encode(&asn_DEF_REAL, &real, buf_append, &output);
+    assert(encoded.encoded == 3 && output.len == sizeof(expected));
+    assert(memcmp(output.data, expected, sizeof(expected)) == 0);
+    decoded = cbor_decode(NULL, &asn_DEF_REAL, (void **)&real_decoded,
+                          output.data, output.len);
+    assert(decoded.code == RC_OK && decoded.consumed == sizeof(expected));
+    assert(asn_REAL2double(real_decoded, &value) == 0 && value == 1.5);
+    ASN_STRUCT_FREE(asn_DEF_REAL, real_decoded);
+    ASN_STRUCT_FREE_CONTENTS_ONLY(asn_DEF_REAL, &real);
+
+    buf_free(&output);
+    encoded = cbor_encode(&asn_DEF_NativeReal, &native, buf_append, &output);
+    assert(encoded.encoded == 3 && output.len == sizeof(expected));
+    assert(memcmp(output.data, expected, sizeof(expected)) == 0);
+    decoded = cbor_decode(NULL, &asn_DEF_NativeReal, (void **)&native_decoded,
+                          output.data, output.len);
+    assert(decoded.code == RC_OK && decoded.consumed == sizeof(expected));
+    assert(*native_decoded == native);
+    free(native_decoded);
+    buf_free(&output);
+    puts("PASSED: test_cbor_real_float_adapters");
+}
+
 int
 main(void) {
     printf("=== CBOR Codec Tests ===\n\n");
@@ -1606,6 +1825,9 @@ main(void) {
     test_cbor_string_validation();
     test_cbor_utf8_adapter();
     test_cbor_collections();
+    test_cbor_float_decode();
+    test_cbor_float_encode();
+    test_cbor_real_float_adapters();
     test_asn_encode_decode_cbor_dispatch();
     test_oid_cbor_roundtrip();
     test_cbor_tag_encoding();

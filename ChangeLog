@@ -1,4 +1,11 @@
 Changes since v1.5.3:
+	* Review CBOR against RFC 8949 and serialization draft revision 12. Add
+	  preferred-width C REAL encoding and binary16/32/64 decoding, minimal
+	  negative INTEGER encoding through -2^64, and Rust bounded bignum decoding.
+	  Reject malformed simple values, support indefinite unknown-item scanning,
+	  and bound C scanner recursion even with stack checks disabled. Document
+	  the supported ASN.1 mapping and optional IETF specifications; retain
+	  definite typed containers and declaration-order maps.
 	* Validate C and Rust BER UTCTime values by default (issue #596), including leap days,
 	  calendar dates, clock ranges, and complete UTC offsets. Add
 	  -ftolerant-utc-time to preserve legacy decode behavior, with Rust's
