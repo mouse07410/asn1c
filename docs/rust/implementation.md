@@ -95,9 +95,9 @@ fresh directory after adding application code or running Cargo there.
 | Top-level primitive CONTAINING under CBOR | Unconstrained BIT/OCTET STRING containing a same-module direct BOOLEAN or non-singleton bounded INTEGER; complete inner CBOR value, octet-aligned BIT contents, and C-compatible outer byte string |
 | Direct ANY and required/OPTIONAL ANY SEQUENCE fields | Opaque octets under UPER with C-compatible length framing and shared cursor budgets |
 | Direct ANY | Opt-in APER/OER octet framing, JER hexadecimal strings, and CBOR byte strings; C interoperability vectors and malformed-input checks |
-| Direct BOOLEAN, NULL, bounded INTEGER | Opt-in CBOR prefix encode/decode, including semantic tags and nonminimal heads; bignum tags are rejected |
+| Direct BOOLEAN, NULL, bounded INTEGER | Opt-in CBOR prefix encode/decode, including semantic tags and nonminimal heads; bignum tags are accepted when their value fits the bounded signed range |
 | Direct fixed/bounded BIT or OCTET STRING | Opt-in CBOR definite byte-string encode/decode with SIZE checks; BIT STRING includes an unused-bit count octet and validates zero padding |
-| Flat SEQUENCE of CBOR primitives, strings, or ANY | Opt-in definite text-key map; declaration-order encoding, unordered prefix decoding, required/OPTIONAL/DEFAULT fields, duplicate-key checks and unknown definite-item skip |
+| Flat SEQUENCE of CBOR primitives, strings, or ANY | Opt-in definite text-key map; declaration-order encoding, unordered prefix decoding, required/OPTIONAL/DEFAULT fields, duplicate-key checks and unknown-item skip with bounded indefinite-container support |
 | Direct CHOICE of BOOLEAN, NULL, bounded INTEGER or ANY | CBOR-only one-entry text-key map with at most eight alternatives; unknown, duplicate or multiple keys fail |
 | IOC-selected OPEN TYPE under CBOR | Narrow existing two-field required SEQUENCE and local object-set rows; direct BOOLEAN or bounded INTEGER selected value in a text-key map; selector agreement and complete selected value checked; unique unknown keys skipped and duplicate keys rejected |
 | Top-level BOOLEAN, NULL, bounded INTEGER | Strict CER decoding; canonical short-form TLV only |

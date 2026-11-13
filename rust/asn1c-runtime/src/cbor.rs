@@ -73,27 +73,180 @@ fn parse_head(input: &[u8]) -> Result<(u8, u64, usize), Error> {
     require_bytes(input, width + 1)?;
     let mut raw = [0; 8];
     raw[8 - width..].copy_from_slice(&input[1..=width]);
-    Ok((first >> 5, u64::from_be_bytes(raw), width + 1))
+    let argument = u64::from_be_bytes(raw);
+    if first >> 5 == 7 && info == 24 && argument < 32 {
+        return Err(Error::InvalidEncoding {
+            reason: "invalid CBOR simple value",
+        });
+    }
+    Ok((first >> 5, argument, width + 1))
+}
+
+/// Convert a CBOR bignum magnitude into the bounded signed INTEGER domain.
+/// Input: payload and tag 2 or 3. Returns the signed value. Errors: magnitude
+/// exceeds `i64`. Source: RFC 8949 bignum tags. Version: 2026-11-12.
+/// Responsible: asn1c maintainers. History: bounded CBOR bignum support.
+/// Example: tag 3 with an empty payload yields -1.
+fn decode_bignum_payload(payload: &[u8], tag: u64) -> Result<i64, Error> {
+    let first_significant = payload.iter().position(|byte| *byte != 0);
+    let magnitude_bytes = first_significant.map_or(&[][..], |start| &payload[start..]);
+    if magnitude_bytes.len() > 8 {
+        return Err(Error::InvalidEncoding {
+            reason: "CBOR bignum exceeds i64",
+        });
+    }
+    let mut raw = [0; 8];
+    raw[8 - magnitude_bytes.len()..].copy_from_slice(magnitude_bytes);
+    let magnitude = u64::from_be_bytes(raw);
+    let magnitude = i64::try_from(magnitude).map_err(|_| Error::InvalidEncoding {
+        reason: "CBOR bignum exceeds i64",
+    })?;
+    if tag == 2 {
+        Ok(magnitude)
+    } else {
+        Ok(-1 - magnitude)
+    }
+}
+
+#[cfg(test)]
+mod integer_tests {
+    use super::{decode_integer_cbor, decode_map};
+    use crate::{Error, Limits, Resource};
+
+    /// Check bignum values at signed boundaries and through leading tags.
+    /// Source: RFC 8949 tags 2 and 3. Version: 2026-11-12.
+    /// Inputs: none. Returns: unit. Errors: assertion panic on failure.
+    /// Responsible: asn1c maintainers. History: bounded CBOR bignum regression.
+    /// Example: `cargo test --manifest-path rust/asn1c-runtime/Cargo.toml bignum_values`.
+    #[test]
+    fn bignum_values() {
+        let limits = Limits::default();
+        let cases: &[(&[u8], i64, usize)] = &[
+            (&[0xc2, 0x40], 0, 2),
+            (&[0xc3, 0x40], -1, 2),
+            (&[0xc2, 0x42, 0x00, 0x2a], 42, 4),
+            (&[0xc0, 0xc2, 0x42, 0x00, 0x2a, 0x01], 42, 5),
+            (
+                &[0xc2, 0x48, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+                i64::MAX,
+                10,
+            ),
+            (
+                &[0xc3, 0x48, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+                i64::MIN,
+                10,
+            ),
+            (&[0xc2, 0x58, 0x01, 0x42], 66, 4),
+        ];
+        for (wire, expected, consumed) in cases {
+            let decoded = decode_integer_cbor(wire, i64::MIN, i64::MAX, &limits).unwrap();
+            assert_eq!(decoded.value, *expected, "{wire:?}");
+            assert_eq!(decoded.consumed_bytes, *consumed, "{wire:?}");
+            assert_eq!(decoded.consumed_bits, consumed * 8, "{wire:?}");
+        }
+        assert_eq!(
+            decode_integer_cbor(&[0xc0, 0x01], 1, 1, &limits)
+                .unwrap()
+                .value,
+            1
+        );
+    }
+
+    /// Reject malformed bignum types, inconsistent tags, truncation, and overflow.
+    /// Source: RFC 8949 tag 2 and 3 structure. Version: 2026-11-12.
+    /// Inputs: none. Returns: unit. Errors: assertion panic on failure.
+    /// Responsible: asn1c maintainers. History: malformed bignum regression.
+    /// Example: `cargo test --manifest-path rust/asn1c-runtime/Cargo.toml bad_bignums`.
+    #[test]
+    fn bad_bignums() {
+        let limits = Limits::default();
+        for wire in [
+            &[][..],
+            &[0xc2][..],
+            &[0xc2, 0x01][..],
+            &[0xc3, 0x61, b'x'][..],
+            &[0x41, 0x01][..],
+            &[0xc2, 0xc0, 0x40][..],
+            &[0xc2, 0xc3, 0x40][..],
+            &[0x5f, 0xff][..],
+            &[0xc2, 0x42, 0x01][..],
+            &[0xc2, 0x48, 0x80, 0, 0, 0, 0, 0, 0, 0][..],
+            &[0xc3, 0x48, 0x80, 0, 0, 0, 0, 0, 0, 0][..],
+            &[0xc2, 0x49, 0x01, 0, 0, 0, 0, 0, 0, 0, 0][..],
+        ] {
+            assert!(
+                decode_integer_cbor(wire, i64::MIN, i64::MAX, &limits).is_err(),
+                "{wire:?}"
+            );
+        }
+        assert!(decode_integer_cbor(&[0xc2, 0x41, 0x2a], 0, 41, &limits).is_err());
+        assert!(decode_integer_cbor(&[0xc3, 0x41, 0x2a], -42, -1, &limits).is_err());
+        assert!(matches!(
+            decode_integer_cbor(
+                &[0xc2, 0x43, 1, 2, 3],
+                i64::MIN,
+                i64::MAX,
+                &Limits {
+                    max_work_bits: 32,
+                    ..limits
+                }
+            ),
+            Err(Error::LimitExceeded {
+                resource: Resource::WorkBits,
+                ..
+            })
+        ));
+        assert!(decode_integer_cbor(
+            &[0xc2, 0x40, 0],
+            0,
+            0,
+            &Limits {
+                max_input_bytes: 2,
+                ..limits
+            }
+        )
+        .is_err());
+    }
+
+    /// Reject RFC-reserved AI=24 values and keep valid simple and float values skippable.
+    /// Source: RFC 8949 simple-value encoding. Version: 2026-11-12.
+    /// Inputs: none. Returns: unit. Errors: assertion panic on failure.
+    /// Responsible: asn1c maintainers. History: malformed-simple regression.
+    /// Example: `cargo test --manifest-path rust/asn1c-runtime/Cargo.toml simple_values`.
+    #[test]
+    fn simple_values() {
+        let limits = Limits::default();
+        for argument in 0..=31 {
+            let wire = [0xa1, 0x61, b'x', 0xf8, argument];
+            assert!(decode_map(&wire, &limits).is_err(), "{wire:?}");
+        }
+        for argument in [32, 255] {
+            let wire = [0xa1, 0x61, b'x', 0xf8, argument];
+            assert!(decode_map(&wire, &limits).is_ok(), "{wire:?}");
+        }
+        for wire in [
+            &[0xa1, 0x61, b'x', 0xf9, 0x7c, 0x00][..],
+            &[0xa1, 0x61, b'x', 0xfa, 0x7f, 0xc0, 0, 0][..],
+            &[0xa1, 0x61, b'x', 0xfb, 0x7f, 0xf8, 0, 0, 0, 0, 0, 0][..],
+        ] {
+            assert!(decode_map(wire, &limits).is_ok(), "{wire:?}");
+        }
+    }
 }
 
 /// Find an item after leading semantic tags. Inputs: input prefix and limits.
-/// Returns item offset. Errors: truncation, malformed tags, or work limits.
+/// Returns item offset. Errors: truncation, malformed heads, or work limits.
 /// Source: `cbor_skip_tags`. Version: 2026-10-30. Responsible: asn1c maintainers.
 /// History: prefix decoding. Example: `[0xc0, 0xf5]` yields offset one.
-fn item_offset(input: &[u8], limits: &Limits, reject_bignum: bool) -> Result<usize, Error> {
+fn item_offset(input: &[u8], limits: &Limits) -> Result<usize, Error> {
     check_input_limit(input, limits)?;
     let mut offset = 0_usize;
     loop {
-        let (major, argument, count) = parse_head(&input[offset..])?;
+        let (major, _, count) = parse_head(&input[offset..])?;
         let next = offset.checked_add(count).ok_or(Error::SizeOverflow)?;
         check_work_limit(next.checked_mul(8).ok_or(Error::SizeOverflow)?, limits)?;
         if major != 6 {
             return Ok(offset);
-        }
-        if reject_bignum && (argument == 2 || argument == 3) {
-            return Err(Error::InvalidEncoding {
-                reason: "CBOR bignum tags are unsupported",
-            });
         }
         offset = next;
     }
@@ -145,7 +298,7 @@ pub fn encode_boolean_cbor(value: bool, limits: &Limits) -> Result<Encoded, Erro
 /// # Errors
 /// Returns malformed, truncated, or resource-limit errors.
 pub fn decode_boolean_cbor(input: &[u8], limits: &Limits) -> Result<Decoded<bool>, Error> {
-    let offset = item_offset(input, limits, false)?;
+    let offset = item_offset(input, limits)?;
     let value = match input[offset] {
         0xf4 => false,
         0xf5 => true,
@@ -183,7 +336,7 @@ pub fn encode_null_cbor(limits: &Limits) -> Result<Encoded, Error> {
 /// # Errors
 /// Returns malformed, truncated, or resource-limit errors.
 pub fn decode_null_cbor(input: &[u8], limits: &Limits) -> Result<Decoded<()>, Error> {
-    let offset = item_offset(input, limits, false)?;
+    let offset = item_offset(input, limits)?;
     if input[offset] != 0xf6 {
         return Err(Error::InvalidEncoding {
             reason: "invalid CBOR NULL",
@@ -234,22 +387,59 @@ pub fn decode_integer_cbor(
     upper: i64,
     limits: &Limits,
 ) -> Result<Decoded<i64>, Error> {
-    let offset = item_offset(input, limits, true)?;
-    let (major, argument, count) = parse_head(&input[offset..])?;
-    let integer = i64::try_from(argument).map_err(|_| Error::InvalidEncoding {
-        reason: "CBOR INTEGER exceeds i64",
-    })?;
-    let value = match major {
-        0 => integer,
-        1 => -1 - integer,
-        _ => {
-            return Err(Error::InvalidEncoding {
-                reason: "invalid CBOR INTEGER",
-            })
+    check_input_limit(input, limits)?;
+    let mut offset = 0_usize;
+    let mut bignum_tag = None;
+    loop {
+        let (major, argument, count) = parse_head(&input[offset..])?;
+        let next = offset.checked_add(count).ok_or(Error::SizeOverflow)?;
+        check_work_limit(next.checked_mul(8).ok_or(Error::SizeOverflow)?, limits)?;
+        if major != 6 {
+            break;
         }
+        if argument == 2 || argument == 3 {
+            if bignum_tag.is_some() {
+                return Err(Error::InvalidEncoding {
+                    reason: "nested CBOR bignum tag",
+                });
+            }
+            bignum_tag = Some(argument);
+        } else if bignum_tag.is_some() {
+            return Err(Error::InvalidEncoding {
+                reason: "CBOR bignum tag must directly enclose a byte string",
+            });
+        }
+        offset = next;
+    }
+    let (major, argument, count) = parse_head(&input[offset..])?;
+    let (value, bytes) = if let Some(tag) = bignum_tag {
+        if major != 2 {
+            return Err(Error::InvalidEncoding {
+                reason: "CBOR bignum tag must enclose a byte string",
+            });
+        }
+        let length = usize::try_from(argument).map_err(|_| Error::SizeOverflow)?;
+        let start = offset.checked_add(count).ok_or(Error::SizeOverflow)?;
+        let end = start.checked_add(length).ok_or(Error::SizeOverflow)?;
+        require_bytes(input, end)?;
+        check_work_limit(end.checked_mul(8).ok_or(Error::SizeOverflow)?, limits)?;
+        (decode_bignum_payload(&input[start..end], tag)?, end)
+    } else {
+        let integer = i64::try_from(argument).map_err(|_| Error::InvalidEncoding {
+            reason: "CBOR INTEGER exceeds i64",
+        })?;
+        let value = match major {
+            0 => integer,
+            1 => -1 - integer,
+            _ => {
+                return Err(Error::InvalidEncoding {
+                    reason: "invalid CBOR INTEGER",
+                })
+            }
+        };
+        (value, offset.checked_add(count).ok_or(Error::SizeOverflow)?)
     };
     validate_integer(value, lower, upper)?;
-    let bytes = offset.checked_add(count).ok_or(Error::SizeOverflow)?;
     Ok(Decoded {
         value,
         consumed_bits: bytes.checked_mul(8).ok_or(Error::SizeOverflow)?,
@@ -287,7 +477,7 @@ pub fn encode_any_cbor(value: &[u8], limits: &Limits) -> Result<Encoded, Error> 
 /// # Errors
 /// Returns malformed, truncated, size, resource or allocation errors.
 pub fn decode_any_cbor(input: &[u8], limits: &Limits) -> Result<Decoded<Vec<u8>>, Error> {
-    let offset = item_offset(input, limits, false)?;
+    let offset = item_offset(input, limits)?;
     let (major, length, count) = parse_head(&input[offset..])?;
     if major != 2 {
         return Err(Error::InvalidEncoding {
@@ -463,6 +653,11 @@ fn skip_item(input: &[u8], limits: &Limits, depth: usize) -> Result<usize, Error
             reason: "CBOR nesting depth exceeded",
         });
     }
+    require_bytes(input, 1)?;
+    let major = input[0] >> 5;
+    if input[0] & 31 == 31 && (2..=5).contains(&major) {
+        return skip_indefinite(input, major, limits, depth);
+    }
     let (major, argument, header) = parse_head(input)?;
     let mut end = header;
     match major {
@@ -471,6 +666,7 @@ fn skip_item(input: &[u8], limits: &Limits, depth: usize) -> Result<usize, Error
             let length = usize::try_from(argument).map_err(|_| Error::SizeOverflow)?;
             end = end.checked_add(length).ok_or(Error::SizeOverflow)?;
             require_bytes(input, end)?;
+            check_work_limit(end.checked_mul(8).ok_or(Error::SizeOverflow)?, limits)?;
             if major == 3 && std::str::from_utf8(&input[header..end]).is_err() {
                 return Err(Error::InvalidEncoding {
                     reason: "CBOR text value is not UTF-8",
@@ -502,6 +698,75 @@ fn skip_item(input: &[u8], limits: &Limits, depth: usize) -> Result<usize, Error
     }
     check_work_limit(end.checked_mul(8).ok_or(Error::SizeOverflow)?, limits)?;
     Ok(end)
+}
+
+/// Skip one indefinite CBOR string, array, or map.
+/// Inputs: item bytes, major type, limits, and current depth. Returns item
+/// length. Errors: malformed chunks, truncation, depth, or resource limits.
+/// Source: RFC 8949 section 3.2. Version: 2026-11-12.
+/// Responsible: asn1c maintainers. History: indefinite map-value support.
+/// Example: `[0x5f, 0x41, 0xa5, 0xff]` consumes four bytes.
+fn skip_indefinite(input: &[u8], major: u8, limits: &Limits, depth: usize) -> Result<usize, Error> {
+    if major == 2 || major == 3 {
+        return skip_indefinite_string(input, major, limits);
+    }
+    let mut end = 1_usize;
+    let mut map_key_expected = true;
+    loop {
+        require_bytes(input, end.checked_add(1).ok_or(Error::SizeOverflow)?)?;
+        if input[end] == 0xff {
+            if major == 5 && !map_key_expected {
+                return Err(Error::InvalidEncoding {
+                    reason: "indefinite CBOR map has an unmatched key",
+                });
+            }
+            end += 1;
+            check_work_limit(end.checked_mul(8).ok_or(Error::SizeOverflow)?, limits)?;
+            return Ok(end);
+        }
+        let child_length = skip_item(&input[end..], limits, depth + 1)?;
+        end = end.checked_add(child_length).ok_or(Error::SizeOverflow)?;
+        if major == 5 {
+            map_key_expected = !map_key_expected;
+        }
+        check_work_limit(end.checked_mul(8).ok_or(Error::SizeOverflow)?, limits)?;
+    }
+}
+
+/// Skip one indefinite CBOR byte or text string and validate each text chunk.
+/// Inputs: item bytes, major type, and limits. Returns item length. Errors:
+/// wrong chunk type, nested chunks, invalid UTF-8, truncation, or resource limit.
+/// Source: RFC 8949 section 3.2. Version: 2026-11-12.
+/// Responsible: asn1c maintainers. History: indefinite string support.
+/// Example: `[0x7f, 0x61, b'a', 0x60, 0xff]` consumes five bytes.
+fn skip_indefinite_string(input: &[u8], major: u8, limits: &Limits) -> Result<usize, Error> {
+    let mut end = 1_usize;
+    loop {
+        require_bytes(input, end.checked_add(1).ok_or(Error::SizeOverflow)?)?;
+        if input[end] == 0xff {
+            end += 1;
+            check_work_limit(end.checked_mul(8).ok_or(Error::SizeOverflow)?, limits)?;
+            return Ok(end);
+        }
+        let (chunk_major, length, header) = parse_head(&input[end..])?;
+        if chunk_major != major {
+            return Err(Error::InvalidEncoding {
+                reason: "invalid indefinite CBOR string chunk",
+            });
+        }
+        let length = usize::try_from(length).map_err(|_| Error::SizeOverflow)?;
+        let start = end.checked_add(header).ok_or(Error::SizeOverflow)?;
+        let chunk_end = start.checked_add(length).ok_or(Error::SizeOverflow)?;
+        require_bytes(input, chunk_end)?;
+        check_work_limit(chunk_end.checked_mul(8).ok_or(Error::SizeOverflow)?, limits)?;
+        if major == 3 && std::str::from_utf8(&input[start..chunk_end]).is_err() {
+            return Err(Error::InvalidEncoding {
+                reason: "CBOR text value is not UTF-8",
+            });
+        }
+        end = chunk_end;
+        check_work_limit(end.checked_mul(8).ok_or(Error::SizeOverflow)?, limits)?;
+    }
 }
 
 /// Encode a definite CBOR text-key map in entry order.
@@ -594,7 +859,7 @@ pub fn decode_map<'a>(
     input: &'a [u8],
     limits: &Limits,
 ) -> Result<Decoded<Vec<MapEntry<'a>>>, Error> {
-    let offset = item_offset(input, limits, false)?;
+    let offset = item_offset(input, limits)?;
     let (major, count, header) = parse_head(&input[offset..])?;
     if major != 5 {
         return Err(Error::InvalidEncoding {
@@ -681,7 +946,7 @@ pub fn complete_value<T>(decoded: Decoded<T>, exact_bytes: usize) -> Result<T, E
 #[cfg(test)]
 mod map_tests {
     use super::{decode_map, encode_boolean_cbor, encode_map};
-    use crate::{Error, Limits};
+    use crate::{Encoded, Error, Limits};
 
     /// Check map ordering, tags, nonminimal heads, and borrowed entry spans.
     /// Source: C SEQUENCE CBOR mapping. Version: 2026-10-30.
@@ -733,6 +998,54 @@ mod map_tests {
             encode_map(&[("x", value.clone()), ("x", value)], &limits),
             Err(Error::InvalidEncoding { .. })
         ));
+    }
+
+    /// Skip valid indefinite values and reject malformed chunks and map pairs.
+    /// Source: RFC 8949 section 3.2. Version: 2026-11-12.
+    /// Inputs: none. Returns: unit. Errors: assertion panic on failure.
+    /// Responsible: asn1c maintainers. History: indefinite map-value regression.
+    /// Example: `cargo test --manifest-path rust/asn1c-runtime/Cargo.toml indefinite_values`.
+    #[test]
+    fn indefinite_values() {
+        let limits = Limits::default();
+        let valid_items: &[&[u8]] = &[
+            &[0x9f, 0xf5, 0xff],
+            &[0xbf, 0x61, b'a', 0xf5, 0xff],
+            &[0x5f, 0x41, 0xa5, 0x40, 0xff],
+            &[0x7f, 0x61, b'a', 0x60, 0xff],
+            &[0x9f, 0x9f, 0xf4, 0xff, 0xff],
+        ];
+        for item in valid_items {
+            let mut wire = vec![0xa1, 0x61, b'x'];
+            wire.extend_from_slice(item);
+            let decoded = decode_map(&wire, &limits).unwrap();
+            assert_eq!(decoded.value[0].value, *item);
+            let encoded = Encoded {
+                bytes: item.to_vec(),
+                bit_len: item.len() * 8,
+            };
+            assert!(encode_map(&[("x", encoded)], &limits).is_ok(), "{item:?}");
+        }
+
+        let invalid_items: &[&[u8]] = &[
+            &[0x9f, 0x01],
+            &[0xbf, 0x61, b'a', 0xff],
+            &[0x5f, 0x61, b'a', 0xff],
+            &[0x5f, 0x5f, 0xff, 0xff],
+            &[0x7f, 0x61, 0xff, 0xff],
+            &[0x7f, 0x7f, 0xff, 0xff],
+            &[0xbf, 0x61, b'a', 0xf5],
+        ];
+        for item in invalid_items {
+            let mut wire = vec![0xa1, 0x61, b'x'];
+            wire.extend_from_slice(item);
+            assert!(decode_map(&wire, &limits).is_err(), "{item:?}");
+            let encoded = Encoded {
+                bytes: item.to_vec(),
+                bit_len: item.len() * 8,
+            };
+            assert!(encode_map(&[("x", encoded)], &limits).is_err(), "{item:?}");
+        }
     }
 }
 

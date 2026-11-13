@@ -602,7 +602,13 @@ CBOR uses a separate repository mapping for ASN.1 values. It is not an ASN.1
 encoding rule. Claims of complete deterministic encoding require checking more
 than shortest integer/length forms, including floating-point choices and map
 ordering under [RFC 8949 section 4.2](https://www.rfc-editor.org/rfc/rfc8949.html#section-4.2).
-This change does not establish blanket deterministic-CBOR conformance.
+This does not establish blanket deterministic-CBOR conformance. The
+[CBOR standards review](cbor-standards-review.md) records the current IETF
+baseline and supported profile. C REAL supports binary16/32/64 decoding and
+shortest exact encoding. INTEGER uses ordinary negative integers down to
+`-2^64` and minimal bignums beyond that range. Unknown-item scanning accepts
+indefinite containers, rejects malformed simple values and invalid chunks,
+and caps C nesting at 128 levels even with stack checks disabled.
 
 The generated converter accepts `-iber` and `-ider` as permissive BER-family
 input selectors and `-icer` as the strict CER input selector. Output supports `-oder` and `-ocer` for their respective

@@ -126,19 +126,21 @@ extern arg_t a1f_replace_me_with_proper_interface_arg;
 #define LOG(code, fmt, args...)                                          \
     do {                                                                 \
         int _save_errno = errno;                                         \
+        const char *src = arg->mod ? arg->mod->source_file_name          \
+                                   : "(no module)";                      \
         if(code < 0) {                                                   \
             if(arg->debug) {                                             \
                 arg->debug(code, "%s: " fmt " in %s (%s:%d)", __func__,  \
-                           ##args, arg->mod->source_file_name, __FILE__, \
+                           ##args, src, __FILE__,                        \
                            __LINE__);                                    \
             }                                                            \
         } else if(arg->eh) {                                             \
             if(arg->debug) {                                             \
                 arg->eh(code, fmt " in %s (%s:%d)", ##args,              \
-                        arg->mod->source_file_name, __FILE__, __LINE__); \
+                        src, __FILE__, __LINE__);                        \
             } else {                                                     \
                 arg->eh(code, fmt " in %s", ##args,                      \
-                        arg->mod->source_file_name);                     \
+                        src);                                            \
             }                                                            \
             errno = _save_errno;                                         \
         }                                                                \

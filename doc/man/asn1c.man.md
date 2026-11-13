@@ -1,8 +1,8 @@
 ---
 title: "asn1c(1) ASN.1 Compiler"
 author:
-  - "Lev Walkin <vlm@lionet.info>"
-  - "Mouse <5923577+mouse07410@users.noreply.github.com>"
+  - 'Lev Walkin \<vlm@lionet.info\>'
+  - 'Mouse \<5923577+mouse07410@users.noreply.github.com\>'
 date: "October 11, 2026"
 ---
 
@@ -340,6 +340,8 @@ See the `asn1c-usage.pdf` for details.
 | JER-MINIFIED | `jer_encode()` | JER | `jer_decode()` |
 | CBOR | `cbor_encode()` | CBOR | `cbor_decode()` |
 
+For CANONICAL-XER, call `xer_encode()` with `XER_F_CANONICAL`.
+
 CER encoding uses `cer_encode()` or `asn_encode(ATS_CER, ...)`; the generated
 converter accepts `-ocer` output. The C backend generates CER support by
 default, and the `ASN_DISABLE_CER_SUPPORT` build macro disables both the
@@ -447,7 +449,7 @@ for well-known tags (e.g., `CBOR_TAG_DATETIME_STRING`, `CBOR_TAG_URI`,
 
 **Decoding:** All asn1c CBOR decoders are *tag-transparent*: any number
 of leading tag headers are silently consumed before the underlying value
-is decoded.  No application changes are required to accept tagged data.
+is decoded. Applications must validate registered tag semantics as needed.
 The helper `cbor_skip_tags(buf, size)` (in `cbor_support.h`) returns the
 number of bytes occupied by leading tag headers, or -1 on error.
 When decoder code must skip a complete raw CBOR value, it should call
@@ -457,7 +459,12 @@ wrapper `cbor_skip_item(buf, size)` remains available for callers without
 decoder context.
 
 **Bignum tags:** Tags 2 and 3 are used internally by the INTEGER encoder
-and decoder for values that exceed the 64-bit signed range, per RFC 8949.
+and decoder for values beyond the ordinary major-type 0/1 range, per RFC 8949.
+
+Typed containers use definite lengths. REAL accepts binary16/32/64 and emits
+shortest exact widths; NaN is f9 7e 00. Maps retain definition order and do
+not claim deterministic key ordering. Raw item scanning accepts indefinite
+containers and imposes a 128-level nesting limit even with stack checks disabled.
 
 # EXIT STATUS
 
