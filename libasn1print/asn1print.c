@@ -96,7 +96,7 @@ asn1print(asn1p_t *asn, enum asn1print_flags flags) {
 
 	TQ_FOR(mod, &(asn->modules), mod_next) {
 		if(mod->_tags & MT_STANDARD_MODULE)
-			return 0; /* Ignore modules imported from skeletons */
+			continue; /* Ignore modules imported from skeletons */
 		if(modno++) safe_printf("\n");
 		asn1print_module(asn, mod, flags);
 	}
