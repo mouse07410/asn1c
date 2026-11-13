@@ -119,6 +119,7 @@ doc/docsrc/*.xdv
 
 # /libasn1fix/
 /libasn1fix/check_*
+!/libasn1fix/check_*.c
 
 # /libasn1parser/
 /libasn1parser/check_*
