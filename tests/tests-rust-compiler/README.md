@@ -1,5 +1,12 @@
 # Generated Rust compiler tests
 
+With GNU make (including Apple's make), Automake runs the three compiler test
+scripts serially to limit concurrent compiler workloads even under `make -j`.
+Each script defaults `CARGO_BUILD_JOBS` to 1; callers may override it.
+This reduces concurrency after
+external SIGKILLs were observed during a suite run; their cause is unknown.
+Existing failure assertions remain in place.
+
 `check-rust-backend.sh` exercises the first generated Rust slice in a temporary
 directory. Its generated conformance cases cover BOOLEAN, NULL, bounded and
 singleton INTEGER, and a full `i64`-range INTEGER with UPER. It checks CER

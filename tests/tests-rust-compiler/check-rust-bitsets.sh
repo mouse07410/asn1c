@@ -10,6 +10,10 @@
 
 set -eu
 
+# Bound Cargo concurrency by default; callers may select a different limit.
+CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-1}
+export CARGO_BUILD_JOBS
+
 top_srcdir=$(cd "${top_srcdir:-../..}" && pwd)
 top_builddir=$(cd "${top_builddir:-../..}" && pwd)
 test_srcdir="$top_srcdir/tests/tests-rust-compiler"

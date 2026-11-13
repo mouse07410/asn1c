@@ -1,4 +1,7 @@
 Changes since v1.5.3:
+	* Bound Rust compiler suite concurrency by ordering its scripts and defaulting
+	  Cargo to one build job, while retaining failure assertions. External
+	  SIGKILLs were observed during a suite run; their cause remains unknown.
 	* Review and integrate PRs #598, #600, and #601: avoid a signed sign-bit
 	  shift in compiler integer bounds, permit module lookups without a current
 	  IMPORTS context, and continue printing after standard modules. Strengthen

@@ -11,6 +11,10 @@ $(ASN1C):
 # here would override Automake's generated driver recipes for these tests.
 $(TEST_LOGS): $(ASN1C)
 
+# Serialize this directory without overriding Automake's implicit log recipes.
+# Explicit log dependencies prevent its suffix rules from creating test logs.
+.NOTPARALLEL:
+
 EXTRA_DIST = $(srcdir)/WideMixed.asn1 \
     $(srcdir)/WideOptional.asn1 \
     $(srcdir)/BoolDefaultsOnly.asn1 \
