@@ -1,8 +1,8 @@
 ---
 title: "asn1c(1) ASN.1 Compiler"
 author:
-  - "Lev Walkin <vlm@lionet.info>"
-  - "Mouse <5923577+mouse07410@users.noreply.github.com>"
+  - 'Lev Walkin \<vlm@lionet.info\>'
+  - 'Mouse \<5923577+mouse07410@users.noreply.github.com\>'
 date: "October 11, 2026"
 ---
 
@@ -339,6 +339,8 @@ See the `asn1c-usage.pdf` for details.
 | JER | `jer_encode()` | JER | `jer_decode()` |
 | JER-MINIFIED | `jer_encode()` | JER | `jer_decode()` |
 | CBOR | `cbor_encode()` | CBOR | `cbor_decode()` |
+
+For CANONICAL-XER, call `xer_encode()` with `XER_F_CANONICAL`.
 
 CER encoding uses `cer_encode()` or `asn_encode(ATS_CER, ...)`; the generated
 converter accepts `-ocer` output. The C backend generates CER support by

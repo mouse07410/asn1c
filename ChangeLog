@@ -1,4 +1,7 @@
 Changes since v1.5.3:
+	* Adapt the documentation fixes from upstream vlm/asn1c PR #555 by
+	  @theirix (2026-11-13), escaping author email addresses in generated
+	  manpages and documenting the XER_F_CANONICAL flag.
 	* Apply rustfmt to the Rust runtime's BER/CER re-exports so the Rust CI
 	  formatting gate passes. This changes no codec behavior or security checks.
 	* Review CBOR against RFC 8949 and serialization draft revision 12. Add

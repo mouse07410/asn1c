@@ -502,6 +502,9 @@ T}@T{
 T}
 .TE
 .PP
+For CANONICAL\-XER, call \f[CR]xer_encode()\f[R] with
+\f[CR]XER_F_CANONICAL\f[R].
+.PP
 CER encoding uses \f[CR]cer_encode()\f[R] or
 \f[CR]asn_encode(ATS_CER, ...)\f[R]; the generated converter accepts
 \f[CR]\-ocer\f[R] output.
@@ -651,14 +654,16 @@ The compatibility wrapper \f[CR]cbor_skip_item(buf, size)\f[R] remains
 available for callers without decoder context.
 .PP
 \f[B]Bignum tags:\f[R] Tags 2 and 3 are used internally by the INTEGER
-encoder and decoder for values beyond the ordinary major-type 0/1 range, per
-RFC 8949.
+encoder and decoder for values beyond the ordinary major\-type 0/1
+range, per RFC 8949.
 .PP
-Typed containers use definite lengths. REAL accepts binary16/32/64 and emits
-shortest exact widths; NaN is f9 7e 00. Maps retain definition order and do
-not claim deterministic key ordering. Raw item scanning accepts indefinite
-containers and imposes a 128-level nesting limit even with stack checks disabled.
-
+Typed containers use definite lengths.
+REAL accepts binary16/32/64 and emits shortest exact widths; NaN is f9
+7e 00.
+Maps retain definition order and do not claim deterministic key
+ordering.
+Raw item scanning accepts indefinite containers and imposes a 128\-level
+nesting limit even with stack checks disabled.
 .SH EXIT STATUS
 .TP
 \f[B]0\f[R]
@@ -686,8 +691,5 @@ A FATAL diagnostic always gives a non\-zero exit status.
 .SH SEE ALSO
 \f[CR]unber\f[R](1), \f[CR]enber\f[R](1).
 .SH AUTHORS
-Lev Walkin \c
-.MT vlm@lionet.info
-.ME \c; Mouse \c
-.MT 5923577+mouse07410@users.noreply.github.com
-.ME \c.
+Lev Walkin <vlm\(atlionet.info>; Mouse
+<5923577+mouse07410\(atusers.noreply.github.com>.
