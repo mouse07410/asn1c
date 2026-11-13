@@ -640,7 +640,7 @@ Symbolic constants for well\-known tags (e.g.,
 \f[B]Decoding:\f[R] All asn1c CBOR decoders are
 \f[I]tag\-transparent\f[R]: any number of leading tag headers are
 silently consumed before the underlying value is decoded.
-No application changes are required to accept tagged data.
+Applications must validate registered tag semantics as needed.
 The helper \f[CR]cbor_skip_tags(buf, size)\f[R] (in
 \f[CR]cbor_support.h\f[R]) returns the number of bytes occupied by
 leading tag headers, or \-1 on error.
@@ -651,8 +651,14 @@ The compatibility wrapper \f[CR]cbor_skip_item(buf, size)\f[R] remains
 available for callers without decoder context.
 .PP
 \f[B]Bignum tags:\f[R] Tags 2 and 3 are used internally by the INTEGER
-encoder and decoder for values that exceed the 64\-bit signed range, per
+encoder and decoder for values beyond the ordinary major-type 0/1 range, per
 RFC 8949.
+.PP
+Typed containers use definite lengths. REAL accepts binary16/32/64 and emits
+shortest exact widths; NaN is f9 7e 00. Maps retain definition order and do
+not claim deterministic key ordering. Raw item scanning accepts indefinite
+containers and imposes a 128-level nesting limit even with stack checks disabled.
+
 .SH EXIT STATUS
 .TP
 \f[B]0\f[R]
