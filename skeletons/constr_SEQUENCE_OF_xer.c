@@ -154,6 +154,7 @@ SEQUENCE_OF_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr,
     }
     size_t mlen = mname ? strlen(mname) : 0;
     int xcan = (flags & XER_F_CANONICAL);
+    int emitted = 0;
     int i;
 
     if(!sptr) ASN__ENCODE_FAILED;
@@ -182,7 +183,10 @@ SEQUENCE_OF_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr,
             ASN__CALLBACK3("<", 1, mname, mlen, ">", 1);
         }
 
-        tmper = elm->type->op->xer_encoder(elm->type, memb_ptr, ilevel + 1,
+        if(!xcan && specs->as_XMLValueList == 1)
+            ASN__TEXT_INDENT(1, ilevel + 1);
+        tmper = elm->type->op->xer_encoder(elm->type, memb_ptr,
+                                           ilevel + (specs->as_XMLValueList != 2),
                                            flags, cb, app_key);
         if(tmper.encoded == -1) {
             XER_ENCODER_RECURSION_DEPTH_DEC();
@@ -192,8 +196,22 @@ SEQUENCE_OF_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr,
         if(tmper.encoded == 0 && specs->as_XMLValueList) {
             const char *name = elm->type->xml_tag;
             size_t len = strlen(name);
-            if(!xcan) ASN__TEXT_INDENT(1, ilevel + 1);
             ASN__CALLBACK3("<", 1, name, len, "/>", 2);
+        }
+
+        emitted = 1;
+
+        if(!xcan && specs->as_XMLValueList == 2) {
+            /*
+             * Value-list of CHOICE: keep the blank separator line that
+             * follows each element, indented to the container's level.
+             * The CHOICE encoder already terminated the element line.
+             */
+            int sep_level = ilevel - 1;
+            int sep_i;
+            if(sep_level < 0) sep_level = 0;
+            for(sep_i = 0; sep_i < sep_level; sep_i++)
+                ASN__CALLBACK("    ", 4);
         }
 
         if(mname) {
@@ -209,6 +227,15 @@ SEQUENCE_OF_encode_xer(const asn_TYPE_descriptor_t *td, const void *sptr,
                 ASN__CALLBACK3("</", 2, mname, mlen, ">", 1);
             }
         }
+    }
+
+    if(!xcan && emitted && specs->as_XMLValueList) {
+        /*
+         * Terminate the last element line (mode 1) or the last blank
+         * separator line (mode 2) so the container's closing tag starts
+         * on a fresh line, indented by its parent.
+         */
+        ASN__CALLBACK("\n", 1);
     }
 
     XER_ENCODER_RECURSION_DEPTH_DEC();
