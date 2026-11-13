@@ -150,6 +150,12 @@ universal OCTET STRING tags for the fragments; BIT STRING fragments use their
 universal BIT STRING tag. BER input also preserves legacy opaque `ANY`
 containers under the bounds described in that audit.
 
+The C BER decoder validates each primitive BIT STRING fragment: its content
+must include an unused-bit count from 0 through 7, and an empty payload must
+have count zero. Only the final component may have unused bits (X.690 8.6.4).
+These checks also apply to nested constructed values and incremental input;
+malformed fragments fail decoding instead of silently changing the value.
+
 In Rust output mode, CER supports top-level BOOLEAN, NULL, finite
 nonextensible INTEGER values whose bounds fit signed 64-bit integers, direct
 nonextensible ENUMERATED values fitting signed 64-bit integers, and direct

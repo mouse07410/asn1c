@@ -1,4 +1,8 @@
 Changes since v1.5.3:
+	* Reject BER constructed BIT STRING values with unused bits in a non-final
+	  fragment (issue #602), including nested and incremental input. Validate
+	  each primitive fragment count before concatenation to prevent silent
+	  value changes and masked malformed fragments.
 	* Adapt the documentation fixes from upstream vlm/asn1c PR #555 by
 	  @theirix (2026-11-13), escaping author email addresses in generated
 	  manpages and documenting the XER_F_CANONICAL flag.
