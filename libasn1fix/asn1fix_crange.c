@@ -1437,7 +1437,11 @@ asn1f_real_range_from_WCOMPS(const char *dbg_name,
         asn1cnst_range_t *tmprange = asn1constraint_compute_constraint_range(
             dbg_name, ASN_BASIC_INTEGER, el->elements[0], ACT_EL_RANGE,
             *dst_range, 0, CPR_noflags);
-        assert(tmprange);
+        if(!tmprange) {
+            FREE_MEB();
+            _range_free(range);
+            return NULL;	/* Keep errno (EPERM from the rejected range). */
+        }
         if(tmprange->incompatible) {
             _range_free(tmprange);
             FREE_MEB();
@@ -2019,6 +2023,21 @@ asn1constraint_compute_constraint_range(
     case RFR_INCOMPATIBLE:
 		range->incompatible = 1;
 		return range;
+	}
+
+	/*
+	 * A multi-character FROM("abc") is a set of singleton elements
+	 * (el_count > 0) with deliberately inverted parent edges
+	 * (left = max, right = min).  Only a simple interval has meaningful
+	 * parent edges here, so restrict the emptiness check to el_count == 0.
+	 */
+	if(range->el_count == 0
+	   && _edge_compare(&range->left, &range->right) > 0) {
+		FATAL("Constraint range %s at line %d is empty",
+		      _range_string(range), range->left.lineno);
+		_range_free(range);
+		errno = EPERM;
+		return NULL;
 	}
 
 	if(minmax) {
