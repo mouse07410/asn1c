@@ -81,6 +81,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 failures=0
+deadline=${WATCHDOG_DEADLINE:-10}
 
 # Purpose: Write the one-type ASN.1 schema used by a test case.
 # Original source: Added for ASN1-0088 reversed range regression coverage.
@@ -153,10 +154,11 @@ watchdog () {
               kill "$sleep_pid" 2>/dev/null || :
           fi' HUP INT TERM
 
-    watchdog_sleep 10 || exit 0
+    watchdog_sleep "$deadline" || exit 0
 
     # The compiler may have exited while a cancel was being delivered.
     kill -0 "$compiler_pid" 2>/dev/null || exit 0
+    [ ! -f "$cancel_file" ] || exit 0
     : > "$marker"
     kill -TERM "$compiler_pid" 2>/dev/null || exit 0
     # Cancel-aware grace: if the compiler died on TERM, the parent cancels
@@ -171,7 +173,7 @@ watchdog () {
 # Version/date: 2, 2026-11-16.
 # Inputs: NAME is the temporary filename stem for input and output files.
 # Returns: No value; sets status to compiler status or 124 on a real
-#          deadline (marker present and a signal wait status).
+#          deadline (marker present, whatever the wait status).
 # Exceptions: The caller handles non-zero status and timeout outcomes.
 # Responsible party: asn1c test maintainers.
 # History: Cancels through a file as well as a signal; keeps a normal
@@ -216,9 +218,11 @@ run_asn1c () {
     active_watchdog_pid=
     active_compiler_pid=
     active_cancel=
-    # A timer kill yields 143 (TERM) or 137 (KILL); a compiler that
-    # exited on its own keeps its real status even if the marker raced.
-    if [ -f "$timeout_marker" ] && [ "$status" -ge 128 ]; then
+    # The marker is written only while the compiler is alive past the
+    # deadline, so it is authoritative even if the compiler then caught TERM
+    # and exited 0 or 65. Cancellation is checked before the marker, so a
+    # compiler that finished in time keeps its real status.
+    if [ -f "$timeout_marker" ]; then
         status=124
     fi
 }
@@ -240,7 +244,7 @@ check_invalid () {
     run_asn1c "$name"
 
     if [ "$status" -eq 124 ]; then
-        echo "FAIL: $name ($schema): timed out after 10s (asn1c did not terminate)"
+        echo "FAIL: $name ($schema): timed out after ${deadline}s (asn1c did not terminate)"
         cat "$TMPDIR_TEST/$name.err" >&2
         failures=$((failures + 1))
     elif [ "$status" -ge 128 ]; then
@@ -278,7 +282,7 @@ check_valid () {
     run_asn1c "$name"
 
     if [ "$status" -eq 124 ]; then
-        echo "FAIL: $name ($schema): timed out after 10s (asn1c did not terminate)"
+        echo "FAIL: $name ($schema): timed out after ${deadline}s (asn1c did not terminate)"
         cat "$TMPDIR_TEST/$name.err" >&2
         failures=$((failures + 1))
     elif [ "$status" -ge 128 ]; then
@@ -293,6 +297,38 @@ check_valid () {
         echo "PASS: $name ($schema)"
     fi
 }
+
+# Watchdog self-test: fake compilers prove that a deadline expiry is always
+# reported as a timeout, even when the compiler handles TERM and exits
+# normally, and that a prompt exit keeps its own status.
+selftest_case () {
+    label=$1
+    body=$2
+    expect=$3
+    fake="$TMPDIR_TEST/fake-$label.sh"
+    printf '#!/bin/sh\n%s\n' "$body" > "$fake"
+    chmod +x "$fake"
+    write_schema "$label" 'INTEGER'
+    saved_asn1c=$ASN1C saved_deadline=$deadline
+    ASN1C=$fake deadline=1
+    run_asn1c "$label"
+    ASN1C=$saved_asn1c deadline=$saved_deadline
+    if [ "$status" -eq "$expect" ]; then
+        echo "PASS: watchdog $label: status $status"
+    else
+        echo "FAIL: watchdog $label: expected $expect, got $status"
+        failures=$((failures + 1))
+    fi
+}
+
+selftest_case prompt-exit 'exit 65' 65
+selftest_case hang-term 'sleep 30 & wait' 124
+selftest_case graceful-term-65 \
+    'trap "exit 65" TERM; sleep 30 & wait' 124
+selftest_case graceful-term-0 \
+    'trap "exit 0" TERM; sleep 30 & wait' 124
+selftest_case ignore-term-kill \
+    'trap "" TERM; while :; do sleep 1; done' 124
 
 # Value and SIZE ranges whose lower bound exceeds the upper bound.
 check_invalid value-reversed 'INTEGER (5..1)'
