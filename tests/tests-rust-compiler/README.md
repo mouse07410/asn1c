@@ -230,6 +230,19 @@ and deterministic regeneration. Runtime-name overlaps are positive compilation
 cases. `LIB`, `Core`, and `Asn1cRuntime` modules are checked for safe filenames
 and pass an offline Cargo check.
 
+`check-rust-constraint-ranges.sh` runs the Rust CLI on reversed INTEGER, SIZE,
+FROM, REAL-component, union, and extension ranges and verifies the shared
+frontend rejects them with exit 65 before publishing a crate. The Rust CLI
+rejects `-fno-constraints` as a C-only option, so that switch cannot bypass the
+shared validation. On builds with `HAVE_128_BIT_INT`, valid native-width
+extrema and values just outside i64 must reach the Rust backend and receive its
+normal unsupported-range diagnostic before publication. This reflects the
+generated Rust INTEGER representation's current i64 bound; it does not imply
+that the Rust runtime supports i128 values. A generated UPER/APER crate checks
+round trips at signed i64 extrema and their neighbours, narrow-range
+constructors, empty input, and a spare constrained-integer code under strict
+Clippy settings.
+
 The harness is registered in the normal test suite. It can also be run from a
 configured build tree with:
 

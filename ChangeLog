@@ -2,6 +2,21 @@ Changes since v1.5.3:
 	* Bound Rust compiler suite concurrency by ordering its scripts and defaulting
 	  Cargo to one build job, while retaining failure assertions. External
 	  SIGKILLs were observed during a suite run; their cause remains unknown.
+	* Run the reversed-range compiler regression without GNU timeout, using
+	  a POSIX sleep/kill watchdog with a ten-second deadline and bounded
+	  termination grace; clean up compiler and timer children on interruption.
+	  Build a missing compiler before focused or parallel runs of this check.
+	* Guard constraint endpoint adjustments using the actual compiler integer
+	  limits (issue #607, PR #608), preventing signed overflow and unbounded
+	  range allocation at 128-bit extrema. Test native and 64-bit boundaries.
+	* Reject reversed value, SIZE, and FROM intervals before intersection
+	  (issue #605, PR #606), and propagate invalid REAL component ranges
+	  without asserting. This prevents malformed schemas aborting the compiler.
+	* Exercise issues #605 and #607 through actual Rust crate generation:
+	  reject reversed shared-frontend ranges and valid compiler-width INTEGER
+	  bounds that exceed Rust's i64 representation before output publication.
+	  Round-trip signed i64 extrema and neighbours through generated UPER/APER;
+	  this does not add i128 support to the Rust runtime.
 	* Review and integrate PRs #598, #600, and #601: avoid a signed sign-bit
 	  shift in compiler integer bounds, permit module lookups without a current
 	  IMPORTS context, and continue printing after standard modules. Strengthen

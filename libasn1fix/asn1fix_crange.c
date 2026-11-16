@@ -702,7 +702,7 @@ _range_split(asn1cnst_range_t *ra, const asn1cnst_range_t *rb) {
 		nr->left = ra->left;
 		nr->right = rb->left;
 		if(nr->right.type == ARE_VALUE) {
-			if(nr->right.value == INTMAX_MIN) {
+			if(nr->right.value == ASN_INTEGER_MIN) {
 				/* We've hit the limit here. */
 				break;
 			}
@@ -720,7 +720,7 @@ _range_split(asn1cnst_range_t *ra, const asn1cnst_range_t *rb) {
 		nr->left = rb->right;
 		nr->right = ra->right;
 		if(nr->left.type == ARE_VALUE) {
-			if(nr->left.value == INTMAX_MAX) {
+			if(nr->left.value == ASN_INTEGER_MAX) {
 				/* We've hit the limit here. */
 				break;
 			}
@@ -1101,14 +1101,14 @@ _range_subtract_interval(asn1cnst_range_t *result,
 	}
 	if(cut->left.type == ARE_VALUE
 	&& _edge_compare(&source->left, &cut->left) < 0
-	&& cut->left.value > INTMAX_MIN) {
+	&& cut->left.value > ASN_INTEGER_MIN) {
 		asn1cnst_edge_t left_right = cut->left;
 		left_right.value--;
 		if(_range_add_interval(result, &source->left, &left_right)) return -1;
 	}
 	if(cut->right.type == ARE_VALUE
 	&& _edge_compare(&source->right, &cut->right) > 0
-	&& cut->right.value < INTMAX_MAX) {
+	&& cut->right.value < ASN_INTEGER_MAX) {
 		asn1cnst_edge_t right_left = cut->right;
 		right_left.value++;
 		if(_range_add_interval(result, &right_left, &source->right)) return -1;
@@ -1437,7 +1437,11 @@ asn1f_real_range_from_WCOMPS(const char *dbg_name,
         asn1cnst_range_t *tmprange = asn1constraint_compute_constraint_range(
             dbg_name, ASN_BASIC_INTEGER, el->elements[0], ACT_EL_RANGE,
             *dst_range, 0, CPR_noflags);
-        assert(tmprange);
+        if(!tmprange) {
+            FREE_MEB();
+            _range_free(range);
+            return NULL;	/* Keep errno (EPERM from the rejected range). */
+        }
         if(tmprange->incompatible) {
             _range_free(tmprange);
             FREE_MEB();
@@ -2021,6 +2025,21 @@ asn1constraint_compute_constraint_range(
 		return range;
 	}
 
+	/*
+	 * A multi-character FROM("abc") is a set of singleton elements
+	 * (el_count > 0) with deliberately inverted parent edges
+	 * (left = max, right = min).  Only a simple interval has meaningful
+	 * parent edges here, so restrict the emptiness check to el_count == 0.
+	 */
+	if(range->el_count == 0
+	   && _edge_compare(&range->left, &range->right) > 0) {
+		FATAL("Constraint range %s at line %d is empty",
+		      _range_string(range), range->left.lineno);
+		_range_free(range);
+		errno = EPERM;
+		return NULL;
+	}
+
 	if(minmax) {
 		asn1cnst_range_t *clone;
 
@@ -2133,6 +2152,81 @@ check_intersection_allocation_failure(void) {
 }
 
 /**
+ * Purpose: Verify subtraction and splitting immediately around integer bounds.
+ * Original source: Issue #607 / PR #608 independent boundary regression probe.
+ * Version/date: 1, 2026-11-16.
+ * Parameters: None.
+ * Returns: No value; assertions fail if either operation loses a boundary part.
+ * Exceptions: Allocation failures or incorrect pieces fail the unit test.
+ * Author: asn1c maintainers.
+ * History: Added to retain the UBSan boundary probe as a permanent regression.
+ * Example: Called at the start of the check_crange unit-test main.
+ */
+static void
+check_integer_boundary_pieces(void) {
+	asn1cnst_range_t *source = _range_new();
+	asn1cnst_range_t *cut = _range_new();
+	asn1cnst_range_t *out = _range_new();
+
+	assert(source && cut && out);
+#ifdef HAVE_128_BIT_INT
+	/* These finite values sit just outside intmax_t but remain in asn1c's type. */
+	source->left.type = ARE_VALUE;
+	source->left.value = (asn1c_integer_t)INTMAX_MIN - 1;
+	source->right.type = ARE_VALUE;
+	source->right.value = (asn1c_integer_t)INTMAX_MAX + 1;
+	cut->left.type = ARE_VALUE;
+	cut->left.value = INTMAX_MIN;
+	cut->right.type = ARE_VALUE;
+	cut->right.value = INTMAX_MAX;
+
+	/* Subtraction must preserve the two values outside the cut. */
+	assert(_range_subtract_interval(out, source, cut) == 0);
+	assert(out->el_count == 2);
+	assert(out->elements[0]->left.value == (asn1c_integer_t)INTMAX_MIN - 1);
+	assert(out->elements[0]->right.value == (asn1c_integer_t)INTMAX_MIN - 1);
+	assert(out->elements[1]->left.value == (asn1c_integer_t)INTMAX_MAX + 1);
+	assert(out->elements[1]->right.value == (asn1c_integer_t)INTMAX_MAX + 1);
+
+	/* Splitting must retain the lower piece, cut, and upper piece in order. */
+	_range_free(out);
+	out = _range_split(source, cut);
+	assert(out);
+	assert(out->el_count == 3);
+	assert(out->elements[0]->left.value == (asn1c_integer_t)INTMAX_MIN - 1);
+	assert(out->elements[0]->right.value == (asn1c_integer_t)INTMAX_MIN - 1);
+	assert(out->elements[1]->left.value == INTMAX_MIN);
+	assert(out->elements[1]->right.value == INTMAX_MAX);
+	assert(out->elements[2]->left.value == (asn1c_integer_t)INTMAX_MAX + 1);
+	assert(out->elements[2]->right.value == (asn1c_integer_t)INTMAX_MAX + 1);
+	_range_free(out);
+	out = _range_new();
+	assert(out);
+#endif
+
+	/* Subtracting every representable integer must leave no out-of-domain pieces. */
+	source->left.type = ARE_MIN;
+	source->right.type = ARE_MAX;
+	cut->left.type = ARE_VALUE;
+	cut->left.value = ASN_INTEGER_MIN;
+	cut->right.type = ARE_VALUE;
+	cut->right.value = ASN_INTEGER_MAX;
+	assert(_range_subtract_interval(out, source, cut) == 0);
+	assert(out->el_count == 0);
+	_range_free(out);
+
+	/* The matching split contains exactly the representable integer range. */
+	out = _range_split(source, cut);
+	assert(out);
+	assert(out->el_count == 1);
+	assert(out->elements[0]->left.value == ASN_INTEGER_MIN);
+	assert(out->elements[0]->right.value == ASN_INTEGER_MAX);
+	_range_free(out);
+	_range_free(source);
+	_range_free(cut);
+}
+
+/**
  * Purpose: Run internal interval split and allocation-failure regressions.
  * Original source: asn1c range-computation unit-test entry point.
  * Version: Updated 2026-11-01 for ISO646String alias coverage.
@@ -2147,6 +2241,7 @@ int main() {
     asn1cnst_range_t *ra = _range_new();
     asn1cnst_range_t *rb = _range_new();
 
+	check_integer_boundary_pieces();
 	assert(check_intersection_allocation_failure() == 0);
 	/* ISO646 shares VisibleString's alphabet; unknown known-multiplier
 	 * kinds must return a null range instead of aborting the fixer. */
@@ -2211,8 +2306,8 @@ int main() {
     ra->left.type = ARE_MIN;
     ra->right.type = ARE_VALUE; ra->right.value = 20;
 
-    /* (<INTMAX_MIN>..15) */
-    rb->left.type = ARE_VALUE; rb->left.value = INTMAX_MIN;
+    /* (<ASN_INTEGER_MIN>..15) */
+    rb->left.type = ARE_VALUE; rb->left.value = ASN_INTEGER_MIN;
     rb->right.type = ARE_VALUE; rb->right.value = 15;
 
     r = _range_split(ra, rb);
@@ -2228,7 +2323,7 @@ int main() {
     fprintf(stderr, "[0].left = %s\n", _edge_string(&r->elements[0]->left));
     fprintf(stderr, "[0].right = %s\n", _edge_string(&r->elements[0]->right));
     assert(r->elements[0]->left.type == ARE_VALUE);
-    assert(r->elements[0]->left.value == INTMAX_MIN);
+    assert(r->elements[0]->left.value == ASN_INTEGER_MIN);
     assert(r->elements[0]->right.type == ARE_VALUE);
     assert(r->elements[0]->right.value == 15);
 

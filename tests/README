@@ -4,6 +4,16 @@ tests-c-compiler     - C code compiles and runs, and produces expected result
 tests-skeletons      - "skeletons" code primitives are correct
 tests-randomized     - fuzz-testing of DER/OER/PER/XER codecs
 
+Reversed constraint range regression (2026-11-16)
+------------------------------------------------
+The reversed-range check rejects malformed value, SIZE, FROM, and REAL component
+ranges and accepts neighbouring valid forms. A POSIX shell watchdog bounds each
+compiler invocation to ten seconds without requiring timeout or gtimeout; an
+unresponsive compiler receives TERM followed by KILL after a two-second grace.
+The focused target builds a missing compiler before running, including with -j:
+
+    make -C tests/tests-asn1c-compiler -j4 check TESTS=check-reversed-ranges.sh
+
 Generated constraint recursion regression (2026-10-23)
 ----------------------------------------------------
 The randomized OCTET STRING value-constraint case previously stalled inside
