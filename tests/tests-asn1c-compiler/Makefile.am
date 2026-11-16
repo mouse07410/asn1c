@@ -8,6 +8,7 @@ dist_check_SCRIPTS += check-xer-text-bitstring.sh
 dist_check_SCRIPTS += check-issue-592.sh
 dist_check_SCRIPTS += check-standard-module-order.sh
 dist_check_SCRIPTS += check-reversed-ranges.sh
+dist_check_SCRIPTS += check-boundary-ranges.sh
 TESTS_ENVIRONMENT= top_srcdir=${top_srcdir} top_builddir=${top_builddir} \
 	CC="$(CC)"
 TESTS = $(dist_check_SCRIPTS)

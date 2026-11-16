@@ -49,10 +49,16 @@ trap 'rm -rf "$TMPDIR_TEST"' EXIT
 
 failures=0
 
-# write_schema NAME SCHEMA
-#
-# Writes a one-type schema whose type is SCHEMA. printf is used because the
-# FROM cases contain double quotes.
+# Purpose: Write the one-type ASN.1 schema used by a test case.
+# Original source: Added for ASN1-0088 reversed range regression coverage.
+# Version/date: 1, 2026-11-16.
+# Inputs: NAME is the temporary filename stem; SCHEMA is the type expression.
+# Returns: No value; writes NAME.asn1 beneath TMPDIR_TEST.
+# Exceptions: A failed printf or write exits because the script uses set -e.
+# Responsible party: asn1c test maintainers.
+# History: Added with the reversed constraint range checks.
+# Example: write_schema value-reversed 'INTEGER (5..1)'
+# printf is used because FROM cases contain double quotes.
 write_schema () {
     name=$1
     schema=$2
@@ -61,10 +67,15 @@ write_schema () {
         > "$TMPDIR_TEST/$name.asn1"
 }
 
-# run_asn1c NAME
-#
-# Runs `asn1c -E -F` on the schema for NAME and stores the exit status in
-# `status`.
+# Purpose: Run asn1c on a generated schema with a ten-second time limit.
+# Original source: Added for ASN1-0088 reversed range regression coverage.
+# Version/date: 1, 2026-11-16.
+# Inputs: NAME is the temporary filename stem for input and output files.
+# Returns: No value; sets status to the selected timeout command's exit status.
+# Exceptions: The caller handles non-zero status and timeout outcomes.
+# Responsible party: asn1c test maintainers.
+# History: Accepts either timeout or gtimeout for supported host platforms.
+# Example: run_asn1c value-reversed
 run_asn1c () {
     name=$1
 
@@ -75,10 +86,15 @@ run_asn1c () {
     set -e
 }
 
-# check_invalid NAME SCHEMA
-#
-# Requires `-E -F` to fail cleanly: exit 65, not a timeout, not a signal, and
-# with the "empty range" diagnostic on stderr.
+# Purpose: Assert a reversed range fails with the expected diagnostic.
+# Original source: Added for ASN1-0088 reversed range regression coverage.
+# Version/date: 1, 2026-11-16.
+# Inputs: NAME is the temporary filename stem; SCHEMA is the type expression.
+# Returns: No value; increments failures when any assertion does not hold.
+# Exceptions: Reports failure and continues with subsequent test cases.
+# Responsible party: asn1c test maintainers.
+# History: Checks exit 65, signal/timeout distinction, and empty range text.
+# Example: check_invalid value-reversed 'INTEGER (5..1)'
 check_invalid () {
     name=$1
     schema=$2
@@ -108,9 +124,15 @@ check_invalid () {
     fi
 }
 
-# check_valid NAME SCHEMA
-#
-# Requires `-E -F` to accept the schema: exit 0, not a timeout, not a signal.
+# Purpose: Assert a valid neighboring range is accepted.
+# Original source: Added for ASN1-0088 reversed range regression coverage.
+# Version/date: 1, 2026-11-16.
+# Inputs: NAME is the temporary filename stem; SCHEMA is the type expression.
+# Returns: No value; increments failures when any assertion does not hold.
+# Exceptions: Reports failure and continues with subsequent test cases.
+# Responsible party: asn1c test maintainers.
+# History: Keeps valid boundary forms covered with reversed range cases.
+# Example: check_valid value-equal 'INTEGER (5..5)'
 check_valid () {
     name=$1
     schema=$2

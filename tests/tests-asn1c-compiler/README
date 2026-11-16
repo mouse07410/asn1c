@@ -51,3 +51,7 @@ make -C tests/tests-asn1c-compiler check, including the full parsing inventory.
 The reversed-range regression checks malformed value, SIZE, FROM, union,
 extension, and REAL component intervals for a normal diagnostic exit, with
 valid neighbouring intervals and alphabet sets as controls (issue #605).
+
+The boundary-range regression checks termination at the compiler integer
+limits and neighbouring bounds (issue #607). The range regressions require
+GNU coreutils timeout (or gtimeout on macOS) to bound malformed-input runs.

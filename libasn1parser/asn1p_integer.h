@@ -34,6 +34,25 @@ typedef	__int128 asn1c_integer_t;
 typedef	intmax_t asn1c_integer_t;
 #endif
 
+/*
+ * Limits of asn1c_integer_t. Code that adjusts a range endpoint by one must
+ * compare against these, not against INTMAX_MIN/INTMAX_MAX: the two agree only
+ * in an intmax_t build, and in the 128-bit build the INTMAX_* guards let the
+ * increment of ASN_INTEGER_MAX (or the decrement of ASN_INTEGER_MIN) through,
+ * which is signed overflow.
+ */
+#define ASN_INTEGER_BITS (8 * sizeof(asn1c_integer_t))
+/*
+ * The largest value of the signed type, built without shifting into the
+ * sign bit: shifting a signed 1 by (bits - 1) places is undefined because
+ * the result, 2^(bits-1), is not representable. Shifting by (bits - 2)
+ * keeps every intermediate value representable, and doubling into the last
+ * step stays within the type.
+ */
+#define ASN_INTEGER_MAX \
+    ((((asn1c_integer_t)1 << (ASN_INTEGER_BITS - 2)) - 1) * 2 + 1)
+#define ASN_INTEGER_MIN (-(ASN_INTEGER_MAX)-1)
+
 int asn1p_atoi(const char *ptr, asn1c_integer_t *r_value);
 const char *asn1p_itoa(asn1c_integer_t value);   /* Ptr to a static buf */
 /*

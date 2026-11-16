@@ -1,4 +1,7 @@
 Changes since v1.5.3:
+	* Guard constraint endpoint adjustments using the actual compiler integer
+	  limits (issue #607, PR #608), preventing signed overflow and unbounded
+	  range allocation at 128-bit extrema. Test native and 64-bit boundaries.
 	* Reject reversed value, SIZE, and FROM intervals before intersection
 	  (issue #605, PR #606), and propagate invalid REAL component ranges
 	  without asserting. This prevents malformed schemas aborting the compiler.
