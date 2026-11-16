@@ -5,6 +5,11 @@ Changes since v1.5.3:
 	* Reject reversed value, SIZE, and FROM intervals before intersection
 	  (issue #605, PR #606), and propagate invalid REAL component ranges
 	  without asserting. This prevents malformed schemas aborting the compiler.
+	* Exercise issues #605 and #607 through actual Rust crate generation:
+	  reject reversed shared-frontend ranges and valid compiler-width INTEGER
+	  bounds that exceed Rust's i64 representation before output publication.
+	  Round-trip signed i64 extrema and neighbours through generated UPER/APER;
+	  this does not add i128 support to the Rust runtime.
 	* Review and integrate PRs #598, #600, and #601: avoid a signed sign-bit
 	  shift in compiler integer bounds, permit module lookups without a current
 	  IMPORTS context, and continue printing after standard modules. Strengthen

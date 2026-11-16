@@ -1,4 +1,5 @@
-dist_check_SCRIPTS = check-rust-backend.sh check-rust-aliases.sh check-rust-bitsets.sh
+dist_check_SCRIPTS = check-rust-backend.sh check-rust-aliases.sh check-rust-bitsets.sh \
+    check-rust-constraint-ranges.sh
 TESTS = $(dist_check_SCRIPTS)
 TESTS_ENVIRONMENT = top_srcdir=$(top_srcdir) top_builddir=$(top_builddir)
 
@@ -35,6 +36,7 @@ EXTRA_DIST = $(srcdir)/WideMixed.asn1 \
     $(srcdir)/bool_xer_conformance.rs \
     $(srcdir)/bool_wide_conformance.rs \
     $(srcdir)/bool_owned_conformance.rs \
+    $(srcdir)/rust_constraint_ranges_conformance.rs \
     $(srcdir)/c_boolean_storage.c \
     $(srcdir)/CborSlice.asn1 \
     $(srcdir)/CborSequence.asn1 \
