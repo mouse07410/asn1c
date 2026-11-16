@@ -3945,55 +3945,40 @@ emit_single_member_PER_constraint(arg_t *arg, asn1cnst_range_t *range, int alpha
 
     if(range->left.type == ARE_VALUE) {
 		if(range->right.type == ARE_VALUE) {
-			asn1c_integer_t cover = 1;
-			asn1c_integer_t r = 1 + range->right.value
-					      - range->left.value;
 			size_t rbits;	/* Value range bits */
 			ssize_t ebits;	/* Value effective range bits */
 
-			if(range->empty_constraint)
-				r = 0;
-
 			if(alphabetsize) {
 				/* X.691: 27.5.2 */
-				r = PER_FROM_alphabet_characters(range);
-			}
-
-			/* Compute real constraint */
-			for(rbits = 0; rbits < (8 * sizeof(r)); rbits++) {
-				if(r <= cover)
-					break;
-				cover *= 2;	/* Can't do shifting */
-				if(cover < 0) {
-					FATAL("Constraint at line %d too wide "
-						"for %d-bits integer type",
-						arg->expr->_lineno,
-						sizeof(r) * 8);
-					rbits = sizeof(r);
-					break;
-				}
+				asn1c_integer_t n =
+					PER_FROM_alphabet_characters(range);
+				rbits = (n > 0)
+					    ? asn1p_unsigned_bit_length(
+						  (asn1c_uinteger_t)(n - 1))
+					    : 0;
+			} else if(range->empty_constraint) {
+				rbits = 0;
+			} else {
+				/*
+				 * The count is right - left + 1, which does
+				 * not fit asn1c_integer_t when the range covers
+				 * the whole type. Use the unsigned span; its bit
+				 * length is range_bits.
+				 */
+				rbits = asn1p_range_bit_length(
+					range->left.value, range->right.value);
 			}
 
 			if(alphabetsize) {
-				ebits = rbits;
+				ebits = (ssize_t)rbits;
 			} else {
 				/* X.691, #10.9.4.1 */
-				for(ebits = 0; ebits <= 16; ebits++)
-					if(r <= 1 << ebits) break;
-				if(ebits == 17
-				|| range->right.value >= 65536)
+				if(rbits > 16
+				|| range->right.value >= 65536) {
 					ebits = -1;
-			if(0) {
-				/* X.691, #10.5.7.1 */
-				for(ebits = 0; ebits <= 8; ebits++)
-					if(r <= 1 << ebits) break;
-				if(ebits == 9) {
-					if(r <= 65536)
-						ebits = 16;
-					else
-						ebits = -1;
+				} else {
+					ebits = (ssize_t)rbits;
 				}
-			}
 			}
 
 			OUT("{ APC_CONSTRAINED%s,%s% d, % d, ",

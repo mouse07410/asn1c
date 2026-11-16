@@ -73,5 +73,13 @@ identity guarantees. Do not use it to supervise hostile commands. A deadline
 marker always makes the case fail, including when TERM is handled gracefully.
 
 The boundary-range regression checks termination at the compiler integer
-limits and neighbouring bounds (issue #607). That check requires GNU
-coreutils timeout (or gtimeout on macOS) to bound malformed-input runs.
+limits, the emitted PER width for the full signed 64-bit range and
+0..INTMAX_MAX, and neighbouring bounds (issue #607). That check uses a
+POSIX sleep/kill watchdog as well, so it needs no GNU timeout;
+WATCHDOG_DEADLINE overrides its ten-second deadline (canonical decimal,
+1 through 3600) and the script self-tests the deadline, TERM and KILL
+paths with fake compilers. Like the reversed-range watchdog it bounds a
+direct compiler process, not an arbitrary process tree. Run the focused
+check from the repository root with:
+
+    make -C tests/tests-asn1c-compiler check TESTS=check-boundary-ranges.sh

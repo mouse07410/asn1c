@@ -73,6 +73,44 @@ check_parse_limits(void) {
  * Responsible party: asn1c maintainers. History: eliminates test sign-bit shifts.
  * Example: invoked by make check in libasn1parser.
  */
+/*
+ * Purpose: check unsigned bit-length helpers at their boundaries.
+ * Original source: added with the unsigned-span PER range width.
+ * Version/date: 1.0, 2026-11-17.
+ * Inputs: none. Returns: no value.
+ * Exceptions: assertion failure terminates the test.
+ * Responsible party: asn1c maintainers.
+ * History: split from main() to keep function size bounded.
+ * Example: main() calls this after the parse-limit checks.
+ */
+static void
+check_bit_lengths(void) {
+/* asn1p_unsigned_bit_length() */
+assert(asn1p_unsigned_bit_length(0) == 0);
+assert(asn1p_unsigned_bit_length(1) == 1);
+assert(asn1p_unsigned_bit_length(2) == 2);
+assert(asn1p_unsigned_bit_length(3) == 2);
+assert(asn1p_unsigned_bit_length(4) == 3);
+assert(asn1p_unsigned_bit_length((asn1c_uinteger_t)1
+                                 << (ASN_INTEGER_BITS - 1))
+       == ASN_INTEGER_BITS);
+
+/* asn1p_range_bit_length() */
+assert(asn1p_range_bit_length(5, 5) == 0);
+assert(asn1p_range_bit_length(0, 1) == 1);
+assert(asn1p_range_bit_length(0, 2) == 2);
+assert(asn1p_range_bit_length(0, 3) == 2);
+assert(asn1p_range_bit_length(0, 255) == 8);
+assert(asn1p_range_bit_length(0, 256) == 9);
+assert(asn1p_range_bit_length(-128, 127) == 8);
+assert(asn1p_range_bit_length(0, ASN_INTEGER_MAX) == ASN_INTEGER_BITS - 1);
+assert(asn1p_range_bit_length(ASN_INTEGER_MIN, 0) == ASN_INTEGER_BITS);
+assert(asn1p_range_bit_length(ASN_INTEGER_MIN, ASN_INTEGER_MAX)
+       == ASN_INTEGER_BITS);
+/* Opposite direction: a reversed range has no values. */
+assert(asn1p_range_bit_length(5, 1) == 0);
+}
+
 int main() {
     asn1c_integer_t maximum = check_parse_limits();
 
@@ -121,6 +159,8 @@ int main() {
     default:
         assert(!"Unreachable");
     }
+
+    check_bit_lengths();
 
     return 0;
 }

@@ -83,6 +83,24 @@ strtoaint_lim(const char *str, const char **end, asn1c_integer_t *intp) {
 	return STRTOX_OK;
 }
 
+size_t
+asn1p_unsigned_bit_length(asn1c_uinteger_t value) {
+	size_t bits = 0;
+	while(value) {
+		bits++;
+		value >>= 1;
+	}
+	return bits;
+}
+
+size_t
+asn1p_range_bit_length(asn1c_integer_t left, asn1c_integer_t right) {
+	if(right < left)
+		return 0;
+	return asn1p_unsigned_bit_length((asn1c_uinteger_t)right
+					 - (asn1c_uinteger_t)left);
+}
+
 int
 asn1p_atoi(const char *ptr, asn1c_integer_t *value) {
     const char *end = ptr + strlen(ptr);

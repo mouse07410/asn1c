@@ -53,6 +53,18 @@ typedef	intmax_t asn1c_integer_t;
     ((((asn1c_integer_t)1 << (ASN_INTEGER_BITS - 2)) - 1) * 2 + 1)
 #define ASN_INTEGER_MIN (-(ASN_INTEGER_MAX)-1)
 
+/* Unsigned counterpart of asn1c_integer_t, for span arithmetic. */
+#ifdef HAVE_128_BIT_INT
+typedef unsigned __int128 asn1c_uinteger_t;
+#else
+typedef uintmax_t asn1c_uinteger_t;
+#endif
+
+/* Number of bits needed to represent value (0 for 0). */
+size_t asn1p_unsigned_bit_length(asn1c_uinteger_t value);
+/* Bits needed for the count of values in [left, right]; 0 if right < left. */
+size_t asn1p_range_bit_length(asn1c_integer_t left, asn1c_integer_t right);
+
 int asn1p_atoi(const char *ptr, asn1c_integer_t *r_value);
 const char *asn1p_itoa(asn1c_integer_t value);   /* Ptr to a static buf */
 /*
