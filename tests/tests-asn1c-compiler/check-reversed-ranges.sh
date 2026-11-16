@@ -30,6 +30,24 @@
 
 set -eu
 
+if [ "${WATCHDOG_DEADLINE+x}" = x ]; then
+    deadline=$WATCHDOG_DEADLINE
+else
+    deadline=10
+fi
+
+case "$deadline" in
+    ''|*[!0-9]*|0|0*)
+        echo "ERROR: WATCHDOG_DEADLINE must be a canonical decimal integer from 1 to 3600" >&2
+        exit 2
+        ;;
+esac
+
+if [ "${#deadline}" -gt 4 ] || [ "$deadline" -gt 3600 ]; then
+    echo "ERROR: WATCHDOG_DEADLINE must be a canonical decimal integer from 1 to 3600" >&2
+    exit 2
+fi
+
 top_srcdir=$(cd "${top_srcdir:-../..}" && pwd)
 top_builddir=$(cd "${top_builddir:-../..}" && pwd)
 
@@ -81,7 +99,6 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 failures=0
-deadline=${WATCHDOG_DEADLINE:-10}
 
 # Purpose: Write the one-type ASN.1 schema used by a test case.
 # Original source: Added for ASN1-0088 reversed range regression coverage.
@@ -218,10 +235,9 @@ run_asn1c () {
     active_watchdog_pid=
     active_compiler_pid=
     active_cancel=
-    # The marker is written only while the compiler is alive past the
-    # deadline, so it is authoritative even if the compiler then caught TERM
-    # and exited 0 or 65. Cancellation is checked before the marker, so a
-    # compiler that finished in time keeps its real status.
+    # The watchdog rechecks cancellation and compiler liveness before marking
+    # a timeout. These separate checks are best effort, not atomic; the marker
+    # is authoritative once present, even if the compiler then exits normally.
     if [ -f "$timeout_marker" ]; then
         status=124
     fi
@@ -298,37 +314,146 @@ check_valid () {
     fi
 }
 
-# Watchdog self-test: fake compilers prove that a deadline expiry is always
-# reported as a timeout, even when the compiler handles TERM and exits
-# normally, and that a prompt exit keeps its own status.
+# Purpose: Check watchdog deadlines and cleanup with controlled fake compilers.
+# Original source: Added with the reversed range checks.
+# Version/date: 1, 2026-11-16.
+# Inputs: LABEL names the case; BODY is the fake compiler script; EXPECT is
+#         its expected asn1c status; TIMEOUT optionally sets its deadline.
+# Returns: No value; increments failures when status or child cleanup differs.
+# Exceptions: File and command errors may exit because the script uses set -e.
+# Responsible party: asn1c test maintainers.
+# History: Covers prompt exit, hanging compilers and graceful or ignored TERM.
+# Example: selftest_case prompt-exit 'exit 65' 65 10
 selftest_case () {
     label=$1
     body=$2
     expect=$3
+    timeout=${4:-3}
     fake="$TMPDIR_TEST/fake-$label.sh"
+    child_pid_file="$TMPDIR_TEST/$label.child-pid"
     printf '#!/bin/sh\n%s\n' "$body" > "$fake"
     chmod +x "$fake"
     write_schema "$label" 'INTEGER'
     saved_asn1c=$ASN1C saved_deadline=$deadline
-    ASN1C=$fake deadline=1
+    ASN1C=$fake deadline=$timeout
+    SELFTEST_CHILD_PID_FILE=$child_pid_file
+    export SELFTEST_CHILD_PID_FILE
     run_asn1c "$label"
     ASN1C=$saved_asn1c deadline=$saved_deadline
+    unset SELFTEST_CHILD_PID_FILE
     if [ "$status" -eq "$expect" ]; then
         echo "PASS: watchdog $label: status $status"
     else
         echo "FAIL: watchdog $label: expected $expect, got $status"
         failures=$((failures + 1))
     fi
+
+    case "$label" in
+        graceful-term-*)
+            if [ ! -s "$child_pid_file" ]; then
+                echo "FAIL: watchdog $label: child PID was not recorded"
+                failures=$((failures + 1))
+            else
+                IFS= read -r child_pid < "$child_pid_file"
+                if kill -0 "$child_pid" 2>/dev/null; then
+                    echo "FAIL: watchdog $label: child $child_pid survived compiler exit"
+                    failures=$((failures + 1))
+                else
+                    echo "PASS: watchdog $label: child process was reaped"
+                fi
+            fi
+            ;;
+    esac
 }
 
-selftest_case prompt-exit 'exit 65' 65
-selftest_case hang-term 'sleep 30 & wait' 124
+# Purpose: Check malformed WATCHDOG_DEADLINE values fail before test setup.
+# Original source: Added with PR610 watchdog hardening.
+# Version/date: 1, 2026-11-16.
+# Inputs: LABEL names the case; VALUE is the malformed environment value.
+# Returns: No value; increments failures unless exit 2 includes the validation.
+# Exceptions: File and command errors may exit because the script uses set -e.
+# Responsible party: asn1c test maintainers.
+# History: Covers invalid syntax, noncanonical numbers and out-of-range values.
+# Example: selftest_deadline_input leading-zero 01
+selftest_deadline_input () {
+    label=$1
+    value=$2
+    output="$TMPDIR_TEST/deadline-$label.out"
+    error="$TMPDIR_TEST/deadline-$label.err"
+
+    if WATCHDOG_DEADLINE=$value sh "$0" > "$output" 2> "$error"; then
+        status=0
+    else
+        status=$?
+    fi
+
+    if [ "$status" -eq 2 ] && grep -Fq \
+        'WATCHDOG_DEADLINE must be a canonical decimal integer from 1 to 3600' "$error"; then
+        echo "PASS: watchdog deadline $label rejected"
+    else
+        echo "FAIL: watchdog deadline $label: expected exit 2 and validation message, got $status"
+        cat "$error" >&2
+        failures=$((failures + 1))
+    fi
+}
+
+selftest_deadline_input alphabetic abc
+selftest_deadline_input empty ''
+selftest_deadline_input plus-sign +1
+selftest_deadline_input whitespace ' 1'
+selftest_deadline_input decimal 1.5
+selftest_deadline_input negative -1
+selftest_deadline_input zero 0
+selftest_deadline_input leading-zero 01
+selftest_deadline_input above-limit 3601
+selftest_deadline_input oversized 9999999999999999999999999999999999999999
+
+selftest_case prompt-exit 'exit 65' 65 10
+selftest_case hang-term 'exec sleep 30' 124
+# These variables expand in the generated compiler, not the test runner.
+# shellcheck disable=SC2016
 selftest_case graceful-term-65 \
-    'trap "exit 65" TERM; sleep 30 & wait' 124
+    '# child_pid and term_pending are state variables for deferred TERM cleanup.
+child_pid=
+term_pending=
+trap "term_pending=1
+if [ -n \"\$child_pid\" ]; then
+    kill \"\$child_pid\" 2>/dev/null || :
+    wait \"\$child_pid\" 2>/dev/null || :
+    exit 65
+fi" TERM HUP INT
+sleep 30 &
+child_pid=$!
+printf "%s\n" "$child_pid" > "$SELFTEST_CHILD_PID_FILE"
+if [ -n "$term_pending" ]; then
+    kill "$child_pid" 2>/dev/null || :
+    wait "$child_pid" 2>/dev/null || :
+    exit 65
+fi
+wait "$child_pid"' 124
+# These variables expand in the generated compiler, not the test runner.
+# shellcheck disable=SC2016
 selftest_case graceful-term-0 \
-    'trap "exit 0" TERM; sleep 30 & wait' 124
+    '# child_pid and term_pending are state variables for deferred TERM cleanup.
+child_pid=
+term_pending=
+trap "term_pending=1
+if [ -n \"\$child_pid\" ]; then
+    kill \"\$child_pid\" 2>/dev/null || :
+    wait \"\$child_pid\" 2>/dev/null || :
+    exit 0
+fi" TERM HUP INT
+sleep 30 &
+child_pid=$!
+printf "%s\n" "$child_pid" > "$SELFTEST_CHILD_PID_FILE"
+if [ -n "$term_pending" ]; then
+    kill "$child_pid" 2>/dev/null || :
+    wait "$child_pid" 2>/dev/null || :
+    exit 0
+fi
+wait "$child_pid"' 124
 selftest_case ignore-term-kill \
-    'trap "" TERM; while :; do sleep 1; done' 124
+    'trap "" TERM; exec sleep 30' 124
 
 # Value and SIZE ranges whose lower bound exceeds the upper bound.
 check_invalid value-reversed 'INTEGER (5..1)'
