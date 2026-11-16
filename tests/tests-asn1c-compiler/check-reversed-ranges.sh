@@ -24,8 +24,7 @@
 #
 # An abort is the failure this test exists for, so a timeout (exit 124) or a
 # death by signal (exit 128+) is reported separately from an ordinary error
-# exit. `timeout` or `gtimeout` is required: skipping without it would hide
-# the bug.
+# exit. A POSIX sleep/kill watchdog bounds the compiler run on every host.
 
 set -eu
 
@@ -34,18 +33,44 @@ top_builddir=$(cd "${top_builddir:-../..}" && pwd)
 
 ASN1C="${ASN1C:-${top_builddir}/asn1c/asn1c}"
 
-TIMEOUT_CMD=
-if command -v timeout >/dev/null 2>&1; then
-    TIMEOUT_CMD=timeout
-elif command -v gtimeout >/dev/null 2>&1; then
-    TIMEOUT_CMD=gtimeout
-else
-    echo "FAIL: neither 'timeout' nor 'gtimeout' is available for this test"
-    exit 1
-fi
-
 TMPDIR_TEST=$(mktemp -d)
-trap 'rm -rf "$TMPDIR_TEST"' EXIT
+# These state variables hold direct child PIDs for exit/signal cleanup.
+active_compiler_pid=
+active_watchdog_pid=
+
+# Purpose: Stop active test children and remove temporary files on exit.
+# Original source: Added for ASN1-0088 reversed range regression coverage.
+# Version/date: 1, 2026-11-16.
+# Inputs: None; uses the active child PIDs and TMPDIR_TEST globals.
+# Returns: No value; waits for tracked children to exit.
+# Exceptions: Cleanup commands may fail; failures are ignored during cleanup.
+# Responsible party: asn1c test maintainers.
+# History: Ensures compiler and watchdog children do not outlive this script.
+# Example: Called automatically by the EXIT and signal traps.
+cleanup () {
+    trap - EXIT HUP INT TERM
+
+    if [ -n "$active_watchdog_pid" ]; then
+        kill -TERM "$active_watchdog_pid" 2>/dev/null || :
+        wait "$active_watchdog_pid" 2>/dev/null || :
+        active_watchdog_pid=
+    fi
+
+    if [ -n "$active_compiler_pid" ]; then
+        kill -TERM "$active_compiler_pid" 2>/dev/null || :
+        sleep 2
+        kill -KILL "$active_compiler_pid" 2>/dev/null || :
+        wait "$active_compiler_pid" 2>/dev/null || :
+        active_compiler_pid=
+    fi
+
+    rm -rf "$TMPDIR_TEST"
+}
+
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 failures=0
 
@@ -67,23 +92,105 @@ write_schema () {
         > "$TMPDIR_TEST/$name.asn1"
 }
 
-# Purpose: Run asn1c on a generated schema with a ten-second time limit.
+# Purpose: Sleep for a bounded watchdog interval and honor interruption.
+# Original source: Added for ASN1-0088 reversed range regression coverage.
+# Version/date: 1, 2026-11-16.
+# Inputs: SECONDS is the requested delay; uses sleep_pid and interruption state.
+# Returns: Zero when the interval completes; non-zero when interrupted.
+# Exceptions: Sleep and kill failures are tolerated during process races.
+# Responsible party: asn1c test maintainers.
+# History: Saves the timer PID before acting on a deferred signal.
+# Example: watchdog_sleep 10
+watchdog_sleep () {
+    seconds=$1
+    sleep "$seconds" &
+    sleep_pid=$!
+    if [ -n "$watchdog_interrupted" ]; then
+        kill "$sleep_pid" 2>/dev/null || :
+    fi
+    wait "$sleep_pid" 2>/dev/null || :
+    # A trapped signal can interrupt wait before the killed sleep is reaped.
+    if [ -n "$watchdog_interrupted" ]; then
+        wait "$sleep_pid" 2>/dev/null || :
+    fi
+    sleep_pid=
+    [ -z "$watchdog_interrupted" ]
+}
+
+# Purpose: Enforce the deadline and stop the compiler if it expires.
+# Original source: Added for ASN1-0088 reversed range regression coverage.
+# Version/date: 1, 2026-11-16.
+# Inputs: Compiler PID and marker path.
+# Returns: No value; creates the marker on timeout and signals the compiler.
+# Exceptions: Sleep and kill failures are tolerated during process races.
+# Responsible party: asn1c test maintainers.
+# History: Cancels and reaps its timer on normal completion or interruption.
+# Example: watchdog "$active_compiler_pid" "$timeout_marker" &
+watchdog () {
+    compiler_pid=$1
+    marker=$2
+    # The sleep PID is a state variable local to this watchdog subshell.
+    sleep_pid=
+    # This state variable defers timer cleanup until its launched PID is saved.
+    watchdog_interrupted=
+    trap 'watchdog_interrupted=1
+          if [ -n "$sleep_pid" ]; then
+              kill "$sleep_pid" 2>/dev/null || :
+          fi' HUP INT TERM
+
+    watchdog_sleep 10 || exit 0
+
+    : > "$marker"
+    kill -TERM "$compiler_pid" 2>/dev/null || exit 0
+    watchdog_sleep 2 || exit 0
+    kill -KILL "$compiler_pid" 2>/dev/null || :
+}
+
+# Purpose: Run asn1c with a ten-second deadline and bounded TERM grace.
 # Original source: Added for ASN1-0088 reversed range regression coverage.
 # Version/date: 1, 2026-11-16.
 # Inputs: NAME is the temporary filename stem for input and output files.
-# Returns: No value; sets status to the selected timeout command's exit status.
+# Returns: No value; sets status to compiler status or 124 on deadline.
 # Exceptions: The caller handles non-zero status and timeout outcomes.
 # Responsible party: asn1c test maintainers.
-# History: Accepts either timeout or gtimeout for supported host platforms.
+# History: Uses POSIX sleep and kill rather than an external timeout utility.
 # Example: run_asn1c value-reversed
 run_asn1c () {
     name=$1
+    timeout_marker="$TMPDIR_TEST/$name.timeout"
+    rm -f "$timeout_marker"
+
+    # Defer signal exits until both child PIDs have been recorded for cleanup.
+    # This state variable stores the signal's normal shell exit status.
+    deferred_signal_status=
+    trap 'deferred_signal_status=129' HUP
+    trap 'deferred_signal_status=130' INT
+    trap 'deferred_signal_status=143' TERM
+    "$ASN1C" -E -F "$TMPDIR_TEST/$name.asn1" \
+        >"$TMPDIR_TEST/$name.out" 2>"$TMPDIR_TEST/$name.err" &
+    active_compiler_pid=$!
+    watchdog "$active_compiler_pid" "$timeout_marker" &
+    active_watchdog_pid=$!
+    trap 'exit 129' HUP
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    if [ -n "$deferred_signal_status" ]; then
+        exit "$deferred_signal_status"
+    fi
 
     set +e
-    "$TIMEOUT_CMD" 10 "$ASN1C" -E -F "$TMPDIR_TEST/$name.asn1" \
-        >"$TMPDIR_TEST/$name.out" 2>"$TMPDIR_TEST/$name.err"
+    wait "$active_compiler_pid"
     status=$?
     set -e
+
+    # Cancel and reap the watchdog, including whichever sleep it owns.
+    kill -TERM "$active_watchdog_pid" 2>/dev/null || :
+    wait "$active_watchdog_pid" 2>/dev/null || :
+    active_watchdog_pid=
+    active_compiler_pid=
+    if [ -f "$timeout_marker" ]; then
+        status=124
+    fi
 }
 
 # Purpose: Assert a reversed range fails with the expected diagnostic.
