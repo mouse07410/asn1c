@@ -9,18 +9,6 @@
 
 #include "asn1p_integer.h"
 
-#define ASN_INTEGER_BITS (8 * sizeof(asn1c_integer_t))
-/*
- * The largest value of the signed type, built without shifting into the
- * sign bit: shifting a signed 1 by (bits - 1) places is undefined because
- * the result, 2^(bits-1), is not representable. Shifting by (bits - 2)
- * keeps every intermediate value representable, and doubling into the last
- * step stays within the type.
- */
-#define ASN_INTEGER_MAX \
-    ((((asn1c_integer_t)1 << (ASN_INTEGER_BITS - 2)) - 1) * 2 + 1)
-#define ASN_INTEGER_MIN (-(ASN_INTEGER_MAX)-1)
-
 /*
  * Parse the number in the given string until the given *end position,
  * returning the position after the last parsed character back using the

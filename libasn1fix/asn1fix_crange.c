@@ -702,7 +702,7 @@ _range_split(asn1cnst_range_t *ra, const asn1cnst_range_t *rb) {
 		nr->left = ra->left;
 		nr->right = rb->left;
 		if(nr->right.type == ARE_VALUE) {
-			if(nr->right.value == INTMAX_MIN) {
+			if(nr->right.value == ASN_INTEGER_MIN) {
 				/* We've hit the limit here. */
 				break;
 			}
@@ -720,7 +720,7 @@ _range_split(asn1cnst_range_t *ra, const asn1cnst_range_t *rb) {
 		nr->left = rb->right;
 		nr->right = ra->right;
 		if(nr->left.type == ARE_VALUE) {
-			if(nr->left.value == INTMAX_MAX) {
+			if(nr->left.value == ASN_INTEGER_MAX) {
 				/* We've hit the limit here. */
 				break;
 			}
@@ -1101,14 +1101,14 @@ _range_subtract_interval(asn1cnst_range_t *result,
 	}
 	if(cut->left.type == ARE_VALUE
 	&& _edge_compare(&source->left, &cut->left) < 0
-	&& cut->left.value > INTMAX_MIN) {
+	&& cut->left.value > ASN_INTEGER_MIN) {
 		asn1cnst_edge_t left_right = cut->left;
 		left_right.value--;
 		if(_range_add_interval(result, &source->left, &left_right)) return -1;
 	}
 	if(cut->right.type == ARE_VALUE
 	&& _edge_compare(&source->right, &cut->right) > 0
-	&& cut->right.value < INTMAX_MAX) {
+	&& cut->right.value < ASN_INTEGER_MAX) {
 		asn1cnst_edge_t right_left = cut->right;
 		right_left.value++;
 		if(_range_add_interval(result, &right_left, &source->right)) return -1;
@@ -2211,8 +2211,8 @@ int main() {
     ra->left.type = ARE_MIN;
     ra->right.type = ARE_VALUE; ra->right.value = 20;
 
-    /* (<INTMAX_MIN>..15) */
-    rb->left.type = ARE_VALUE; rb->left.value = INTMAX_MIN;
+    /* (<ASN_INTEGER_MIN>..15) */
+    rb->left.type = ARE_VALUE; rb->left.value = ASN_INTEGER_MIN;
     rb->right.type = ARE_VALUE; rb->right.value = 15;
 
     r = _range_split(ra, rb);
@@ -2228,7 +2228,7 @@ int main() {
     fprintf(stderr, "[0].left = %s\n", _edge_string(&r->elements[0]->left));
     fprintf(stderr, "[0].right = %s\n", _edge_string(&r->elements[0]->right));
     assert(r->elements[0]->left.type == ARE_VALUE);
-    assert(r->elements[0]->left.value == INTMAX_MIN);
+    assert(r->elements[0]->left.value == ASN_INTEGER_MIN);
     assert(r->elements[0]->right.type == ARE_VALUE);
     assert(r->elements[0]->right.value == 15);
 
