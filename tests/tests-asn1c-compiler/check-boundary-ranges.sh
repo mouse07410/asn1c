@@ -452,6 +452,15 @@ done
 # Configured ASN_INTEGER endpoints, plus a mixed signed range.
 check_range max "0..$ASN_INTEGER_MAX"
 check_range min "$ASN_INTEGER_MIN..0"
+
+# The printer must not alter the minimum while fixing the range.
+if grep -Fq "($ASN_INTEGER_MIN..0)" "$TMPDIR_TEST/min.out"; then
+    echo "PASS: printed minimum is exact"
+else
+    echo "FAIL: printed minimum is not exact:"
+    grep 'T ::=' "$TMPDIR_TEST/min.out" >&2 || true
+    failures=$((failures + 1))
+fi
 check_range neg1max "-1..$ASN_INTEGER_MAX"
 
 # Keep signed 64-bit boundaries covered even in 128-bit builds.
