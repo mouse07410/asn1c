@@ -47,3 +47,7 @@ with the DEFAULT. The three stale expressions caused all jobs in CI run
 the canonical omission fix, runtime validation, and every comparison check;
 it introduces no production-code or input-validation change. Validate it with
 make -C tests/tests-asn1c-compiler check, including the full parsing inventory.
+
+The reversed-range regression checks malformed value, SIZE, FROM, union,
+extension, and REAL component intervals for a normal diagnostic exit, with
+valid neighbouring intervals and alphabet sets as controls (issue #605).

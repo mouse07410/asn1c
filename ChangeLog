@@ -1,4 +1,7 @@
 Changes since v1.5.3:
+	* Reject reversed value, SIZE, and FROM intervals before intersection
+	  (issue #605, PR #606), and propagate invalid REAL component ranges
+	  without asserting. This prevents malformed schemas aborting the compiler.
 	* Review and integrate PRs #598, #600, and #601: avoid a signed sign-bit
 	  shift in compiler integer bounds, permit module lookups without a current
 	  IMPORTS context, and continue printing after standard modules. Strengthen
