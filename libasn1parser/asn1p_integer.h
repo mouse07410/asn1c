@@ -60,9 +60,9 @@ typedef unsigned __int128 asn1c_uinteger_t;
 typedef uintmax_t asn1c_uinteger_t;
 #endif
 
-/* Number of bits needed to represent value (0 for 0). */
+/* Bits needed for values [0, value], equal to ceil(log2(value + 1)). */
 size_t asn1p_unsigned_bit_length(asn1c_uinteger_t value);
-/* Bits needed for the count of values in [left, right]; 0 if right < left. */
+/* Bits needed for [left, right]: ceil(log2(count)); 0 for empty/reversed. */
 size_t asn1p_range_bit_length(asn1c_integer_t left, asn1c_integer_t right);
 
 int asn1p_atoi(const char *ptr, asn1c_integer_t *r_value);

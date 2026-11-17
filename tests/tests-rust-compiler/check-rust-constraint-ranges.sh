@@ -198,10 +198,11 @@ else
     echo "NOTE: configured compiler lacks HAVE_128_BIT_INT; skipping wide-range backend checks"
 fi
 
-# Generate supported full i64 and narrow intervals with UPER and APER.
+# Generate supported full i64, positive i64, and narrow intervals with PER.
 cat >"$test_tmp/signed64-boundaries.asn1" <<'EOF'
 Signed64Boundaries DEFINITIONS ::= BEGIN
 All ::= INTEGER (-9223372036854775808..9223372036854775807)
+Positive ::= INTEGER (0..9223372036854775807)
 Small ::= INTEGER (-2..2)
 END
 EOF
@@ -227,7 +228,7 @@ if ! (cargo test --offline --manifest-path "$test_tmp/signed64/Cargo.toml" \
     exit 1
 fi
 
-echo "PASS: full signed64 and narrow interval UPER/APER boundaries"
+echo "PASS: full signed64, positive and narrow interval UPER/APER boundaries"
 
 if [ "$failures" -ne 0 ]; then
     echo "FAIL: $failures Rust constraint-range regression case(s) failed"

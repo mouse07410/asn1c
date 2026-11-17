@@ -3922,6 +3922,94 @@ constraint_is_component_relation_only(const asn1p_constraint_t *constraint) {
 	return 1;
 }
 
+/*
+ * Purpose: Calculate PER range_bits and effective_bits for a concrete range.
+ * Original source: mr-j0nes, PR #612; extracted from the PER constraint emitter.
+ * Version/date: 1.0, 2026-11-17.
+ * Inputs: range must be non-NULL with ARE_VALUE endpoints; alphabetsize is
+ *         nonzero for a permitted-alphabet constraint; rbits receives
+ *         range_bits and ebits receives effective_bits; both must be non-NULL.
+ * Returns: No value; writes the calculated PER widths to the output pointers.
+ * Exceptions: None; callers ensure the documented range and pointer inputs.
+ * Responsible party: asn1c maintainers.
+ * History: Isolates X.691 width rules while retaining the original arithmetic.
+ * Example: A 0..65535 value range yields range_bits=16 and effective_bits=16.
+ */
+static void
+calculate_single_member_PER_widths(asn1cnst_range_t *range, int alphabetsize,
+                                   size_t *rbits, ssize_t *ebits) {
+	if(alphabetsize) {
+		/* X.691: 27.5.2 */
+		asn1c_integer_t n = PER_FROM_alphabet_characters(range);
+		*rbits = (n > 0)
+			? asn1p_unsigned_bit_length((asn1c_uinteger_t)(n - 1))
+			: 0;
+	} else if(range->empty_constraint) {
+		*rbits = 0;
+	} else {
+		/* The unsigned span handles the full signed range without overflow. */
+		*rbits = asn1p_range_bit_length(range->left.value,
+		                               range->right.value);
+	}
+
+	if(alphabetsize) {
+		*ebits = (ssize_t)*rbits;
+	} else if(*rbits > 16 || range->right.value >= 65536) {
+		/* X.691, #10.9.4.1 */
+		*ebits = -1;
+	} else {
+		*ebits = (ssize_t)*rbits;
+	}
+}
+
+/*
+ * Purpose: Emit the source range as a courtesy PER constraint comment.
+ * Original source: Existing asn1c PER constraint emitter; extracted in 2026.
+ * Version/date: 1.0, 2026-11-17.
+ * Inputs: arg is the active output context; range is the constraint; type is
+ *         an optional constraint label, or NULL when no label is needed.
+ * Returns: No value; appends the same comment bytes previously emitted inline.
+ * Exceptions: None; arg must be valid and range must be non-NULL.
+ * Responsible party: asn1c maintainers.
+ * History: Extracts the pcmt output block without changing formatting.
+ * Example: A labeled SIZE range emits a comment such as (SIZE(1..5)).
+ */
+static void
+emit_single_member_PER_range_comment(arg_t *arg, asn1cnst_range_t *range,
+                                     const char *type) {
+	if(range->left.type == ARE_VALUE || range->right.type == ARE_VALUE) {
+		OUT("\t/* ");
+		if(type) OUT("(%s", type);
+		OUT("(");
+		if(range->left.type == ARE_VALUE)
+			OUT("%s", asn1p_itoa(range->left.value));
+		else
+			OUT("MIN");
+		OUT("..");
+		if(range->right.type == ARE_VALUE)
+			OUT("%s", asn1p_itoa(range->right.value));
+		else
+			OUT("MAX");
+		if(range->extensible) OUT(",...");
+		if(type) OUT(")");
+		OUT(") */");
+	}
+}
+
+/*
+ * Purpose: Emit one PER constraint record for an ASN.1 range.
+ * Original source: Existing asn1c C backend; PER width logic by mr-j0nes, PR #612.
+ * Version/date: 2.0, 2026-11-17.
+ * Inputs: arg is the valid output context; range is the PER constraint or
+ *         NULL; alphabetsize selects permitted-alphabet handling; type is an
+ *         optional label.
+ * Returns: Zero after emission; current unsupported ranges use unconstrained
+ *          output while preserving any range comment.
+ * Exceptions: None; output errors follow the compiler's normal output path.
+ * Responsible party: asn1c maintainers.
+ * History: Width and courtesy-comment logic are delegated to static helpers.
+ * Example: Emits APC_CONSTRAINED for a concrete INTEGER value range.
+ */
 static int
 emit_single_member_PER_constraint(arg_t *arg, asn1cnst_range_t *range, int alphabetsize, const char *type) {
     if(!range || range->incompatible || range->not_PER_visible) {
@@ -3947,39 +4035,8 @@ emit_single_member_PER_constraint(arg_t *arg, asn1cnst_range_t *range, int alpha
 		if(range->right.type == ARE_VALUE) {
 			size_t rbits;	/* Value range bits */
 			ssize_t ebits;	/* Value effective range bits */
-
-			if(alphabetsize) {
-				/* X.691: 27.5.2 */
-				asn1c_integer_t n =
-					PER_FROM_alphabet_characters(range);
-				rbits = (n > 0)
-					    ? asn1p_unsigned_bit_length(
-						  (asn1c_uinteger_t)(n - 1))
-					    : 0;
-			} else if(range->empty_constraint) {
-				rbits = 0;
-			} else {
-				/*
-				 * The count is right - left + 1, which does
-				 * not fit asn1c_integer_t when the range covers
-				 * the whole type. Use the unsigned span; its bit
-				 * length is range_bits.
-				 */
-				rbits = asn1p_range_bit_length(
-					range->left.value, range->right.value);
-			}
-
-			if(alphabetsize) {
-				ebits = (ssize_t)rbits;
-			} else {
-				/* X.691, #10.9.4.1 */
-				if(rbits > 16
-				|| range->right.value >= 65536) {
-					ebits = -1;
-				} else {
-					ebits = (ssize_t)rbits;
-				}
-			}
+			calculate_single_member_PER_widths(range, alphabetsize,
+			                                   &rbits, &ebits);
 
 			OUT("{ APC_CONSTRAINED%s,%s% d, % d, ",
 				range->extensible
@@ -4012,28 +4069,7 @@ emit_single_member_PER_constraint(arg_t *arg, asn1cnst_range_t *range, int alpha
 	}
 
   pcmt:
-
-	/*
-	 * Print some courtesy debug information.
-	 */
-	if(range->left.type == ARE_VALUE
-	|| range->right.type == ARE_VALUE) {
-		OUT("\t/* ");
-		if(type) OUT("(%s", type);
-		OUT("(");
-		if(range->left.type == ARE_VALUE)
-			OUT("%s", asn1p_itoa(range->left.value));
-		else
-			OUT("MIN");
-		OUT("..");
-		if(range->right.type == ARE_VALUE)
-			OUT("%s", asn1p_itoa(range->right.value));
-		else
-			OUT("MAX");
-		if(range->extensible) OUT(",...");
-		if(type) OUT(")");
-		OUT(") */");
-	}
+	emit_single_member_PER_range_comment(arg, range, type);
 
 	return 0;
 }

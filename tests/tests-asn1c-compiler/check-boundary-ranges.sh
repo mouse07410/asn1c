@@ -80,6 +80,7 @@ marker=
 # Exceptions: Cleanup commands may fail; failures are ignored.
 # Responsible party: asn1c test maintainers.
 # History: An interrupted run no longer leaves the compiler or timer behind.
+# Example: cleanup runs automatically after the final test or a signal.
 cleanup () {
     trap - EXIT HUP INT TERM
 
@@ -110,19 +111,88 @@ trap 'exit 143' TERM
 
 failures=0
 
-# Purpose: Run a command with a wall-clock limit without GNU timeout.
-# Original source: Adapted from tests/tests-randomized/check-bundles.sh.
-# Version/date: 1, 2026-11-16.
-# Inputs: NAME is the case name for the marker; LIMIT is seconds; the rest is
-#         the command and its arguments.
-# Returns: the command's status, or 124 when the deadline expired.
-# Exceptions: none; the timer exits by itself if it cannot be cancelled.
-# Note: this script must not install HUP/INT/TERM traps before forking the
-#       timer; a trap inherited by the subshell can swallow the cancel.
-#       A deadline is authoritative: the timer writes the marker only while
-#       the command is still alive, and re-checks the cancel file first.
+# Purpose: Sleep for a bounded interval while observing cancellation/signals.
+# Original source: Adapted from tests/tests-asn1c-compiler/check-reversed-ranges.sh.
+# Version/date: 1, 2026-11-17.
+# Inputs: SECONDS is the requested delay; cancel_file, sleep_pid, and
+#         watchdog_interrupted are local watchdog state.
+# Returns: Zero when the interval ends; non-zero when cancellation is observed.
+# Exceptions: Sleep and kill failures are tolerated during process races.
 # Responsible party: asn1c test maintainers.
-# History: Replaces a hard dependency on timeout/gtimeout, absent on macOS.
+# History: Records and reaps each sleep child to prevent orphan sleeps.
+# Example: watchdog_sleep 10
+watchdog_sleep () {
+    seconds=$1
+    while [ "$seconds" -gt 0 ]; do
+        sleep 1 &
+        sleep_pid=$!
+        if [ -n "$watchdog_interrupted" ] || [ -f "$cancel_file" ]; then
+            kill "$sleep_pid" 2>/dev/null || :
+        fi
+        wait "$sleep_pid" 2>/dev/null || :
+        # Reap sleep if a trapped signal interrupted wait before it finished.
+        if [ -n "$watchdog_interrupted" ] || [ -f "$cancel_file" ]; then
+            wait "$sleep_pid" 2>/dev/null || :
+            sleep_pid=
+            return 1
+        fi
+        sleep_pid=
+        seconds=$((seconds - 1))
+    done
+    return 0
+}
+
+# Purpose: Enforce one command deadline and stop the command when it expires.
+# Original source: Adapted from check-reversed-ranges.sh.
+# Version/date: 2, 2026-11-17.
+# Inputs: Command PID, seconds, marker path, and cancel file path.
+# Returns: No value; marks a timeout and signals the command when overdue.
+# Exceptions: Sleep and kill failures are tolerated during process races.
+# Responsible party: asn1c test maintainers.
+# History: Tracks and reaps its sleep child and observes cancel files.
+# Example: watchdog "$command_pid" 10 "$marker" "$cancel" &
+watchdog () {
+    watched_pid=$1
+    limit=$2
+    timeout_marker=$3
+    cancel_file=$4
+    # The sleep PID is a state variable local to this watchdog process.
+    sleep_pid=
+    # This state variable defers sleep cleanup until its launched PID is saved.
+    watchdog_interrupted=
+    trap 'watchdog_interrupted=1
+          if [ -n "$sleep_pid" ]; then
+              kill "$sleep_pid" 2>/dev/null || :
+          fi' HUP INT TERM
+
+    watchdog_sleep "$limit" || exit 0
+
+    # The command may have finished while cancellation was being delivered.
+    kill -0 "$watched_pid" 2>/dev/null || exit 0
+    [ ! -f "$cancel_file" ] || exit 0
+    : > "$timeout_marker"
+    kill -TERM "$watched_pid" 2>/dev/null || exit 0
+    # A cancel during grace prevents a late KILL after a normal command exit.
+    watchdog_sleep 2 || exit 0
+    [ ! -f "$cancel_file" ] || exit 0
+    # This PID check is best effort; exit and PID reuse cannot be checked
+    # atomically with the subsequent signal.
+    kill -0 "$watched_pid" 2>/dev/null || exit 0
+    kill -KILL "$watched_pid" 2>/dev/null || :
+}
+
+# Purpose: Run a command with a wall-clock limit without GNU timeout.
+# Original source: Adapted from tests/tests-randomized/check-bundles.sh and
+#                  check-reversed-ranges.sh.
+# Version/date: 2, 2026-11-17.
+# Inputs: NAME is the marker stem; LIMIT is seconds; remaining arguments are
+#         the command and its arguments.
+# Returns: The command status, or 124 when the deadline marker was written.
+# Exceptions: Signal exits are deferred until both direct child PIDs are saved.
+# Note: Sleep and PID lifecycle checks are best effort; checking liveness and
+#       signaling cannot be atomic, so PID reuse remains a narrow race.
+# Responsible party: asn1c test maintainers.
+# History: Defers signals until PID registration and tracks watchdog sleeps.
 # Example: run_bounded case 10 "$ASN1C" -E -F case.asn1
 run_bounded () {
     name=$1
@@ -132,38 +202,34 @@ run_bounded () {
     cancel="$TMPDIR_TEST/$name.cancel"
 
     rm -f "$marker" "$cancel"
+    # Defer signal exits until the compiler and watchdog PIDs are both saved.
+    # This state variable records a signal received during child registration.
+    deferred_signal_status=
+    trap 'deferred_signal_status=129' HUP
+    trap 'deferred_signal_status=130' INT
+    trap 'deferred_signal_status=143' TERM
     "$@" &
     command_pid=$!
-    (
-        trap - HUP INT TERM
-        remaining=$limit
-        while [ "$remaining" -gt 0 ]; do
-            sleep 1
-            # A cancel may arrive while the timer is starting up.
-            [ ! -f "$cancel" ] || exit 0
-            remaining=$((remaining - 1))
-        done
-        # The command may have finished just before the timer was cancelled.
-        kill -0 "$command_pid" 2>/dev/null || exit 0
-        [ ! -f "$cancel" ] || exit 0
-        : > "$marker"
-        kill -TERM "$command_pid" 2>/dev/null || :
-        sleep 2
-        # Do not KILL a PID that may already have been reaped and reused.
-        [ ! -f "$cancel" ] || exit 0
-        kill -KILL "$command_pid" 2>/dev/null || :
-    ) &
+    watchdog "$command_pid" "$limit" "$marker" "$cancel" &
     timer_pid=$!
+    trap 'exit 129' HUP
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    if [ -n "$deferred_signal_status" ]; then
+        exit "$deferred_signal_status"
+    fi
 
-    wait "$command_pid" && status=0 || status=$?
-    # Tell the timer the command finished, then stop it.
+    if wait "$command_pid"; then
+        status=0
+    else
+        status=$?
+    fi
+    # The cancel file covers a lost signal while the watchdog was starting.
     : > "$cancel"
     kill -TERM "$timer_pid" 2>/dev/null || :
     wait "$timer_pid" 2>/dev/null || :
     timer_pid=
-    # The marker is written only while the command is still running past the
-    # deadline, so a deadline is a failure whatever status the command then
-    # reports (it may catch TERM and exit 0).
+    # Marker wins even if the command catches TERM and exits successfully.
     if [ -f "$marker" ]; then
         rm -f "$marker"
         marker=
@@ -234,21 +300,21 @@ EOF
     fi
 }
 
-# Purpose: Require the PER constraint emitted for an INTEGER range to have the
-# expected width.
+# Purpose: Require PER range_bits and effective_bits emitted for an INTEGER.
 # Original source: Added with the unsigned-span range width fix.
-# Version/date: 1, 2026-11-16.
+# Version/date: 2, 2026-11-17.
 # Inputs: NAME is the temporary filename stem; RANGE is the INTEGER range
-#         text; BITS is the expected PER range width.
+#         text; BITS is expected range_bits; EBITS is expected effective_bits.
 # Returns: No value; increments failures when generation or the check fails.
 # Exceptions: Reports a failure and continues with later cases.
 # Responsible party: asn1c test maintainers.
-# History: Pins range_bits for a range that spans the whole intmax_t type.
-# Example: check_codegen full64 '-9223372036854775808..9223372036854775807' 64
+# History: Pins both PER widths for boundary and finite ranges.
+# Example: check_codegen full64 '-9223372036854775808..9223372036854775807' 64 -1
 check_codegen () {
     name=$1
     range=$2
     bits=$3
+    ebits=$4
 
     cat > "$TMPDIR_TEST/$name.asn1" <<EOF
 M DEFINITIONS ::= BEGIN
@@ -274,56 +340,98 @@ EOF
         cat "$TMPDIR_TEST/$name.err" >&2
         failures=$((failures + 1))
     else
-        if line=$(grep -E "APC_CONSTRAINED,[[:space:]]*$bits," \
+        if line=$(grep -E "APC_CONSTRAINED,[[:space:]]*$bits,[[:space:]]*$ebits," \
                        "$TMPDIR_TEST/$name-out/T.c"); then
-            echo "PASS: $name ($range): $line"
+            echo "PASS: $name ($range): range_bits=$bits effective_bits=$ebits"
         else
             echo "FAIL: $name ($range): no expected PER constraint" \
-                 "(APC_CONSTRAINED, $bits) in T.c"
+                 "(APC_CONSTRAINED, $bits, $ebits) in T.c"
             failures=$((failures + 1))
         fi
     fi
 }
 
-# Purpose: Run the watchdog against a generated fake compiler and check status.
+# Purpose: Run a fake compiler and check watchdog status and child cleanup.
 # Original source: Added with the boundary range checks.
-# Version/date: 2, 2026-11-17.
+# Version/date: 3, 2026-11-17.
 # Inputs: LABEL names the case; BODY is the fake compiler script; EXPECT is
-#         the expected run_asn1c status.
-# Returns: No value; increments failures on a status mismatch.
+#         its expected status; TIMEOUT optionally overrides the deadline.
+# Returns: No value; increments failures on status or child-reaping mismatch.
 # Exceptions: Reports a failure and continues.
 # Responsible party: asn1c test maintainers.
-# History: Keeps the deadline, TERM and KILL paths covered in-tree.
-# Example: selftest_case hang 'exec sleep 30' 124
+# History: Keeps prompt-exit, deadline, TERM and KILL paths covered in-tree.
+# Example: selftest_case prompt-exit 'exit 65' 65 10
 selftest_case () {
     label=$1
     body=$2
     expect=$3
+    timeout=${4:-3}
     fake="$TMPDIR_TEST/fake-$label.sh"
+    child_pid_file="$TMPDIR_TEST/$label.child-pid"
     printf '#!/bin/sh\n%s\n' "$body" > "$fake"
     chmod +x "$fake"
     printf 'M DEFINITIONS ::= BEGIN\nT ::= INTEGER\nEND\n' \
         > "$TMPDIR_TEST/$label.asn1"
-    saved_asn1c=$ASN1C
-    saved_deadline=$deadline
-    ASN1C=$fake
-    deadline=1
+    saved_asn1c=$ASN1C saved_deadline=$deadline
+    ASN1C=$fake deadline=$timeout
+    SELFTEST_CHILD_PID_FILE=$child_pid_file
+    export SELFTEST_CHILD_PID_FILE
     run_asn1c "$label" -E -F "$TMPDIR_TEST/$label.asn1"
-    ASN1C=$saved_asn1c
-    deadline=$saved_deadline
+    ASN1C=$saved_asn1c deadline=$saved_deadline
+    unset SELFTEST_CHILD_PID_FILE
     if [ "$status" -eq "$expect" ]; then
         echo "PASS: watchdog $label: status $status"
     else
         echo "FAIL: watchdog $label: expected $expect, got $status"
         failures=$((failures + 1))
     fi
+
+    case "$label" in
+        graceful-term-*|ignore-term-kill)
+            if [ ! -s "$child_pid_file" ]; then
+                echo "FAIL: watchdog $label: child PID was not recorded"
+                failures=$((failures + 1))
+            else
+                IFS= read -r child_pid < "$child_pid_file"
+                if kill -0 "$child_pid" 2>/dev/null; then
+                    echo "FAIL: watchdog $label: child $child_pid survived compiler exit"
+                    failures=$((failures + 1))
+                else
+                    echo "PASS: watchdog $label: child process was reaped"
+                fi
+            fi
+            ;;
+    esac
 }
 
 # A deadline that expires is always a timeout, whatever the compiler then does.
-selftest_case prompt-exit 'exit 65' 65
+selftest_case prompt-exit 'exit 65' 65 10
 selftest_case hang 'exec sleep 30' 124
-selftest_case graceful-term-0 'trap "exit 0" TERM; while :; do sleep 1; done' 124
-selftest_case ignore-term-kill 'trap "" TERM; while :; do sleep 1; done' 124
+# These variables expand in the generated compiler, not the test runner.
+# shellcheck disable=SC2016
+selftest_case graceful-term-0 \
+    '# child_pid and term_pending are state variables for deferred TERM cleanup.
+child_pid=
+term_pending=
+trap "term_pending=1
+if [ -n \"\$child_pid\" ]; then
+    kill \"\$child_pid\" 2>/dev/null || :
+    wait \"\$child_pid\" 2>/dev/null || :
+    exit 0
+fi" TERM HUP INT
+sleep 30 &
+child_pid=$!
+printf "%s\n" "$child_pid" > "$SELFTEST_CHILD_PID_FILE"
+if [ -n "$term_pending" ]; then
+    kill "$child_pid" 2>/dev/null || :
+    wait "$child_pid" 2>/dev/null || :
+    exit 0
+fi
+wait "$child_pid"' 124
+selftest_case ignore-term-kill \
+    'printf "%s\n" "$$" > "$SELFTEST_CHILD_PID_FILE"
+trap "" TERM
+exec sleep 30' 124
 
 # Invalid deadline overrides must fail before any temp file is created.
 for bad_deadline in 05 0 "" 3601 99999999999999999999; do
@@ -353,11 +461,16 @@ check_range signed64-full '-9223372036854775808..9223372036854775807'
 check_range width-control "0..$WIDTH_CONTROL"
 check_range maxm1 "0..$ASN_INTEGER_MAX_MINUS_ONE"
 
-# Full signed 64-bit range: valid on every build, 64 PER range bits.
-check_codegen full64 '-9223372036854775808..9223372036854775807' 64
+# Check both PER widths at the full signed and signed-maximum boundaries.
+check_codegen full64 '-9223372036854775808..9223372036854775807' 64 -1
 
-# The other power-of-two boundary: 0..INTMAX_MAX is 63 bits.
-check_codegen max63 '0..9223372036854775807' 63
+check_codegen max63 '0..9223372036854775807' 63 -1
+
+# Finite value counts exercise fixed widths and the 16-bit alignment boundary.
+check_codegen singleton '5..5' 0 0
+check_codegen fixed16 '0..65535' 16 16
+check_codegen variable17 '0..65536' 17 -1
+check_codegen cross16 '65535..65536' 1 -1
 
 if [ "$failures" -ne 0 ]; then
     echo "$failures constraint-boundary check(s) failed"

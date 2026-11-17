@@ -74,11 +74,15 @@ marker always makes the case fail, including when TERM is handled gracefully.
 
 The boundary-range regression checks termination at the compiler integer
 limits, the emitted PER width for the full signed 64-bit range and
-0..INTMAX_MAX, and neighbouring bounds (issue #607). That check uses a
+0..INTMAX_MAX, and neighbouring bounds (issues #607 and #611). It checks both
+range_bits and effective_bits at singleton, 16-bit, and 17-bit boundaries.
+The original PER width correction is by Javier (@mr-j0nes), PR #612.
+That check uses a
 POSIX sleep/kill watchdog as well, so it needs no GNU timeout;
 WATCHDOG_DEADLINE overrides its ten-second deadline (canonical decimal,
 1 through 3600) and the script self-tests the deadline, TERM and KILL
-paths with fake compilers. Like the reversed-range watchdog it bounds a
+paths with fake compilers, including reaping timer sleeps and deferring signal
+exits until child PIDs are recorded. Like the reversed-range watchdog it bounds a
 direct compiler process, not an arbitrary process tree. Run the focused
 check from the repository root with:
 
