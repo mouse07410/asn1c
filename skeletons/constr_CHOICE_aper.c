@@ -19,6 +19,7 @@ CHOICE_decode_aper(const asn_codec_ctx_t *opt_codec_ctx,
     void **memb_ptr2 = NULL;
     void *st = *sptr;
     int value = 0;
+    int ext_adds = 0;  /* Decoding an extension addition, not a root one */
 
     if(ASN__STACK_OVERFLOW_CHECK(opt_codec_ctx))
         ASN__DECODE_FAILED;
@@ -39,7 +40,10 @@ CHOICE_decode_aper(const asn_codec_ctx_t *opt_codec_ctx,
     if(ct && ct->flags & APC_EXTENSIBLE) {
         value = per_get_few_bits(pd, 1);
         if(value < 0) ASN__DECODE_STARVED;
-        if(value) ct = 0;  /* Not restricted */
+        if(value) {
+            ct = 0;  /* Not restricted */
+            ext_adds = 1;
+        }
         if((unsigned)value >= td->elements_count)
             ASN__DECODE_FAILED;
     }
@@ -55,12 +59,19 @@ CHOICE_decode_aper(const asn_codec_ctx_t *opt_codec_ctx,
         if(specs->ext_start == -1)
             ASN__DECODE_FAILED;
 
-        if(specs && specs->tag2el_count > (unsigned)specs->ext_start) {
+        if(td->elements_count > (unsigned)specs->ext_start) {
             value = aper_get_nsnnwn(pd); /* extension elements range */
             if(value < 0) ASN__DECODE_STARVED;
             value += specs->ext_start;
             if((unsigned)value >= td->elements_count)
                 ASN__DECODE_FAILED;
+        } else if(ext_adds) {
+            /*
+             * The extension bit announced an extension addition, but this
+             * CHOICE defines none. Do not reuse the extension bit as a
+             * member index: reject the input instead.
+             */
+            ASN__DECODE_FAILED;
         }
     }
 
@@ -83,6 +94,12 @@ CHOICE_decode_aper(const asn_codec_ctx_t *opt_codec_ctx,
         memb_ptr2 = &memb_ptr;
     }
     ASN_DEBUG("Discovered CHOICE %s encodes %s", td->name, elm->name);
+
+    if(!elm->type || !elm->type->op || !elm->type->op->aper_decoder) {
+        ASN_DEBUG("No APER decoder for %s in %s (CHOICE)",
+                  elm->name, td->name);
+        ASN__DECODE_FAILED;
+    }
 
     if(ct && ct->range_bits >= 0) {
         rv = elm->type->op->aper_decoder(opt_codec_ctx, elm->type,

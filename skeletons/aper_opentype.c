@@ -55,6 +55,12 @@ aper_open_type_get_simple(const asn_codec_ctx_t *ctx,
 	spd.nbits = bufLen << 3;
 
 	ASN_DEBUG_INDENT_ADD(+4);
+	if(!td->op || !td->op->aper_decoder) {
+		ASN_DEBUG("No APER decoder for %s (open type)", td->name);
+		ASN_DEBUG_INDENT_ADD(-4);
+		FREEMEM(buf);
+		ASN__DECODE_FAILED;
+	}
 	rv = td->op->aper_decoder(ctx, td, constraints, sptr, &spd);
 	ASN_DEBUG_INDENT_ADD(-4);
 
