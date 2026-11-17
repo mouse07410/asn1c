@@ -1,4 +1,9 @@
 Changes since v1.5.3:
+	* Fix full-width INTEGER PER constraint metadata without signed overflow
+	  (issue #611, PR #612 by Javier / @mr-j0nes). Derive widths from unsigned
+	  spans; expand arithmetic, C metadata and generated Rust PER regressions.
+	  Harden the portable boundary-test watchdog and document security review,
+	  Copilot feedback, validation and remaining limits in docs/issue-611-review.md.
 	* Bound Rust compiler suite concurrency by ordering its scripts and defaulting
 	  Cargo to one build job, while retaining failure assertions. External
 	  SIGKILLs were observed during a suite run; their cause remains unknown.

@@ -25,7 +25,8 @@ check-tagged-choice-sequence-of.sh.log \
 check-pdu-deps-primitive-helpers.sh.log \
 check-issue-586.sh.log check-no-applicable-constraints.sh.log \
 check-xer-text-bitstring.sh.log check-issue-592.sh.log \
-check-standard-module-order.sh.log check-reversed-ranges.sh.log: $(ASN1C)
+check-standard-module-order.sh.log check-reversed-ranges.sh.log \
+check-boundary-ranges.sh.log: $(ASN1C)
 
 EXTRA_DIST = README $(srcdir)/*asn1* $(srcdir)/exit-status/*.asn1 \
     $(srcdir)/issue-586/OpenV1.asn1 \

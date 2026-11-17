@@ -66,6 +66,62 @@ check_parse_limits(void) {
 }
 
 /*
+ * Purpose: check unsigned bit-length helpers at their boundaries.
+ * Original source: mr-j0nes, PR #612, with expanded boundary coverage.
+ * Version/date: 1.1, 2026-11-17.
+ * Inputs: none. Returns: no value.
+ * Exceptions: assertion failure terminates the test.
+ * Responsible party: asn1c maintainers.
+ * History: checks every unsigned power-of-two boundary and signed small range.
+ * Example: main() calls this after the parse-limit checks.
+ */
+static void
+check_bit_lengths(void) {
+    size_t bit; /* state variable: current unsigned bit boundary. */
+    int left; /* state variable: lower endpoint under exhaustive test. */
+    int right; /* state variable: upper endpoint under exhaustive test. */
+
+    /* Check zero and both sides of every unsigned power-of-two boundary. */
+    assert(asn1p_unsigned_bit_length(0) == 0);
+    for(bit = 1; bit <= ASN_INTEGER_BITS; bit++) {
+        asn1c_uinteger_t power = (asn1c_uinteger_t)1 << (bit - 1);
+        assert(asn1p_unsigned_bit_length(power - 1) == bit - 1);
+        assert(asn1p_unsigned_bit_length(power) == bit);
+    }
+    assert(asn1p_unsigned_bit_length(~(asn1c_uinteger_t)0)
+           == ASN_INTEGER_BITS);
+
+    /* Exhaust ordered and reversed intervals in a signed range small enough
+     * that the independent count calculation cannot overflow. */
+    for(left = -32; left <= 32; left++) {
+        for(right = -32; right <= 32; right++) {
+            int width = 0; /* state variable: independently calculated width. */
+            int capacity = 1; /* state variable: representable value count. */
+            int count = right >= left ? right - left + 1 : 0;
+
+            while(capacity < count) {
+                width++;
+                capacity *= 2;
+            }
+            assert(asn1p_range_bit_length(left, right) == (size_t)width);
+        }
+    }
+
+    /* Verify the full signed span and familiar power-of-two range widths. */
+    assert(asn1p_range_bit_length(5, 5) == 0);
+    assert(asn1p_range_bit_length(0, 1) == 1);
+    assert(asn1p_range_bit_length(0, 2) == 2);
+    assert(asn1p_range_bit_length(0, 3) == 2);
+    assert(asn1p_range_bit_length(0, 255) == 8);
+    assert(asn1p_range_bit_length(0, 256) == 9);
+    assert(asn1p_range_bit_length(-128, 127) == 8);
+    assert(asn1p_range_bit_length(0, ASN_INTEGER_MAX) == ASN_INTEGER_BITS - 1);
+    assert(asn1p_range_bit_length(ASN_INTEGER_MIN, 0) == ASN_INTEGER_BITS);
+    assert(asn1p_range_bit_length(ASN_INTEGER_MIN, ASN_INTEGER_MAX)
+           == ASN_INTEGER_BITS);
+}
+
+/*
  * Purpose: run parser boundary and INTEGER representation regressions.
  * Original source: existing asn1c integer tests; PR #598 boundary extension.
  * Version/date: 1.1, 2026-11-13.
@@ -121,6 +177,8 @@ int main() {
     default:
         assert(!"Unreachable");
     }
+
+    check_bit_lengths();
 
     return 0;
 }

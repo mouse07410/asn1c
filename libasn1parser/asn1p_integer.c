@@ -83,6 +83,51 @@ strtoaint_lim(const char *str, const char **end, asn1c_integer_t *intp) {
 	return STRTOX_OK;
 }
 
+/*
+ * Purpose: return the binary width needed to encode values from zero through
+ * value, inclusive. This is ceil(log2(value + 1)); zero needs no bits.
+ * Original source: mr-j0nes, PR #612.
+ * Version/date: 1.0, 2026-11-17.
+ * Inputs: value, the largest unsigned value in the encoded range.
+ * Returns: the number of bits needed to encode that range.
+ * Exceptions: none.
+ * Responsible party: mr-j0nes (original implementation); asn1c maintainers.
+ * History: helper added for PER integer range width calculation.
+ * Example: asn1p_unsigned_bit_length(3) returns 2 for values 0 through 3.
+ */
+size_t
+asn1p_unsigned_bit_length(asn1c_uinteger_t value) {
+	size_t bits = 0; /* state variable: accumulated binary width. */
+	/* Consume one unsigned bit per iteration; no signed arithmetic is used. */
+	while(value) {
+		bits++;
+		value >>= 1;
+	}
+	return bits;
+}
+
+/*
+ * Purpose: return the minimum bit width for the inclusive signed range.
+ * The width is ceil(log2(count)), where count is right - left + 1; a
+ * singleton range therefore needs zero bits.
+ * Original source: mr-j0nes, PR #612.
+ * Version/date: 1.0, 2026-11-17.
+ * Inputs: left, the lower signed endpoint; right, the upper signed endpoint.
+ * Returns: the minimum width, or zero when right is less than left.
+ * Exceptions: none.
+ * Responsible party: mr-j0nes (original implementation); asn1c maintainers.
+ * History: uses unsigned span subtraction to cover the full signed domain
+ * without overflowing signed arithmetic.
+ * Example: asn1p_range_bit_length(-128, 127) returns 8.
+ */
+size_t
+asn1p_range_bit_length(asn1c_integer_t left, asn1c_integer_t right) {
+	if(right < left)
+		return 0;
+	return asn1p_unsigned_bit_length((asn1c_uinteger_t)right
+					 - (asn1c_uinteger_t)left);
+}
+
 int
 asn1p_atoi(const char *ptr, asn1c_integer_t *value) {
     const char *end = ptr + strlen(ptr);
