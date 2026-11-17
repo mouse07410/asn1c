@@ -2,6 +2,10 @@ Changes since v1.5.3:
 	* Bound Rust compiler suite concurrency by ordering its scripts and defaulting
 	  Cargo to one build job, while retaining failure assertions. External
 	  SIGKILLs were observed during a suite run; their cause remains unknown.
+	* Harden PR #610's range-watchdog self-tests: reap fake-compiler children,
+	  allow scheduling headroom, and reject invalid WATCHDOG_DEADLINE values.
+	  Keep deadline expiry authoritative even for graceful TERM exits, and
+	  cover malformed deadline inputs as well as cancellation and escalation.
 	* Run the reversed-range compiler regression without GNU timeout, using
 	  a POSIX sleep/kill watchdog with a ten-second deadline and bounded
 	  termination grace; clean up compiler and timer children on interruption.
