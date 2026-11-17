@@ -24,9 +24,29 @@
 #
 # An abort is the failure this test exists for, so a timeout (exit 124) or a
 # death by signal (exit 128+) is reported separately from an ordinary error
-# exit. A POSIX sleep/kill watchdog bounds the compiler run on every host.
+# exit. A POSIX sleep/kill watchdog bounds the compiler run on every host;
+# it is cancelled through a cancel file as well as a signal, because a
+# signal delivered while the timer is being forked can be lost.
 
 set -eu
+
+if [ "${WATCHDOG_DEADLINE+x}" = x ]; then
+    deadline=$WATCHDOG_DEADLINE
+else
+    deadline=10
+fi
+
+case "$deadline" in
+    ''|*[!0-9]*|0|0*)
+        echo "ERROR: WATCHDOG_DEADLINE must be a canonical decimal integer from 1 to 3600" >&2
+        exit 2
+        ;;
+esac
+
+if [ "${#deadline}" -gt 4 ] || [ "$deadline" -gt 3600 ]; then
+    echo "ERROR: WATCHDOG_DEADLINE must be a canonical decimal integer from 1 to 3600" >&2
+    exit 2
+fi
 
 top_srcdir=$(cd "${top_srcdir:-../..}" && pwd)
 top_builddir=$(cd "${top_builddir:-../..}" && pwd)
@@ -37,6 +57,7 @@ TMPDIR_TEST=$(mktemp -d)
 # These state variables hold direct child PIDs for exit/signal cleanup.
 active_compiler_pid=
 active_watchdog_pid=
+active_cancel=
 
 # Purpose: Stop active test children and remove temporary files on exit.
 # Original source: Added for ASN1-0088 reversed range regression coverage.
@@ -50,10 +71,15 @@ active_watchdog_pid=
 cleanup () {
     trap - EXIT HUP INT TERM
 
+    if [ -n "$active_cancel" ]; then
+        : > "$active_cancel"
+    fi
+
     if [ -n "$active_watchdog_pid" ]; then
         kill -TERM "$active_watchdog_pid" 2>/dev/null || :
         wait "$active_watchdog_pid" 2>/dev/null || :
         active_watchdog_pid=
+        active_cancel=
     fi
 
     if [ -n "$active_compiler_pid" ]; then
@@ -92,43 +118,50 @@ write_schema () {
         > "$TMPDIR_TEST/$name.asn1"
 }
 
-# Purpose: Sleep for a bounded watchdog interval and honor interruption.
-# Original source: Added for ASN1-0088 reversed range regression coverage.
-# Version/date: 1, 2026-11-16.
-# Inputs: SECONDS is the requested delay; uses sleep_pid and interruption state.
-# Returns: Zero when the interval completes; non-zero when interrupted.
+# Purpose: Sleep for a bounded interval, cancel file and interruption aware.
+# Original source: Added with the reversed range checks.
+# Version/date: 2, 2026-11-16.
+# Inputs: SECONDS is the requested delay; uses cancel_file, sleep_pid and the
+#         interruption state of the calling watchdog.
+# Returns: Zero when the full interval passes; non-zero when cancelled.
 # Exceptions: Sleep and kill failures are tolerated during process races.
 # Responsible party: asn1c test maintainers.
-# History: Saves the timer PID before acting on a deferred signal.
+# History: Polls a cancel file so a lost cancel signal costs at most a second.
 # Example: watchdog_sleep 10
 watchdog_sleep () {
     seconds=$1
-    sleep "$seconds" &
-    sleep_pid=$!
-    if [ -n "$watchdog_interrupted" ]; then
-        kill "$sleep_pid" 2>/dev/null || :
-    fi
-    wait "$sleep_pid" 2>/dev/null || :
-    # A trapped signal can interrupt wait before the killed sleep is reaped.
-    if [ -n "$watchdog_interrupted" ]; then
+    while [ "$seconds" -gt 0 ]; do
+        sleep 1 &
+        sleep_pid=$!
+        if [ -n "$watchdog_interrupted" ] || [ -f "$cancel_file" ]; then
+            kill "$sleep_pid" 2>/dev/null || :
+        fi
         wait "$sleep_pid" 2>/dev/null || :
-    fi
-    sleep_pid=
-    [ -z "$watchdog_interrupted" ]
+        # A trapped signal can interrupt wait before the killed sleep is reaped.
+        if [ -n "$watchdog_interrupted" ] || [ -f "$cancel_file" ]; then
+            wait "$sleep_pid" 2>/dev/null || :
+            sleep_pid=
+            return 1
+        fi
+        sleep_pid=
+        seconds=$((seconds - 1))
+    done
+    return 0
 }
 
 # Purpose: Enforce the deadline and stop the compiler if it expires.
-# Original source: Added for ASN1-0088 reversed range regression coverage.
-# Version/date: 1, 2026-11-16.
-# Inputs: Compiler PID and marker path.
+# Original source: Added with the reversed range checks.
+# Version/date: 2, 2026-11-16.
+# Inputs: Compiler PID, marker path and cancel file path.
 # Returns: No value; creates the marker on timeout and signals the compiler.
 # Exceptions: Sleep and kill failures are tolerated during process races.
 # Responsible party: asn1c test maintainers.
-# History: Cancels and reaps its timer on normal completion or interruption.
-# Example: watchdog "$active_compiler_pid" "$timeout_marker" &
+# History: Polls the cancel file and checks the compiler is still alive.
+# Example: watchdog "$active_compiler_pid" "$timeout_marker" "$cancel" &
 watchdog () {
     compiler_pid=$1
     marker=$2
+    cancel_file=$3
     # The sleep PID is a state variable local to this watchdog subshell.
     sleep_pid=
     # This state variable defers timer cleanup until its launched PID is saved.
@@ -138,27 +171,37 @@ watchdog () {
               kill "$sleep_pid" 2>/dev/null || :
           fi' HUP INT TERM
 
-    watchdog_sleep 10 || exit 0
+    watchdog_sleep "$deadline" || exit 0
 
+    # The compiler may have exited while a cancel was being delivered.
+    kill -0 "$compiler_pid" 2>/dev/null || exit 0
+    [ ! -f "$cancel_file" ] || exit 0
     : > "$marker"
     kill -TERM "$compiler_pid" 2>/dev/null || exit 0
+    # Cancel-aware grace: if the compiler died on TERM, the parent cancels
+    # the watchdog here and the KILL is skipped; if it ignored TERM, the
+    # parent is still waiting, the grace completes, and the KILL runs.
     watchdog_sleep 2 || exit 0
     kill -KILL "$compiler_pid" 2>/dev/null || :
 }
 
 # Purpose: Run asn1c with a ten-second deadline and bounded TERM grace.
-# Original source: Added for ASN1-0088 reversed range regression coverage.
-# Version/date: 1, 2026-11-16.
+# Original source: Added with the reversed range checks.
+# Version/date: 2, 2026-11-16.
 # Inputs: NAME is the temporary filename stem for input and output files.
-# Returns: No value; sets status to compiler status or 124 on deadline.
+# Returns: No value; sets status to compiler status or 124 on a real
+#          deadline (marker present, whatever the wait status).
 # Exceptions: The caller handles non-zero status and timeout outcomes.
 # Responsible party: asn1c test maintainers.
-# History: Uses POSIX sleep and kill rather than an external timeout utility.
+# History: Cancels through a file as well as a signal; keeps a normal
+#          exit status when the compiler won the race.
 # Example: run_asn1c value-reversed
 run_asn1c () {
     name=$1
     timeout_marker="$TMPDIR_TEST/$name.timeout"
-    rm -f "$timeout_marker"
+    cancel_file="$TMPDIR_TEST/$name.cancel"
+    rm -f "$timeout_marker" "$cancel_file"
+    active_cancel=$cancel_file
 
     # Defer signal exits until both child PIDs have been recorded for cleanup.
     # This state variable stores the signal's normal shell exit status.
@@ -169,7 +212,7 @@ run_asn1c () {
     "$ASN1C" -E -F "$TMPDIR_TEST/$name.asn1" \
         >"$TMPDIR_TEST/$name.out" 2>"$TMPDIR_TEST/$name.err" &
     active_compiler_pid=$!
-    watchdog "$active_compiler_pid" "$timeout_marker" &
+    watchdog "$active_compiler_pid" "$timeout_marker" "$cancel_file" &
     active_watchdog_pid=$!
     trap 'exit 129' HUP
     trap 'exit 130' INT
@@ -183,11 +226,18 @@ run_asn1c () {
     status=$?
     set -e
 
-    # Cancel and reap the watchdog, including whichever sleep it owns.
+    # Cancel and reap the watchdog, including whichever sleep it owns. The
+    # file is written first so a signal lost during the watchdog's fork
+    # window is still observed by its one-second poll.
+    : > "$cancel_file"
     kill -TERM "$active_watchdog_pid" 2>/dev/null || :
     wait "$active_watchdog_pid" 2>/dev/null || :
     active_watchdog_pid=
     active_compiler_pid=
+    active_cancel=
+    # The watchdog rechecks cancellation and compiler liveness before marking
+    # a timeout. These separate checks are best effort, not atomic; the marker
+    # is authoritative once present, even if the compiler then exits normally.
     if [ -f "$timeout_marker" ]; then
         status=124
     fi
@@ -210,7 +260,7 @@ check_invalid () {
     run_asn1c "$name"
 
     if [ "$status" -eq 124 ]; then
-        echo "FAIL: $name ($schema): timed out after 10s (asn1c did not terminate)"
+        echo "FAIL: $name ($schema): timed out after ${deadline}s (asn1c did not terminate)"
         cat "$TMPDIR_TEST/$name.err" >&2
         failures=$((failures + 1))
     elif [ "$status" -ge 128 ]; then
@@ -248,7 +298,7 @@ check_valid () {
     run_asn1c "$name"
 
     if [ "$status" -eq 124 ]; then
-        echo "FAIL: $name ($schema): timed out after 10s (asn1c did not terminate)"
+        echo "FAIL: $name ($schema): timed out after ${deadline}s (asn1c did not terminate)"
         cat "$TMPDIR_TEST/$name.err" >&2
         failures=$((failures + 1))
     elif [ "$status" -ge 128 ]; then
@@ -263,6 +313,147 @@ check_valid () {
         echo "PASS: $name ($schema)"
     fi
 }
+
+# Purpose: Check watchdog deadlines and cleanup with controlled fake compilers.
+# Original source: Added with the reversed range checks.
+# Version/date: 1, 2026-11-16.
+# Inputs: LABEL names the case; BODY is the fake compiler script; EXPECT is
+#         its expected asn1c status; TIMEOUT optionally sets its deadline.
+# Returns: No value; increments failures when status or child cleanup differs.
+# Exceptions: File and command errors may exit because the script uses set -e.
+# Responsible party: asn1c test maintainers.
+# History: Covers prompt exit, hanging compilers and graceful or ignored TERM.
+# Example: selftest_case prompt-exit 'exit 65' 65 10
+selftest_case () {
+    label=$1
+    body=$2
+    expect=$3
+    timeout=${4:-3}
+    fake="$TMPDIR_TEST/fake-$label.sh"
+    child_pid_file="$TMPDIR_TEST/$label.child-pid"
+    printf '#!/bin/sh\n%s\n' "$body" > "$fake"
+    chmod +x "$fake"
+    write_schema "$label" 'INTEGER'
+    saved_asn1c=$ASN1C saved_deadline=$deadline
+    ASN1C=$fake deadline=$timeout
+    SELFTEST_CHILD_PID_FILE=$child_pid_file
+    export SELFTEST_CHILD_PID_FILE
+    run_asn1c "$label"
+    ASN1C=$saved_asn1c deadline=$saved_deadline
+    unset SELFTEST_CHILD_PID_FILE
+    if [ "$status" -eq "$expect" ]; then
+        echo "PASS: watchdog $label: status $status"
+    else
+        echo "FAIL: watchdog $label: expected $expect, got $status"
+        failures=$((failures + 1))
+    fi
+
+    case "$label" in
+        graceful-term-*)
+            if [ ! -s "$child_pid_file" ]; then
+                echo "FAIL: watchdog $label: child PID was not recorded"
+                failures=$((failures + 1))
+            else
+                IFS= read -r child_pid < "$child_pid_file"
+                if kill -0 "$child_pid" 2>/dev/null; then
+                    echo "FAIL: watchdog $label: child $child_pid survived compiler exit"
+                    failures=$((failures + 1))
+                else
+                    echo "PASS: watchdog $label: child process was reaped"
+                fi
+            fi
+            ;;
+    esac
+}
+
+# Purpose: Check malformed WATCHDOG_DEADLINE values fail before test setup.
+# Original source: Added with PR610 watchdog hardening.
+# Version/date: 1, 2026-11-16.
+# Inputs: LABEL names the case; VALUE is the malformed environment value.
+# Returns: No value; increments failures unless exit 2 includes the validation.
+# Exceptions: File and command errors may exit because the script uses set -e.
+# Responsible party: asn1c test maintainers.
+# History: Covers invalid syntax, noncanonical numbers and out-of-range values.
+# Example: selftest_deadline_input leading-zero 01
+selftest_deadline_input () {
+    label=$1
+    value=$2
+    output="$TMPDIR_TEST/deadline-$label.out"
+    error="$TMPDIR_TEST/deadline-$label.err"
+
+    if WATCHDOG_DEADLINE=$value sh "$0" > "$output" 2> "$error"; then
+        status=0
+    else
+        status=$?
+    fi
+
+    if [ "$status" -eq 2 ] && grep -Fq \
+        'WATCHDOG_DEADLINE must be a canonical decimal integer from 1 to 3600' "$error"; then
+        echo "PASS: watchdog deadline $label rejected"
+    else
+        echo "FAIL: watchdog deadline $label: expected exit 2 and validation message, got $status"
+        cat "$error" >&2
+        failures=$((failures + 1))
+    fi
+}
+
+selftest_deadline_input alphabetic abc
+selftest_deadline_input empty ''
+selftest_deadline_input plus-sign +1
+selftest_deadline_input whitespace ' 1'
+selftest_deadline_input decimal 1.5
+selftest_deadline_input negative -1
+selftest_deadline_input zero 0
+selftest_deadline_input leading-zero 01
+selftest_deadline_input above-limit 3601
+selftest_deadline_input oversized 9999999999999999999999999999999999999999
+
+selftest_case prompt-exit 'exit 65' 65 10
+selftest_case hang-term 'exec sleep 30' 124
+# These variables expand in the generated compiler, not the test runner.
+# shellcheck disable=SC2016
+selftest_case graceful-term-65 \
+    '# child_pid and term_pending are state variables for deferred TERM cleanup.
+child_pid=
+term_pending=
+trap "term_pending=1
+if [ -n \"\$child_pid\" ]; then
+    kill \"\$child_pid\" 2>/dev/null || :
+    wait \"\$child_pid\" 2>/dev/null || :
+    exit 65
+fi" TERM HUP INT
+sleep 30 &
+child_pid=$!
+printf "%s\n" "$child_pid" > "$SELFTEST_CHILD_PID_FILE"
+if [ -n "$term_pending" ]; then
+    kill "$child_pid" 2>/dev/null || :
+    wait "$child_pid" 2>/dev/null || :
+    exit 65
+fi
+wait "$child_pid"' 124
+# These variables expand in the generated compiler, not the test runner.
+# shellcheck disable=SC2016
+selftest_case graceful-term-0 \
+    '# child_pid and term_pending are state variables for deferred TERM cleanup.
+child_pid=
+term_pending=
+trap "term_pending=1
+if [ -n \"\$child_pid\" ]; then
+    kill \"\$child_pid\" 2>/dev/null || :
+    wait \"\$child_pid\" 2>/dev/null || :
+    exit 0
+fi" TERM HUP INT
+sleep 30 &
+child_pid=$!
+printf "%s\n" "$child_pid" > "$SELFTEST_CHILD_PID_FILE"
+if [ -n "$term_pending" ]; then
+    kill "$child_pid" 2>/dev/null || :
+    wait "$child_pid" 2>/dev/null || :
+    exit 0
+fi
+wait "$child_pid"' 124
+selftest_case ignore-term-kill \
+    'trap "" TERM; exec sleep 30' 124
 
 # Value and SIZE ranges whose lower bound exceeds the upper bound.
 check_invalid value-reversed 'INTEGER (5..1)'
