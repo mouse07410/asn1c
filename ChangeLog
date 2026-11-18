@@ -1,4 +1,6 @@
 Changes since v1.5.3:
+	* Make the extensible CHOICE decode exception's scope explicit so Clang
+	  accepts generated-code builds with -Werror -Wall.
 	* Preserve the exact signed minimum when printing ASN.1 INTEGER values,
 	  including compiler range diagnostics (issue #613, PR #614).
 	* Repair debug builds of the BER and OER decoder dispatchers when rejecting

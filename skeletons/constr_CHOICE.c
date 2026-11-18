@@ -132,8 +132,9 @@ CHOICE_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
     /* A completed extensible PER/OER decode can legitimately skip a newer arm.
      * This never permits encoding an unselected application CHOICE. */
     if(present == 0 && specs->ext_start >= 0 && asn_check_constraints_is_decoding()
-       && (asn_check_constraints_is_per() || asn_check_constraints_is_oer()))
+       && (asn_check_constraints_is_per() || asn_check_constraints_is_oer())) {
         return 0;
+    }
 
 	if(present > 0 && present <= td->elements_count) {
 		asn_TYPE_member_t *elm = &td->elements[present-1];
