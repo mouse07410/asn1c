@@ -16,7 +16,11 @@ oer_decode(const asn_codec_ctx_t *opt_codec_ctx,
 
     /* Reject invalid public arguments before dispatching into type code. */
     if(!type_descriptor || !type_descriptor->op || !type_descriptor->op->oer_decoder || !struct_ptr
-       || (size && !ptr)) ASN__DECODE_FAILED;
+       || (size && !ptr)) {
+        /* The descriptor may be absent, so do not use the td-based debug macro. */
+        asn_dec_rval_t failure = {RC_FAIL, 0};
+        return failure;
+    }
 
 	/*
 	 * Stack checker requires that the codec context

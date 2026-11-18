@@ -6,6 +6,7 @@
 #include <asn_internal.h>
 #include <constr_CHOICE.h>
 #include <aper_opentype.h>
+#include <limits.h>
 
 asn_dec_rval_t
 CHOICE_decode_aper(const asn_codec_ctx_t *opt_codec_ctx,
@@ -19,6 +20,7 @@ CHOICE_decode_aper(const asn_codec_ctx_t *opt_codec_ctx,
     void **memb_ptr2 = NULL;
     void *st = *sptr;
     int value = 0;
+    int ext_adds = 0;  /* Decoding an extension addition, not a root one */
 
     if(ASN__STACK_OVERFLOW_CHECK(opt_codec_ctx))
         ASN__DECODE_FAILED;
@@ -39,7 +41,10 @@ CHOICE_decode_aper(const asn_codec_ctx_t *opt_codec_ctx,
     if(ct && ct->flags & APC_EXTENSIBLE) {
         value = per_get_few_bits(pd, 1);
         if(value < 0) ASN__DECODE_STARVED;
-        if(value) ct = 0;  /* Not restricted */
+        if(value) {
+            ct = 0;  /* Not restricted */
+            ext_adds = 1;
+        }
         if((unsigned)value >= td->elements_count)
             ASN__DECODE_FAILED;
     }
@@ -55,12 +60,22 @@ CHOICE_decode_aper(const asn_codec_ctx_t *opt_codec_ctx,
         if(specs->ext_start == -1)
             ASN__DECODE_FAILED;
 
-        if(specs && specs->tag2el_count > (unsigned)specs->ext_start) {
+        if(td->elements_count > (unsigned)specs->ext_start) {
             value = aper_get_nsnnwn(pd); /* extension elements range */
             if(value < 0) ASN__DECODE_STARVED;
-            value += specs->ext_start;
-            if((unsigned)value >= td->elements_count)
+            /* Check the wire index before adding the root size: untrusted
+             * large indices must neither overflow nor select a root member. */
+            if((unsigned)value >= td->elements_count - (unsigned)specs->ext_start
+               || value >= INT_MAX - specs->ext_start)
                 ASN__DECODE_FAILED;
+            value += specs->ext_start;
+        } else if(ext_adds) {
+            /*
+             * The extension bit announced an extension addition, but this
+             * CHOICE defines none. Do not reuse the extension bit as a
+             * member index: reject the input instead.
+             */
+            ASN__DECODE_FAILED;
         }
     }
 
@@ -71,10 +86,18 @@ CHOICE_decode_aper(const asn_codec_ctx_t *opt_codec_ctx,
         ASN_DEBUG("CHOICE presence index effective %d", value);
     }
 
+    /* Reject an unusable descriptor before recording a present member, so
+     * cleanup cannot follow a missing type or operation table. */
+    elm = &td->elements[value];
+    if(!elm->type || !elm->type->op || !elm->type->op->aper_decoder) {
+        ASN_DEBUG("No APER decoder for %s in %s (CHOICE)",
+                  elm->name, td->name);
+        ASN__DECODE_FAILED;
+    }
+
     /* Set presence to be able to free it later */
     _set_present_idx(st, specs->pres_offset, specs->pres_size, value + 1);
 
-    elm = &td->elements[value];
     if(elm->flags & ATF_POINTER) {
         /* Member is a pointer to another structure */
         memb_ptr2 = (void **)((char *)st + elm->memb_offset);

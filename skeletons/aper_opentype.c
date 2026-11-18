@@ -21,6 +21,9 @@ aper_open_type_get_simple(const asn_codec_ctx_t *ctx,
 	size_t padding;
 
 	ASN__STACK_OVERFLOW_CHECK(ctx);
+	/* Validate metadata and input before logging or consuming the stream. */
+	if(!td || !td->op || !td->op->aper_decoder || !pd)
+		ASN__DECODE_FAILED;
 
 	ASN_DEBUG("Getting open type %s...", td->name);
 

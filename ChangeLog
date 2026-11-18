@@ -1,4 +1,12 @@
 Changes since v1.5.3:
+	* Preserve the exact signed minimum when printing ASN.1 INTEGER values,
+	  including compiler range diagnostics (issue #613, PR #614).
+	* Repair debug builds of the BER and OER decoder dispatchers when rejecting
+	  invalid arguments; format Rust BER tests for the CI formatting check.
+	* Reject unsupported APER CHOICE extension alternatives rather than
+	  decoding them as root members (issue #615, PR #616 by Javier / @mr-j0nes).
+	  Guard extension index arithmetic and missing APER decoders; add regressions
+	  for large and truncated indices, valid choices, and absent codecs.
 	* Add --strict-mode for C and Rust across selected codec families. Apply
 	  X.691 non-known-multiplier PER constraint visibility, automatic C root
 	  validation, zero PER filler, strict DER input and standard XER wrappers.

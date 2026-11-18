@@ -18676,7 +18676,10 @@ mod tests {
         context
             .verify_canonical(&input, consumed, &canonical.bytes)
             .unwrap();
-        assert_eq!(context.work_used, (30 + usize::from(cfg!(feature = "strict-mode"))) * 8);
+        assert_eq!(
+            context.work_used,
+            (30 + usize::from(cfg!(feature = "strict-mode"))) * 8
+        );
         assert!(strict_decode_sequence_ia5(
             &input,
             &Limits {
@@ -19390,7 +19393,10 @@ mod tests {
         context
             .verify_canonical(&cer, consumed, &canonical.bytes)
             .unwrap();
-        assert_eq!(context.work_used, (30 + usize::from(cfg!(feature = "strict-mode"))) * 8);
+        assert_eq!(
+            context.work_used,
+            (30 + usize::from(cfg!(feature = "strict-mode"))) * 8
+        );
         let mut low_work = RecordContext::new_with_aggregate_scratch(&Limits {
             max_work_bits: (30 + usize::from(cfg!(feature = "strict-mode"))) * 8 - 1,
             ..Limits::default()
@@ -19904,10 +19910,14 @@ mod tests {
             assert_eq!(value.as_bytes(), [0xff]);
             let invalid_strict = matches!(
                 *kind,
-                CharacterStringKind::Utf8String | CharacterStringKind::NumericString
-                    | CharacterStringKind::PrintableString | CharacterStringKind::VisibleString
-                    | CharacterStringKind::Iso646String | CharacterStringKind::Ia5String
-                    | CharacterStringKind::BmpString | CharacterStringKind::UniversalString
+                CharacterStringKind::Utf8String
+                    | CharacterStringKind::NumericString
+                    | CharacterStringKind::PrintableString
+                    | CharacterStringKind::VisibleString
+                    | CharacterStringKind::Iso646String
+                    | CharacterStringKind::Ia5String
+                    | CharacterStringKind::BmpString
+                    | CharacterStringKind::UniversalString
             ) && cfg!(feature = "strict-mode");
             let wire = [*tag, 1, 0xff];
             if invalid_strict {
@@ -20020,7 +20030,10 @@ mod tests {
         for (kind, bytes) in accepted {
             let value = CharacterString::try_from_bytes(*kind, bytes, &limits).unwrap();
             if cfg!(feature = "strict-mode")
-                && matches!(*kind, CharacterStringKind::BmpString | CharacterStringKind::UniversalString)
+                && matches!(
+                    *kind,
+                    CharacterStringKind::BmpString | CharacterStringKind::UniversalString
+                )
             {
                 assert!(encode_character_string_cer(&value, &limits).is_err());
                 assert!(encode_character_string_der(&value, &limits).is_err());
@@ -20048,11 +20061,20 @@ mod tests {
         ];
         for (kind, bytes) in rejected {
             let value = CharacterString::try_from_bytes(*kind, bytes, &limits).unwrap();
-            assert_eq!(encode_character_string_der(&value, &limits).is_err(), cfg!(feature = "strict-mode"));
+            assert_eq!(
+                encode_character_string_der(&value, &limits).is_err(),
+                cfg!(feature = "strict-mode")
+            );
             assert!(encode_character_string_cer(&value, &limits).is_err());
-            let mut wire = vec![u8::try_from(kind.tag_number()).unwrap(), u8::try_from(bytes.len()).unwrap()];
+            let mut wire = vec![
+                u8::try_from(kind.tag_number()).unwrap(),
+                u8::try_from(bytes.len()).unwrap(),
+            ];
             wire.extend_from_slice(bytes);
-            assert_eq!(decode_character_string_ber(&wire, *kind, &limits).is_err(), cfg!(feature = "strict-mode"));
+            assert_eq!(
+                decode_character_string_ber(&wire, *kind, &limits).is_err(),
+                cfg!(feature = "strict-mode")
+            );
             assert!(decode_character_string_cer(&wire, *kind, &limits).is_err());
         }
     }
@@ -24636,19 +24658,32 @@ mod tests {
         ];
         for bytes in invalid_utf8 {
             let value = CharacterString::try_from_bytes(utf8, bytes, &limits).unwrap();
-            assert_eq!(encode_character_string_der(&value, &limits).is_err(), cfg!(feature = "strict-mode"));
-            assert_eq!(encode_character_string_cer(&value, &limits).is_err(), cfg!(feature = "strict-mode"));
+            assert_eq!(
+                encode_character_string_der(&value, &limits).is_err(),
+                cfg!(feature = "strict-mode")
+            );
+            assert_eq!(
+                encode_character_string_cer(&value, &limits).is_err(),
+                cfg!(feature = "strict-mode")
+            );
             let mut wire = vec![12, u8::try_from(bytes.len()).unwrap()];
             wire.extend_from_slice(bytes);
-            assert_eq!(decode_character_string_ber(&wire, utf8, &limits).is_err(), cfg!(feature = "strict-mode"));
+            assert_eq!(
+                decode_character_string_ber(&wire, utf8, &limits).is_err(),
+                cfg!(feature = "strict-mode")
+            );
         }
 
         // Boundary scalar values stay valid, including a supplementary plane.
         for bytes in [b"abc".as_slice(), &[0xf4, 0x8f, 0xbf, 0xbf], &[0xc3, 0xa9]] {
             let value = CharacterString::try_from_bytes(utf8, bytes, &limits).unwrap();
             let encoded = encode_character_string_der(&value, &limits).unwrap();
-            assert_eq!(decode_character_string_ber(&encoded.bytes, utf8, &limits).unwrap().value, value);
+            assert_eq!(
+                decode_character_string_ber(&encoded.bytes, utf8, &limits)
+                    .unwrap()
+                    .value,
+                value
+            );
         }
     }
-
 }

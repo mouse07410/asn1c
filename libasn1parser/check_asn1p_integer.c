@@ -13,6 +13,8 @@
 #include "asn1p_integer.h"
 
 static void check(int lineno, asn1c_integer_t value, const char *expected);
+static void check_string(int lineno, asn1c_integer_t value,
+                         const char *expected);
 
 struct {
     uint8_t *buf; size_t size;
@@ -122,6 +124,82 @@ check_bit_lengths(void) {
 }
 
 /*
+ * Purpose: check exact decimal formatting of both formatters.
+ * Original source: mr-j0nes, ASN1-0087.
+ * Version/date: 1.0, 2026-11-17.
+ * Inputs: none. Returns: no value.
+ * Exceptions: assertion failure terminates the test.
+ * Responsible party: asn1c maintainers.
+ * History: split from main() to keep the function size bounded.
+ * Example: main() calls this after the bit-length checks.
+ */
+static void
+check_itoa_formatting(void) {
+    /* asn1p_itoa() and asn1p_itoa_s(): exact decimal formatting. */
+    check_string(__LINE__, 0, "0");
+    check_string(__LINE__, 1, "1");
+    check_string(__LINE__, -1, "-1");
+
+    /* Nine-digit chunk boundaries. */
+    check_string(__LINE__, 999999999, "999999999");
+    check_string(__LINE__, 1000000000, "1000000000");
+    check_string(__LINE__, 1000000001, "1000000001");
+    check_string(__LINE__, -999999999, "-999999999");
+    check_string(__LINE__, -1000000000, "-1000000000");
+    check_string(__LINE__, -1000000001, "-1000000001");
+
+    /* Fast-path boundaries; the expected text follows sizeof(long). */
+    switch(sizeof(long)) {
+        case 8:
+            check_string(__LINE__, LONG_MIN, "-9223372036854775808");
+            check_string(__LINE__, LONG_MAX, "9223372036854775807");
+            break;
+        case 4:
+            check_string(__LINE__, LONG_MIN, "-2147483648");
+            check_string(__LINE__, LONG_MAX, "2147483647");
+            break;
+        default:
+            assert(!"Unreachable");
+    }
+
+    /* intmax_t is 64-bit on every supported platform. */
+    check_string(__LINE__, INTMAX_MIN, "-9223372036854775808");
+    check_string(__LINE__, INTMAX_MAX, "9223372036854775807");
+
+    /*
+     * ASN_INTEGER_MIN/MAX and their neighbours.  The values come from the
+     * macros, never from a literal, so this also compiles on the narrower
+     * integer builds.
+     */
+    switch(sizeof(asn1c_integer_t)) {
+        case 16:
+            check_string(__LINE__, ASN_INTEGER_MIN + 1,
+                         "-170141183460469231731687303715884105727");
+            check_string(__LINE__, ASN_INTEGER_MAX - 1,
+                         "170141183460469231731687303715884105726");
+            check_string(__LINE__, ASN_INTEGER_MIN,
+                         "-170141183460469231731687303715884105728");
+            check_string(__LINE__, ASN_INTEGER_MAX,
+                         "170141183460469231731687303715884105727");
+            break;
+        case 8:
+            check_string(__LINE__, ASN_INTEGER_MIN + 1, "-9223372036854775807");
+            check_string(__LINE__, ASN_INTEGER_MAX - 1, "9223372036854775806");
+            check_string(__LINE__, ASN_INTEGER_MIN, "-9223372036854775808");
+            check_string(__LINE__, ASN_INTEGER_MAX, "9223372036854775807");
+            break;
+        case 4:
+            check_string(__LINE__, ASN_INTEGER_MIN + 1, "-2147483647");
+            check_string(__LINE__, ASN_INTEGER_MAX - 1, "2147483646");
+            check_string(__LINE__, ASN_INTEGER_MIN, "-2147483648");
+            check_string(__LINE__, ASN_INTEGER_MAX, "2147483647");
+            break;
+        default:
+            assert(!"Unreachable");
+    }
+}
+
+/*
  * Purpose: run parser boundary and INTEGER representation regressions.
  * Original source: existing asn1c integer tests; PR #598 boundary extension.
  * Version/date: 1.1, 2026-11-13.
@@ -180,6 +258,8 @@ int main() {
 
     check_bit_lengths();
 
+    check_itoa_formatting();
+
     return 0;
 }
 
@@ -194,4 +274,60 @@ static void check(int lineno, asn1c_integer_t value, const char *expected) {
     }
     printf("%02d: %s -> %s\n", lineno, asn1p_itoa(value), ab->buffer);
     abuf_free(ab);
+}
+
+/*
+ * Purpose: check both formatters, returned length, and buffer-size contract.
+ * Original source: mr-j0nes, PR #614.
+ * Version/date: 1.0, 2026-11-18.
+ * Inputs: lineno identifies the case; value is formatted; expected is its text.
+ * Returns: no value. Exceptions: assertion failure terminates the test.
+ * Responsible party: asn1c maintainers.
+ * History: added with the signed minimum formatting regression.
+ * Example: check_string(__LINE__, -1, "-1").
+ * The exact-length buffer cannot hold the NUL; one more byte must fit.
+ */
+static void check_string(int lineno, asn1c_integer_t value,
+                         const char *expected) {
+    char buf[128] = "";
+    const char *s = asn1p_itoa(value);
+    size_t len = strlen(expected);
+    int ret;
+
+    if(!s || strcmp(s, expected) != 0) {
+        fprintf(stderr, "%02d: asn1p_itoa() -> [%s], expected [%s]\n",
+                lineno, s ? s : "(null)", expected);
+        assert(!"asn1p_itoa() returned the wrong string");
+    }
+
+    ret = asn1p_itoa_s(buf, sizeof(buf), value);
+    if(ret != (int)len || strlen(buf) != len || strcmp(buf, expected) != 0) {
+        fprintf(stderr,
+                "%02d: asn1p_itoa_s() -> ret=%d strlen=%zu [%s], "
+                "expected ret=%d strlen=%zu [%s]\n",
+                lineno, ret, strlen(buf), buf, (int)len, len, expected);
+        assert(!"asn1p_itoa_s() returned the wrong string or length");
+    }
+
+    /* Invalid destinations must fail before reaching snprintf or memcpy. */
+    assert(asn1p_itoa_s(NULL, sizeof(buf), value) == -1);
+
+    ret = asn1p_itoa_s(buf, len, value);
+    if(ret != -1) {
+        fprintf(stderr,
+                "%02d: asn1p_itoa_s(buf, %zu) -> %d, expected -1 "
+                "(no room for the NUL)\n",
+                lineno, len, ret);
+        assert(!"asn1p_itoa_s() accepted a buffer without room for the NUL");
+    }
+
+    ret = asn1p_itoa_s(buf, len + 1, value);
+    if(ret != (int)len || strlen(buf) != len || strcmp(buf, expected) != 0) {
+        fprintf(stderr,
+                "%02d: asn1p_itoa_s(buf, %zu) -> ret=%d strlen=%zu [%s], "
+                "expected ret=%d strlen=%zu [%s]\n",
+                lineno, len + 1, ret, strlen(buf), buf, (int)len, len,
+                expected);
+        assert(!"asn1p_itoa_s() failed on an exactly fitting buffer");
+    }
 }

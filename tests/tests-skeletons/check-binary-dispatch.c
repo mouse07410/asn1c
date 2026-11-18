@@ -588,6 +588,49 @@ test_invalid_dispatch_arguments(void) {
     result = asn_decode(0, ATS_BER, &asn_DEF_BOOLEAN, (void **)&decoded, 0, 1);
     require_condition(result.code == RC_FAIL,
                       "null input buffer", "nonempty input needs a buffer");
+
+    /* Exercise the BER entry point directly, including absent operations. */
+    {
+        asn_TYPE_descriptor_t missing_ops = asn_DEF_BOOLEAN;
+        asn_TYPE_operation_t missing_decoder = *asn_DEF_BOOLEAN.op;
+        missing_ops.op = 0;
+        result = ber_decode(0, 0, (void **)&decoded, valid_der, sizeof(valid_der));
+        require_condition(result.code == RC_FAIL && result.consumed == 0,
+                          "BER null descriptor", "must fail without consuming input");
+        result = ber_decode(0, &missing_ops, (void **)&decoded, valid_der, sizeof(valid_der));
+        require_condition(result.code == RC_FAIL && result.consumed == 0,
+                          "BER missing operations", "must fail without consuming input");
+        missing_decoder.ber_decoder = 0;
+        missing_ops.op = &missing_decoder;
+        result = ber_decode(0, &missing_ops, (void **)&decoded, valid_der, sizeof(valid_der));
+        require_condition(result.code == RC_FAIL && result.consumed == 0,
+                          "BER missing decoder", "must fail without consuming input");
+        result = ber_decode(0, &asn_DEF_BOOLEAN, 0, valid_der, sizeof(valid_der));
+        require_condition(result.code == RC_FAIL && result.consumed == 0,
+                          "BER null output", "must fail without consuming input");
+        result = ber_decode(0, &asn_DEF_BOOLEAN, (void **)&decoded, 0, 1);
+        require_condition(result.code == RC_FAIL && result.consumed == 0,
+                          "BER null input", "must fail without consuming input");
+
+        missing_ops.op = 0;
+        result = oer_decode(0, 0, (void **)&decoded, valid_der, sizeof(valid_der));
+        require_condition(result.code == RC_FAIL && result.consumed == 0,
+                          "OER null descriptor", "must fail without consuming input");
+        result = oer_decode(0, &missing_ops, (void **)&decoded, valid_der, sizeof(valid_der));
+        require_condition(result.code == RC_FAIL && result.consumed == 0,
+                          "OER missing operations", "must fail without consuming input");
+        missing_decoder.oer_decoder = 0;
+        missing_ops.op = &missing_decoder;
+        result = oer_decode(0, &missing_ops, (void **)&decoded, valid_der, sizeof(valid_der));
+        require_condition(result.code == RC_FAIL && result.consumed == 0,
+                          "OER missing decoder", "must fail without consuming input");
+        result = oer_decode(0, &asn_DEF_BOOLEAN, 0, valid_der, sizeof(valid_der));
+        require_condition(result.code == RC_FAIL && result.consumed == 0,
+                          "OER null output", "must fail without consuming input");
+        result = oer_decode(0, &asn_DEF_BOOLEAN, (void **)&decoded, 0, 1);
+        require_condition(result.code == RC_FAIL && result.consumed == 0,
+                          "OER null input", "must fail without consuming input");
+    }
     if(decoded) ASN_STRUCT_FREE(asn_DEF_BOOLEAN, decoded);
 }
 

@@ -49,6 +49,7 @@ check_PROGRAMS =                \
     check-APER-support          \
     check-APER-SET              \
     check-APER-OCTET_STRING     \
+    check-APER-CHOICE-extension \
     check-APER-INTEGER		\
     check-APER-INTEGER-constraint \
     check-APER-INTEGER-semiconstrained \
@@ -246,6 +247,9 @@ CFLAGS = $(filter-out $(CODE_COVERAGE_CFLAGS), @CFLAGS@) \
 LDADD = -lm $(top_builddir)/skeletons/libasn1cskeletons.la
 
 check_BER_NativeInteger_uint64_LDADD = $(LDADD)
+
+check_APER_CHOICE_extension_SOURCES = check-APER-CHOICE-extension.c
+check_APER_CHOICE_extension_LDADD = $(LDADD)
 
 # Enable XER_ALLOW_EMPTY_OPTIONALS for the empty optionals test
 check_XER_empty_optionals_CFLAGS = -DXER_ALLOW_EMPTY_OPTIONALS $(CFLAGS)

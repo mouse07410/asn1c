@@ -149,8 +149,24 @@ const char *asn1p_itoa(asn1c_integer_t v) {
     }
 }
 
+/*
+ * Purpose: format a signed ASN.1 integer as a NUL-terminated decimal string.
+ * Original source: asn1c; unsigned minimum fix by mr-j0nes, PR #614.
+ * Version/date: 1.1, 2026-11-18.
+ * Inputs: buf is the destination; size is its capacity; v is the value.
+ * Returns: decimal string length excluding NUL, or -1 if it does not fit.
+ * Exceptions: none.
+ * Responsible party: asn1c maintainers.
+ * History: use unsigned magnitude to format the minimum without overflow.
+ * Example: asn1p_itoa_s(buf, sizeof(buf), -1) writes "-1" and returns 2.
+ */
 int asn1p_itoa_s(char *buf, size_t size, asn1c_integer_t v) {
     char tmp_buf[128];
+    asn1c_uinteger_t mag;
+    int sign;
+
+    /* A nonzero capacity must refer to writable storage. */
+    if(!buf) return -1;
 
     if(v >= LONG_MIN && v < LONG_MAX) {
         int ret = snprintf(buf, size, "%ld", (long)v);
@@ -160,48 +176,42 @@ int asn1p_itoa_s(char *buf, size_t size, asn1c_integer_t v) {
         return ret;
     }
 
-    int sign = 0;
-    if(v < 0) {
-        if(v == ASN_INTEGER_MIN) {
-            switch(sizeof(v)) {
-            case 16:
-                if(size < 41)
-                    return -1;
-                memcpy(buf, "-170141183460469231731687303715884105729", 41);
-                return 41;
-            case 8:
-                if(size < 21)
-                    return -1;
-                memcpy(buf, "-9223372036854775809", 21);
-                return 21;
-            default:
-                assert(!"unreachable");
-            }
+    /*
+     * Compute |v| in unsigned arithmetic.  Negating ASN_INTEGER_MIN in
+     * asn1c_integer_t would overflow; the unsigned conversion is defined
+     * modulo 2^N and yields 2^(N-1) for the minimum.
+     */
+    sign = (v < 0);
+    mag = sign ? (asn1c_uinteger_t)0 - (asn1c_uinteger_t)v
+               : (asn1c_uinteger_t)v;
+
+    assert(mag > 1000000000UL);
+
+    {
+        char restbuf[10] = "000000000";
+        unsigned long rest = (unsigned long)(mag % 1000000000UL);
+        const char *reststr = asn1p_itoa((long)rest);
+        size_t restlen = strlen(reststr);
+        /* mag <= 2^(N-1), so the quotient fits the signed type. */
+        asn1c_integer_t head = (asn1c_integer_t)(mag / 1000000000UL);
+        const char *headstr;
+        int ret;
+
+        assert(restlen <= 9);
+        memcpy(restbuf + (9 - restlen), reststr, restlen);
+
+        headstr = asn1p_itoa(head);
+        assert(headstr);
+        ret = snprintf(tmp_buf, sizeof(tmp_buf), "%s%s%s",
+                       sign ? "-" : "", headstr, restbuf);
+        if(ret < 0 || (size_t)ret >= size) {
+            assert(ret > 0 && (size_t)ret < sizeof(tmp_buf));
+            return -1;
         }
-
-        sign = -1;
-        v = -v; /* Ditch the sign */
+        memcpy(buf, tmp_buf, ret);
+        buf[ret] = '\0';
+        return ret;
     }
-
-    assert(v > 1000000000L);
-    char restbuf[10] = "000000000\0";
-    const char *rest = asn1p_itoa((long)(v % 1000000000L));
-    size_t restlen = strlen(rest);
-    assert(restlen <= 9);
-    memcpy(restbuf + (9 - restlen), rest, restlen);
-    rest = restbuf;
-
-    const char *head = asn1p_itoa(v / 1000000000L);
-    assert(head);
-    int ret = snprintf(tmp_buf, sizeof(tmp_buf), "%s%s%s", sign ? "-" : "",
-                       head, rest);
-    if(ret < 0 || (size_t)ret >= size) {
-        assert(ret > 0 && (size_t)ret < sizeof(tmp_buf));
-        return -1;
-    }
-    memcpy(buf, tmp_buf, ret);
-    buf[ret] = '\0';
-    return ret;
 }
 
 abuf *
