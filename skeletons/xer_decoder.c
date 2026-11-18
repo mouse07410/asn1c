@@ -16,6 +16,10 @@ xer_decode(const asn_codec_ctx_t *opt_codec_ctx,
            const void *buffer, size_t size) {
     asn_codec_ctx_t s_codec_ctx;
 
+    /* Reject invalid public arguments before dispatching into type code. */
+    if(!td || !td->op || !td->op->xer_decoder || !struct_ptr
+       || (size && !buffer)) ASN__DECODE_FAILED;
+
 	/*
 	 * Stack checker requires that the codec context
 	 * must be allocated on the stack.
@@ -35,7 +39,8 @@ xer_decode(const asn_codec_ctx_t *opt_codec_ctx,
 	/*
 	 * Invoke type-specific decoder.
 	 */
-	return td->op->xer_decoder(opt_codec_ctx, td, struct_ptr, 0, buffer, size);
+	return ASN__STRICT_DECODE_RESULT(td, struct_ptr, ATS_BASIC_XER,
+        td->op->xer_decoder(opt_codec_ctx, td, struct_ptr, 0, buffer, size));
 }
 
 

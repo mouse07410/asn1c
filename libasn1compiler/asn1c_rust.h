@@ -15,6 +15,8 @@
  *               A1C_GEN_BER, and A1C_GEN_CER.
  *   tolerant_utc_time  Select legacy raw BER UTCTime decoding in generated code
  *                      when nonzero; zero selects strict BER decoding.
+ *   strict_mode  Enable the strict-mode runtime feature when nonzero. Conflicts
+ *                with tolerant_utc_time.
  * Returns zero on success, -1 on validation or output failure.
  * Errors are printed with ASN.1 module, type, and line where applicable.
  * Original source: new asn1c Rust backend. Version/date: 0.1.0, 2026-10-11.
@@ -28,6 +30,6 @@
  */
 int asn1c_rust_compile(asn1p_t *asn, const char *runtime_dir,
                        const char *destdir, uint64_t codecs,
-                       int tolerant_utc_time);
+                       int tolerant_utc_time, int strict_mode);
 
 #endif /* ASN1C_RUST_H */

@@ -3425,6 +3425,9 @@ cer_encode(const asn_codec_ctx_t *opt_codec_ctx,
     cer_buffer_t encoded = {0};
     asn_enc_rval_t result;
 
+    /* Validate the root before any output is published. */
+    ASN__STRICT_ENCODE_CHECK(td, value, ATS_CER);
+
     cer_initialize_context(&ctx, &local_stack, opt_codec_ctx);
     if(!td || !value || !cb) {
         errno = EINVAL;

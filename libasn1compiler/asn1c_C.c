@@ -293,8 +293,11 @@ asn1c_lang_C_type_common_INTEGER(arg_t *arg) {
 			OUT("\t/* This list is extensible */\n");
 		OUT("};\n");
 		
-		/* Only generate custom validation for NativeEnumerated types */
-		if(expr->expr_type == ASN_BASIC_ENUMERATED && asn1c_type_fits_long(arg, expr)) {
+        /* Strict mode uses NativeEnumerated_constraint: it validates the full
+         * native long and retains standards-defined unknown PER additions.
+         * The legacy enum-width switch remains a compatibility-only callback. */
+        if(!(arg->flags & A1C_STRICT_MODE)
+           && expr->expr_type == ASN_BASIC_ENUMERATED && asn1c_type_fits_long(arg, expr)) {
                 /*
                  * Use the proper naming functions to get the enum type and
                  * constant names. c_name(arg).members_name gives us "e_xxx"
@@ -4320,15 +4323,17 @@ emit_member_PER_size_constraints(arg_t *arg, asn1p_expr_t *expr,
 	}
 
 	/*
-	 * UTF8String (SIZE(lb..ub, ...)) has no PER-visible alphabet
+	 * Compatibility profile: UTF8String (SIZE(lb..ub, ...)) has no PER-visible alphabet
 	 * constraint, but its extensible size constraint is still PER-visible.
 	 * Some inputs are reduced to an unconstrained PER range here, which
 	 * makes the generated APER decoder miss the extension bit and fail to
-	 * decode otherwise valid messages.  Fall back to the generic constraint
+	 * decode compatibility-profile messages. X.691 (2021) 30.6 forbids
+	 * this fallback in strict mode. Fall back to the generic constraint
 	 * range only when the PER range has lost the size constraint and there
 	 * is an explicit constraint to recover.
 	 */
-	if((etype & ASN_STRING_MASK)
+	if(!(arg->flags & A1C_STRICT_MODE)
+	&& (etype & ASN_STRING_MASK)
 	&& expr->combined_constraints
 	&& asn1c_per_range_needs_generic_size_fallback(range)) {
 		asn1cnst_range_t *generic_range =

@@ -69,6 +69,10 @@ asn1c__save_asn_config(arg_t *arg, const char *destdir,
 
     safe_fprintf(mkf, "// Generated automatically. Don't edit manually!\n\n");
 
+    /* Persist the standards policy for every generated runtime build. */
+    if(arg->flags & A1C_STRICT_MODE)
+        safe_fprintf(mkf, "#define ASN_STRICT_MODE 1\n");
+
     /* Persist the compatibility policy for every generated runtime build. */
     if(arg->flags & A1C_TOLERANT_UTC_TIME)
         safe_fprintf(mkf, "#define ASN_ENABLE_TOLERANT_UTCTIME 1\n");

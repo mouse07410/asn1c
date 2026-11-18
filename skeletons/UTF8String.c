@@ -168,6 +168,14 @@ UTF8String_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 	return (len < 0) ? -1 : 0;
 }
 
+/*
+ * Count or convert UTF-8 characters, using scalar UTF-8 in strict builds.
+ * Source: existing asn1c UTF8String processor. Version/date: 2026-11-17.
+ * Inputs: st owns bounded source octets; optional dst/dstlen bound scalar output.
+ * Returns character count or a negative U8E_* error. Exceptions: none.
+ * Responsible: asn1c maintainers. History: strict scalars; bounded length probe.
+ * Example: UTF8String_length uses NULL/zero output to count characters.
+ */
 static ssize_t
 UTF8String__process(const UTF8String_t *st, uint32_t *dst, size_t dstlen) {
 	size_t length = 0;
@@ -196,7 +204,7 @@ UTF8String__process(const UTF8String_t *st, uint32_t *dst, size_t dstlen) {
 		/* assert(want >= 1 && want <= 6) */
 
 		/* Check character sequence length */
-		if(buf + want > end) return U8E_TRUNC;
+		if((size_t)(end - buf) < (size_t)want) return U8E_TRUNC;
 
 		value = ch & (0xff >> want);
 		cend = buf + want;
@@ -207,6 +215,11 @@ UTF8String__process(const UTF8String_t *st, uint32_t *dst, size_t dstlen) {
 		}
 		if(value < UTF8String_mv[want])
 			return U8E_NOTMIN;
+#ifdef ASN_STRICT_MODE
+        /* ISO/IEC 10646 UTF-8 uses scalar values and at most four octets. */
+        if(want > 4 || value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff))
+            return U8E_ILLSTART;
+#endif
 		if(dst < dstend)
 			*dst++ = value;	/* Record value */
 	}

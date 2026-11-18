@@ -438,7 +438,7 @@ BIT_STRING__is_binary(const void *chunk_buf, size_t chunk_size) {
 
 /*
  * Auto-detect and convert from either binary or hexadecimal format for BIT STRING.
- * Supports explicit prefixes per X.693:
+ * Compatibility mode supports explicit ASN.1 value-notation prefixes:
  *   - B'...' or b'...' for binary format
  *   - H'...' or h'...' for hexadecimal format
  * Without explicit prefixes, defaults to binary unless hexadecimal digits (2-9, A-F)
@@ -452,6 +452,12 @@ BIT_STRING__convert_binary_or_hex(void *sptr, const void *chunk_buf,
     const unsigned char *pend = p + chunk_size;
     int explicit_binary = 0;
     int explicit_hex = 0;
+
+#ifdef ASN_STRICT_MODE
+    /* X.693 basic xmlbstring is binary text, without ASN.1 value-notation
+     * quotes or automatically inferred hexadecimal digits. */
+    if(!BIT_STRING__is_binary(chunk_buf, chunk_size)) return -1;
+#endif
 
     /* Skip leading whitespace */
     while(p < pend && (*p == 0x09 || *p == 0x0a || *p == 0x0c ||
@@ -1031,6 +1037,10 @@ OCTET_STRING__convert_auto(void *sptr, const void *chunk_buf,
     /* Check for explicit H' / h' prefix (nonstandard; X.693 does not define
      * this for OCTET STRING, but we accept it liberally). */
     if((p + 1) < pend && (*p == 'H' || *p == 'h') && p[1] == '\'') {
+#ifdef ASN_STRICT_MODE
+        /* X.693 hex text has no ASN.1 value-notation H'...' wrapper. */
+        return -1;
+#else
         const unsigned char *content_start = p + 2;
         const unsigned char *content_end = content_start;
         ssize_t result;
@@ -1049,6 +1059,7 @@ OCTET_STRING__convert_auto(void *sptr, const void *chunk_buf,
         if(result < 0) return result;
 
         return (ssize_t)((content_end - buf_start) + 1);  /* include closing ' */
+#endif /* ASN_STRICT_MODE */
     }
 
     /* Determine format on the first non-whitespace chunk, then pin it. */
@@ -1060,8 +1071,14 @@ OCTET_STRING__convert_auto(void *sptr, const void *chunk_buf,
             st->_xer_decode_state.format_decided = 1;  /* hex */
             break;
         case OCTET_STRING_FMT_BASE64:
+#ifdef ASN_STRICT_MODE
+            /* X.693 default OCTET STRING syntax is hex. Explicit BASE64
+             * descriptors use OCTET_STRING_decode_xer_base64 directly. */
+            return -1;
+#else
             st->_xer_decode_state.format_decided = 2;  /* base64 */
             break;
+#endif
         case OCTET_STRING_FMT_ERROR:
         default:
             return -1;  /* Undecodable content */

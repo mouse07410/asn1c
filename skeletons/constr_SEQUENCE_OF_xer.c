@@ -18,6 +18,10 @@ asn_dec_rval_t
 SEQUENCE_OF_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
                        const asn_TYPE_descriptor_t *td, void **struct_ptr,
                        const char *opt_mname, const void *buf_ptr, size_t size) {
+#ifdef ASN_STRICT_MODE
+    /* X.693 has schema-derived wrappers only; preserve the streaming decoder. */
+    return SET_OF_decode_xer(opt_codec_ctx, td, struct_ptr, opt_mname, buf_ptr, size);
+#else
     asn_dec_rval_t rval;
     const char *xml_tag = opt_mname ? opt_mname : td->xml_tag;
     const char *buf = (const char *)buf_ptr;
@@ -102,6 +106,7 @@ SEQUENCE_OF_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
     }
     
     return rval;
+#endif /* ASN_STRICT_MODE */
 }
 
 asn_enc_rval_t

@@ -16,6 +16,9 @@ jer_encode(const asn_TYPE_descriptor_t *td, const void *sptr,
     asn_enc_rval_t er = {0, 0, 0};
 	asn_enc_rval_t tmper;
 
+    /* Validate the root before any output is published. */
+    ASN__STRICT_ENCODE_CHECK(td, sptr, ATS_JER);
+
 	if(!td || !sptr) goto cb_failed;
 
 	tmper = td->op->jer_encoder(td, 0, sptr, 0, jer_flags, cb, app_key);

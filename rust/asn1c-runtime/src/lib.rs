@@ -20,6 +20,10 @@
 
 use std::fmt;
 
+/// Whether this runtime was compiled with the standards policy feature.
+/// Cargo unifies dependency features, so this applies to all users of this crate.
+pub const STRICT_MODE: bool = cfg!(feature = "strict-mode");
+
 /// Primitive Aligned Packed Encoding Rules (APER) codecs.
 pub mod aper;
 /// Checked BER parsing and DER/CER codecs for OIDs, strings, and ENUMERATED.

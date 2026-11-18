@@ -2,6 +2,24 @@
 #include <asn_internal.h>
 #include <aper_decoder.h>
 
+/*
+ * Validate raw APER arguments before descriptor access or size arithmetic.
+ * Source: existing APER argument checks. Version/date: 2026-11-17.
+ * Parameters: td/sptr select target storage; buffer/size bound input; skip_bits
+ * and unused_bits select the first and final octet's unused bit counts.
+ * Returns nonzero for valid arguments; no exceptions or side effects.
+ * Responsible: asn1c maintainers. History: bound decoder cyclomatic complexity.
+ * Example: a size above SIZE_MAX/8 is rejected without reading the buffer.
+ */
+static int
+aper_decoder_arguments_valid(const asn_TYPE_descriptor_t *td, void **sptr,
+                              const void *buffer, size_t size,
+                              int skip_bits, int unused_bits) {
+    return td && td->op && sptr && (!size || buffer) && size <= SIZE_MAX / 8
+        && skip_bits >= 0 && skip_bits <= 7 && unused_bits >= 0 && unused_bits <= 7
+        && (!unused_bits || size);
+}
+
 asn_dec_rval_t
 aper_decode_complete(const asn_codec_ctx_t *opt_codec_ctx,
                      const asn_TYPE_descriptor_t *td, void **sptr,
@@ -9,6 +27,13 @@ aper_decode_complete(const asn_codec_ctx_t *opt_codec_ctx,
 	asn_dec_rval_t rval;
 
 	rval = aper_decode(opt_codec_ctx, td, sptr, buffer, size, 0, 0);
+#ifdef ASN_STRICT_MODE
+    /* Check only final-octet filler, leaving following framed values untouched. */
+    if(rval.code == RC_OK && (rval.consumed & 7)
+       && (((const uint8_t *)buffer)[rval.consumed >> 3]
+           & ((1u << (8 - (rval.consumed & 7))) - 1u)))
+        rval.code = RC_FAIL;
+#endif
 	if(rval.consumed) {
 		/*
 		 * We've always given 8-aligned data,
@@ -41,10 +66,8 @@ aper_decode(const asn_codec_ctx_t *opt_codec_ctx,
 	asn_dec_rval_t rval;
 	asn_per_data_t pd;
 
-	if(skip_bits < 0 || skip_bits > 7
-		|| unused_bits < 0 || unused_bits > 7
-		|| (unused_bits > 0 && !size))
-		ASN__DECODE_FAILED;
+    if(!aper_decoder_arguments_valid(td, sptr, buffer, size, skip_bits, unused_bits))
+        ASN__DECODE_FAILED;
 
 	/*
 	 * Stack checker requires that the codec context
@@ -96,5 +119,5 @@ aper_decode(const asn_codec_ctx_t *opt_codec_ctx,
 			rval.consumed = 0;
 		}
 	}
-	return rval;
+	return ASN__STRICT_DECODE_RESULT(td, sptr, ATS_ALIGNED_BASIC_PER, rval);
 }

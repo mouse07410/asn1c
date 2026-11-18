@@ -32,6 +32,10 @@ ber_decode(const asn_codec_ctx_t *opt_codec_ctx,
            const void *ptr, size_t size) {
     asn_codec_ctx_t s_codec_ctx;
 
+    /* Reject invalid public arguments before dispatching into type code. */
+    if(!type_descriptor || !type_descriptor->op || !type_descriptor->op->ber_decoder || !struct_ptr
+       || (size && !ptr)) ASN__DECODE_FAILED;
+
 	/*
 	 * Stack checker requires that the codec context
 	 * must be allocated on the stack.
@@ -51,11 +55,12 @@ ber_decode(const asn_codec_ctx_t *opt_codec_ctx,
 	/*
 	 * Invoke type-specific decoder.
 	 */
-	return type_descriptor->op->ber_decoder(opt_codec_ctx, type_descriptor,
+	return ASN__STRICT_DECODE_RESULT(type_descriptor, struct_ptr, ATS_BER,
+        type_descriptor->op->ber_decoder(opt_codec_ctx, type_descriptor,
 		struct_ptr,	/* Pointer to the destination structure */
 		ptr, size,	/* Buffer and its size */
 		0		/* Default tag mode is 0 */
-		);
+		));
 }
 
 /*

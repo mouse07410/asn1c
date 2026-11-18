@@ -507,3 +507,15 @@ byte array and expose typed constructors plus BOOLEAN getters/setters. The
 runtime wire APIs and resource limits are unchanged. Smaller records keep
 public BOOLEAN fields; OPTIONAL remains `Option<bool>`, and XER DEFAULT remains
 `Option<bool>`. See [the generated API](../../docs/rust/implementation.md).
+
+## Strict policy feature
+
+Generated `--rust --strict-mode` projects enable the `strict-mode` Cargo
+feature. Existing mandatory bounds, resource and grammar checks remain in all
+builds. The feature additionally validates restricted-string content at BER
+input and DER output boundaries, including record fields, and requires
+one-to-four-octet Unicode scalar UTF-8. The default retains the documented
+legacy acceptance profile. Cargo feature unification can enable the feature
+for other crates sharing this runtime. See `docs/strict-mode.md` in the compiler source tree
+for supported combinations and limits; this feature adds no new codec/type
+support or DER decode API.

@@ -98,18 +98,43 @@ asn_TYPE_operation_t asn_OP_NativeEnumerated = {
 #endif  /* !defined(ASN_DISABLE_CBOR_SUPPORT) */
 };
 
+/*
+ * Validate a named ENUMERATED value or a losslessly retained PER addition.
+ * Source: existing asn1c enum mapping. Version/date: 2026-11-17.
+ * Inputs: td supplies enum maps; sptr holds a native value; ctfailcb/app_key
+ * receive optional diagnostics. Returns zero or -1. Exceptions: none.
+ * Responsible: asn1c maintainers. History: retain standard strict PER relay.
+ * Example: a bounded unknown-addition ordinal remains relayable through PER.
+ */
 int
 NativeEnumerated_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
                       asn_app_constraint_failed_f *ctfailcb, void *app_key) {
     const asn_INTEGER_specifics_t *specs =
-        (const asn_INTEGER_specifics_t *)td->specifics;
+        (const asn_INTEGER_specifics_t *)(td ? td->specifics : NULL);
     const long *native = (const long *)sptr;
     const asn_INTEGER_enum_map_t *el;
+    if(!specs || !native) {
+        ASN__CTFAIL(app_key, td, sptr, "%s: enum value or map not given", td ? td->name : "ENUMERATED");
+        return -1;
+    }
+
+#ifdef ASN_STRICT_MODE
+    /* Preserve bounded, lossless PER relay of explicit unknown-addition markers.
+     * The ordinal must follow every locally known addition; otherwise a marker
+     * would decode back as a different, known value. Other syntaxes cannot
+     * infer an ASN.1 member from this internal ordinal. */
+    if(specs->extension > 0 && specs->extension - 1 <= specs->map_count
+       && ASN_NATIVE_ENUMERATED_IS_UNKNOWN_EXT(*native)
+       && LONG_MAX - *native >= specs->map_count - specs->extension + 1
+       && asn_check_constraints_is_per())
+        return 0;
+#endif
     el = INTEGER_map_value2enum(specs, *native);
     if(el) {
         return 0;
     } else {
         ASN_DEBUG("No element corresponds to the value %ld", *native);
+        ASN__CTFAIL(app_key, td, sptr, "%s: no member corresponds to %ld", td->name, *native);
         return -1;
     }
 }

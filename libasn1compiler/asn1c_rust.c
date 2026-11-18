@@ -279,7 +279,7 @@ static int rust_enum_name_safe(const char *);
 static int rust_enum_unique(asn1p_expr_t *, asn1p_expr_t *);
 static size_t rust_enumerated_rank(asn1p_expr_t *, asn1p_expr_t *);
 static int rust_stage_project(asn1p_t *, const char *, rust_output_t *, uint64_t,
-                              int);
+                              int, int);
 static int rust_publish_project(rust_output_t *);
 static int rust_check_existing(const char *);
 static int rust_check_owned_tree(const char *, const char *, const char *);
@@ -292,7 +292,7 @@ static int rust_remove_tree(const char *);
 static int rust_copy_runtime(const char *, const char *);
 static int rust_make_directory(const char *);
 static int rust_write_project(asn1p_t *, const char *, const char *, uint64_t,
-                              int);
+                              int, int);
 static int rust_write_module(FILE *, asn1p_module_t *, uint64_t, int);
 static int rust_write_module_file(asn1p_module_t *, const char *, uint64_t, int);
 static int rust_write_type(FILE *, asn1p_module_t *, asn1p_expr_t *, uint64_t,
@@ -435,7 +435,7 @@ static int rust_write_method_doc(FILE *, const char *, const char *,
 static int rust_write_manifest(asn1p_t *, const char *);
 static int rust_copy_file(const char *, const char *);
 static int rust_join(char *, size_t, const char *, const char *);
-static int rust_write_cargo(FILE *);
+static int rust_write_cargo(FILE *, int);
 static int rust_write_lib(asn1p_t *, const char *);
 static int rust_format_bound(char *, size_t, int64_t);
 static int rust_is_keyword(const char *);
@@ -448,24 +448,41 @@ static int rust_check_owned_file(const char *, const char *, const char *);
 static void rust_diagnostic(asn1p_module_t *, asn1p_expr_t *, const char *);
 
 /*
+ * Validate the two independent Rust generation policy switches.
+ * Source: backend entry contract. Version/date: 2026-11-17.
+ * Parameters: tolerant_utc_time requests raw BER time input; strict_mode
+ * requests standards validation. Each is zero or one and they cannot both be one.
+ * Returns nonzero for valid settings; no exceptions or side effects.
+ * Responsible: asn1c maintainers. History: bound entry-point policy complexity.
+ * Example: rust_policies_valid(1, 1) returns zero.
+ */
+static int
+rust_policies_valid(int tolerant_utc_time, int strict_mode) {
+    return (tolerant_utc_time == 0 || tolerant_utc_time == 1)
+        && (strict_mode == 0 || strict_mode == 1)
+        && !(strict_mode && tolerant_utc_time);
+}
+
+/*
  * Validate and emit a standalone Cargo project for the first Rust slice.
  * Parameters: asn is the fixed tree; runtime_dir is the matching runtime
  * source directory; destdir is the project path or NULL; codecs is the
  * requested codec mask; tolerant_utc_time is zero for strict BER or one for
- * raw compatibility BER. Returns zero or -1; does not throw. This function
+ * raw compatibility BER; strict_mode enables the standards runtime feature.
+ * Returns zero or -1; does not throw. This function
  * stages all files before publishing. Original source: new backend.
  * Version/date: 0.1.0, 2026-10-11. Responsible party: asn1c maintainers.
  * History: initial primitive codecs. Example: asn1c_rust_compile(tree,
- * runtime_path, output_path, A1C_GEN_UPER | A1C_GEN_CER, 0).
+ * runtime_path, output_path, A1C_GEN_UPER | A1C_GEN_CER, 0, 0).
  */
 int
 asn1c_rust_compile(asn1p_t *asn, const char *runtime_dir,
                    const char *destdir, uint64_t codecs,
-                   int tolerant_utc_time) {
+                   int tolerant_utc_time, int strict_mode) {
     rust_output_t output = {{0}, {0}, {0}, 0, 0};
 
     if(!asn || !runtime_dir || !*runtime_dir
-    || (tolerant_utc_time != 0 && tolerant_utc_time != 1)) {
+    || !rust_policies_valid(tolerant_utc_time, strict_mode)) {
         fprintf(stderr, "asn1c: Rust backend received an invalid tree, runtime, or policy\n");
         return -1;
     }
@@ -486,7 +503,7 @@ asn1c_rust_compile(asn1p_t *asn, const char *runtime_dir,
         strcpy(output.target, "asn1c-rust");
     }
     if(rust_stage_project(asn, runtime_dir, &output, codecs,
-                          tolerant_utc_time)) return -1;
+                          tolerant_utc_time, strict_mode)) return -1;
     if(rust_publish_project(&output)) {
         if(output.stage_created) rust_remove_tree(output.stage);
         return -1;
@@ -5658,17 +5675,18 @@ rust_diagnostic(asn1p_module_t *module, asn1p_expr_t *expr,
 /*
  * Create a private sibling staging directory and write the complete project.
  * Parameters: asn is validated; runtime_dir supplies assets; output receives
- * transaction paths; codecs selects generated methods and tolerant_utc_time
+ * transaction paths; strict_mode selects standards validation; codecs selects
+ * generated methods and tolerant_utc_time
  * selects raw compatibility BER time decoding. Returns
  * zero or -1. Original source:
  * new Rust backend. Version/date: 0.1.0, 2026-10-11. Responsible party:
  * asn1c maintainers. History: initial staged writer. Example:
- * rust_stage_project(tree, runtime, &output, A1C_GEN_CER, 0).
+ * rust_stage_project(tree, runtime, &output, A1C_GEN_CER, 0, 0).
  */
 static int
 rust_stage_project(asn1p_t *asn, const char *runtime_dir,
                    rust_output_t *output, uint64_t codecs,
-                   int tolerant_utc_time) {
+                   int tolerant_utc_time, int strict_mode) {
     unsigned attempt;
     if(!output->target[0]) return -1;
     for(attempt = 0; attempt < 100; attempt++) {
@@ -5688,7 +5706,7 @@ rust_stage_project(asn1p_t *asn, const char *runtime_dir,
     }
     if(!output->stage_created) return -1;
     if(rust_write_project(asn, runtime_dir, output->stage, codecs,
-                          tolerant_utc_time)) {
+                          tolerant_utc_time, strict_mode)) {
         rust_remove_tree(output->stage);
         output->stage_created = 0;
         return -1;
@@ -5946,16 +5964,17 @@ rust_make_directory(const char *path) {
 /*
  * Write the complete staged Cargo project and vendored runtime.
  * Parameters: asn is the fixed tree; runtime_dir is the asset root; stage is a
- * private new directory; codecs selects emitted methods and tolerant_utc_time
+ * private new directory; strict_mode selects standards validation; codecs
+ * selects emitted methods and tolerant_utc_time
  * selects raw compatibility BER time decoding. Returns zero or -1.
  * Original source: new Rust backend.
  * Version/date: 0.1.0, 2026-10-11. Responsible party: asn1c maintainers.
  * History: first generated crate layout. Example: rust_write_project(tree,
- * runtime, stage, A1C_GEN_CER, 0).
+ * runtime, stage, A1C_GEN_CER, 0, 0).
  */
 static int
 rust_write_project(asn1p_t *asn, const char *runtime_dir, const char *stage,
-                   uint64_t codecs, int tolerant_utc_time) {
+                   uint64_t codecs, int tolerant_utc_time, int strict_mode) {
     char path[PATH_MAX];
     char runtime_copy[PATH_MAX];
     FILE *cargo;
@@ -5970,7 +5989,7 @@ rust_write_project(asn1p_t *asn, const char *runtime_dir, const char *stage,
     cargo = fopen(path, "wb");
     if(!cargo) return -1;
     {
-        int cargo_error = rust_write_cargo(cargo);
+        int cargo_error = rust_write_cargo(cargo, strict_mode);
         if(fclose(cargo) != 0) cargo_error = -1;
         if(cargo_error) return -1;
     }
@@ -14294,17 +14313,20 @@ failure:
 
 /*
  * Create a crate Cargo.toml with only the local runtime dependency.
- * Parameters: stream is the new manifest file. Returns zero or -1. Original
+ * Parameters: stream is the new manifest file; strict_mode enables runtime policy.
+ * Returns zero or -1; no exceptions. Original
  * source: new Rust backend. Version/date: 0.1.0, 2026-10-11. Responsible
  * party: asn1c maintainers. History: initial std-only project. Example:
- * rust_write_cargo(stream).
+ * rust_write_cargo(stream, 1).
  */
 static int
-rust_write_cargo(FILE *stream) {
-    return fputs("[package]\nname = \"asn1c-generated\"\nversion = \"0.1.0\"\n"
-                 "edition = \"2021\"\n\n[dependencies]\n"
-                 "asn1c-runtime = { path = \"runtime\" }\n", stream) < 0
-               ? -1 : 0;
+rust_write_cargo(FILE *stream, int strict_mode) {
+    if(fputs("[package]\nname = \"asn1c-generated\"\nversion = \"0.1.0\"\n"
+             "edition = \"2021\"\n\n[dependencies]\n"
+             "asn1c-runtime = { path = \"runtime\"", stream) == EOF) return -1;
+    /* Cargo feature unification propagates strict policy to the entire runtime. */
+    if(strict_mode && fputs(", features = [\"strict-mode\"]", stream) == EOF) return -1;
+    return fputs(" }\n", stream) == EOF ? -1 : 0;
 }
 
 /*

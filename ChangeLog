@@ -1,4 +1,10 @@
 Changes since v1.5.3:
+	* Add --strict-mode for C and Rust across selected codec families. Apply
+	  X.691 non-known-multiplier PER constraint visibility, automatic C root
+	  validation, zero PER filler, strict DER input and standard XER wrappers.
+	  Preserve subtype repertoire checks and standard unknown extensions;
+	  propagate a Rust runtime feature for stricter BER/DER string validation.
+	  Document profile interoperability and support limits; add regressions.
 	* Fix full-width INTEGER PER constraint metadata without signed overflow
 	  (issue #611, PR #612 by Javier / @mr-j0nes). Derive widths from unsigned
 	  spans; expand arithmetic, C metadata and generated Rust PER regressions.

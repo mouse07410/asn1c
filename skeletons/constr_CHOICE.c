@@ -129,6 +129,12 @@ CHOICE_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
 	 * Figure out which CHOICE element is encoded.
 	 */
 	present = _fetch_present_idx(sptr, specs->pres_offset,specs->pres_size);
+    /* A completed extensible PER/OER decode can legitimately skip a newer arm.
+     * This never permits encoding an unselected application CHOICE. */
+    if(present == 0 && specs->ext_start >= 0 && asn_check_constraints_is_decoding()
+       && (asn_check_constraints_is_per() || asn_check_constraints_is_oer()))
+        return 0;
+
 	if(present > 0 && present <= td->elements_count) {
 		asn_TYPE_member_t *elm = &td->elements[present-1];
 		const void *memb_ptr;

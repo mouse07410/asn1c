@@ -6,12 +6,26 @@
 #include <asn_internal.h>
 #include <aper_support.h>
 
+/*
+ * Consume APER alignment filler, rejecting nonzero filler in strict mode.
+ * Source: X.691 (2021), 11.1 octet alignment. Version/date: 2026-11-17.
+ * Parameters: pd is the bounded PER input cursor (state variable).
+ * Returns zero when aligned, -1 for missing/strictly invalid bits; compatibility
+ * mode retains the consumed filler value. Exceptions: none.
+ * Responsible: asn1c maintainers. History: enforce strict zero alignment.
+ * Example: nboff=5 consumes three zero bits before an octet-aligned value.
+ */
 int32_t
 aper_get_align(asn_per_data_t *pd) {
 
 	if(pd->nboff & 0x7) {
 		ASN_DEBUG("Aligning %ld bits", 8 - ((unsigned long)pd->nboff & 0x7));
+#ifdef ASN_STRICT_MODE
+        /* Alignment bits have no value and must all be zero. */
+        return per_get_few_bits(pd, 8 - (pd->nboff & 0x7)) == 0 ? 0 : -1;
+#else
 		return per_get_few_bits(pd, 8 - (pd->nboff & 0x7));
+#endif
 	}
 	return 0;
 }

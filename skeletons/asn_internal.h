@@ -177,6 +177,39 @@ asn__format_to_callback(
 
 #define	ASN__DEFAULT_STACK_MAX	(30000)
 
+/* Strict policy is persisted in asn_config.h by --strict-mode. Reject build
+ * overrides which would silently re-enable a nonstandard time grammar. */
+#if defined(ASN_STRICT_MODE) && defined(ASN_ENABLE_TOLERANT_UTCTIME)
+#error "ASN_STRICT_MODE conflicts with ASN_ENABLE_TOLERANT_UTCTIME"
+#endif
+
+/* Validate complete public codec calls; descriptor operations remain internal.
+ * Source: asn1c constraint API. Version/date: 2026-11-17.
+ * Inputs: type/value identify the root; syntax selects CONTAINING rules.
+ * Return: the enclosing encoder fails before invoking its output callback.
+ * Exceptions: none. Responsible: asn1c maintainers. History: strict policy.
+ * Example: ASN__STRICT_ENCODE_CHECK(td, sptr, ATS_DER).
+ */
+#ifdef ASN_STRICT_MODE
+#include <constraints.h>
+#define ASN__STRICT_ENCODE_CHECK(type, value, syntax) do {                \
+    if(!(type) || !(type)->op || !(value)                                 \
+       || asn_check_constraints_with_syntax((type), (value),              \
+                                             (syntax), NULL, NULL)) {   \
+        asn_enc_rval_t strict_er;                                        \
+        strict_er.encoded = -1;                                          \
+        strict_er.failed_type = (type);                                  \
+        strict_er.structure_ptr = (value);                               \
+        return strict_er;                                                \
+    }                                                                   \
+} while(0)
+#define ASN__STRICT_DECODE_RESULT(type, value, syntax, result) \
+    asn_check_decoded_constraints((type), (value), (syntax), (result))
+#else
+#define ASN__STRICT_ENCODE_CHECK(type, value, syntax) do { } while(0)
+#define ASN__STRICT_DECODE_RESULT(type, value, syntax, result) (result)
+#endif
+
 /* Define ASN_REJECT_UNKNOWN_EXTENSIONS to restore strict decode failure for
  * unknown UPER/OER CHOICE alternatives and UPER/APER ENUMERATED additions. */
 

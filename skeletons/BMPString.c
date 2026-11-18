@@ -116,6 +116,14 @@ asn_TYPE_descriptor_t asn_DEF_BMPString = {
     &asn_SPC_BMPString_specs
 };
 
+/*
+ * Validate BMPString storage alignment and strict ISO/IEC 10646 character scalars.
+ * Source: existing asn1c BMPString validator. Version/date: 2026-11-17.
+ * Inputs: td names the type; sptr is its value; ctfailcb/app_key receive errors.
+ * Returns zero on success or -1 on invalid/missing content. Exceptions: none.
+ * Responsible: asn1c maintainers. History: strict scalar validation.
+ * Example: malformed trailing octets fail before a subtype SIZE calculation.
+ */
 int
 BMPString_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
                      asn_app_constraint_failed_f *ctfailcb, void *app_key) {
@@ -134,6 +142,19 @@ BMPString_constraint(const asn_TYPE_descriptor_t *td, const void *sptr,
         return -1;
     }
 
+#ifdef ASN_STRICT_MODE
+    /* ISO/IEC 10646 characters exclude surrogate code points. */
+    {
+        size_t offset;
+        for(offset = 0; offset < st->size; offset += 2) {
+            uint32_t scalar = ((uint32_t)st->buf[offset] << 8) | st->buf[offset + 1];
+            if(scalar >= 0xd800 && scalar <= 0xdfff) {
+                ASN__CTFAIL(app_key, td, sptr, "%s: invalid ISO/IEC 10646 scalar", td->name);
+                return -1;
+            }
+        }
+    }
+#endif
     return 0;
 }
 

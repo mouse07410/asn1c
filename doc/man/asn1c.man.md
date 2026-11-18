@@ -12,7 +12,7 @@ asn1c -- the ASN.1 Compiler
 
 # SYNOPSIS
 
-asn1c [**--rust** | **-E** [**-F**] | **-P** | **-R**] \
+asn1c [**--strict-mode**] [**--rust** | **-E** [**-F**] | **-P** | **-R**] \
       [**-S** *dir*] [**-D** *dir*] [**-X**] \
       [**-W***debug-*...] [**-f***option*] [**-gen-***option*]
       [**-pdu**={**all**|**auto**|*Type*}] \
@@ -34,6 +34,15 @@ strings, ENUMERATED, and flat SEQUENCE with required or OPTIONAL direct fields.
 Other types and codec combinations produce a diagnostic until implemented.
 
 # OPTIONS
+
+--strict-mode
+:   Select the standards policy for all selected codecs and either output
+    target. Disable the C non-known-multiplier PER SIZE compatibility fallback,
+    validate C values at public codec boundaries, and tighten documented syntax
+    and string repertoire allowances. Conflicts with `-fno-constraints`, `-fbless-SIZE`, and
+    `-ftolerant-utc-time`. Regenerate and rebuild when changing profiles.
+    Strict C DER verification is one-shot like CER. See `docs/strict-mode.md`
+    for the exact format coverage, API contracts and remaining support limits.
 
 ## Stage Selection Options
 

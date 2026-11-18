@@ -14,6 +14,9 @@ static ssize_t der_write_TL(ber_tlv_tag_t tag, ber_tlv_len_t len,
 asn_enc_rval_t
 der_encode(const asn_TYPE_descriptor_t *type_descriptor, const void *struct_ptr,
            asn_app_consume_bytes_f *consume_bytes, void *app_key) {
+    /* Validate the root before any output is published. */
+    ASN__STRICT_ENCODE_CHECK(type_descriptor, struct_ptr, ATS_DER);
+
     ASN_DEBUG("DER encoder invoked for %s",
 		type_descriptor->name);
 
@@ -53,6 +56,9 @@ der_encode_to_buffer(const asn_TYPE_descriptor_t *type_descriptor,
                      const void *struct_ptr, void *buffer, size_t buffer_size) {
     enc_to_buf_arg arg;
 	asn_enc_rval_t ec;
+
+    /* Validate the root before any output is published. */
+    ASN__STRICT_ENCODE_CHECK(type_descriptor, struct_ptr, ATS_DER);
 
 	arg.buffer = buffer;
 	arg.left = buffer_size;

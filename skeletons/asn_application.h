@@ -156,6 +156,14 @@ asn_enc_rval_t asn_encode(
 
 /*
  * A generic decoder for any supported transfer syntax.
+ * In ASN_STRICT_MODE builds, successful root values undergo ASN.1 constraint
+ * validation. A constraint failure retains ordinary decoder storage ownership.
+ * ATS_DER additionally compares the decoded prefix against DER re-encoding.
+ * Like CER, strict DER is one-shot: on RC_WMORE/error, output allocated by the
+ * decoder is freed (caller-provided storage is reset), and consumed is zero.
+ * Retry strict DER with the complete input, not merely the unconsumed suffix.
+ * Opaque ANY contents are preserved by the DER encoder and need independent
+ * application validation; comparison alone cannot canonicalize those contents.
  */
 asn_dec_rval_t asn_decode(
     const asn_codec_ctx_t *opt_codec_parameters, enum asn_transfer_syntax,

@@ -34,5 +34,6 @@ cbor_decode(const asn_codec_ctx_t *opt_codec_ctx,
         opt_codec_ctx = &s_codec_ctx;
     }
 
-    return td->op->cbor_decoder(opt_codec_ctx, td, struct_ptr, buffer, size);
+    return ASN__STRICT_DECODE_RESULT(td, struct_ptr, ATS_CBOR,
+        td->op->cbor_decoder(opt_codec_ctx, td, struct_ptr, buffer, size));
 }

@@ -458,6 +458,14 @@ asn1c_emit_constraint_checking_code(arg_t *arg) {
 	OUT("}\n");
 	OUT("\n");
 
+    /* Subtype SIZE/FROM checks do not replace the base string repertoire.
+     * In particular, validate full BMP/Universal octets before dividing sizes. */
+    if((arg->flags & A1C_STRICT_MODE) && (etype & ASN_STRING_MASK)) {
+        const char *base_type = ASN_EXPR_TYPE2STR(etype);
+        OUT("/* Strict policy: validate the base type before subtype constraints. */\n");
+        OUT("if(%s_constraint(td, sptr, ctfailcb, app_key)) return -1;\n", base_type);
+    }
+
 	if((r_value) && (!ulong_optimize))
 		emit_value_determination_code(arg, etype, r_value);
 	if(r_size)

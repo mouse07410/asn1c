@@ -1,5 +1,5 @@
 dist_check_SCRIPTS = check-rust-backend.sh check-rust-aliases.sh check-rust-bitsets.sh \
-    check-rust-constraint-ranges.sh
+    check-rust-constraint-ranges.sh check-rust-strict-mode.sh
 TESTS = $(dist_check_SCRIPTS)
 TESTS_ENVIRONMENT = top_srcdir=$(top_srcdir) top_builddir=$(top_builddir)
 
@@ -585,3 +585,5 @@ EXTRA_DIST = $(srcdir)/WideMixed.asn1 \
     $(srcdir)/c_nested_ber_cer.c \
     $(srcdir)/coverage.json \
     $(srcdir)/README.md
+
+EXTRA_DIST += $(srcdir)/strict_mode_conformance.rs $(srcdir)/strict_mode_xer.rs

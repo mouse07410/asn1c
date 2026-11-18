@@ -93,7 +93,7 @@ static int importStandardModules(asn1p_t *asn, const char *skeletons_dir);
 typedef struct asn1c_cli_options_s {
     enum asn1p_flags parser_flags; /* ASN.1 parser state variable. */
     enum asn1f_flags fixer_flags; /* Tree fixer state variable. */
-    enum asn1c_flags compiler_flags; /* C compiler state variable. */
+    enum asn1c_flags compiler_flags; /* Shared policy/codegen state variable. */
     enum asn1print_flags printer_flags; /* Printer state variable. */
     int print_out; /* Parse-and-print state variable. */
     int fix_n_print; /* Fix-before-print state variable. */
@@ -112,7 +112,7 @@ typedef struct asn1c_cli_options_s {
 } asn1c_cli_options_t;
 
 static void asn1c_cli_options_init(asn1c_cli_options_t *);
-static int asn1c_extract_rust_switch(int *, char **, int *);
+static int asn1c_extract_long_switches(int *, char **, asn1c_cli_options_t *);
 static int asn1c_short_option_takes_argument(char);
 static int asn1c_parse_options(int *, char **, asn1c_cli_options_t *);
 static int asn1c_handle_option(int, const char *, asn1c_cli_options_t *,
@@ -133,6 +133,7 @@ static int asn1c_parse_long_size(const char *, asn1c_cli_options_t *);
 static int asn1c_parse_integer_native_type(const char *, asn1c_cli_options_t *);
 static int asn1c_parse_complex_threshold(const char *, asn1c_cli_options_t *);
 static int asn1c_validate_options(const asn1c_cli_options_t *);
+static int asn1c_validate_strict_options(const asn1c_cli_options_t *);
 static int asn1c_resolve_skeletons(asn1c_cli_options_t *, const char *);
 static int asn1c_resolve_runtime(asn1c_cli_options_t *);
 static int asn1c_runtime_layout_available(const char *);
@@ -208,17 +209,18 @@ asn1c_short_option_takes_argument(char option) {
 }
 
 /*
- * Remove exact --rust options while preserving getopt's short-option operands.
- * Parameters: argc is the argument count; argv is compacted in place; selected
- * receives the target flag. Returns zero or -1; does not throw. Original source:
+ * Remove exact target and policy switches, preserving short-option operands.
+ * Parameters: argc is the argument count; argv is compacted in place; options
+ * receives target and policy flags. Returns zero or -1; does not throw. Original source:
  * new asn1c CLI target selection. Version/date: 0.1.0, 2026-10-11. Responsible
  * party: asn1c maintainers. History: models clustered short options and `--`.
  * Example: `asn1c --rust schema.asn1` selects the Rust target.
  */
 static int
-asn1c_extract_rust_switch(int *argc, char **argv, int *selected) {
+asn1c_extract_long_switches(int *argc, char **argv, asn1c_cli_options_t *options) {
     int read_index, write_index = 1, end_options = 0;
-    int found = 0;
+    int found = 0; /* state variable: detect duplicate target switches. */
+    int strict_found = 0; /* state variable: detect duplicate policy switches. */
 
     for(read_index = 1; read_index < *argc; read_index++) {
         const char *argument = argv[read_index];
@@ -233,7 +235,16 @@ asn1c_extract_rust_switch(int *argc, char **argv, int *selected) {
                 return -1;
             }
             found = 1;
-            *selected = 1;
+            options->rust_target = 1;
+            continue;
+        }
+        if(!end_options && !strcmp(argument, "--strict-mode")) {
+            if(strict_found) {
+                fprintf(stderr, "asn1c: --strict-mode may be specified only once\n");
+                return -1;
+            }
+            strict_found = 1;
+            options->compiler_flags |= A1C_STRICT_MODE;
             continue;
         }
         argv[write_index++] = argv[read_index];
@@ -290,7 +301,7 @@ asn1c_codec_flag(const char *name) {
 static int
 asn1c_parse_options(int *argc, char **argv, asn1c_cli_options_t *options) {
     int ch;
-    if(asn1c_extract_rust_switch(argc, argv, &options->rust_target)) return -1;
+    if(asn1c_extract_long_switches(argc, argv, options)) return -1;
     while((ch = getopt(*argc, argv, "D:d:EFf:g:hn:LPp:RS:vW:X")) != -1) {
         if(asn1c_handle_option(ch, optarg, options, argv[0])) return -1;
     }
@@ -772,6 +783,27 @@ asn1c_parse_complex_threshold(const char *value,
 }
 
 /*
+ * Reject explicit compatibility switches which contradict standards policy.
+ * Source: existing CLI option definitions. Version/date: 2026-11-17.
+ * Parameters: options is the non-NULL parsed option state.
+ * Returns zero, or -1 with a diagnostic on conflicting settings; no exceptions.
+ * Responsible: asn1c maintainers. History: shared strict policy validation.
+ * Example: --strict-mode -fbless-SIZE fails before fixing or writing a schema.
+ */
+static int
+asn1c_validate_strict_options(const asn1c_cli_options_t *options) {
+    if(!(options->compiler_flags & A1C_STRICT_MODE)) return 0;
+    /* Constraint removal, nonstandard SIZE applicability and raw times conflict. */
+    if((options->compiler_flags & (A1C_NO_CONSTRAINTS | A1C_TOLERANT_UTC_TIME))
+       || (options->fixer_flags & A1F_EXTENDED_SizeConstraint)) {
+        fprintf(stderr, "Error: --strict-mode conflicts with -fno-constraints, "
+                        "-fbless-SIZE, and -ftolerant-utc-time\n");
+        return -1;
+    }
+    return 0;
+}
+
+/*
  * Validate target-specific constraints before input files are parsed.
  * Parameters: options is the complete option state. Returns zero or -1; no
  * exception is raised. Original source: asn1c option validation. Version/date:
@@ -785,6 +817,7 @@ asn1c_validate_options(const asn1c_cli_options_t *options) {
         | (uint64_t)A1C_GEN_CER | (uint64_t)A1C_GEN_APER
         | (uint64_t)A1C_GEN_OER | (uint64_t)A1C_GEN_JER | (uint64_t)A1C_GEN_CBOR
         | (uint64_t)A1C_GEN_XER;
+    if(asn1c_validate_strict_options(options)) return -1;
     if(options->print_out) {
         if((options->printer_flags & APF_PRINT_CONSTRAINTS)
            && !options->fix_n_print) {
@@ -1358,6 +1391,7 @@ usage(const char *av0) {
 "  -F                    During -E operation, also perform tree fixing\n"
 "\n"
 "  -P                    Concatenate and print the compiled text\n"
+"  --strict-mode         Enforce standards policy for all selected codecs\n"
 "  -R                    Restrict output (tables only, no support code)\n"
 "  -S <dir>              Directory with support (skeleton?) files\n"
 "                        (Default is \"%s\")\n"

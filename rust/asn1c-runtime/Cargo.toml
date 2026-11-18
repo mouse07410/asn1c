@@ -9,3 +9,7 @@ license = "BSD-2-Clause"
 [lib]
 name = "asn1c_runtime"
 path = "src/lib.rs"
+
+[features]
+# Standards policy selected by the compiler for every generated codec.
+strict-mode = []

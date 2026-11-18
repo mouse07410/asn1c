@@ -50,7 +50,7 @@ pub const MAX_TAG_NUMBER: u32 = 0x3fff_ffff;
 pub enum CharacterStringKind {
     /// `ObjectDescriptor`, universal tag 7; arbitrary bytes under C behavior.
     ObjectDescriptor,
-    /// `UTF8String`, universal tag 12; validates C's minimal 1-6 byte forms in CER.
+    /// `UTF8String`, tag 12; strict mode requires ISO/IEC 10646 scalar UTF-8.
     Utf8String,
     /// `NumericString`, universal tag 18.
     NumericString,
@@ -112,7 +112,8 @@ impl CharacterStringKind {
 
 /// Owned raw octets for a direct ASN.1 character-string value.
 ///
-/// BER decoding and DER encoding preserve bytes. CER applies the C descriptor's
+/// BER decoding and DER encoding preserve bytes by default. The `strict-mode`
+/// feature validates their content too. CER applies the selected descriptor's
 /// content check for the stored `kind`; the type has no infallible `Clone`.
 #[derive(Debug, Eq, PartialEq)]
 pub struct CharacterString {
@@ -3116,7 +3117,7 @@ impl SequenceWriter<'_> {
         self.context.require_aggregate_scratch()?;
         let tag = Tag::universal(kind.tag_number());
         validate_field_descriptor(tag, field_kind)?;
-        if self.rule == RecordEncoding::Cer {
+        if self.rule == RecordEncoding::Cer || cfg!(feature = "strict-mode") {
             validate_character_string_content(
                 kind,
                 content,
@@ -6403,6 +6404,8 @@ fn encode_character_string_der_bytes(
             .ok_or(Error::SizeOverflow)?,
     )?;
     let mut work = 0;
+    #[cfg(feature = "strict-mode")]
+    validate_character_string_content(kind, bytes, limits, &mut work)?;
     charge_work(&mut work, encoded_len, limits)?;
     let encoded = write_primitive(u64::from(kind.tag_number()), bytes, limits)?;
     check_character_string_scratch(
@@ -6590,6 +6593,8 @@ fn decode_character_string_cer_bytes(
 ) -> Result<Decoded<Vec<u8>>, Error> {
     let mut work = 0;
     let decoded = decode_character_string_ber_bytes(input, kind, limits, &mut work)?;
+    // Strict BER already charged and performed this validation during parsing.
+    #[cfg(not(feature = "strict-mode"))]
     validate_character_string_content(kind, &decoded.value, limits, &mut work)?;
     let encoded_len = character_string_cer_encoded_len(kind, decoded.value.len())?;
     check(Resource::OutputBytes, encoded_len, limits.max_output_bytes)?;
@@ -6675,6 +6680,9 @@ fn decode_character_string_ber_bytes_with_capacity(
         aggregate_capacity,
     )?;
     check_character_string_scratch(decoded.value.capacity())?;
+    // Strict BER validates the abstract string repertoire as well as TLV framing.
+    #[cfg(feature = "strict-mode")]
+    validate_character_string_content(kind, &decoded.value, limits, work)?;
     Ok(decoded)
 }
 
@@ -7806,9 +7814,12 @@ fn validate_character_string_content(
             bytes.iter().all(|byte| (0x20..=0x7e).contains(byte))
         }
         CharacterStringKind::Ia5String => bytes.iter().all(|byte| *byte <= 0x7f),
+        #[cfg(not(feature = "strict-mode"))]
         CharacterStringKind::Utf8String => is_c_compatible_utf8(bytes),
-        CharacterStringKind::BmpString => bytes.len().is_multiple_of(2),
-        CharacterStringKind::UniversalString => bytes.len().is_multiple_of(4),
+        #[cfg(feature = "strict-mode")]
+        CharacterStringKind::Utf8String => core::str::from_utf8(bytes).is_ok(),
+        CharacterStringKind::BmpString => scalar_string_content_valid(bytes, 2),
+        CharacterStringKind::UniversalString => scalar_string_content_valid(bytes, 4),
         CharacterStringKind::ObjectDescriptor
         | CharacterStringKind::TeletexString
         | CharacterStringKind::T61String
@@ -7821,6 +7832,30 @@ fn validate_character_string_content(
     } else {
         Err(invalid(character_string_constraint_reason(kind)))
     }
+}
+
+/// Check fixed-width character boundaries and strict ISO/IEC 10646 scalars.
+/// Source: `BMPString`/`UniversalString` representation; version/date: 2026-11-17.
+/// `bytes` contains big-endian characters; `width` must be two or four octets.
+/// Returns false for invalid width/alignment or strict scalar violations.
+/// No errors or panics. Responsible: asn1c maintainers. History: strict policy.
+/// Example: a BMP surrogate fails under the `strict-mode` feature.
+fn scalar_string_content_valid(bytes: &[u8], width: usize) -> bool {
+    if !matches!(width, 2 | 4) || !bytes.len().is_multiple_of(width) {
+        return false;
+    }
+    if !cfg!(feature = "strict-mode") {
+        return true;
+    }
+    // Validated widths make the fixed array indexing below bounded.
+    bytes.chunks_exact(width).all(|chunk| {
+        let scalar = if width == 2 {
+            u32::from(u16::from_be_bytes([chunk[0], chunk[1]]))
+        } else {
+            u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]])
+        };
+        char::from_u32(scalar).is_some()
+    })
 }
 
 /// Return the static diagnostic for one failed C-compatible string check.
@@ -7847,7 +7882,7 @@ const fn character_string_constraint_reason(kind: CharacterStringKind) -> &'stat
             "VisibleString contains a byte outside 0x20..=0x7e"
         }
         CharacterStringKind::Ia5String => "IA5String content contains an octet above 0x7f",
-        CharacterStringKind::Utf8String => "UTF8String is not a minimal C-compatible sequence",
+        CharacterStringKind::Utf8String => "UTF8String contains invalid character encoding",
         CharacterStringKind::BmpString => "BMPString content length is not divisible by two",
         CharacterStringKind::UniversalString => {
             "UniversalString content length is not divisible by four"
@@ -7874,6 +7909,7 @@ const fn character_string_constraint_reason(kind: CharacterStringKind) -> &'stat
 /// Source: `UTF8String__process` in the C skeleton. Version: 2026-11-01.
 /// Responsible: runtime maintainers. History: C compatibility gate.
 /// Example: accepts minimal legacy 5-byte `[0xf8, 0x88, 0x80, 0x80, 0x80]`.
+#[cfg(not(feature = "strict-mode"))]
 fn is_c_compatible_utf8(bytes: &[u8]) -> bool {
     let mut cursor = 0;
     while cursor < bytes.len() {
@@ -17816,15 +17852,22 @@ mod tests {
         let limits = Limits::default();
         let raw = Ia5String::try_from_bytes(&[0, 0x1b, 0x7f, 0x80, 0xff], &limits).unwrap();
         assert_eq!(raw.as_bytes(), [0, 0x1b, 0x7f, 0x80, 0xff]);
-        assert_eq!(
-            encode_ia5_string_der(&raw, &limits).unwrap().bytes,
-            [0x16, 5, 0, 0x1b, 0x7f, 0x80, 0xff]
-        );
+        let raw_der = encode_ia5_string_der(&raw, &limits);
+        if cfg!(feature = "strict-mode") {
+            assert!(raw_der.is_err());
+        } else {
+            assert_eq!(raw_der.unwrap().bytes, [0x16, 5, 0, 0x1b, 0x7f, 0x80, 0xff]);
+        }
         assert!(encode_ia5_string_cer(&raw, &limits).is_err());
 
-        let decoded = decode_ia5_string_ber(&[0x16, 1, 0x80], &limits).unwrap();
-        assert_eq!(decoded.value.as_bytes(), [0x80]);
-        assert_eq!(decoded.consumed_bytes, 3);
+        let decoded = decode_ia5_string_ber(&[0x16, 1, 0x80], &limits);
+        if cfg!(feature = "strict-mode") {
+            assert!(decoded.is_err());
+        } else {
+            let decoded = decoded.unwrap();
+            assert_eq!(decoded.value.as_bytes(), [0x80]);
+            assert_eq!(decoded.consumed_bytes, 3);
+        }
         assert!(decode_ia5_string_cer(&[0x16, 1, 0x80], &limits).is_err());
 
         let valid = Ia5String::try_from_bytes(&[0, 0x1b, 0x7f], &limits).unwrap();
@@ -17947,13 +17990,12 @@ mod tests {
         assert!(decode_ia5_string_cer(&child_alias, &limits).is_err());
 
         let high_bit_child = [0x36, 0x80, 4, 1, 0x80, 0, 0];
-        assert_eq!(
-            decode_ia5_string_ber(&high_bit_child, &limits)
-                .unwrap()
-                .value
-                .as_bytes(),
-            [0x80]
-        );
+        let high_bit_result = decode_ia5_string_ber(&high_bit_child, &limits);
+        if cfg!(feature = "strict-mode") {
+            assert!(high_bit_result.is_err());
+        } else {
+            assert_eq!(high_bit_result.unwrap().value.as_bytes(), [0x80]);
+        }
         assert!(decode_ia5_string_cer(&high_bit_child, &limits).is_err());
     }
 
@@ -18249,8 +18291,13 @@ mod tests {
         let mut context = RecordContext::new_with_aggregate_scratch(&limits);
         let mut reader = SequenceReader::new_tagged(&raw_high_bit, &fields, &mut context).unwrap();
         reader.next_tagged_field().unwrap();
-        assert_eq!(reader.read_ia5_string().unwrap().as_bytes(), [0x80]);
-        reader.next_tagged_field().unwrap();
+        let high_bit_result = reader.read_ia5_string();
+        if cfg!(feature = "strict-mode") {
+            assert!(high_bit_result.is_err());
+        } else {
+            assert_eq!(high_bit_result.unwrap().as_bytes(), [0x80]);
+            reader.next_tagged_field().unwrap();
+        }
         assert!(strict_decode_sequence_ia5(&raw_high_bit, &limits).is_err());
         let high_tag_alias = [0x30, 4, 0x1f, 0x16, 1, b'A'];
         let mut context = RecordContext::new_with_aggregate_scratch(&limits);
@@ -18366,12 +18413,12 @@ mod tests {
         let limits = Limits::default();
         let value = Ia5String::try_from_bytes(b"A", &limits).unwrap();
         let invalid = Ia5String::try_from_bytes(&[0x80], &limits).unwrap();
-        assert_eq!(
-            encode_sequence_ia5(RecordEncoding::Der, &invalid, &limits)
-                .unwrap()
-                .bytes,
-            [0x30, 3, 0x16, 1, 0x80]
-        );
+        let invalid_der = encode_sequence_ia5(RecordEncoding::Der, &invalid, &limits);
+        if cfg!(feature = "strict-mode") {
+            assert!(invalid_der.is_err());
+        } else {
+            assert_eq!(invalid_der.unwrap().bytes, [0x30, 3, 0x16, 1, 0x80]);
+        }
         assert!(RecordField::new(Tag::context_specific(2), FieldKind::Ia5String).is_err());
         assert!(RecordField::new_explicit(Tag::context_specific(2), FieldKind::Ia5String).is_err());
 
@@ -18629,11 +18676,11 @@ mod tests {
         context
             .verify_canonical(&input, consumed, &canonical.bytes)
             .unwrap();
-        assert_eq!(context.work_used, 30 * 8);
+        assert_eq!(context.work_used, (30 + usize::from(cfg!(feature = "strict-mode"))) * 8);
         assert!(strict_decode_sequence_ia5(
             &input,
             &Limits {
-                max_work_bits: 30 * 8 - 1,
+                max_work_bits: (30 + usize::from(cfg!(feature = "strict-mode"))) * 8 - 1,
                 ..Limits::default()
             },
         )
@@ -19343,9 +19390,9 @@ mod tests {
         context
             .verify_canonical(&cer, consumed, &canonical.bytes)
             .unwrap();
-        assert_eq!(context.work_used, 30 * 8);
+        assert_eq!(context.work_used, (30 + usize::from(cfg!(feature = "strict-mode"))) * 8);
         let mut low_work = RecordContext::new_with_aggregate_scratch(&Limits {
-            max_work_bits: 30 * 8 - 1,
+            max_work_bits: (30 + usize::from(cfg!(feature = "strict-mode"))) * 8 - 1,
             ..Limits::default()
         });
         let low_result = (|| {
@@ -19552,7 +19599,7 @@ mod tests {
         let value = Ia5String::try_from_bytes(&[0, 0x7f], &Limits::default()).unwrap();
         let der_exact = Limits {
             max_output_bytes: 4,
-            max_work_bits: 32,
+            max_work_bits: 32 + if cfg!(feature = "strict-mode") { 16 } else { 0 },
             ..Limits::default()
         };
         assert_eq!(
@@ -19570,7 +19617,7 @@ mod tests {
         assert!(encode_ia5_string_der(
             &value,
             &Limits {
-                max_work_bits: 31,
+                max_work_bits: der_exact.max_work_bits - 1,
                 ..der_exact
             }
         )
@@ -19855,11 +19902,24 @@ mod tests {
             let value = CharacterString::try_from_bytes(*kind, &[0xff], &limits).unwrap();
             assert_eq!(value.kind(), *kind);
             assert_eq!(value.as_bytes(), [0xff]);
-            let der = encode_character_string_der(&value, &limits).unwrap();
-            assert_eq!(der.bytes, [*tag, 1, 0xff]);
-            let decoded = decode_character_string_ber(&der.bytes, *kind, &limits).unwrap();
-            assert_eq!(decoded.value.kind(), *kind);
-            assert_eq!(decoded.value.as_bytes(), [0xff]);
+            let invalid_strict = matches!(
+                *kind,
+                CharacterStringKind::Utf8String | CharacterStringKind::NumericString
+                    | CharacterStringKind::PrintableString | CharacterStringKind::VisibleString
+                    | CharacterStringKind::Iso646String | CharacterStringKind::Ia5String
+                    | CharacterStringKind::BmpString | CharacterStringKind::UniversalString
+            ) && cfg!(feature = "strict-mode");
+            let wire = [*tag, 1, 0xff];
+            if invalid_strict {
+                assert!(encode_character_string_der(&value, &limits).is_err());
+                assert!(decode_character_string_ber(&wire, *kind, &limits).is_err());
+            } else {
+                let der = encode_character_string_der(&value, &limits).unwrap();
+                assert_eq!(der.bytes, wire);
+                let decoded = decode_character_string_ber(&der.bytes, *kind, &limits).unwrap();
+                assert_eq!(decoded.value.kind(), *kind);
+                assert_eq!(decoded.value.as_bytes(), [0xff]);
+            }
 
             let empty = CharacterString::try_from_bytes(*kind, &[], &limits).unwrap();
             let cer = encode_character_string_cer(&empty, &limits).unwrap();
@@ -19959,6 +20019,13 @@ mod tests {
         ];
         for (kind, bytes) in accepted {
             let value = CharacterString::try_from_bytes(*kind, bytes, &limits).unwrap();
+            if cfg!(feature = "strict-mode")
+                && matches!(*kind, CharacterStringKind::BmpString | CharacterStringKind::UniversalString)
+            {
+                assert!(encode_character_string_cer(&value, &limits).is_err());
+                assert!(encode_character_string_der(&value, &limits).is_err());
+                continue;
+            }
             let encoded = encode_character_string_cer(&value, &limits).unwrap();
             assert_eq!(
                 decode_character_string_cer(&encoded.bytes, *kind, &limits)
@@ -19981,11 +20048,12 @@ mod tests {
         ];
         for (kind, bytes) in rejected {
             let value = CharacterString::try_from_bytes(*kind, bytes, &limits).unwrap();
-            assert!(encode_character_string_der(&value, &limits).is_ok());
+            assert_eq!(encode_character_string_der(&value, &limits).is_err(), cfg!(feature = "strict-mode"));
             assert!(encode_character_string_cer(&value, &limits).is_err());
-            let der = encode_character_string_der(&value, &limits).unwrap();
-            assert!(decode_character_string_ber(&der.bytes, *kind, &limits).is_ok());
-            assert!(decode_character_string_cer(&der.bytes, *kind, &limits).is_err());
+            let mut wire = vec![u8::try_from(kind.tag_number()).unwrap(), u8::try_from(bytes.len()).unwrap()];
+            wire.extend_from_slice(bytes);
+            assert_eq!(decode_character_string_ber(&wire, *kind, &limits).is_err(), cfg!(feature = "strict-mode"));
+            assert!(decode_character_string_cer(&wire, *kind, &limits).is_err());
         }
     }
 
@@ -20016,6 +20084,10 @@ mod tests {
             let value =
                 CharacterString::try_from_bytes(CharacterStringKind::Utf8String, bytes, &limits)
                     .unwrap();
+            if cfg!(feature = "strict-mode") && core::str::from_utf8(bytes).is_err() {
+                assert!(encode_character_string_cer(&value, &limits).is_err());
+                continue;
+            }
             let encoded = encode_character_string_cer(&value, &limits).unwrap();
             assert_eq!(
                 decode_character_string_cer(
@@ -20253,7 +20325,7 @@ mod tests {
         let value = CharacterString::try_from_bytes(kind, b"A", &default).unwrap();
         let der_exact = Limits {
             max_output_bytes: 3,
-            max_work_bits: 24,
+            max_work_bits: 24 + if cfg!(feature = "strict-mode") { 8 } else { 0 },
             ..default
         };
         assert!(encode_character_string_der(&value, &der_exact).is_ok());
@@ -20268,7 +20340,7 @@ mod tests {
         assert!(encode_character_string_der(
             &value,
             &Limits {
-                max_work_bits: 23,
+                max_work_bits: der_exact.max_work_bits - 1,
                 ..der_exact
             }
         )
@@ -20495,7 +20567,13 @@ mod tests {
         ];
         let limits = Limits::default();
         for kind in kinds {
-            let value = CharacterString::try_from_bytes(kind, b"A", &limits).unwrap();
+            let seed: &[u8] = match kind {
+                CharacterStringKind::NumericString => b"1",
+                CharacterStringKind::BmpString => &[0, b'A'],
+                CharacterStringKind::UniversalString => &[0, 0, 0, b'A'],
+                _ => b"A",
+            };
+            let value = CharacterString::try_from_bytes(kind, seed, &limits).unwrap();
             let wire = encode_character_string_der(&value, &limits).unwrap().bytes;
             for end in 0..wire.len() {
                 let truncated = &wire[..end];
@@ -24541,4 +24619,36 @@ mod tests {
             }
         }
     }
+
+    /// Check strict-feature character validation without changing raw storage.
+    /// Source: ISO/IEC 10646 UTF-8 and BER type repertoires; date: 2026-11-17.
+    /// Responsible: asn1c maintainers. Inputs/returns: none; assertions panic.
+    /// History: strict mode regressions. Example: run with and without features.
+    #[test]
+    fn strict_policy_character_boundaries() {
+        let limits = Limits::default();
+        let utf8 = CharacterStringKind::Utf8String;
+        let invalid_utf8: &[&[u8]] = &[
+            &[0xed, 0xa0, 0x80],
+            &[0xf4, 0x90, 0x80, 0x80],
+            &[0xf8, 0x88, 0x80, 0x80, 0x80],
+            &[0xfc, 0x84, 0x80, 0x80, 0x80, 0x80],
+        ];
+        for bytes in invalid_utf8 {
+            let value = CharacterString::try_from_bytes(utf8, bytes, &limits).unwrap();
+            assert_eq!(encode_character_string_der(&value, &limits).is_err(), cfg!(feature = "strict-mode"));
+            assert_eq!(encode_character_string_cer(&value, &limits).is_err(), cfg!(feature = "strict-mode"));
+            let mut wire = vec![12, u8::try_from(bytes.len()).unwrap()];
+            wire.extend_from_slice(bytes);
+            assert_eq!(decode_character_string_ber(&wire, utf8, &limits).is_err(), cfg!(feature = "strict-mode"));
+        }
+
+        // Boundary scalar values stay valid, including a supplementary plane.
+        for bytes in [b"abc".as_slice(), &[0xf4, 0x8f, 0xbf, 0xbf], &[0xc3, 0xa9]] {
+            let value = CharacterString::try_from_bytes(utf8, bytes, &limits).unwrap();
+            let encoded = encode_character_string_der(&value, &limits).unwrap();
+            assert_eq!(decode_character_string_ber(&encoded.bytes, utf8, &limits).unwrap().value, value);
+        }
+    }
+
 }

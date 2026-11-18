@@ -19,6 +19,9 @@ cbor_encode(const asn_TYPE_descriptor_t *td, const void *sptr,
             asn_app_consume_bytes_f *cb, void *app_key) {
     asn_enc_rval_t er = {0, 0, 0};
 
+    /* Validate the root before any output is published. */
+    ASN__STRICT_ENCODE_CHECK(td, sptr, ATS_CBOR);
+
     if(!td || !td->op || !sptr || !cb || !td->op->cbor_encoder) {
         ASN__ENCODE_FAILED;
     }

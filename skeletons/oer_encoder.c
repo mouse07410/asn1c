@@ -11,6 +11,9 @@
 asn_enc_rval_t
 oer_encode(const asn_TYPE_descriptor_t *type_descriptor, const void *struct_ptr,
            asn_app_consume_bytes_f *consume_bytes, void *app_key) {
+    /* Validate the root before any output is published. */
+    ASN__STRICT_ENCODE_CHECK(type_descriptor, struct_ptr, ATS_BASIC_OER);
+
     ASN_DEBUG("OER encoder invoked for %s", type_descriptor->name);
 
     /*
@@ -62,6 +65,9 @@ oer_encode_to_buffer(const asn_TYPE_descriptor_t *type_descriptor,
 ) {
     enc_to_buf_arg arg;
     asn_enc_rval_t ec;
+
+    /* Validate the root before any output is published. */
+    ASN__STRICT_ENCODE_CHECK(type_descriptor, struct_ptr, ATS_BASIC_OER);
 
     arg.buffer = buffer;
     arg.left = buffer_size;

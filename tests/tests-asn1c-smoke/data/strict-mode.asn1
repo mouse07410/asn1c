@@ -1,0 +1,25 @@
+StrictPolicy DEFINITIONS ::= BEGIN
+N ::= INTEGER (0..2)
+Wide ::= INTEGER (0..3)
+T ::= SEQUENCE { s UTF8String (SIZE(0..32)) }
+Utf ::= UTF8String (SIZE(0..32))
+Alias ::= Utf
+Ext ::= UTF8String (SIZE(1..150,...))
+Tele ::= TeletexString (SIZE(0..32))
+T61 ::= T61String (SIZE(0..32))
+Video ::= VideotexString (SIZE(0..32))
+Graphic ::= GraphicString (SIZE(0..32))
+General ::= GeneralString (SIZE(0..32))
+Object ::= ObjectDescriptor (SIZE(0..32))
+Bmp ::= BMPString (SIZE(0..2))
+Universal ::= UniversalString (SIZE(0..2))
+E ::= ENUMERATED { one(0), two(1), ... }
+Known ::= ENUMERATED { one(0), two(1), ..., three(2) }
+C ::= CHOICE { one NULL, ... }
+Pair ::= SEQUENCE { e E, c C }
+Bits ::= BIT STRING
+Octets ::= OCTET STRING
+Encoded ::= [XER:BASE64] OCTET STRING
+Items ::= SEQUENCE OF INTEGER
+Bag ::= SET OF INTEGER
+END

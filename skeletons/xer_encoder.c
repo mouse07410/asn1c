@@ -19,6 +19,9 @@ xer_encode(const asn_TYPE_descriptor_t *td, const void *sptr,
 	size_t mlen;
 	int xcan = (xer_flags & XER_F_CANONICAL) ? 1 : 2;
 
+    /* Validate the root before any output is published. */
+    ASN__STRICT_ENCODE_CHECK(td, sptr, ATS_BASIC_XER);
+
 	if(!td || !sptr) goto cb_failed;
 
 	mname = td->xml_tag;

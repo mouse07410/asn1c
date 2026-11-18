@@ -254,8 +254,20 @@ SET_OF_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
             switch(ch_type) {
             case PXER_WMORE:
                 RETURN(RC_WMORE);
+            case PXER_TEXT:
+#ifdef ASN_STRICT_MODE
+                /* Text between element tags is whitespace unless XMLValueList
+                 * delegates the value text itself to its primitive decoder. */
+                if(xer_whitespace_span(buf_ptr, ch_size) != (size_t)ch_size) {
+                    if(ctx->phase == 1 && specs->as_XMLValueList == 2) {
+                        ctx->phase = 2;
+                        continue;
+                    }
+                    RETURN(RC_FAIL);
+                }
+#endif
+                /* Fall through */
             case PXER_COMMENT:  /* Got XML comment */
-            case PXER_TEXT:  /* Ignore free-standing text */
                 XER_ADVANCE(ch_size);  /* Skip silently */
                 continue;
             case PXER_TAG:
@@ -277,6 +289,7 @@ SET_OF_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
 		    }
 		}
 		
+#ifndef ASN_STRICT_MODE
         /* Check for ASN.1 type keyword tags like <SEQUENCE OF> or <SET OF>
          * These are meta-syntax tags that may appear in debug-annotated XER files
          * but are not part of the standard XER encoding. Skip them if present. */
@@ -314,6 +327,7 @@ SET_OF_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
             }
             if(skipped_keyword) continue;
         }
+#endif /* !ASN_STRICT_MODE */
 		
         tcv = xer_check_tag(buf_ptr, ch_size, xml_tag);
         ASN_DEBUG("XER/SET OF: tcv = %d, ph=%d t=%s",
@@ -347,12 +361,22 @@ SET_OF_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
             /* If we're in phase 1 and encounter an unknown closing tag,
              * it's likely the closing tag of our parent wrapper (OPEN TYPE).
              * Finish successfully and let parent handle the closing tag. */
+#ifndef ASN_STRICT_MODE
             if(tcv == XCT_UNKNOWN_CL && ctx->phase == 1) {
                 ASN_DEBUG("XER/SET OF: unknown closing tag in phase 1, completing successfully");
                 ctx->phase = 3;  /* Phase out successfully */
                 RETURN(RC_OK);
             }
+#endif /* !ASN_STRICT_MODE */
             
+#ifdef ASN_STRICT_MODE
+            /* Delegate member tags only after the schema-derived root opened.
+             * The element decoder validates its exact expected XML tag. */
+            if(ctx->phase == 1 && (tcv == XCT_UNKNOWN_OP || tcv == XCT_UNKNOWN_BO)) {
+                ctx->phase = 2;
+                continue;
+            }
+#else
             /* Robust handling in phase 0... */
  			if(ctx->phase == 0) {
 			    int is_container = (xml_tag && xer_token_name_equals_normalized(buf_ptr, ch_size, xml_tag));
@@ -386,6 +410,7 @@ SET_OF_decode_xer(const asn_codec_ctx_t *opt_codec_ctx,
 			    continue;
 			}
 			ASN_DEBUG("XER/SET OF: fallback condition failed, phase=%d", ctx->phase);
+#endif /* ASN_STRICT_MODE */
 			
             /* Fall through */
         default:

@@ -35,7 +35,25 @@ int asn_check_constraints(
 int asn_check_constraints_with_syntax(
     const struct asn_TYPE_descriptor_s *type_descriptor,
     const void *struct_ptr, int syntax, char *errbuf, size_t *errlen);
+/*
+ * Validate a completed root decode under the selected syntax.
+ * Source: asn1c codec boundary policy. Version/date: 2026-11-17.
+ * Parameters: td describes *sptr; syntax selects CONTAINING interpretation;
+ * result is the decoder status, including its original consumed count.
+ * Returns result, changing RC_OK to RC_FAIL on a constraint violation.
+ * RC_WMORE and RC_FAIL, storage ownership and consumed units are preserved.
+ * Exceptions: none. Responsible: asn1c maintainers. History: strict policy.
+ * Example: called by ASN__STRICT_DECODE_RESULT after a BER root decode.
+ */
+asn_dec_rval_t asn_check_decoded_constraints(
+    const struct asn_TYPE_descriptor_s *td, void **sptr, int syntax,
+    asn_dec_rval_t result);
 int asn_check_constraints_current_syntax(void);
+/* Internal dynamic context; see constraints.c. Does not enable extension encoding. */
+int asn_check_constraints_is_decoding(void);
+/* Family predicates include canonical variants; see their contracts in constraints.c. */
+int asn_check_constraints_is_per(void);
+int asn_check_constraints_is_oer(void);
 int asn_check_containing_constraint(
     const struct asn_TYPE_descriptor_s *type_descriptor,
     const void *struct_ptr,

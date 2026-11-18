@@ -99,6 +99,9 @@ aper_encode(const asn_TYPE_descriptor_t *td,
 	asn_per_outp_t po;
 	asn_enc_rval_t er = {0,0,0};
 
+    /* Validate the root before any output is published. */
+    ASN__STRICT_ENCODE_CHECK(td, sptr, ATS_ALIGNED_BASIC_PER);
+
 	/*
 	 * Invoke type-specific encoder.
 	 */

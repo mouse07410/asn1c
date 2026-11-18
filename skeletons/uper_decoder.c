@@ -14,6 +14,13 @@ uper_decode_complete(const asn_codec_ctx_t *opt_codec_ctx,
     asn_dec_rval_t rval;
 
 	rval = uper_decode(opt_codec_ctx, td, sptr, buffer, size, 0, 0);
+#ifdef ASN_STRICT_MODE
+    /* Check only final-octet filler, leaving following framed values untouched. */
+    if(rval.code == RC_OK && (rval.consumed & 7)
+       && (((const uint8_t *)buffer)[rval.consumed >> 3]
+           & ((1u << (8 - (rval.consumed & 7))) - 1u)))
+        rval.code = RC_FAIL;
+#endif
 	if(rval.consumed) {
 		/*
 		 * We've always given 8-aligned data,
@@ -120,6 +127,9 @@ uper_decode(const asn_codec_ctx_t *opt_codec_ctx,
 	asn_dec_rval_t rval;
 	asn_per_data_t pd;
 
+    if(!td || !td->op || !sptr || (size && !buffer)
+       || size > SIZE_MAX / 8) ASN__DECODE_FAILED;
+
 	if(skip_bits < 0 || skip_bits > 7
 	|| unused_bits < 0 || unused_bits > 7
 	|| (unused_bits > 0 && !size))
@@ -171,5 +181,5 @@ uper_decode(const asn_codec_ctx_t *opt_codec_ctx,
 			(long)rval.consumed, (long)(rval.consumed >> 3), 
 			(long)(rval.consumed & 7));
 	}
-	return rval;
+	return ASN__STRICT_DECODE_RESULT(td, sptr, ATS_UNALIGNED_BASIC_PER, rval);
 }

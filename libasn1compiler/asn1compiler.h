@@ -183,6 +183,8 @@ enum asn1c_flags {
 	A1C_GEN_CER                     = 0x1000000000,
 	/* -ftolerant-utc-time: retain raw BER UTCTime behavior for C and Rust. */
 	A1C_TOLERANT_UTC_TIME           = 0x2000000000,
+	/* --strict-mode: standards policy shared by all codecs and targets. */
+	A1C_STRICT_MODE                 = 0x4000000000,
 };
 
 /*

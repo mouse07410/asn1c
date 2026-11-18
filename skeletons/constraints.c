@@ -83,17 +83,61 @@ asn_check_constraints(const asn_TYPE_descriptor_t *type_descriptor,
 
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_THREADS__)
 static thread_local int constraint_check_syntax = ATS_BER;
+static thread_local int constraint_check_decoding; /* state variable. */
 static thread_local unsigned constraint_check_depth; /* state variable. */
 #elif defined(__GNUC__) || defined(__clang__)
 static __thread int constraint_check_syntax = ATS_BER;
+static __thread int constraint_check_decoding; /* state variable. */
 static __thread unsigned constraint_check_depth; /* state variable. */
 #elif defined(_MSC_VER)
 static __declspec(thread) int constraint_check_syntax = ATS_BER;
+static __declspec(thread) int constraint_check_decoding; /* state variable. */
 static __declspec(thread) unsigned constraint_check_depth; /* state variable. */
 #else
 static int constraint_check_syntax = ATS_BER;
+static int constraint_check_decoding; /* state variable. */
 static unsigned constraint_check_depth; /* state variable. */
 #endif
+
+/*
+ * Identify validation of successful decoder output, including skipped additions.
+ * Source: codec-boundary policy. Version/date: 2026-11-17. Inputs: none.
+ * Returns nonzero within decoded-value checks; exceptions: none.
+ * Responsible: asn1c maintainers. History: preserve standard extension skipping.
+ * Example: CHOICE_constraint permits decoder-produced skipped extensions.
+ */
+int
+asn_check_constraints_is_decoding(void) {
+    return constraint_check_decoding;
+}
+
+/*
+ * Identify both basic and canonical PER variants during constraint validation.
+ * Source: transfer-syntax enum. Version/date: 2026-11-17. Inputs: none.
+ * Returns nonzero for either alignment of PER; no exceptions.
+ * Responsible: asn1c maintainers. History: preserve canonical extension relay.
+ * Example: ATS_ALIGNED_CANONICAL_PER returns nonzero inside a constraint check.
+ */
+int
+asn_check_constraints_is_per(void) {
+    return constraint_check_syntax == ATS_UNALIGNED_BASIC_PER
+        || constraint_check_syntax == ATS_UNALIGNED_CANONICAL_PER
+        || constraint_check_syntax == ATS_ALIGNED_BASIC_PER
+        || constraint_check_syntax == ATS_ALIGNED_CANONICAL_PER;
+}
+
+/*
+ * Identify both basic and canonical OER during decoded-value validation.
+ * Source: transfer-syntax enum. Version/date: 2026-11-17. Inputs: none.
+ * Returns nonzero for either OER variant; no exceptions.
+ * Responsible: asn1c maintainers. History: preserve skipped extension validation.
+ * Example: ATS_CANONICAL_OER is recognized as OER rather than a different family.
+ */
+int
+asn_check_constraints_is_oer(void) {
+    return constraint_check_syntax == ATS_BASIC_OER
+        || constraint_check_syntax == ATS_CANONICAL_OER;
+}
 
 int
 asn_check_constraints_current_syntax(void) {
@@ -125,4 +169,27 @@ asn_check_constraints_with_syntax(
     if(ret == -1 && errlen) *errlen = arg.errlen;
 
     return ret;
+}
+
+/*
+ * Check a completed root without touching partial values or their ownership.
+ * Source: asn1c constraint API. Version/date: 2026-11-17.
+ * Parameters: td/sptr identify the decoded value; syntax selects CONTAINING;
+ * result supplies the status and consumed count in the caller's native units.
+ * Returns the original result, or RC_FAIL after unsuccessful validation.
+ * Exceptions: none. Responsible: asn1c maintainers. History: strict policy.
+ * Example: a BER INTEGER outside its ASN.1 range changes RC_OK to RC_FAIL.
+ */
+asn_dec_rval_t
+asn_check_decoded_constraints(const asn_TYPE_descriptor_t *td, void **sptr,
+                              int syntax, asn_dec_rval_t result) {
+    int saved_decoding = constraint_check_decoding;
+    /* Partial streaming values must remain resumable until RC_OK. */
+    if(result.code != RC_OK) return result;
+    constraint_check_decoding = 1;
+    if(!sptr || !*sptr
+       || asn_check_constraints_with_syntax(td, *sptr, syntax, NULL, NULL))
+        result.code = RC_FAIL;
+    constraint_check_decoding = saved_decoding;
+    return result;
 }

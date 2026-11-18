@@ -42,6 +42,16 @@ Compile all decoder skeleton objects with the macro and perform a clean rebuild;
 defining it only in application code does not change an already-built runtime
 library. Compatibility warning contributed by <shakespark@gmail.com>.
 
+#### Standards policy
+
+Use `asn1c --strict-mode` (also with `--rust`) to select the standards policy
+for all enabled codecs. It disables the C non-known-multiplier PER SIZE
+compatibility fallback, adds automatic C codec-boundary constraint checks,
+and tightens documented syntax/repertoire allowances. Existing invocations
+retain their compatibility behavior. Regenerate and rebuild both peers when
+changing PER profiles. See [strict-mode behavior and limits](docs/strict-mode.md)
+for format coverage, Rust support limits and streaming/API contracts.
+
 #### UTCTime validation
 
 The C runtime and generated Rust BER decoder validate `UTCTime` syntax, clock

@@ -54,10 +54,18 @@ asn1_compile_with_target(asn1p_t *asn, const char *datadir,
 	}
 	if(asn1c_validate_dispatch_arguments(asn, datadir, destdir, argc, optc,
 	                                      argv, target)) return -1;
+    /* Enforce policy for library callers as well as the command-line driver. */
+    if((flags & A1C_STRICT_MODE)
+       && (flags & (A1C_NO_CONSTRAINTS | A1C_TOLERANT_UTC_TIME))) {
+        errno = EINVAL;
+        fprintf(stderr, "asn1c: strict mode conflicts with permissive options\n");
+        return -1;
+    }
 	if(target_options && target_options->target == ASN1C_TARGET_RUST) {
 		return asn1c_rust_compile(asn, target_options->rust_runtime_dir,
 		                           destdir, target_options->rust_codecs,
-		                           !!(flags & A1C_TOLERANT_UTC_TIME));
+		                           !!(flags & A1C_TOLERANT_UTC_TIME),
+		                           !!(flags & A1C_STRICT_MODE));
 	}
 	return asn1_compile_c(asn, datadir, destdir, flags, argc, optc, argv,
 	                      complex_threshold);

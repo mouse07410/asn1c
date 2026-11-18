@@ -414,7 +414,13 @@ asn_encode_der_family(const asn_encode_arguments_t *args) {
         /* Fall through. */
     case ATS_DER:
         if(td->op->der_encoder) {
+#ifdef ASN_STRICT_MODE
+            /* The generic entry already checked the exact selected syntax.
+             * Preserve BER CONTAINING semantics when using DER outer output. */
+            er = td->op->der_encoder(td, sptr, 0, 0, callback, callback_key);
+#else
             er = der_encode(td, sptr, callback, callback_key);
+#endif
             if(er.encoded == -1) {
                 if(er.failed_type && er.failed_type->op && er.failed_type->op->der_encoder) {
                     errno = EBADF;   /* Structure has incorrect form. */
@@ -880,6 +886,8 @@ asn_encode_internal(const asn_codec_ctx_t *opt_codec_ctx,
         ASN__ENCODE_FAILED;
     }
 
+    ASN__STRICT_ENCODE_CHECK(td, sptr, syntax);
+
     /* Publish a complete validated argument set to the selected family. */
     args.codec_ctx = opt_codec_ctx;
     args.syntax = syntax;
@@ -889,6 +897,74 @@ asn_encode_internal(const asn_codec_ctx_t *opt_codec_ctx,
     args.callback_key = callback_key;
     return dispatch(&args);
 }
+
+#if defined(ASN_STRICT_MODE) && !defined(ASN_DISABLE_BER_SUPPORT)
+/* Comparison state for bounded DER canonical-input verification. */
+typedef struct asn_der_compare_s {
+    const unsigned char *bytes; /* Consumed input to compare with DER output. */
+    size_t size; /* Number of consumed input octets. */
+    size_t offset; /* state variable: successfully compared output octets. */
+} asn_der_compare_t;
+
+/*
+ * Compare DER output against the input without allocating another encoding.
+ * Source: asn1c CER comparison approach and X.690 DER. Date: 2026-11-17.
+ * Inputs: buffer/size are output; key is bounded comparison state.
+ * Returns zero on equality, -1 for mismatch/overrun. Exceptions: none.
+ * Responsible: asn1c maintainers. History: strict DER input verification.
+ * Example: der_encode(td, value, asn_der_compare, &state).
+ */
+static int
+asn_der_compare(const void *buffer, size_t size, void *key) {
+    asn_der_compare_t *state = key;
+    /* The remaining-input budget also bounds the comparison work. */
+    if(size > state->size - state->offset
+       || (size && memcmp(state->bytes + state->offset, buffer, size)))
+        return -1;
+    state->offset += size;
+    return 0;
+}
+
+/*
+ * Verify DER canonical representation after a completed BER-family decode.
+ * Source: X.690 DER and asn1c CER validator. Version/date: 2026-11-17.
+ * Parameters: ctx supplies decoder limits; td/sptr select root storage;
+ * buffer/size bound input. Returns decoder result or RC_FAIL on non-DER input.
+ * One-shot input verification, like CER: partial/error storage is freed or reset;
+ * failures consume zero bytes. Retry RC_WMORE with the complete input.
+ * Exceptions: none. Responsible: asn1c maintainers. History: strict DER input.
+ * Example: BOOLEAN 01 01 01 is valid BER, but fails this DER boundary.
+ */
+static asn_dec_rval_t
+asn_strict_der_decode(const asn_codec_ctx_t *ctx,
+                      const asn_TYPE_descriptor_t *td, void **sptr,
+                      const void *buffer, size_t size) {
+    int allocated_here = sptr && *sptr == NULL;
+    asn_dec_rval_t result = ber_decode(ctx, td, sptr, buffer, size);
+    asn_der_compare_t comparison;
+    asn_enc_rval_t encoded;
+    if(result.code != RC_OK) goto cleanup;
+
+    /* Compare only this value, allowing a caller to decode concatenated PDUs. */
+    comparison.bytes = buffer;
+    comparison.size = result.consumed;
+    comparison.offset = 0;
+    encoded = der_encode(td, *sptr, asn_der_compare, &comparison);
+    if(encoded.encoded < 0 || comparison.offset != comparison.size)
+        result.code = RC_FAIL;
+cleanup:
+    /* DER verification needs the complete input, like the CER validator. */
+    if(result.code != RC_OK) {
+        if(td && td->op && td->op->free_struct && sptr && *sptr) {
+            td->op->free_struct(td, *sptr, allocated_here ? ASFM_FREE_EVERYTHING
+                                               : ASFM_FREE_UNDERLYING_AND_RESET);
+            if(allocated_here) *sptr = NULL;
+        }
+        result.consumed = 0;
+    }
+    return result;
+}
+#endif /* ASN_STRICT_MODE */
 
 /*
  * Purpose: Dispatch a transfer-syntax decode to its generic codec.
@@ -950,6 +1026,11 @@ asn_decode(const asn_codec_ctx_t *opt_codec_ctx,
 #endif  /* !ASN_DISABLE_BER_SUPPORT && !ASN_DISABLE_CER_SUPPORT */
 
     case ATS_DER:
+#if defined(ASN_STRICT_MODE) && !defined(ASN_DISABLE_BER_SUPPORT)
+        return asn_strict_der_decode(opt_codec_ctx, td, sptr, buffer, size);
+#endif
+        /* Compatibility mode accepts the BER family through the DER alias. */
+        /* Fall through */
     case ATS_BER:
 #if !defined(ASN_DISABLE_BER_SUPPORT)
         return ber_decode(opt_codec_ctx, td, sptr, buffer, size);
