@@ -38,6 +38,7 @@ TESTS += check-binary-format-selectors.sh
 TESTS += check-CER.sh
 TESTS += check-PER-single-flavor.sh
 TESTS += check-JER-multi-pdu.sh
+TESTS += check-issue-617.sh
 TESTS += check-BER-retag.sh
 TESTS += check-issue-588.sh
 TESTS += check-issue-587.sh

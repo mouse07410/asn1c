@@ -1,4 +1,9 @@
 Changes since v1.5.3:
+	* Normalize trailing zero bits when encoding fixed-size BIT STRING types
+	  with a NamedBitList to JER (issue #617, PR #618 by Javier / @mr-j0nes).
+	  Require the exact width for unnamed types and reject any set bit beyond
+	  the fixed width. Preserve JER SIZE metadata for aliases and validate
+	  equivalent fixed-size named values in strict-mode constraint checks.
 	* Make the extensible CHOICE decode exception's scope explicit so Clang
 	  accepts generated-code builds with -Werror -Wall.
 	* Preserve the exact signed minimum when printing ASN.1 INTEGER values,

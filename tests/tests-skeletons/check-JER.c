@@ -413,19 +413,8 @@ test_jer_bit_string_edges(void) {
     const asn_jer_constraints_t variable = {-1, 0, 0};
     const asn_jer_constraints_t fixed_zero = {0, 0, 0};
     const asn_jer_constraints_t fixed_nine = {9, 0, 0};
-    const asn_jer_constraints_t fixed_eight = {8, 0, 0};
-    const asn_jer_constraints_t fixed_sixteen = {16, 0, 0};
     unsigned char nine_bits[] = {0xab, 0x80};
     BIT_STRING_t fixed_value = {nine_bits, sizeof(nine_bits), 7, {0}};
-    unsigned char one_bit[] = {0x80};
-    BIT_STRING_t short_eight = {one_bit, sizeof(one_bit), 7, {0}};
-    unsigned char a8_bits[] = {0xa8};
-    BIT_STRING_t short_nine = {a8_bits, sizeof(a8_bits), 3, {0}};
-    unsigned char full_byte[] = {0xab};
-    BIT_STRING_t full_eight = {full_byte, sizeof(full_byte), 0, {0}};
-    unsigned char too_wide[] = {0xab, 0x80};
-    BIT_STRING_t too_wide_nine = {too_wide, sizeof(too_wide), 0, {0}};
-    BIT_STRING_t empty_fixed = {0};
     BIT_STRING_t old_value = {0};
     jer_capture_t capture = {{0}, 0};
     void *decoded = 0;
@@ -542,73 +531,83 @@ test_jer_bit_string_edges(void) {
                                          capture_jer_bytes, &capture).encoded < 0);
         }
 
-        /* Short values are padded to the fixed width (X.697 24.2.2). */
-        capture.length = 0;
-        capture.data[0] = '\0';
-        encoded = BIT_STRING_encode_jer(&asn_DEF_BIT_STRING, &fixed_eight,
-                                        &short_eight, 0, JER_F_MINIFIED,
-                                        capture_jer_bytes, &capture);
-        assert(encoded.encoded == 4 && strcmp(capture.data, "\"80\"") == 0);
-
-        /* The padded form decodes to a full byte and re-encodes the same. */
-        {
-            BIT_STRING_t *decoded_short = 0;
-            asn_dec_rval_t dr = BIT_STRING_decode_jer(
-                NULL, &asn_DEF_BIT_STRING, &fixed_eight,
-                (void **)&decoded_short, capture.data, (size_t)encoded.encoded);
-            assert(dr.code == RC_OK && decoded_short);
-            assert(decoded_short->size == 1);
-            assert(decoded_short->bits_unused == 0);
-            capture.length = 0;
-            capture.data[0] = '\0';
-            encoded = BIT_STRING_encode_jer(&asn_DEF_BIT_STRING, &fixed_eight,
-                                            decoded_short, 0, JER_F_MINIFIED,
-                                            capture_jer_bytes, &capture);
-            assert(encoded.encoded == 4
-                   && strcmp(capture.data, "\"80\"") == 0);
-            ASN_STRUCT_FREE(asn_DEF_BIT_STRING, decoded_short);
-        }
-
-        capture.length = 0;
-        capture.data[0] = '\0';
-        encoded = BIT_STRING_encode_jer(&asn_DEF_BIT_STRING, &fixed_sixteen,
-                                        &short_eight, 0, JER_F_MINIFIED,
-                                        capture_jer_bytes, &capture);
-        assert(encoded.encoded == 6 && strcmp(capture.data, "\"8000\"") == 0);
-
-        capture.length = 0;
-        capture.data[0] = '\0';
-        encoded = BIT_STRING_encode_jer(&asn_DEF_BIT_STRING, &fixed_nine,
-                                        &short_nine, 0, JER_F_MINIFIED,
-                                        capture_jer_bytes, &capture);
-        assert(encoded.encoded == 6 && strcmp(capture.data, "\"A800\"") == 0);
-
-        capture.length = 0;
-        capture.data[0] = '\0';
-        encoded = BIT_STRING_encode_jer(&asn_DEF_BIT_STRING, &fixed_eight,
-                                        &full_eight, 0, JER_F_MINIFIED,
-                                        capture_jer_bytes, &capture);
-        assert(encoded.encoded == 4 && strcmp(capture.data, "\"AB\"") == 0);
-
-        capture.length = 0;
-        capture.data[0] = '\0';
-        encoded = BIT_STRING_encode_jer(&asn_DEF_BIT_STRING, &fixed_eight,
-                                        &empty_fixed, 0, JER_F_MINIFIED,
-                                        capture_jer_bytes, &capture);
-        assert(encoded.encoded == 4 && strcmp(capture.data, "\"00\"") == 0);
-
-        /* The declared width still bounds the value. */
-        assert(BIT_STRING_encode_jer(&asn_DEF_BIT_STRING, &fixed_nine,
-                                     &too_wide_nine, 0, JER_F_MINIFIED,
-                                     capture_jer_bytes, &capture).encoded < 0);
-
-        /* A callback failure through the padding path is reported. */
-        assert(BIT_STRING_encode_jer(&asn_DEF_BIT_STRING, &fixed_eight,
-                                     &short_eight, 0, JER_F_MINIFIED,
-                                     reject_jer_bytes, 0).encoded < 0);
     }
 
     printf("✓ BIT STRING JER empty and malformed-value tests passed\n");
+}
+
+/*
+ * Verify X.697 24.2.2 normalization and exact widths for unnamed types.
+ * Parameters: none. Returns: no value. Throws: nothing; asserts on mismatch.
+ * Original source: PR #618. Version/date: 2026-11-19. Author: asn1c maintainers.
+ * History: tests both resizing directions and checks named-bit metadata.
+ * Example: one stored bit with SIZE(16) encodes as "8000" for a named type.
+ */
+static void
+test_jer_fixed_named_bits(void) {
+    asn_TYPE_descriptor_t named = asn_DEF_BIT_STRING;
+    asn_OCTET_STRING_specifics_t specifics = asn_SPC_BIT_STRING_specs;
+    unsigned char one_bit[] = {0x80};
+    unsigned char full_byte[] = {0xab};
+    unsigned char long_nine[] = {0xab, 0x80, 0};
+    unsigned char past_nine[] = {0xab, 0xc0};
+    unsigned char zero[] = {0};
+    size_t index;
+
+    /* Each row specifies the stored bits, target width, and expected token. */
+    const struct {
+        BIT_STRING_t value;     /* Source storage and unused bit count. */
+        ssize_t width;           /* Fixed width declared by the ASN.1 type. */
+        int named;               /* Whether the descriptor has a NamedBitList. */
+        const char *expected;    /* Expected JSON token, or NULL on rejection. */
+    } cases[] = {
+        {{one_bit, 1, 7, {0}}, 8, 1, "\"80\""},
+        {{one_bit, 1, 7, {0}}, 16, 1, "\"8000\""},
+        {{one_bit, 1, 7, {0}}, 9, 1, "\"8000\""},
+        {{one_bit, 1, 7, {0}}, 136, 1, "\"8000000000000000000000000000000000\""},
+        {{full_byte, 1, 0, {0}}, 8, 0, "\"AB\""},
+        {{0}, 8, 1, "\"00\""},
+        {{zero, 1, 0, {0}}, 0, 1, "\"\""},
+        {{long_nine, 3, 7, {0}}, 9, 1, "\"AB80\""},
+        {{long_nine, 2, 0, {0}}, 9, 1, "\"AB80\""},
+        {{past_nine, 2, 0, {0}}, 9, 1, NULL},
+        {{past_nine, 2, 7, {0}}, 9, 1, NULL},
+        {{one_bit, 1, 7, {0}}, 8, 0, NULL},
+        {{0}, 8, 0, NULL},
+        {{long_nine, 2, 0, {0}}, 9, 0, NULL},
+    };
+    specifics.has_named_bits = 1;
+    named.specifics = &specifics;
+
+    /* Decode each accepted token to confirm the wire value has the full width. */
+    for(index = 0; index < sizeof(cases) / sizeof(cases[0]); ++index) {
+        const asn_jer_constraints_t fixed = {cases[index].width, 0, 0};
+        const asn_TYPE_descriptor_t *td = cases[index].named ? &named : &asn_DEF_BIT_STRING;
+        jer_capture_t capture = {{0}, 0};
+        void *decoded = NULL;
+        asn_enc_rval_t encoded =
+            BIT_STRING_encode_jer(td, &fixed, &cases[index].value, 0,
+                                  JER_F_MINIFIED, capture_jer_bytes, &capture);
+        if(!cases[index].expected) {
+            assert(encoded.encoded < 0 && capture.length == 0);
+            continue;
+        }
+
+        assert(encoded.encoded == (ssize_t)strlen(cases[index].expected));
+        assert(strcmp(capture.data, cases[index].expected) == 0);
+        assert(BIT_STRING_decode_jer(NULL, td, &fixed, &decoded, capture.data,
+                                     capture.length).code == RC_OK && decoded);
+        const BIT_STRING_t *value = decoded;
+        assert(value->size * 8 - (size_t)value->bits_unused == (size_t)fixed.size);
+        ASN_STRUCT_FREE(asn_DEF_BIT_STRING, decoded);
+    }
+
+    /* Leave room for the opening quote but force the padded hex callback to fail. */
+    const asn_jer_constraints_t fixed = {16, 0, 0};
+    jer_capture_t capture = {{0}, sizeof(capture.data) - 2};
+    assert(BIT_STRING_encode_jer(&named, &fixed, &cases[0].value, 0,
+                                 JER_F_MINIFIED, capture_jer_bytes, &capture).encoded < 0);
+    assert(capture.length == sizeof(capture.data) - 1);
 }
 
 /*
@@ -727,6 +726,7 @@ main(void) {
     test_jer_decode_with_file();
     test_jer_decode_bit_string_object();
     test_jer_bit_string_edges();
+    test_jer_fixed_named_bits();
     test_jer_empty_octet_string_encoders();
     
     printf("✓ All JER decoding tests passed!\n");

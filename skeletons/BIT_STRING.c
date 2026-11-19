@@ -182,6 +182,32 @@ BIT_STRING__compactify(const BIT_STRING_t *st, BIT_STRING_t *tmp) {
 }
 
 /*
+ * Validate packed BIT STRING storage and calculate its width without mutation.
+ * Source: JER encoder validation. Version/date: 2026-11-19.
+ * Parameters: value supplies the bits; trim_trailing_zeros requests the
+ * shortest equivalent named-bit width; bit_count receives the width on success.
+ * Returns zero on success, -1 on invalid storage or overflow. Throws: nothing.
+ * Responsible party: asn1c maintainers. History: shared by JER and strict SIZE.
+ * Example: stored 0x80 with no unused bits has a trimmed width of one.
+ */
+int
+BIT_STRING__get_size(const BIT_STRING_t *value, int trim_trailing_zeros, size_t *bit_count) {
+    BIT_STRING_t compact;
+    size_t unused;
+
+    if(!bit_count || !value || (value->size && !value->buf) || value->size > SIZE_MAX / 8
+       || value->bits_unused < 0 || value->bits_unused > 7) return -1;
+    if(!value->size && value->bits_unused) return -1;
+    unused = (size_t)value->bits_unused;
+    if(unused && (value->buf[value->size - 1] & ((1u << unused) - 1u))) return -1;
+
+    /* Compact only after checking the invariants required by the shared helper. */
+    if(trim_trailing_zeros) value = BIT_STRING__compactify(value, &compact);
+    *bit_count = value->size * 8 - (size_t)value->bits_unused;
+    return 0;
+}
+
+/*
  * Return whether a BIT STRING can be compared safely.
  *
  * Purpose: Classify absent, well-formed, and malformed values before reading
