@@ -197,36 +197,47 @@ BIT_STRING__jer_validate_value(const BIT_STRING_t *value, ssize_t fixed_bits,
        && (value->buf[value->size - 1] & ((1u << unused) - 1u))) return -1;
     *bit_count = capacity - unused;
     if(fixed_bits >= 0) {
-        if((size_t)fixed_bits != *bit_count) return -1;
+        /*
+         * Trailing zero bits are not significant (X.697 24.2.2): a value
+         * whose declared width fits the fixed size is valid and is padded at
+         * emission time. The padding check above already proves the unused
+         * bits are zero, so a wider declared width is the only rejection.
+         */
         expected_bytes = ((size_t)fixed_bits + 7) / 8;
-        if(value->size != expected_bytes) return -1;
+        if(*bit_count > (size_t)fixed_bits) return -1;
+        /* Defence in depth: the width check already rejects wider values. */
+        if(value->size > expected_bytes) return -1;
     }
     return 0;
 }
 
 /*
- * Emit BIT STRING bytes as uppercase hexadecimal in bounded callback chunks.
+ * Emit emit_bytes bytes as uppercase hexadecimal in bounded callback chunks.
+ * Bytes past value->size are zero, which is how a short fixed-size BIT STRING
+ * is padded to its full wire width (X.697 24.2.2).
  *
  * Original source: local JER encoder helper. Version/date: 2026-10-30.
- * Parameters: value supplies bytes; cb/key are the output callback pair;
- * encoded tracks successful output bytes. Returns: zero on success, -1 on
- * callback or count overflow. Throws: nothing. Responsible party: maintainers.
- * History: shares fixed and variable wire output. Example: 0xAB emits `AB`.
+ * Parameters: value supplies bytes; emit_bytes is the output width; cb/key
+ * are the output callback pair; encoded tracks successful output bytes.
+ * Returns: zero on success, -1 on callback or count overflow.
+ * Throws: nothing. Responsible party: maintainers.
+ * History: shares fixed and variable wire output; fixed width zero-fills.
+ * Example: 0xAB emits `AB`; {0x80} at eight bits emits `80`.
  */
 static int
-BIT_STRING__jer_emit_hex(const BIT_STRING_t *value,
+BIT_STRING__jer_emit_hex(const BIT_STRING_t *value, size_t emit_bytes,
                          asn_app_consume_bytes_f *cb, void *key,
                          asn_enc_rval_t *encoded) {
     static const char hex[] = "0123456789ABCDEF";
     char chunk[32];
     size_t offset;
 
-    for(offset = 0; offset < value->size; offset += sizeof(chunk) / 2) {
-        size_t count = value->size - offset;
+    for(offset = 0; offset < emit_bytes; offset += sizeof(chunk) / 2) {
+        size_t count = emit_bytes - offset;
         size_t i;
         if(count > sizeof(chunk) / 2) count = sizeof(chunk) / 2;
         for(i = 0; i < count; ++i) {
-            uint8_t byte = value->buf[offset + i];
+            uint8_t byte = offset + i < value->size ? value->buf[offset + i] : 0;
             chunk[i * 2] = hex[byte >> 4];
             chunk[i * 2 + 1] = hex[byte & 0x0f];
         }
@@ -271,8 +282,11 @@ BIT_STRING_encode_jer(const asn_TYPE_descriptor_t *td,
     (void)bit_count;
 
     if(fixed_bits >= 0) {
+        size_t expected_bytes = ((size_t)fixed_bits + 7) / 8;
         ASN__CALLBACK("\"", 1);
-        if(BIT_STRING__jer_emit_hex(st, cb, app_key, &er)) ASN__ENCODE_FAILED;
+        if(BIT_STRING__jer_emit_hex(st, expected_bytes, cb, app_key, &er)) {
+            ASN__ENCODE_FAILED;
+        }
         ASN__CALLBACK("\"", 1);
     } else {
         ASN__CALLBACK("{", 1);
@@ -280,7 +294,9 @@ BIT_STRING_encode_jer(const asn_TYPE_descriptor_t *td,
         ASN__CALLBACK(minified ? "\"value\":" : "\"value\": ",
                       minified ? 8 : 9);
         ASN__CALLBACK("\"", 1);
-        if(BIT_STRING__jer_emit_hex(st, cb, app_key, &er)) ASN__ENCODE_FAILED;
+        if(BIT_STRING__jer_emit_hex(st, st->size, cb, app_key, &er)) {
+            ASN__ENCODE_FAILED;
+        }
         ASN__CALLBACK("\",", 2);
         if(!minified) ASN__TEXT_INDENT(1, ilevel + 1);
         ASN__CALLBACK(minified ? "\"length\":" : "\"length\": ",
