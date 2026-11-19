@@ -199,7 +199,8 @@ The bounded BIT STRING fixture carries its exact logical bit length alongside
 the packed octets. It checks non-octet standalone vectors, required and OPTIONAL
 SEQUENCE fields, spare codes, truncation, zero padding, resource limits, and
 generated C comparisons. Extensible ranges, disjoint unions, upper bounds at
-65536, and variable `NamedBitList` forms fail before publication.
+65536, and `NamedBitList` forms fail before publication. The Rust JER backend
+also rejects fixed-size `NamedBitList` types during generation.
 Direct ENUMERATED tests cover numeric index ordering, spare indexes,
 singleton framing, budgets, extension rejection, and live C comparisons.
 

@@ -530,9 +530,84 @@ test_jer_bit_string_edges(void) {
                                          &extra, 0, JER_F_MINIFIED,
                                          capture_jer_bytes, &capture).encoded < 0);
         }
+
     }
 
     printf("✓ BIT STRING JER empty and malformed-value tests passed\n");
+}
+
+/*
+ * Verify X.697 24.2.2 normalization and exact widths for unnamed types.
+ * Parameters: none. Returns: no value. Throws: nothing; asserts on mismatch.
+ * Original source: PR #618. Version/date: 2026-11-19. Author: asn1c maintainers.
+ * History: tests both resizing directions and checks named-bit metadata.
+ * Example: one stored bit with SIZE(16) encodes as "8000" for a named type.
+ */
+static void
+test_jer_fixed_named_bits(void) {
+    asn_TYPE_descriptor_t named = asn_DEF_BIT_STRING;
+    asn_OCTET_STRING_specifics_t specifics = asn_SPC_BIT_STRING_specs;
+    unsigned char one_bit[] = {0x80};
+    unsigned char full_byte[] = {0xab};
+    unsigned char long_nine[] = {0xab, 0x80, 0};
+    unsigned char past_nine[] = {0xab, 0xc0};
+    unsigned char zero[] = {0};
+    size_t index;
+
+    /* Each row specifies the stored bits, target width, and expected token. */
+    const struct {
+        BIT_STRING_t value;     /* Source storage and unused bit count. */
+        ssize_t width;           /* Fixed width declared by the ASN.1 type. */
+        int named;               /* Whether the descriptor has a NamedBitList. */
+        const char *expected;    /* Expected JSON token, or NULL on rejection. */
+    } cases[] = {
+        {{one_bit, 1, 7, {0}}, 8, 1, "\"80\""},
+        {{one_bit, 1, 7, {0}}, 16, 1, "\"8000\""},
+        {{one_bit, 1, 7, {0}}, 9, 1, "\"8000\""},
+        {{one_bit, 1, 7, {0}}, 136, 1, "\"8000000000000000000000000000000000\""},
+        {{full_byte, 1, 0, {0}}, 8, 0, "\"AB\""},
+        {{0}, 8, 1, "\"00\""},
+        {{zero, 1, 0, {0}}, 0, 1, "\"\""},
+        {{long_nine, 3, 7, {0}}, 9, 1, "\"AB80\""},
+        {{long_nine, 2, 0, {0}}, 9, 1, "\"AB80\""},
+        {{past_nine, 2, 0, {0}}, 9, 1, NULL},
+        {{past_nine, 2, 7, {0}}, 9, 1, NULL},
+        {{one_bit, 1, 7, {0}}, 8, 0, NULL},
+        {{0}, 8, 0, NULL},
+        {{long_nine, 2, 0, {0}}, 9, 0, NULL},
+    };
+    specifics.has_named_bits = 1;
+    named.specifics = &specifics;
+
+    /* Decode each accepted token to confirm the wire value has the full width. */
+    for(index = 0; index < sizeof(cases) / sizeof(cases[0]); ++index) {
+        const asn_jer_constraints_t fixed = {cases[index].width, 0, 0};
+        const asn_TYPE_descriptor_t *td = cases[index].named ? &named : &asn_DEF_BIT_STRING;
+        jer_capture_t capture = {{0}, 0};
+        void *decoded = NULL;
+        asn_enc_rval_t encoded =
+            BIT_STRING_encode_jer(td, &fixed, &cases[index].value, 0,
+                                  JER_F_MINIFIED, capture_jer_bytes, &capture);
+        if(!cases[index].expected) {
+            assert(encoded.encoded < 0 && capture.length == 0);
+            continue;
+        }
+
+        assert(encoded.encoded == (ssize_t)strlen(cases[index].expected));
+        assert(strcmp(capture.data, cases[index].expected) == 0);
+        assert(BIT_STRING_decode_jer(NULL, td, &fixed, &decoded, capture.data,
+                                     capture.length).code == RC_OK && decoded);
+        const BIT_STRING_t *value = decoded;
+        assert(value->size * 8 - (size_t)value->bits_unused == (size_t)fixed.size);
+        ASN_STRUCT_FREE(asn_DEF_BIT_STRING, decoded);
+    }
+
+    /* Leave room for the opening quote but force the padded hex callback to fail. */
+    const asn_jer_constraints_t fixed = {16, 0, 0};
+    jer_capture_t capture = {{0}, sizeof(capture.data) - 2};
+    assert(BIT_STRING_encode_jer(&named, &fixed, &cases[0].value, 0,
+                                 JER_F_MINIFIED, capture_jer_bytes, &capture).encoded < 0);
+    assert(capture.length == sizeof(capture.data) - 1);
 }
 
 /*
@@ -651,6 +726,7 @@ main(void) {
     test_jer_decode_with_file();
     test_jer_decode_bit_string_object();
     test_jer_bit_string_edges();
+    test_jer_fixed_named_bits();
     test_jer_empty_octet_string_encoders();
     
     printf("✓ All JER decoding tests passed!\n");

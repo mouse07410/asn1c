@@ -16,7 +16,7 @@ static int is_string_alphabet_type(asn1p_expr_type_e etype);
 static int needs_PER_alphabet_maps(arg_t *arg, asn1p_expr_type_e etype);
 static int emit_alphabet_check_loop(arg_t *arg, asn1cnst_range_t *range);
 static int emit_value_determination_code(arg_t *arg, asn1p_expr_type_e etype, asn1cnst_range_t *r_value);
-static int emit_size_determination_code(arg_t *arg, asn1p_expr_type_e etype);
+static int emit_size_determination_code(arg_t *arg, asn1p_expr_type_e etype, asn1cnst_range_t *range);
 static asn1p_expr_type_e _find_terminal_type(arg_t *arg);
 static abuf *emit_range_comparison_code(asn1cnst_range_t *range,
                                           const char *varname,
@@ -311,6 +311,34 @@ asn1c_check_contained_type(arg_t *arg, asn1p_expr_t *expr) {
     return 0;
 }
 
+/*
+ * Emit the storage check for a fixed-size named BIT STRING in strict mode.
+ * Source: X.680 22.7. Version/date: 2026-11-19. Author: asn1c maintainers.
+ * Parameters: arg supplies the compiler context; range is the SIZE range,
+ * narrowed to an upper-bound comparison when the check is emitted.
+ * Returns one when it emits a trimmed size check, zero otherwise. No exceptions.
+ * History: allow valid compact BER values through strict constraint checks.
+ * Example: a named value with one set bit at position zero fits SIZE(8).
+ */
+static int
+emit_fixed_named_bit_string_size(arg_t *arg, asn1cnst_range_t *range) {
+    const asn1p_expr_t *terminal;
+
+    if(!(arg->flags & A1C_STRICT_MODE) || range->extensible || range->el_count
+       || range->left.type != ARE_VALUE || range->right.type != ARE_VALUE
+       || range->left.value != range->right.value) return 0;
+    terminal = asn1f_find_terminal_type_ex(arg->asn, arg->ns, arg->expr);
+    if(!terminal || terminal->expr_type != ASN_BASIC_BIT_STRING || !TQ_FIRST(&terminal->members)) return 0;
+
+    /* Any shortest equivalent width up to the fixed size can be zero-filled. */
+    range->left.type = ARE_MIN;
+    OUT("if(BIT_STRING__get_size(st, 1, &size)) {\n");
+    OUT("\tASN__CTFAIL(app_key, td, sptr, \"%%s: invalid BIT STRING storage\", td->name);\n");
+    OUT("\treturn -1;\n");
+    OUT("}\n");
+    return 1;
+}
+
 int
 asn1c_emit_constraint_checking_code(arg_t *arg) {
 	asn1cnst_range_t *r_size;
@@ -469,7 +497,7 @@ asn1c_emit_constraint_checking_code(arg_t *arg) {
 	if((r_value) && (!ulong_optimize))
 		emit_value_determination_code(arg, etype, r_value);
 	if(r_size)
-		emit_size_determination_code(arg, etype);
+		emit_size_determination_code(arg, etype, r_size);
 
 	INDENT(-1);
 	REDIR(OT_CTABLES);
@@ -1208,11 +1236,21 @@ emit_range_constraint_condition(arg_t *arg, const abuf *comparison) {
     }
 }
 
+/*
+ * Emit the size calculation used by a generated subtype checker.
+ * Source: asn1c C constraint generator. Version/date: 2026-11-19.
+ * Parameters: arg selects the output stream; etype is the terminal type;
+ * range is the SIZE constraint and may be adjusted for named-bit equivalence.
+ * Returns zero on success and -1 for unsupported types. Throws: nothing.
+ * Responsible party: asn1c maintainers. History: handle strict named BIT STRING.
+ * Example: emit a bit width for BIT STRING or a byte width for OCTET STRING.
+ */
 static int
-emit_size_determination_code(arg_t *arg, asn1p_expr_type_e etype) {
+emit_size_determination_code(arg_t *arg, asn1p_expr_type_e etype, asn1cnst_range_t *range) {
 
 	switch(etype) {
 	case ASN_BASIC_BIT_STRING:
+		if(emit_fixed_named_bit_string_size(arg, range)) break;
 		OUT("if(st->size > 0) {\n");
 		OUT("\t/* Size in bits */\n");
 		OUT("\tsize = 8 * st->size - (st->bits_unused & 0x07);\n");

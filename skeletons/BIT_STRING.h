@@ -74,6 +74,9 @@ asn_random_fill_f BIT_STRING_random_fill;
 
 const BIT_STRING_t *BIT_STRING__compactify(const BIT_STRING_t *st, BIT_STRING_t *tmp);
 
+/* Validate packed storage and return its width, optionally omitting trailing zeros. */
+int BIT_STRING__get_size(const BIT_STRING_t *value, int trim_trailing_zeros, size_t *bit_count);
+
 #ifdef __cplusplus
 }
 #endif

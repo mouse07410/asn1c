@@ -5755,7 +5755,7 @@ emit_member_encoding_constraints(arg_t *arg, asn1p_expr_t *expr,
     OUT_NOINDENT("#if !defined(ASN_DISABLE_JER_SUPPORT)\n");
 	if(C99_MODE) OUT(".jer_constraints = ");
 	if(arg->flags & A1C_GEN_JER) {
-		if((expr->constraints && expr->expr_type == ASN_BASIC_BIT_STRING)
+		if((expr->constraints && expr_get_type(arg, expr) == ASN_BASIC_BIT_STRING)
 		   || expr->encoding_control.encoding_type == EC_JER_NAME) {
 			OUT("&asn_JER_memb_%s_constr_%d",
 				MKID(expr),
@@ -6211,7 +6211,7 @@ emit_type_DEF(arg_t *arg, asn1p_expr_t *expr, enum tvm_compat tv_mode,
         OUT_NOINDENT("#endif  /* !defined(ASN_DISABLE_UPER_SUPPORT) || !defined(ASN_DISABLE_APER_SUPPORT) */\n");
         OUT_NOINDENT("#if !defined(ASN_DISABLE_JER_SUPPORT)\n");
 		if(arg->flags & A1C_GEN_JER) {
-            if(expr->expr_type == ASN_BASIC_BIT_STRING) {
+            if(terminal_etype == ASN_BASIC_BIT_STRING) {
                 OUT("&asn_JER_type_%s_constr_%d",
 					expr_id, expr->_type_unique_index);
 			} else {

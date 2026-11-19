@@ -172,61 +172,61 @@ BIT_STRING__jer_parse_length(const char **cursor, const char *end,
 /*
  * Validate BIT STRING storage, padding, overflow, and an optional fixed size.
  *
- * Original source: local JER encoder helper. Version/date: 2026-10-30.
+ * Original source: local JER encoder helper. Version/date: 2026-11-19.
  * Parameters: value is the source BIT STRING; fixed_bits is -1 or exact size;
- * bit_count receives the logical width. Returns: zero for valid, -1 otherwise.
+ * specs supplies NamedBitList metadata; bit_count receives the stored width.
+ * Returns: zero for valid, -1 otherwise.
  * Throws: nothing. Responsible party: asn1c maintainers.
- * History: protect JER hex output from invalid storage and padding. Example:
- * a one-byte value with `bits_unused == 3` has five meaningful bits.
+ * History: validates storage and supports fixed-size named-bit normalization.
+ * Example: a one-bit named value fits a fixed width of eight bits.
  */
 static int
 BIT_STRING__jer_validate_value(const BIT_STRING_t *value, ssize_t fixed_bits,
+                               const asn_OCTET_STRING_specifics_t *specs,
                                size_t *bit_count) {
-    size_t capacity;
-    size_t unused;
-    size_t expected_bytes;
+    if(fixed_bits < -1 || BIT_STRING__get_size(value, 0, bit_count)) return -1;
+    if(fixed_bits >= 0 && *bit_count != (size_t)fixed_bits) {
+        size_t trimmed_bits;
 
-    if(!value || (value->size && !value->buf) || fixed_bits < -1
-       || value->bits_unused < 0 || value->bits_unused > 7
-       || value->size > SIZE_MAX / 8) return -1;
-    if(value->size == 0 && value->bits_unused != 0) return -1;
-    capacity = value->size * 8;
-    unused = (size_t)value->bits_unused;
-    if(unused > capacity) return -1;
-    if(value->size && unused
-       && (value->buf[value->size - 1] & ((1u << unused) - 1u))) return -1;
-    *bit_count = capacity - unused;
-    if(fixed_bits >= 0) {
-        if((size_t)fixed_bits != *bit_count) return -1;
-        expected_bytes = ((size_t)fixed_bits + 7) / 8;
-        if(value->size != expected_bytes) return -1;
+        /*
+         * X.697 24.2.2 permits resizing only types with a NamedBitList.
+         * A short value needs zero-fill; a long value fits only when all
+         * bits beyond the fixed width are zero.
+         */
+        if(!specs || !specs->has_named_bits) return -1;
+        if(*bit_count > (size_t)fixed_bits
+           && (BIT_STRING__get_size(value, 1, &trimmed_bits) || trimmed_bits > (size_t)fixed_bits)) return -1;
     }
     return 0;
 }
 
 /*
- * Emit BIT STRING bytes as uppercase hexadecimal in bounded callback chunks.
+ * Emit emit_bytes bytes as uppercase hexadecimal in bounded callback chunks.
+ * Emit zeroes past value->size. The caller has validated that any omitted
+ * bits of a fixed-size named BIT STRING are already zero (X.697 24.2.2).
  *
- * Original source: local JER encoder helper. Version/date: 2026-10-30.
- * Parameters: value supplies bytes; cb/key are the output callback pair;
- * encoded tracks successful output bytes. Returns: zero on success, -1 on
- * callback or count overflow. Throws: nothing. Responsible party: maintainers.
- * History: shares fixed and variable wire output. Example: 0xAB emits `AB`.
+ * Original source: local JER encoder helper. Version/date: 2026-11-19.
+ * Parameters: value supplies bytes; emit_bytes is the output width; cb/key
+ * are the output callback pair; encoded tracks successful output bytes.
+ * Returns: zero on success, -1 on callback or count overflow.
+ * Throws: nothing. Responsible party: maintainers.
+ * History: shares fixed and variable wire output; fixed width zero-fills.
+ * Example: {0x80} emitted at two octets produces `8000`.
  */
 static int
-BIT_STRING__jer_emit_hex(const BIT_STRING_t *value,
+BIT_STRING__jer_emit_hex(const BIT_STRING_t *value, size_t emit_bytes,
                          asn_app_consume_bytes_f *cb, void *key,
                          asn_enc_rval_t *encoded) {
     static const char hex[] = "0123456789ABCDEF";
     char chunk[32];
     size_t offset;
 
-    for(offset = 0; offset < value->size; offset += sizeof(chunk) / 2) {
-        size_t count = value->size - offset;
+    for(offset = 0; offset < emit_bytes; offset += sizeof(chunk) / 2) {
+        size_t count = emit_bytes - offset;
         size_t i;
         if(count > sizeof(chunk) / 2) count = sizeof(chunk) / 2;
         for(i = 0; i < count; ++i) {
-            uint8_t byte = value->buf[offset + i];
+            uint8_t byte = offset + i < value->size ? value->buf[offset + i] : 0;
             chunk[i * 2] = hex[byte >> 4];
             chunk[i * 2 + 1] = hex[byte & 0x0f];
         }
@@ -241,11 +241,11 @@ BIT_STRING__jer_emit_hex(const BIT_STRING_t *value,
  * Encode a BIT STRING using fixed quoted hex or the variable JER object form.
  *
  * Original source: asn1c BIT STRING JER encoder, hardened locally.
- * Version/date: 2026-10-30. Parameters: td supplies descriptor constraints;
+ * Version/date: 2026-11-19. Parameters: td supplies constraints and specifics;
  * constraints optionally overrides them; sptr is the BIT STRING; ilevel and
  * flags select formatting; cb/app_key receive output. Returns: encoded byte
  * count or -1 with failure metadata. Throws: nothing. Responsible party:
- * asn1c maintainers. History: validates bounds/padding and permits empty data.
+ * asn1c maintainers. History: validates storage and normalizes named bits.
  * Example: empty variable value encodes as {"value":"","length":0}.
  */
 asn_enc_rval_t
@@ -257,6 +257,7 @@ BIT_STRING_encode_jer(const asn_TYPE_descriptor_t *td,
     asn_enc_rval_t er = {0, 0, 0};
     const BIT_STRING_t *st = (const BIT_STRING_t *)sptr;
     const asn_jer_constraints_t *cts = constraints;
+    const asn_OCTET_STRING_specifics_t *specs = td ? td->specifics : 0;
     size_t bit_count;
     ssize_t fixed_bits = -1;
     int minified = (flags & JER_F_MINIFIED) != 0;
@@ -265,14 +266,16 @@ BIT_STRING_encode_jer(const asn_TYPE_descriptor_t *td,
 
     if(!cts && td) cts = td->encoding_constraints.jer_constraints;
     if(cts) fixed_bits = cts->size;
-    if(!cb || BIT_STRING__jer_validate_value(st, fixed_bits, &bit_count)) {
+    if(!cb || BIT_STRING__jer_validate_value(st, fixed_bits, specs, &bit_count)) {
         ASN__ENCODE_FAILED;
     }
-    (void)bit_count;
 
     if(fixed_bits >= 0) {
+        size_t expected_bytes = ((size_t)fixed_bits + 7) / 8;
         ASN__CALLBACK("\"", 1);
-        if(BIT_STRING__jer_emit_hex(st, cb, app_key, &er)) ASN__ENCODE_FAILED;
+        if(BIT_STRING__jer_emit_hex(st, expected_bytes, cb, app_key, &er)) {
+            ASN__ENCODE_FAILED;
+        }
         ASN__CALLBACK("\"", 1);
     } else {
         ASN__CALLBACK("{", 1);
@@ -280,7 +283,9 @@ BIT_STRING_encode_jer(const asn_TYPE_descriptor_t *td,
         ASN__CALLBACK(minified ? "\"value\":" : "\"value\": ",
                       minified ? 8 : 9);
         ASN__CALLBACK("\"", 1);
-        if(BIT_STRING__jer_emit_hex(st, cb, app_key, &er)) ASN__ENCODE_FAILED;
+        if(BIT_STRING__jer_emit_hex(st, st->size, cb, app_key, &er)) {
+            ASN__ENCODE_FAILED;
+        }
         ASN__CALLBACK("\",", 2);
         if(!minified) ASN__TEXT_INDENT(1, ilevel + 1);
         ASN__CALLBACK(minified ? "\"length\":" : "\"length\": ",
