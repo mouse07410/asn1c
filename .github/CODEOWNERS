@@ -1,0 +1,4 @@
+# Inert unless the ruleset enables "Require review from Code Owners".
+# With one owner that would block your own PRs (authors can't approve
+# their own PRs) — your ruleset has it off, so this is documentation only.
+* @sleevetosleeve

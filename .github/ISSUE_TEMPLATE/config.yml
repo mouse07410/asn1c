@@ -1,0 +1,5 @@
+blank_issues_enabled: false   # force choosing a template
+contact_links:
+  - name: Questions & ideas → Discussions
+    url: https://github.com/sleevetosleeve/asn1c/discussions
+    about: Q&A and ideas go to Discussions; issues are for bugs/tasks/features
