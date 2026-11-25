@@ -213,8 +213,12 @@ asn1f_look_value_in_type(arg_t *arg,
 				break;
 			default:
 				WARNING("Unexpected type %s for %s",
-						type_expr->expr_type,
-						type_expr->Identifier);
+					ASN_EXPR_TYPE2STR(type_expr->expr_type)
+						? ASN_EXPR_TYPE2STR(type_expr->expr_type)
+						: "(unknown type)",
+					type_expr->Identifier
+						? type_expr->Identifier
+						: "anonymous type");
 				return -1;
 			}
 			arg->expr = saved_expr;

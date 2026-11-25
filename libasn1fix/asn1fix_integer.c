@@ -84,7 +84,8 @@ asn1f_fix_integer(arg_t *arg) {
 				"Value for the identifier %s "
 				"is not compatible with INTEGER type",
 				expr->Identifier,
-				iv->_lineno);
+				iv->_lineno,
+				iv->Identifier);
 			rvalue = -1;
 			continue;
 		}

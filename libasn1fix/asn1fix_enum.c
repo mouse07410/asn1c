@@ -212,7 +212,7 @@ asn1f_fix_enum(arg_t *arg) {
 			eval = ev->value->value.v_integer;
 			break;
 		case ATV_REFERENCED:
-			FATAL("HERE HERE HERE", 1);
+			FATAL("HERE HERE HERE");
 			rvalue = -1;
 			continue;
 			break;

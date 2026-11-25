@@ -84,8 +84,8 @@ _asn1f_add_unique_row(arg_t *arg, asn1p_expr_t *expr, asn1p_ioc_row_t *row) {
     /* Look for duplicates */
     switch(_asn1f_is_ioc_row_duplicate(expr->ioc_table, row)) {
     case -1:
-        DEBUG("Found Information Object Duplicate in %s", expr->Identifier,
-              expr->_lineno);
+        DEBUG("Found Information Object Duplicate in %s at line %d",
+              expr->Identifier, expr->_lineno);
         return -1;
     case 0:
         /* Not a duplicate */
@@ -341,7 +341,7 @@ _asn1f_parse_class_object_data_default_syntx(arg_t *arg, asn1p_expr_t *eclass,
                     if(newpos) *newpos = buf;
                     return -1;
                 }
-                DEBUG("Reference %s satisfied by %s (%d)",
+                DEBUG("Reference %s satisfied by %s (%td)",
                         cm->Identifier,
                         buf, p - buf);
                 ret = _asn1f_assign_cell_value(arg, cell, buf, p, counter);
@@ -428,13 +428,13 @@ _asn1f_parse_class_object_data_defined_syntx(arg_t *arg, asn1p_expr_t *eclass,
 			cell = asn1p_ioc_row_cell_fetch(row,
 					chunk->content.token);
 			if(cell == NULL) {
-				FATAL("Field reference %s found in WITH SYNTAX {} clause does not match actual field in Object Class %s",
+				FATAL("Field reference %s found in WITH SYNTAX {} clause does not match actual field in Object Class %s at line %d",
 					chunk->content.token,
 					eclass->Identifier, eclass->_lineno);
 				if(newpos) *newpos = buf;
 				return -1;
 			}
-			DEBUG("Reference %s satisfied by %s (%d)",
+			DEBUG("Reference %s satisfied by %s (%td)",
 				chunk->content.token,
 				buf, p - buf);
 			ret = _asn1f_assign_cell_value(arg, cell, buf, p, counter);

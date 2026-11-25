@@ -44,7 +44,8 @@
 /*
  * A definition of a function that will log error messages.
  */
-typedef void (*error_logger_f)(int _is_fatal, const char *fmt, ...);
+typedef void (*error_logger_f)(int _is_fatal, const char *fmt, ...)
+    __attribute__((format(printf, 2, 3)));
 
 /*
  * Universal argument.

@@ -25,9 +25,12 @@ static int asn1f_fetch_minimal_choice_root_tag(arg_t *arg, struct asn1p_type_tag
 static int
 asn1f_fetch_tags_impl(arg_t *arg, struct asn1p_type_tag_s **tags, int count, int skip, enum asn1f_aft_flags_e flags) {
 	asn1p_expr_t *expr = arg->expr;
+	const char *type_name = ASN_EXPR_TYPE2STR(expr->expr_type);
 
-	DEBUG("Fetching tag from %s: meta %d, type %s", expr->Identifier,
-		expr->meta_type, expr->expr_type);
+	DEBUG("Fetching tag from %s: meta %d, type %s",
+		expr->Identifier ? expr->Identifier : "anonymous type",
+		expr->meta_type,
+		type_name ? type_name : "(unknown type)");
 
 	/* If this type is tagged, add this tag first */
 	if(expr->tag.tag_class != TC_NOCLASS)
