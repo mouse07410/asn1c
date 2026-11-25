@@ -45,6 +45,12 @@ int yyparse(void **param);	/* byacc does not produce a prototype */
 void asn1p_lexer_hack_push_opaque_state(void);
 void asn1p_lexer_hack_enable_with_syntax(void);
 void asn1p_lexer_hack_push_encoding_control(void);
+/*
+ * Frees the module the grammar is still building after a failed parse.
+ * Defined in the epilogue and called by asn1parser.c; not part of the
+ * public interface.
+ */
+void asn1p_parser_discard_partial_module(void);
 #define	yylineno	asn1p_lineno
 extern int asn1p_lineno;
 const char *asn1p_parse_debug_filename;
@@ -547,7 +553,15 @@ ModuleList:
  */
 
 ModuleDefinition:
-	TypeRefName { currentModule = asn1p_module_new(); }
+	TypeRefName {
+		/*
+		 * The previous module, if there was one, was handed to its
+		 * ModuleDefinition, which cleared this pointer; a module
+		 * must never be current while a new one is created.
+		 */
+		assert(currentModule == NULL);
+		currentModule = asn1p_module_new();
+	}
 	optObjectIdentifier TOK_DEFINITIONS
 		optModuleDefinitionFlags
 		TOK_PPEQ TOK_BEGIN
@@ -568,6 +582,13 @@ ModuleDefinition:
 		$$->ModuleName = $1;
 		$$->module_oid = $3;
 		$$->module_flags = $5;
+
+		/*
+		 * The module now belongs to $$ (and, at the top rule, to the
+		 * tree); no longer to the parser.  A failed parse must not
+		 * free it a second time.
+		 */
+		currentModule = 0;
 	}
 	;
 
@@ -2991,6 +3012,25 @@ IdentifierAsValue:
     };
 
 %%
+
+/*
+ * Discard the module the grammar is still building, if any.
+ *
+ * The grammar creates the module as soon as it recognises the module header,
+ * but it only hands the object to the returned tree when the closing END is
+ * reduced.  An error in between leaves it owned by nobody, so the parse
+ * wrappers in asn1parser.c call this after a failed parse.  The
+ * ModuleDefinition action clears currentModule on hand-over, which makes this
+ * a no-op on the success path and keeps the wrapper from freeing a module the
+ * tree owns.
+ */
+void
+asn1p_parser_discard_partial_module(void) {
+	if(currentModule) {
+		asn1p_module_free(currentModule);
+		currentModule = 0;
+	}
+}
 
 
 /*

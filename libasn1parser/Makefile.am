@@ -31,6 +31,14 @@ check_PROGRAMS = check_asn1p_integer
 LDADD = $(top_builddir)/libasn1common/libasn1common.la libasn1parser.la
 
 TESTS = $(check_PROGRAMS)
+check_PROGRAMS += check_parse_cleanup
+
+# The leak regression test needs the sanitizer flags the check target provides.
+check_parse_cleanup_CFLAGS = $(AM_CFLAGS) $(TESTSUITE_CFLAGS)
+check_parse_cleanup_LDFLAGS = $(TESTSUITE_CFLAGS)
+
+# The file-wrapper case writes its schema here.
+CLEANFILES = check_parse_cleanup.tmp
 
 asn1parser.h: asn1p_expr_str.h
 
