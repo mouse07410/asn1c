@@ -45,6 +45,12 @@ int yyparse(void **param);	/* byacc does not produce a prototype */
 void asn1p_lexer_hack_push_opaque_state(void);
 void asn1p_lexer_hack_enable_with_syntax(void);
 void asn1p_lexer_hack_push_encoding_control(void);
+/*
+ * Frees the module the grammar is still building after a failed parse.
+ * Defined in the epilogue and called by asn1parser.c; not part of the
+ * public interface.
+ */
+void asn1p_parser_discard_partial_module(void);
 #define	yylineno	asn1p_lineno
 extern int asn1p_lineno;
 const char *asn1p_parse_debug_filename;
@@ -55,17 +61,12 @@ const char *asn1p_parse_debug_filename;
  */
 extern int asn1p_as_pointer;
 
-/*
- * This temporary variable is used to solve the shortcomings of 1-lookahead
- * parser.
- */
-static struct AssignedIdentifier *saved_aid;
-
 static asn1p_value_t *_convert_bitstring2binary(char *str, int base);
 static void _fixup_anonymous_identifier(asn1p_expr_t *expr);
 static char *_encoding_control_join(char *a, char *b);
 static char *_encoding_control_cstring(char *buf, int len);
 
+/* Parser state variable owning the module until ModuleDefinition reduces. */
 static asn1p_module_t *currentModule;
 
 /**
@@ -547,7 +548,19 @@ ModuleList:
  */
 
 ModuleDefinition:
-	TypeRefName { currentModule = asn1p_module_new(); }
+	TypeRefName {
+		/*
+		 * The previous module, if there was one, was handed to its
+		 * ModuleDefinition, which cleared this pointer; a module
+		 * must never be current while a new one is created.
+		 */
+		assert(currentModule == NULL);
+		currentModule = asn1p_module_new();
+		if(!currentModule) {
+			yyerror(param, "Memory failure");
+			YYABORT;
+		}
+	}
 	optObjectIdentifier TOK_DEFINITIONS
 		optModuleDefinitionFlags
 		TOK_PPEQ TOK_BEGIN
@@ -568,6 +581,13 @@ ModuleDefinition:
 		$$->ModuleName = $1;
 		$$->module_oid = $3;
 		$$->module_flags = $5;
+
+		/*
+		 * The module now belongs to $$ (and, at the top rule, to the
+		 * tree); no longer to the parser.  A failed parse must not
+		 * free it a second time.
+		 */
+		currentModule = NULL;
 	}
 	;
 
@@ -1041,9 +1061,9 @@ EncodingControlAsValue:
 	 */
 	| BasicString {
 		$$ = NULL;
-		return yyerror(param,
-			"Attempt to redefine a standard basic string type, "
+		yyerror(param, "Attempt to redefine a standard basic string type, "
 			"please comment out or remove this type redefinition.");
+		YYABORT;
 	}
 	;
 
@@ -1058,10 +1078,6 @@ optImports:
 
 ImportsDefinition:
 	TOK_IMPORTS optImportsBundleSet ';' {
-		if(!saved_aid && 0)
-			return yyerror(param, "Unterminated IMPORTS FROM, "
-					"expected semicolon ';'");
-		saved_aid = 0;
 		$$ = $2;
 	}
 	/*
@@ -1069,7 +1085,8 @@ ImportsDefinition:
 	 */
 	| TOK_IMPORTS TOK_FROM /* ... */ {
 		$$ = NULL;
-		return yyerror(param, "Empty IMPORTS list");
+		yyerror(param, "Empty IMPORTS list");
+		YYABORT;
 	}
 	;
 
@@ -1092,7 +1109,6 @@ ImportsBundleSet:
 AssignedIdentifier:
 	{ memset(&$$, 0, sizeof($$)); }
 	| ObjectIdentifier { $$.oid = $1; };
-	/* | DefinedValue { $$.value = $1; }; // Handled through saved_aid */
 
 ImportsBundle: 
     ImportsBundleInt ImportSelectionOption {
@@ -1107,8 +1123,6 @@ ImportsBundleInt:
 		$$->fromModuleName = $3;
 		$$->identifier = $4;
 		$$->option = 0;
-		/* This stupid thing is used for look-back hack. */
-		saved_aid = $$->identifier.oid ? 0 : &($$->identifier);
 		checkmem($$);
 	}
 	;
@@ -2750,17 +2764,16 @@ NamedBit:
 
 Enumerations:
     UniverationList {
-		$$ = $1;
-        asn1p_expr_t *first_memb = TQ_FIRST(&($$->members));
-        if(first_memb) {
-            if(first_memb->expr_type == A1TC_EXTENSIBLE) {
-                return yyerror(param,
-                    "The ENUMERATION cannot start with extension (...).");
-            }
-        } else {
-            return yyerror(param,
-                "The ENUMERATION list cannot be empty.");
+        asn1p_expr_t *first_memb = TQ_FIRST(&($1->members));
+        if(!first_memb || first_memb->expr_type == A1TC_EXTENSIBLE) {
+            yyerror(param, first_memb
+                    ? "The ENUMERATION cannot start with extension (...)."
+                    : "The ENUMERATION list cannot be empty.");
+            /* Bison skips destruction of this rule's RHS on YYABORT. */
+            asn1p_expr_free($1);
+            YYABORT;
         }
+        $$ = $1;
     }
 
 UniverationList:
@@ -2991,6 +3004,25 @@ IdentifierAsValue:
     };
 
 %%
+
+/*
+ * Discard the module the grammar is still building, if any.
+ *
+ * The grammar creates the module as soon as it recognises the module header,
+ * but it only hands the object to the returned tree when the closing END is
+ * reduced.  An error in between leaves it owned by nobody, so the parse
+ * wrappers in asn1parser.c call this after a failed parse.  The
+ * ModuleDefinition action clears currentModule on hand-over, which makes this
+ * a no-op on the success path and keeps the wrapper from freeing a module the
+ * tree owns.
+ */
+void
+asn1p_parser_discard_partial_module(void) {
+	if(currentModule) {
+		asn1p_module_free(currentModule);
+		currentModule = NULL;
+	}
+}
 
 
 /*

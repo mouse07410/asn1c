@@ -10,9 +10,9 @@
 #include "asn1p_list.h"
 
 int asn1p_parse(void **param);
+void asn1p_parser_discard_partial_module(void);
 
 void *asn1p__scan_bytes(const char *, int len);
-void *asn1p__delete_buffer(void *);
 void *asn1p_restart(FILE *);
 
 extern int asn1p_lineno;
@@ -51,7 +51,8 @@ asn1p_parse_buffer(const char *buffer, int size /* = -1 */, const char *debug_fi
 	ret = asn1p_parse(ap);
 	asn1p_parse_debug_filename = NULL;
 
-	asn1p__delete_buffer(ybuf);
+	/* Release the scanner buffer and start-condition stack. */
+	asn1p_lex_destroy();
 
 	if(ret == 0) {
 		assert(a);
@@ -59,9 +60,16 @@ asn1p_parse_buffer(const char *buffer, int size /* = -1 */, const char *debug_fi
 			asn1p_delete(a);
 			return NULL;	/* FIXME: destroy (a) */
 		}
-	} else if(a) {
-		asn1p_delete(a);
-		a = NULL;
+	} else {
+		/*
+		 * A module under construction when the error hit is not part
+		 * of (a); the parser still owns it.
+		 */
+		asn1p_parser_discard_partial_module();
+		if(a) {
+			asn1p_delete(a);
+			a = NULL;
+		}
 	}
 
 	return a;
@@ -117,6 +125,8 @@ asn1p_parse_file(const char *filename, enum asn1p_flags flags) {
 	ret = asn1p_parse(ap);
 	asn1p_parse_debug_filename = NULL;
 
+	/* The scanner owns its buffer; the wrapper owns the file. */
+	asn1p_lex_destroy();
 	fclose(fp);
 
 	if(ret == 0) {
@@ -127,6 +137,8 @@ asn1p_parse_file(const char *filename, enum asn1p_flags flags) {
 			return NULL;	/* FIXME: destroy (a) */
 		}
 	} else {
+		/* Free a module the parser was still building, see above. */
+		asn1p_parser_discard_partial_module();
 		if(a) asn1p_delete(a);
 		a = NULL;
 		errno = EINVAL;

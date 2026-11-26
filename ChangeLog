@@ -1,4 +1,9 @@
 Changes since v1.5.3:
+	* Release partially built ASN.1 modules after a rejected parse (PR #620 by
+	  Javier / @mr-j0nes). Transfer ownership to the parse tree at END, unwind
+	  grammar-level rejections, and release scanner buffers in both entry
+	  points. Test repeated failures, mixed file and buffer parsing, and
+	  successful multi-module ownership transfer.
 	* Normalize trailing zero bits when encoding fixed-size BIT STRING types
 	  with a NamedBitList to JER (issue #617, PR #618 by Javier / @mr-j0nes).
 	  Require the exact width for unnamed types and reject any set bit beyond

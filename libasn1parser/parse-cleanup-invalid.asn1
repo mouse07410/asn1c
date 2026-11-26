@@ -1,0 +1,4 @@
+TestModule DEFINITIONS ::= BEGIN
+A ::= INTEGER (0..10)
+B ::= SEQUENCE { a A
+END

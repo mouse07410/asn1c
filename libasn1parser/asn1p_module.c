@@ -18,7 +18,11 @@ asn1p_module_new() {
 		TQ_INIT(&(mod->members));
 
         mod->members_hash = genhash_new(cmpf_string, hashf_string, NULL, NULL);
-        assert(mod->members_hash);
+        /* A partially initialized module must never reach its callers. */
+        if(!mod->members_hash) {
+            free(mod);
+            return NULL;
+        }
     }
 	return mod;
 }

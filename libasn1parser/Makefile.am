@@ -31,10 +31,18 @@ check_PROGRAMS = check_asn1p_integer
 LDADD = $(top_builddir)/libasn1common/libasn1common.la libasn1parser.la
 
 TESTS = $(check_PROGRAMS)
+check_PROGRAMS += check_parse_cleanup
+
+# The leak regression test needs the sanitizer flags the check target provides.
+check_parse_cleanup_CFLAGS = $(AM_CFLAGS) $(TESTSUITE_CFLAGS)
+check_parse_cleanup_LDFLAGS = $(TESTSUITE_CFLAGS)
+
+# Use a distributed input fixture without creating a file in the build tree.
+check_parse_cleanup_CPPFLAGS = $(AM_CPPFLAGS) -DPARSE_CLEANUP_INPUT='"$(srcdir)/parse-cleanup-invalid.asn1"'
 
 asn1parser.h: asn1p_expr_str.h
 
 asn1p_expr_str.h: expr-h.pl asn1p_expr.h
 	./expr-h.pl asn1p_expr.h > $@
 
-EXTRA_DIST = expr-h.pl
+EXTRA_DIST = expr-h.pl parse-cleanup-invalid.asn1
