@@ -54,8 +54,9 @@ typedef struct arg_s {
     asn1_namespace_t *ns;
     asn1p_module_t *mod;
     asn1p_expr_t *expr;
-    error_logger_f eh;
-    error_logger_f debug;
+    /* Annotate the fields so Clang and GCC check calls through them. */
+    error_logger_f eh __attribute__((format(printf, 2, 3))); /* Error/warning sink. */
+    error_logger_f debug __attribute__((format(printf, 2, 3))); /* Optional debug sink. */
     void *key; /* The next level key */
     enum asn1f_flags flags;
 } arg_t;
@@ -126,8 +127,8 @@ extern arg_t a1f_replace_me_with_proper_interface_arg;
 #define LOG(code, fmt, args...)                                          \
     do {                                                                 \
         int _save_errno = errno;                                         \
-        const char *src = arg->mod ? arg->mod->source_file_name          \
-                                   : "(no module)";                      \
+        const char *src = arg->mod && arg->mod->source_file_name          \
+                          ? arg->mod->source_file_name : "(no module)";                      \
         if(code < 0) {                                                   \
             if(arg->debug) {                                             \
                 arg->debug(code, "%s: " fmt " in %s (%s:%d)", __func__,  \

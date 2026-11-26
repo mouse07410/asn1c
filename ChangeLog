@@ -1,4 +1,8 @@
 Changes since v1.5.3:
+	* Type-check fixer diagnostics through both logging callbacks on GCC and
+	  Clang (PR #621 by Javier / @mr-j0nes). Correct format arguments and
+	  guard missing diagnostic names. Test the named INTEGER error and
+	  require both compilers to reject mismatched callback arguments.
 	* Release partially built ASN.1 modules after a rejected parse (PR #620 by
 	  Javier / @mr-j0nes). Transfer ownership to the parse tree at END, unwind
 	  grammar-level rejections, and release scanner buffers in both entry

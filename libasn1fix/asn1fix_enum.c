@@ -212,10 +212,10 @@ asn1f_fix_enum(arg_t *arg) {
 			eval = ev->value->value.v_integer;
 			break;
 		case ATV_REFERENCED:
-			FATAL("HERE HERE HERE", 1);
+			FATAL("Unresolved value for ENUMERATED element %s at line %d",
+				ev->Identifier ? ev->Identifier : "<Anonymous>", ev->_lineno);
 			rvalue = -1;
 			continue;
-			break;
 		default:
 			FATAL("ENUMERATED type %s at line %d "
 				"contain element %s(%s) at line %d",

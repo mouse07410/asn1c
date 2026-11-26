@@ -39,8 +39,22 @@ LDADD = $(noinst_LTLIBRARIES)   \
     $(top_builddir)/libasn1parser/libasn1parser.la  \
     $(top_builddir)/libasn1common/libasn1common.la
 
-check_PROGRAMS = check_crange check_fixer check_lookup_module
+check_PROGRAMS = check_crange check_fixer check_lookup_module check_fixer_formats
 
 TESTS_ENVIRONMENT = top_srcdir=${top_srcdir}
 TESTS = ${check_PROGRAMS}
 
+
+# The positive compile establishes a baseline before testing either callback.
+check-local:
+	$(COMPILE) -Werror=format -fsyntax-only $(srcdir)/check_fixer_formats.c
+	@for kind in DEBUG FATAL; do \
+	    if output=$$(LC_ALL=C $(COMPILE) -Werror=format -fsyntax-only -DCHECK_BAD_$$kind \
+	        $(srcdir)/check_fixer_formats.c 2>&1); then \
+	        echo "Expected a format error in the $$kind diagnostic" >&2; \
+	        exit 1; \
+	    elif ! printf '%s\n' "$$output" | grep -q 'error:.*format'; then \
+	        printf '%s\n' "$$output" >&2; \
+	        exit 1; \
+	    fi; \
+	done

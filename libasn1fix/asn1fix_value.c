@@ -204,19 +204,11 @@ asn1f_look_value_in_type(arg_t *arg,
 		if (!child_expr->value) {
 			asn1p_expr_t *saved_expr = arg->expr;
 			arg->expr = type_expr;
-			switch (type_expr->expr_type) {
-			case ASN_BASIC_INTEGER:
+			/* The type check above restricts this path to INTEGER or ENUMERATED. */
+			if(type_expr->expr_type == ASN_BASIC_INTEGER)
 				asn1f_fix_integer(arg);
-				break;
-			case ASN_BASIC_ENUMERATED:
+			else
 				asn1f_fix_enum(arg);
-				break;
-			default:
-				WARNING("Unexpected type %s for %s",
-						type_expr->expr_type,
-						type_expr->Identifier);
-				return -1;
-			}
 			arg->expr = saved_expr;
 		}
 		if(child_expr->value && _asn1f_copy_value(arg,

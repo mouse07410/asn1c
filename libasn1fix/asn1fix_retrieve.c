@@ -270,7 +270,7 @@ asn1f_lookup_symbol_impl(arg_t *arg, asn1p_expr_t *rhs_pspecs, const asn1p_ref_t
 		
 		return extract;
 	} else {
-		DEBUG("\tToo many components: %d", ref->comp_count);
+		DEBUG("\tToo many components: %zu", ref->comp_count);
 		errno = EINVAL;
 		return NULL;
 	}

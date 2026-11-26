@@ -6,6 +6,7 @@
 #define	ASN1_PARSER_EXPR_STR_H
 
 #include <assert.h>
+#include <stddef.h>
 
 #ifndef	__GNUC__
 #define	__attribute__(x)	/* unused */
@@ -56,9 +57,10 @@ static char *asn1p_expr_type2str[] __attribute__ ((unused)) = {
 
 static inline char * __attribute__((unused))
 _asn1p_expr_type2string(asn1p_expr_type_e type) {
-    assert((signed int)type >= 0);
-    if(type < sizeof(asn1p_expr_type2str)/sizeof(asn1p_expr_type2str[0]))
-        return asn1p_expr_type2str[type];
+    size_t index = (size_t)type;
+    /* A negative value converts to an index outside the table. */
+    if(index < sizeof(asn1p_expr_type2str)/sizeof(asn1p_expr_type2str[0]))
+        return asn1p_expr_type2str[index];
     return NULL;
 }
 
