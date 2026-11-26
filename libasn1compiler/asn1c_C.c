@@ -2877,8 +2877,9 @@ _add_tag2el_member(arg_t *arg, tag2el_t **tag2el, int *count, int el_no, fte_e f
 
     ret = WITH_MODULE_NAMESPACE(
         arg->expr->module, expr_ns,
-        asn1f_fetch_outmost_tag(arg->asn, expr_ns, arg->expr->module, arg->expr,
-                                &tag, AFT_IMAGINARY_ANY));
+        asn1f_fetch_outmost_tag_ex(arg->asn, expr_ns, arg->expr->module, arg->expr,
+                                &tag, AFT_IMAGINARY_ANY, arg->logger_cb,
+                                (arg->flags & A1C_DEBUG) != 0));
     if(ret == 0) {
 		tag2el_t *te;
 		int new_count = (*count) + 1;
@@ -2990,7 +2991,9 @@ emit_tags_vectors(arg_t *arg, asn1p_expr_t *expr, int *tags_count_r, int *all_ta
 	/* Fetch a chain of tags */
     tags_count = WITH_MODULE_NAMESPACE(
         expr->module, expr_ns,
-        asn1f_fetch_tags(arg->asn, expr_ns, expr->module, expr, &tags, 0));
+        asn1f_fetch_tags_ex(arg->asn, expr_ns, expr->module, expr, &tags, 0,
+                            arg->logger_cb,
+                            (arg->flags & A1C_DEBUG) != 0));
     if(tags_count < 0) {
 		DEBUG("fail to fetch tags for %s", expr->Identifier);
 		return -1;
@@ -2999,8 +3002,9 @@ emit_tags_vectors(arg_t *arg, asn1p_expr_t *expr, int *tags_count_r, int *all_ta
 	/* Fetch a chain of tags */
     all_tags_count = WITH_MODULE_NAMESPACE(
         expr->module, expr_ns,
-        asn1f_fetch_tags(arg->asn, expr_ns, expr->module, expr, &all_tags,
-                         AFT_FULL_COLLECT));
+        asn1f_fetch_tags_ex(arg->asn, expr_ns, expr->module, expr, &all_tags,
+                            AFT_FULL_COLLECT, arg->logger_cb,
+                            (arg->flags & A1C_DEBUG) != 0));
     if(all_tags_count < 0) {
 		free(tags);
 		DEBUG("fail to fetch tags chain for %s", expr->Identifier);
@@ -5524,8 +5528,10 @@ emit_member_layout(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t 
 
     if(WITH_MODULE_NAMESPACE(
            expr->module, expr_ns,
-           asn1f_fetch_outmost_tag(arg->asn, expr_ns, expr->module, expr,
-                                   &outmost_tag_s, AFT_IMAGINARY_ANY))) {
+           asn1f_fetch_outmost_tag_ex(arg->asn, expr_ns, expr->module, expr,
+                                   &outmost_tag_s, AFT_IMAGINARY_ANY,
+                                   arg->logger_cb,
+                                   (arg->flags & A1C_DEBUG) != 0))) {
         outmost_tag = 0;
 	} else {
 		outmost_tag = &outmost_tag_s;
@@ -6873,16 +6879,20 @@ static int compar_cameo(const void *ap, const void *bp) {
 	arg_t *arg = cameo_arg;
 
     if(WITH_MODULE_NAMESPACE(a->expr->module, expr_ns,
-                             asn1f_fetch_outmost_tag(
+                             asn1f_fetch_outmost_tag_ex(
                                  arg->asn, expr_ns, a->expr->module, a->expr,
-                                 &atag, AFT_IMAGINARY_ANY | AFT_CANON_CHOICE)))
+                                 &atag, AFT_IMAGINARY_ANY | AFT_CANON_CHOICE,
+                                 arg->logger_cb,
+                                 (arg->flags & A1C_DEBUG) != 0)))
         return 1;
 
     if(WITH_MODULE_NAMESPACE(
            b->expr->module, expr_ns,
-           asn1f_fetch_outmost_tag(arg->asn, expr_ns, b->expr->module, b->expr,
+           asn1f_fetch_outmost_tag_ex(arg->asn, expr_ns, b->expr->module, b->expr,
                                    &btag,
-                                   AFT_IMAGINARY_ANY | AFT_CANON_CHOICE))) {
+                                   AFT_IMAGINARY_ANY | AFT_CANON_CHOICE,
+                                   arg->logger_cb,
+                                   (arg->flags & A1C_DEBUG) != 0))) {
         return -1;
     }
 
