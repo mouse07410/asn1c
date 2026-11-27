@@ -1,4 +1,11 @@
 Changes since v1.5.3:
+	* Report tag-resolution debug traces, warnings, and errors through the
+	  active logger (issue #622 reported and PR #623 submitted by Javier /
+	  @mr-j0nes). Distinguish unknown external tags from resolved tags.
+	  Warn when the fixer cannot verify tag uniqueness and require a known
+	  outer tag for SEQUENCE, SET, and CHOICE components.
+	  Let OF collections use the external element descriptor and reject
+	  external type aliases whose descriptors the compiler cannot generate.
 	* Type-check fixer diagnostics through both logging callbacks on GCC and
 	  Clang (PR #621 by Javier / @mr-j0nes). Correct format arguments and
 	  guard missing diagnostic names. Test the named INTEGER error and

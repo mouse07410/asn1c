@@ -23,6 +23,8 @@ typedef void (*asn1f_logger_f)(int is_fatal, const char *fmt, ...)
  * Type2 ::= [3] IMPLICIT Type3
  * Type3 ::= [4] EXPLICIT SEQUENCE { ... }
  * Will return [2][3][UNIVERSAL 16] for the Type1.
+ * Returns the tag count, 0 when the chain starts with an unresolved known
+ * external tag, or -1 on other failures. The array is NULL for counts <= 0.
  */
 int asn1f_fetch_tags(asn1p_t *asn, struct asn1_namespace_s *ns,
                      asn1p_module_t *mod, asn1p_expr_t *expr,
@@ -40,8 +42,13 @@ int asn1f_fetch_tags_ex(asn1p_t *asn, struct asn1_namespace_s *ns,
     struct asn1p_type_tag_s **tags_r, enum asn1f_aft_flags_e flags,
     asn1f_logger_f logger, int debug_enabled);
 
+enum { ASN1F_TAG_EXTERNAL = 1 };
+
 /*
  * Fetch the outmost tag of the given type.
+ * Returns 0 and writes tag on success, ASN1F_TAG_EXTERNAL when the outer
+ * tag depends on a known external type, or -1 on other lookup failures.
+ * The output is unchanged on any nonzero return.
  * Type1 ::= Type2
  * Type2 ::= [2] Type3
  * Type3 ::= SEQUENCE { ... }

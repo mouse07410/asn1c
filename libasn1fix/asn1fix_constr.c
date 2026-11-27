@@ -1224,8 +1224,8 @@ _asn1f_compare_unresolved_tags(arg_t *arg, asn1p_expr_t *a,
  * Source: Existing constructed-type tag distinctness checker.
  * Version: 2026-10-21.
  * Parameters: arg identifies the enclosing type; a and b are compared components.
- * Returns: zero for distinct tags, or -1 when tags may collide.
- * Errors: emits diagnostics for duplicate or imaginary ANY tags.
+ * Returns: zero when no collision is established, or -1 when tags may collide.
+ * Errors: emits diagnostics for duplicate, imaginary ANY, or unknown external tags.
  * Author: asn1c maintainers.
  * History: group leaf expansion moved to _asn1f_compare_group_tags.
  * Example: optional SEQUENCE fields are checked against their following component.
@@ -1249,6 +1249,13 @@ _asn1f_compare_tags(arg_t *arg, asn1p_expr_t *a, asn1p_expr_t *b) {
 	 * If both tags are explicitly or implicitly given, use them.
 	 */
 	DEBUG("Fetching outmost tags: %d, %d", ra, rb);
+	/* A known external reference does not provide a tag to compare. */
+	if(ra == ASN1F_TAG_EXTERNAL || rb == ASN1F_TAG_EXTERNAL) {
+		const asn1p_expr_t *external = ra == ASN1F_TAG_EXTERNAL ? a : b;
+		WARNING("Cannot verify tag uniqueness for external component %s at line %d",
+			external->Identifier ? external->Identifier : "(unnamed)", external->_lineno);
+		return 0;
+	}
 	if(ra == 0 && rb == 0) {
 		/*
 		 * Simple case: fetched both tags.

@@ -90,6 +90,128 @@ dump_records(const records_t *r) {
                 r->msg[i]);
 }
 
+/*
+ * Purpose: verify external, CHOICE, and successful outmost-tag contracts.
+ * Source: Public tag-fetch API behavior and the known-external extension.
+ * Version/date: 2026-11-26.
+ * Inputs: none; KnownExt is registered by main before this helper is called.
+ * Returns: number of failed assertions.
+ * Errors: parser setup failure returns one; API failures are reported by check.
+ * Author: asn1c maintainers.
+ * History: Added regression coverage for ASN1F_TAG_EXTERNAL.
+ * Example: an untagged KnownExt returns an external sentinel without writing.
+ */
+static int
+check_external_fetch_contract(void) {
+    records_t rec;
+    asn1p_t *asn;
+    asn1p_module_t *mod;
+    asn1p_expr_t *expr;
+    asn1_namespace_t *ns;
+    struct asn1p_type_tag_s *tags;
+    struct asn1p_type_tag_s tag;
+    int count;
+    int failures = 0;
+
+    /* Known external tags return empty success through both array APIs. */
+    asn = parse_one("T ::= KnownExt");
+    if(asn == NULL) return 1;
+    mod = TQ_FIRST(&asn->modules);
+    expr = TQ_FIRST(&mod->members);
+    ns = asn1_namespace_new_from_module(mod, 0);
+    tags = (struct asn1p_type_tag_s *)1;
+    records_reset(&rec);
+    count = asn1f_fetch_tags_ex(asn, ns, mod, expr, &tags, 0, record_diag, 0);
+    failures += check(count == 0 && tags == NULL,
+                      "external _ex tag fetch returns empty success");
+    failures += check(rec.count == 0,
+                      "external _ex tag fetch emits no diagnostic");
+    if(tags != (struct asn1p_type_tag_s *)1) free(tags);
+
+    tags = (struct asn1p_type_tag_s *)1;
+    count = asn1f_fetch_tags(asn, ns, mod, expr, &tags, 0);
+    failures += check(count == 0 && tags == NULL,
+                      "external legacy tag fetch returns empty success");
+    if(tags != (struct asn1p_type_tag_s *)1) free(tags);
+
+    /* Both outmost APIs return the sentinel without touching the output. */
+    memset(&tag, 0, sizeof(tag));
+    tag.tag_class = TC_PRIVATE;
+    tag.tag_value = 123;
+    tag.tag_mode = TM_EXPLICIT;
+    count = asn1f_fetch_outmost_tag_ex(asn, ns, mod, expr, &tag, 0,
+                                       record_diag, 0);
+    failures += check(count == ASN1F_TAG_EXTERNAL && tag.tag_class == TC_PRIVATE
+                      && tag.tag_value == 123 && tag.tag_mode == TM_EXPLICIT,
+                      "external _ex outmost fetch returns sentinel unchanged");
+
+    tag.tag_class = TC_PRIVATE;
+    tag.tag_value = 123;
+    tag.tag_mode = TM_EXPLICIT;
+    count = asn1f_fetch_outmost_tag(asn, ns, mod, expr, &tag, 0);
+    failures += check(count == ASN1F_TAG_EXTERNAL && tag.tag_class == TC_PRIVATE
+                      && tag.tag_value == 123 && tag.tag_mode == TM_EXPLICIT,
+                      "external legacy outmost fetch returns sentinel unchanged");
+    asn1_namespace_free(ns);
+    asn1p_delete(asn);
+
+    /* Canonical CHOICE lookup propagates an unknown external branch. */
+    asn = parse_one("T ::= CHOICE { ext KnownExt, value INTEGER }");
+    if(asn == NULL) return 1;
+    mod = TQ_FIRST(&asn->modules);
+    expr = TQ_FIRST(&mod->members);
+    ns = asn1_namespace_new_from_module(mod, 0);
+    tag.tag_class = TC_PRIVATE;
+    tag.tag_value = 123;
+    tag.tag_mode = TM_EXPLICIT;
+    count = asn1f_fetch_outmost_tag_ex(asn, ns, mod, expr, &tag,
+                                       AFT_CANON_CHOICE, record_diag, 0);
+    failures += check(count == ASN1F_TAG_EXTERNAL && tag.tag_class == TC_PRIVATE
+                      && tag.tag_value == 123 && tag.tag_mode == TM_EXPLICIT,
+                      "canonical CHOICE propagates external tag sentinel");
+    asn1_namespace_free(ns);
+    asn1p_delete(asn);
+
+    /* Ordinary untagged CHOICE still fails and leaves the output untouched. */
+    asn = parse_one("T ::= CHOICE { a INTEGER, b BOOLEAN }");
+    if(asn == NULL) return 1;
+    mod = TQ_FIRST(&asn->modules);
+    expr = TQ_FIRST(&mod->members);
+    ns = asn1_namespace_new_from_module(mod, 0);
+    tags = (struct asn1p_type_tag_s *)1;
+    count = asn1f_fetch_tags_ex(asn, ns, mod, expr, &tags, 0, record_diag, 0);
+    failures += check(count == -1 && tags == NULL,
+                      "untagged CHOICE tag fetch remains an error");
+    if(tags != (struct asn1p_type_tag_s *)1) free(tags);
+
+    tag.tag_class = TC_PRIVATE;
+    tag.tag_value = 123;
+    tag.tag_mode = TM_EXPLICIT;
+    count = asn1f_fetch_outmost_tag_ex(asn, ns, mod, expr, &tag, 0,
+                                       record_diag, 0);
+    failures += check(count == -1 && tag.tag_class == TC_PRIVATE
+                      && tag.tag_value == 123 && tag.tag_mode == TM_EXPLICIT,
+                      "untagged CHOICE outmost fetch fails unchanged");
+    asn1_namespace_free(ns);
+    asn1p_delete(asn);
+
+    /* A zero result is useful only when a valid tag was written. */
+    asn = parse_one("T ::= [2] EXPLICIT INTEGER");
+    if(asn == NULL) return 1;
+    mod = TQ_FIRST(&asn->modules);
+    expr = TQ_FIRST(&mod->members);
+    ns = asn1_namespace_new_from_module(mod, 0);
+    memset(&tag, 0, sizeof(tag));
+    count = asn1f_fetch_outmost_tag(asn, ns, mod, expr, &tag, 0);
+    failures += check(count == 0 && tag.tag_class == TC_CONTEXT_SPECIFIC
+                      && tag.tag_value == 2 && tag.tag_mode == TM_EXPLICIT,
+                      "successful outmost fetch returns a valid tag");
+    asn1_namespace_free(ns);
+    asn1p_delete(asn);
+
+    return failures;
+}
+
 int
 main(void) {
     records_t rec;
@@ -106,6 +228,10 @@ main(void) {
     /* A failed lookup of this name must report EEXIST, not ESRCH. */
     if(asn1f_make_known_external_type("Unknown") != 0) {
         fprintf(stderr, "FAIL: cannot register the known external type\n");
+        return 1;
+    }
+    if(asn1f_make_known_external_type("KnownExt") != 0) {
+        fprintf(stderr, "FAIL: cannot register the external tag test type\n");
         return 1;
     }
 
@@ -231,6 +357,8 @@ main(void) {
     asn1p_delete(asn);
     memset(&a1f_replace_me_with_proper_interface_arg, 0,
            sizeof(a1f_replace_me_with_proper_interface_arg));
+
+    failures += check_external_fetch_contract();
 
     return failures ? 1 : 0;
 }

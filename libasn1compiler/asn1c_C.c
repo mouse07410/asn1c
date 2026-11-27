@@ -97,6 +97,7 @@ static int emit_custom_operation_structure(arg_t *arg, asn1p_expr_t *expr);
 static const char *encoding_type_description(enum asn1p_encoding_control_type_e type);
 
 enum tvm_compat {
+	_TVM_UNAVAILABLE = -1,	/* Tag vectors could not be collected */
 	_TVM_SAME	= 0,	/* tags and all_tags are same */
 	_TVM_SUBSET	= 1,	/* tags are subset of all_tags */
 	_TVM_DIFFERENT	= 2,	/* tags and all_tags are different */
@@ -2607,8 +2608,8 @@ asn1c_lang_C_type_SIMPLE_TYPE(arg_t *arg) {
 		emit_custom_operation_structure(arg, expr);
 	}
 
-	emit_type_DEF(arg, expr, tv_mode, tags_count, all_tags_count,
-		0, etd_spec);
+	if(emit_type_DEF(arg, expr, tv_mode, tags_count, all_tags_count,
+		0, etd_spec) < 0) return -1;
 
 	REDIR(OT_CODE);
 
@@ -2880,6 +2881,14 @@ _add_tag2el_member(arg_t *arg, tag2el_t **tag2el, int *count, int el_no, fte_e f
         asn1f_fetch_outmost_tag_ex(arg->asn, expr_ns, arg->expr->module, arg->expr,
                                 &tag, AFT_IMAGINARY_ANY, arg->logger_cb,
                                 (arg->flags & A1C_DEBUG) != 0));
+    if(ret == ASN1F_TAG_EXTERNAL) {
+        /* A tag map must know the wire tag before it can dispatch to a member. */
+        FATAL("External type used by component %s at line %d has no known outer tag; "
+              "tag the component or supply the ASN.1 type definition",
+              arg->expr->Identifier ? arg->expr->Identifier : "(unnamed)",
+              arg->expr->_lineno);
+        return -1;
+    }
     if(ret == 0) {
 		tag2el_t *te;
 		int new_count = (*count) + 1;
@@ -2996,7 +3005,7 @@ emit_tags_vectors(arg_t *arg, asn1p_expr_t *expr, int *tags_count_r, int *all_ta
                             (arg->flags & A1C_DEBUG) != 0));
     if(tags_count < 0) {
 		DEBUG("fail to fetch tags for %s", expr->Identifier);
-		return -1;
+		return _TVM_UNAVAILABLE;
 	}
 
 	/* Fetch a chain of tags */
@@ -3008,7 +3017,7 @@ emit_tags_vectors(arg_t *arg, asn1p_expr_t *expr, int *tags_count_r, int *all_ta
     if(all_tags_count < 0) {
 		free(tags);
 		DEBUG("fail to fetch tags chain for %s", expr->Identifier);
-		return -1;
+		return _TVM_UNAVAILABLE;
 	}
 
 	assert(tags_count <= all_tags_count);
@@ -5524,18 +5533,13 @@ emit_member_storage(arg_t *arg, asn1p_expr_t *expr) {
 static void
 emit_member_layout(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t *opt_ioc) {
 	struct asn1p_type_tag_s outmost_tag_s;
-	struct asn1p_type_tag_s *outmost_tag;
-
-    if(WITH_MODULE_NAMESPACE(
-           expr->module, expr_ns,
-           asn1f_fetch_outmost_tag_ex(arg->asn, expr_ns, expr->module, expr,
-                                   &outmost_tag_s, AFT_IMAGINARY_ANY,
-                                   arg->logger_cb,
-                                   (arg->flags & A1C_DEBUG) != 0))) {
-        outmost_tag = 0;
-	} else {
-		outmost_tag = &outmost_tag_s;
-	}
+    int tag_status = WITH_MODULE_NAMESPACE(
+        expr->module, expr_ns,
+        asn1f_fetch_outmost_tag_ex(arg->asn, expr_ns, expr->module, expr,
+                                 &outmost_tag_s, AFT_IMAGINARY_ANY,
+                                 arg->logger_cb,
+                                 (arg->flags & A1C_DEBUG) != 0));
+    struct asn1p_type_tag_s *outmost_tag = tag_status == 0 ? &outmost_tag_s : NULL;
 
 	OUT("{ ");
 
@@ -5563,6 +5567,9 @@ emit_member_layout(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t 
 			OUT("-1 /* Ambiguous tag (ANY?) */");
 		else
 			_print_tag(arg, outmost_tag);
+	} else if(tag_status == ASN1F_TAG_EXTERNAL) {
+		/* An OF decoder can delegate the element tag check to its descriptor. */
+		OUT("-1 /* Tag supplied by the external type descriptor */");
 	} else {
 		OUT("-1 /* Ambiguous tag (CHOICE?) */");
 	}
@@ -6075,11 +6082,21 @@ emit_type_DEF(arg_t *arg, asn1p_expr_t *expr, enum tvm_compat tv_mode,
 	asn1p_expr_type_e terminal_etype;
 	int collection_constraint = 0;
 	int using_type_name = 0;
-	char *expr_id = strdup(MKID(expr));
-	char *p = expr_id;
 	char *p2 = (char *)0;
 
 	terminal = asn1f_find_terminal_type_ex(arg->asn, arg->ns, expr);
+	/* An external member can use a supplied descriptor, but an alias needs
+	 * the base type's operations and layout when emitting a new descriptor. */
+	if(!terminal && expr->expr_type == A1TC_REFERENCE) {
+		if(tv_mode != _TVM_UNAVAILABLE) {
+			FATAL("Type %s at line %d has an unresolved base type; "
+				"cannot generate a descriptor without its ASN.1 definition",
+				expr->Identifier, expr->_lineno);
+		}
+		return -1;
+	}
+	char *expr_id = strdup(MKID(expr));
+	char *p = expr_id;
 	terminal_etype = expr_get_type(arg, expr);
 
 	/*
