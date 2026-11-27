@@ -32,6 +32,7 @@ LDADD = $(top_builddir)/libasn1common/libasn1common.la libasn1parser.la
 
 TESTS = $(check_PROGRAMS)
 check_PROGRAMS += check_parse_cleanup
+check_PROGRAMS += check_asn1p_column
 
 # The leak regression test needs the sanitizer flags the check target provides.
 check_parse_cleanup_CFLAGS = $(AM_CFLAGS) $(TESTSUITE_CFLAGS)

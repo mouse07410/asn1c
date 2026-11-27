@@ -14,8 +14,10 @@ void asn1p_parser_discard_partial_module(void);
 
 void *asn1p__scan_bytes(const char *, int len);
 void *asn1p_restart(FILE *);
+void asn1p_lexer_reset_position(void);
 
 extern int asn1p_lineno;
+extern int asn1p_column;
 
 static int _asn1p_set_flags(enum asn1p_flags flags);
 static int _asn1p_fix_modules(asn1p_t *a, const char *fname);
@@ -45,6 +47,7 @@ asn1p_parse_buffer(const char *buffer, int size /* = -1 */, const char *debug_fi
 	}
 
 	asn1p_lineno = initial_lineno;
+	asn1p_lexer_reset_position();
 
 	ap = (void *)&a;
 	asn1p_parse_debug_filename = debug_filename;
@@ -117,6 +120,7 @@ asn1p_parse_file(const char *filename, enum asn1p_flags flags) {
 #endif	/* _WIN32 */
 
 	asn1p_lineno = 1;
+	asn1p_lexer_reset_position();
 
 	asn1p_restart(fp);
 

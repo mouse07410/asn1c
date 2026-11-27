@@ -53,6 +53,7 @@ void asn1p_lexer_hack_push_encoding_control(void);
 void asn1p_parser_discard_partial_module(void);
 #define	yylineno	asn1p_lineno
 extern int asn1p_lineno;
+extern int asn1p_column;
 const char *asn1p_parse_debug_filename;
 #define ASN_FILENAME asn1p_parse_debug_filename
 
@@ -135,7 +136,7 @@ _asn1p_merge_collection_element_constraints(asn1p_expr_t *collection,
 	return 0;
 }
 
-#define	NEW_EXPR()	(asn1p_expr_new(yylineno, currentModule))
+#define	NEW_EXPR()	(asn1p_expr_new_at(yylineno, asn1p_column, currentModule))
 
 #define	checkmem(ptr)	do {						\
 		if(!(ptr))						\
@@ -3194,7 +3195,7 @@ yyerror(void **param, const char *msg) {
 	extern char *asn1p_text;
 	fprintf(stderr,
 		"ASN.1 grammar parse error "
-		"near %s:%d (token \"%s\"): %s\n",
-		ASN_FILENAME, yylineno, asn1p_text, msg);
+		"near %s:%d:%d (token \"%s\"): %s\n",
+		ASN_FILENAME, yylineno, asn1p_column, asn1p_text, msg);
 	return -1;
 }

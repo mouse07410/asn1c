@@ -14,6 +14,7 @@ asn1p_expr_set_source(asn1p_expr_t *expr, asn1p_module_t *module, int lineno) {
     if(expr) {
         expr->module = module;
         expr->_lineno = lineno;
+        expr->_column = 0;    /* The caller only knows the new line. */
         asn1p_ref_set_source(expr->reference, module, lineno);
         asn1p_value_set_source(expr->value, module, lineno);
         asn1p_constraint_set_source(expr->constraints, module, lineno);
@@ -100,6 +101,15 @@ asn1p_expr_compare(const asn1p_expr_t *a, const asn1p_expr_t *b) {
  */
 asn1p_expr_t *
 asn1p_expr_new(int _lineno, asn1p_module_t *mod) {
+	return asn1p_expr_new_at(_lineno, 0, mod);
+}
+
+/*
+ * Same, with the source column of the token that built the expression.
+ * A column of 0 means unknown; asn1p_expr_new() keeps that meaning.
+ */
+asn1p_expr_t *
+asn1p_expr_new_at(int _lineno, int _column, asn1p_module_t *mod) {
 	asn1p_expr_t *expr;
 
 	expr = calloc(1, sizeof *expr);
@@ -108,6 +118,7 @@ asn1p_expr_new(int _lineno, asn1p_module_t *mod) {
 		expr->spec_index = -1;
 		expr->module = mod;
 		expr->_lineno = _lineno;
+		expr->_column = _column;
 		expr->ref_cnt = 0;
 	}
 
@@ -184,7 +195,8 @@ asn1p_expr_clone_impl(asn1p_expr_t *expr, int skip_extensions, asn1p_expr_t *(*r
 			return NULL;	/* Hard error */
 		}
 	}
-	if(!clone) clone = asn1p_expr_new(expr->_lineno, expr->module);
+	if(!clone) clone = asn1p_expr_new_at(expr->_lineno, expr->_column,
+		expr->module);
 	if(!clone) return NULL;
 
 	/*

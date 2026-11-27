@@ -269,6 +269,16 @@ typedef struct asn1p_expr_s {
 	int _lineno;
 
 	/*
+	 * 1-based column where the token that built this structure starts in
+	 * the original grammar source, or 0 when the location is unknown
+	 * (nodes synthesized by the fixer or the compiler).  Tabs count as one
+	 * column and only '\n' resets it.  The parser records it at reduce
+	 * time, so for a production that reduces after reading lookahead it is
+	 * the lookahead token's start, exactly like _lineno.
+	 */
+	int _column;
+
+	/*
 	 * Marks are used for various purposes.
 	 * Here are some predefined ones.
 	 */
@@ -304,6 +314,8 @@ typedef struct asn1p_expr_s {
  * Constructor and destructor.
  */
 asn1p_expr_t *asn1p_expr_new(int _lineno, struct asn1p_module_s *);
+asn1p_expr_t *asn1p_expr_new_at(int _lineno, int _column,
+	struct asn1p_module_s *);
 asn1p_expr_t *asn1p_expr_clone(asn1p_expr_t *, int skip_extensions);
 asn1p_expr_t *asn1p_expr_clone_with_resolver(asn1p_expr_t *,
 	asn1p_expr_t *(*resolver)(asn1p_expr_t *to_resolve, void *resolver_arg),
