@@ -50,12 +50,46 @@ static int asn1f_containing_scan_only;
 arg_t a1f_replace_me_with_proper_interface_arg;
 
 /*
+ * The structured channel is scoped to one asn1f_process_ex() call: its key may
+ * belong to a context that the caller frees as soon as the call returns.
+ * Drop it from the process-wide snapshot on the way out, so a later compiler
+ * lookup can never reach a dead callback.  The legacy eh may stay because it
+ * is the caller's own function, not a borrowed context.
+ */
+static void
+_asn1f_clear_diag_logger(void) {
+	a1f_replace_me_with_proper_interface_arg.diag_cb = 0;
+	a1f_replace_me_with_proper_interface_arg.diag_key = 0;
+}
+
+/*
  * Scan every module defined here in search for inconsistences.
  */
 int
 asn1f_process(asn1p_t *asn, enum asn1f_flags flags,
 		error_logger_f error_logger) {
-	arg_t arg;
+	return asn1f_process_ex(asn, flags, error_logger, NULL, NULL);
+}
+
+/*
+ * Same, but report every diagnostic through a structured callback.
+ */
+int
+asn1f_process_diag(asn1p_t *asn, enum asn1f_flags flags,
+		asn1c_diag_cb cb, void *key) {
+	return asn1f_process_ex(asn, flags, NULL, cb, key);
+}
+
+/*
+ * Scan every module defined here in search for inconsistences.  Diagnostics
+ * go to diag_cb when it is installed, otherwise to legacy_cb.
+ */
+int
+asn1f_process_ex(asn1p_t *asn, enum asn1f_flags flags,
+		void (*legacy_cb)(int, const char *, ...),
+		asn1c_diag_cb diag_cb, void *diag_key) {
+	arg_t arg_s;
+	arg_t *arg = &arg_s;
 	int fatals = 0;
 	int warnings = 0;
 	int ret;
@@ -71,55 +105,51 @@ asn1f_process(asn1p_t *asn, enum asn1f_flags flags,
 	/*
 	 * If errors handler is not specified, default to internal one.
 	 */
-	if(error_logger == 0) {
-		error_logger = _default_error_logger;
+	if(legacy_cb == 0 && diag_cb == 0) {
+		legacy_cb = _default_error_logger;
 	}
 
-	memset(&arg, 0, sizeof(arg));
-	arg.asn = asn;
-	arg.eh = error_logger;
+	memset(arg, 0, sizeof(*arg));
+	arg->asn = asn;
+	arg->eh = legacy_cb;
+	arg->diag_cb = diag_cb;
+	arg->diag_key = diag_key;
 
 	if(flags & A1F_DEBUG) {
-		arg.debug = arg.eh;
-		arg.debug(-1, "Called %s() with flags %d", __func__, flags);
+		arg->debug = arg->eh;
+		/* Keep the bit: the structured channel uses it to gate debug. */
+		arg->flags |= A1F_DEBUG;
+		DEBUG("Called with flags %d", flags);
 		flags &= ~A1F_DEBUG;
 	}
 
 	/* Allow SIZE() constraint for INTEGER and other types */
 	if(flags & A1F_EXTENDED_SizeConstraint) {
-		arg.flags |= A1F_EXTENDED_SizeConstraint;
+		arg->flags |= A1F_EXTENDED_SizeConstraint;
 		flags &= ~A1F_EXTENDED_SizeConstraint;
-		if(arg.debug) {
-			arg.debug(-1,
-				"Extended SizeConstraint support enabled");
-		}
+		DEBUG("Extended SizeConstraint support enabled");
 	}
 
 	if(flags & A1F_COMPOUND_NAMES) {
-		arg.flags |= A1F_COMPOUND_NAMES;
+		arg->flags |= A1F_COMPOUND_NAMES;
 		flags &= ~A1F_COMPOUND_NAMES;
-		if(arg.debug) {
-			arg.debug(-1,
-				"Allow the same symbol name defined in two different modules");
-		}
+		DEBUG("Allow the same symbol name defined in two different modules");
 	}
 
 	if(flags & A1F_PREFER_IMPORT_SOURCE) {
-		arg.flags |= A1F_PREFER_IMPORT_SOURCE;
+		arg->flags |= A1F_PREFER_IMPORT_SOURCE;
 		flags &= ~A1F_PREFER_IMPORT_SOURCE;
-		if(arg.debug) {
-			arg.debug(-1,
-				"IMPORTS resolution: require explicit xp_members match");
-		}
+		DEBUG("IMPORTS resolution: require explicit xp_members match");
 	}
 
-	a1f_replace_me_with_proper_interface_arg = arg;
+	a1f_replace_me_with_proper_interface_arg = *arg;
 
 	/*
 	 * Check that we haven't missed an unknown flag.
 	 */
 	if(flags) {
 		errno = EINVAL;
+		_asn1f_clear_diag_logger();
 		return -1;
 	}
 
@@ -128,29 +158,32 @@ asn1f_process(asn1p_t *asn, enum asn1f_flags flags,
 	asn1f_containing_count = 0;
 	asn1f_containing_seen = 0;
 	asn1f_containing_scan_only = 0;
-	TQ_FOR(arg.mod, &(asn->modules), mod_next) {
-		if(asn1f_promote_containing_module(asn, arg.mod,
-		                                  &asn1f_containing_count)) return -1;
+	TQ_FOR(arg->mod, &(asn->modules), mod_next) {
+		if(asn1f_promote_containing_module(asn, arg->mod,
+		                                  &asn1f_containing_count)) {
+			_asn1f_clear_diag_logger();
+			return -1;
+		}
 	}
 
     /*
      * Process each module in the list.
      * PHASE I.
      */
-    TQ_FOR(arg.mod, &(asn->modules), mod_next) {
-        arg.ns = asn1_namespace_new_from_module(arg.mod, 0);
-        ret = asn1f_fix_module__phase_1(&arg);
+    TQ_FOR(arg->mod, &(asn->modules), mod_next) {
+        arg->ns = asn1_namespace_new_from_module(arg->mod, 0);
+        ret = asn1f_fix_module__phase_1(arg);
         /*
          * These lines are used for illustration purposes.
          * RET2RVAL() is used everywhere else.
          */
         if(ret == -1) fatals++;
         if(ret == 1) warnings++;
-        asn1_namespace_free(arg.ns);
-        arg.ns = 0;
+        asn1_namespace_free(arg->ns);
+        arg->ns = 0;
     }
     if((asn1f_containing_count || asn1f_containing_seen)
-       && asn1f_fix_late_containing(asn, &arg)) fatals++;
+       && asn1f_fix_late_containing(asn, arg)) fatals++;
     /*
      * Generated source files may contain definitions from several top-level
      * assignments, including parameterized specializations. Keep their inner
@@ -159,22 +192,28 @@ asn1f_process(asn1p_t *asn, enum asn1f_flags flags,
      */
     asn1f_apply_unique_index(0);
     /* PHASE II. */
-    TQ_FOR(arg.mod, &(asn->modules), mod_next) {
-        arg.ns = asn1_namespace_new_from_module(arg.mod, 0);
-        ret = asn1f_fix_module__phase_2(&arg);
+    TQ_FOR(arg->mod, &(asn->modules), mod_next) {
+        arg->ns = asn1_namespace_new_from_module(arg->mod, 0);
+        ret = asn1f_fix_module__phase_2(arg);
         if(ret == -1) fatals++;
         if(ret == 1) warnings++;
-        asn1_namespace_free(arg.ns);
-        arg.ns = 0;
+        asn1_namespace_free(arg->ns);
+        arg->ns = 0;
     }
-	if(asn1f_reject_late_containing(asn, &arg)) fatals++;
+	if(asn1f_reject_late_containing(asn, arg)) fatals++;
 	/* Do not expose private phase state to later compiler operations. */
 	asn1f_clear_phase1_marks(asn);
 
+	/*
+	 * Refresh the snapshot for later compiler lookups.  Keep only the
+	 * legacy channel: the structured callback and its key were scoped to
+	 * this call, while eh is the caller's own function.  Omitting the diag
+	 * fields leaves them NULL in the zero-initialised compound literal.
+	 */
 	a1f_replace_me_with_proper_interface_arg = (arg_t){
-		.eh = arg.eh,
-		.debug = arg.debug,
-		.flags = arg.flags,
+		.eh = arg->eh,
+		.debug = arg->debug,
+		.flags = arg->flags & ~A1F_DEBUG,
 	};
 
 	/*
@@ -1171,6 +1210,80 @@ oid_certainly_equal(const asn1p_oid_t *a, const asn1p_oid_t *b) {
 		}
 	}
 	return 1;
+}
+
+/*
+ * The file a diagnostic belongs to: the module's source file, or the source
+ * file of the expression's module when only the expression is set.
+ */
+static const char *
+_asn1f_diag_file(arg_t *arg) {
+	if(arg->mod && arg->mod->source_file_name)
+		return arg->mod->source_file_name;
+	if(arg->expr && arg->expr->module)
+		return arg->expr->module->source_file_name;
+	return NULL;
+}
+
+/*
+ * Format the message once and hand one record to the installed callback.
+ * The record's pointers live only for the duration of that call.
+ */
+static void
+_asn1f_diag_emit(arg_t *arg, asn1c_diag_severity severity,
+                 const char *fmt, va_list ap) {
+	char stackbuf[256];
+	char *msg = stackbuf;
+	asn1c_diag_t diag;
+	va_list aq;
+	int n;
+
+	if(arg->diag_cb == NULL) return;
+
+	va_copy(aq, ap);
+	n = vsnprintf(stackbuf, sizeof(stackbuf), fmt, aq);
+	va_end(aq);
+	if(n < 0)
+		return;		/* Nothing sane to report */
+	if((size_t)n >= sizeof(stackbuf)) {
+		msg = malloc((size_t)n + 1);
+		if(msg == NULL)
+			return;	/* Cannot even report the failure */
+		va_copy(aq, ap);
+		vsnprintf(msg, (size_t)n + 1, fmt, aq);
+		va_end(aq);
+	}
+
+	diag.severity = severity;
+	diag.file = _asn1f_diag_file(arg);
+	diag.line = arg->expr ? arg->expr->_lineno : 0;
+	diag.column = 0;
+	diag.token = NULL;
+	diag.message = msg;
+
+	arg->diag_cb(arg->diag_key, &diag);
+
+	if(msg != stackbuf)
+		free(msg);
+}
+
+void
+asn1f_diag_report(arg_t *arg, asn1c_diag_severity severity,
+                  const char *fmt, ...) {
+	va_list ap;
+
+	va_start(ap, fmt);
+	_asn1f_diag_emit(arg, severity, fmt, ap);
+	va_end(ap);
+}
+
+void
+asn1f_diag_debug(arg_t *arg, const char *fmt, ...) {
+	va_list ap;
+
+	va_start(ap, fmt);
+	_asn1f_diag_emit(arg, ASN1C_DIAG_DEBUG, fmt, ap);
+	va_end(ap);
 }
 
 /*

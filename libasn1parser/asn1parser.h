@@ -10,6 +10,7 @@
 
 #include "asn1_ref.h"
 #include "asn1_buffer.h"
+#include "asn1c_diag.h"
 #include "asn1_namespace.h"
 
 #include "asn1p_integer.h"
@@ -51,6 +52,20 @@ asn1p_t	*asn1p_parse_file(const char *filename,
 asn1p_t	*asn1p_parse_buffer(const char *buffer, int size /* = -1 */,
 	const char *debug_filename, int initial_lineno,
 	enum asn1p_flags);
+
+/*
+ * Same as above, but report the parse errors that yyerror() raises through a
+ * callback instead of printing them.  This is not a complete capture of parser
+ * output: warnings that the grammar actions and the lexer print directly still
+ * go to stderr and never reach the callback.  Every record is only valid
+ * during the callback; the parser is not reentrant, so a callback must not
+ * start another parse.
+ */
+asn1p_t	*asn1p_parse_file_diag(const char *filename,
+	enum asn1p_flags, asn1c_diag_cb cb, void *key);
+asn1p_t	*asn1p_parse_buffer_diag(const char *buffer, int size /* = -1 */,
+	const char *debug_filename, int initial_lineno,
+	enum asn1p_flags, asn1c_diag_cb cb, void *key);
 
 extern const char *asn1p_parse_debug_filename;
 

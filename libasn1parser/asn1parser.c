@@ -17,6 +17,15 @@ void *asn1p_restart(FILE *);
 
 extern int asn1p_lineno;
 
+/*
+ * Diagnostic callback installed for the parse in progress, or NULL to keep
+ * the historical stderr output.  yyerror() in asn1p_y.y reads both; they are
+ * cleared as soon as the parse returns.  The parser was never reentrant, so
+ * this file-scope state adds no new restriction.
+ */
+asn1c_diag_cb asn1p_diag_cb;
+void *asn1p_diag_key;
+
 static int _asn1p_set_flags(enum asn1p_flags flags);
 static int _asn1p_fix_modules(asn1p_t *a, const char *fname);
 
@@ -25,6 +34,15 @@ static int _asn1p_fix_modules(asn1p_t *a, const char *fname);
  */
 asn1p_t *
 asn1p_parse_buffer(const char *buffer, int size /* = -1 */, const char *debug_filename, int initial_lineno, enum asn1p_flags flags) {
+	return asn1p_parse_buffer_diag(buffer, size, debug_filename,
+		initial_lineno, flags, NULL, NULL);
+}
+
+/*
+ * Parse the given buffer, reporting parser diagnostics through the callback.
+ */
+asn1p_t *
+asn1p_parse_buffer_diag(const char *buffer, int size /* = -1 */, const char *debug_filename, int initial_lineno, enum asn1p_flags flags, asn1c_diag_cb cb, void *key) {
 	asn1p_t *a = 0;
 	void *ap;
 	void *ybuf;
@@ -48,7 +66,11 @@ asn1p_parse_buffer(const char *buffer, int size /* = -1 */, const char *debug_fi
 
 	ap = (void *)&a;
 	asn1p_parse_debug_filename = debug_filename;
+	asn1p_diag_cb = cb;
+	asn1p_diag_key = key;
 	ret = asn1p_parse(ap);
+	asn1p_diag_cb = NULL;
+	asn1p_diag_key = NULL;
 	asn1p_parse_debug_filename = NULL;
 
 	/* Release the scanner buffer and start-condition stack. */
@@ -84,6 +106,16 @@ asn1p_parse_buffer(const char *buffer, int size /* = -1 */, const char *debug_fi
  */
 asn1p_t *
 asn1p_parse_file(const char *filename, enum asn1p_flags flags) {
+	return asn1p_parse_file_diag(filename, flags, NULL, NULL);
+}
+
+/*
+ * Parse the file identified by its name, reporting parser diagnostics through
+ * the callback.  File-open failures keep their stderr text: they are IO
+ * failures, not parser diagnostics.
+ */
+asn1p_t *
+asn1p_parse_file_diag(const char *filename, enum asn1p_flags flags, asn1c_diag_cb cb, void *key) {
 #ifndef	_WIN32
 	struct stat sb;
 #endif
@@ -122,7 +154,11 @@ asn1p_parse_file(const char *filename, enum asn1p_flags flags) {
 
 	ap = (void *)&a;
 	asn1p_parse_debug_filename = filename;
+	asn1p_diag_cb = cb;
+	asn1p_diag_key = key;
 	ret = asn1p_parse(ap);
+	asn1p_diag_cb = NULL;
+	asn1p_diag_key = NULL;
 	asn1p_parse_debug_filename = NULL;
 
 	/* The scanner owns its buffer; the wrapper owns the file. */

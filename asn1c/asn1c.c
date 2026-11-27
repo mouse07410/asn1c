@@ -159,9 +159,10 @@ static int asn1c_run_pipeline(asn1c_cli_options_t *, int, int, char **,
  * A FATAL diagnostic always gives a non-zero exit status, also when the
  * library that reports it continues its work.
  */
-static int fixer_fatal_count; /* FATAL diagnostics via fixer_error_logger */
-static int fixer_warned; /* Warning state variable set by fixer_error_logger. */
-static void fixer_error_logger(int _severity, const char *fmt, ...);
+static int fixer_fatal_count; /* FATAL diagnostics via fixer_diag_sink */
+static int fixer_warned; /* Warning state variable set by fixer_diag_sink. */
+static void fixer_diag_sink(void *key, const asn1c_diag_t *diag);
+static void parser_diag_sink(void *key, const asn1c_diag_t *diag);
 
 /*
  * Initialize C's historical defaults and the separate Rust codec selection.
@@ -993,7 +994,8 @@ asn1c_parse_inputs(int count, char **inputs, enum asn1p_flags parser_flags,
     for(index = 0; index < count; index++) {
         asn1p_t *new_tree;
         errno = 0;
-        new_tree = asn1p_parse_file(inputs[index], parser_flags);
+        new_tree = asn1p_parse_file_diag(inputs[index], parser_flags,
+                                         parser_diag_sink, NULL);
         if(!new_tree) {
             int parse_errno = errno;
             fprintf(stderr, "Cannot parse \"%s\"\n", inputs[index]);
@@ -1060,7 +1062,7 @@ asn1c_import_and_fix_tree(asn1c_cli_options_t *options, asn1p_t *asn,
     TQ_FOR(module, &asn->modules, mod_next) module->asn1p = asn;
     /* Rust module paths disambiguate names, so its fixer may accept duplicates. */
     if(options->rust_target) fixer_flags |= A1F_COMPOUND_NAMES;
-    fix_status = asn1f_process(asn, fixer_flags, fixer_error_logger);
+    fix_status = asn1f_process_diag(asn, fixer_flags, fixer_diag_sink, NULL);
     if(fix_status == -1
     || (options->warnings_as_errors && (fix_status == 1 || fixer_warned)))
         return EX_DATAERR;
@@ -1240,7 +1242,8 @@ import_standard_module_file(asn1p_t *asn, const char *directory,
     full_name = malloc(full_len);
     if(!full_name) return -1;
     snprintf(full_name, full_len, "%s/%s", directory, filename);
-    new_asn = asn1p_parse_file(full_name, A1P_NOFLAGS);
+    new_asn = asn1p_parse_file_diag(full_name, A1P_NOFLAGS,
+                                    parser_diag_sink, NULL);
     if(!new_asn) {
         fprintf(stderr, "WARNING: Cannot parse standard module \"%s\"\n", full_name);
         free(full_name);
@@ -1357,24 +1360,41 @@ importStandardModules(asn1p_t *asn, const char *skeletons_dir) {
 }
 
 /*
- * Same output as the default fixer logger. Records warnings and counts FATAL diagnostics.
+ * Same output as the default fixer logger. Records warnings and counts FATAL
+ * diagnostics.  The core record carries the message without the " in <src>"
+ * decoration, because it carries the file separately; the CLI keeps printing
+ * the historical line, including "(no module)" when the record names no file.
  */
 static void
-fixer_error_logger(int _severity, const char *fmt, ...) {
-    va_list ap;
+fixer_diag_sink(void *key, const asn1c_diag_t *diag) {
     const char *pfx = "";
+    (void)key;
 
-    switch(_severity) {
-    case -1: pfx = "DEBUG: "; break;
-    case 0: pfx = "WARNING: "; fixer_warned = 1; break;
-    case 1: pfx = "FATAL: "; fixer_fatal_count++; break;
+    switch(diag->severity) {
+    case ASN1C_DIAG_DEBUG: pfx = "DEBUG: "; break;
+    case ASN1C_DIAG_WARNING: pfx = "WARNING: "; fixer_warned = 1; break;
+    case ASN1C_DIAG_ERROR: pfx = "FATAL: "; fixer_fatal_count++; break;
     }
 
-    fprintf(stderr, "%s", pfx);
-    va_start(ap, fmt);
-    vfprintf(stderr, fmt, ap);
-    va_end(ap);
-    fprintf(stderr, "\n");
+    fprintf(stderr, "%s%s in %s\n", pfx,
+            diag->message ? diag->message : "",
+            diag->file ? diag->file : "(no module)");
+}
+
+/*
+ * Same line the parser prints without a callback: the record carries the
+ * file, line and offending token, so the CLI re-creates the historical text.
+ */
+static void
+parser_diag_sink(void *key, const asn1c_diag_t *diag) {
+    (void)key;
+    if(diag->severity != ASN1C_DIAG_ERROR) return;
+    fprintf(stderr,
+            "ASN.1 grammar parse error "
+            "near %s:%d (token \"%s\"): %s\n",
+            diag->file ? diag->file : "(null)", diag->line,
+            diag->token ? diag->token : "",
+            diag->message ? diag->message : "");
 }
 
 /*

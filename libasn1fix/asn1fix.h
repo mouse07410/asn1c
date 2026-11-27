@@ -31,6 +31,18 @@ int asn1f_process(asn1p_t *_asn,
 	enum asn1f_flags,
 	void (*error_log_callback)(int _severity, const char *fmt, ...));
 
+/*
+ * Same as asn1f_process(), but report every diagnostic through the callback
+ * instead of printing.  A record carries the module file and the expression
+ * line the fixer knows; column is 0 and token is NULL.  The callback, its key
+ * and the message pointer are only valid during the call: the structured
+ * channel is cleared before asn1f_process_diag() returns, so a lookup the
+ * caller makes afterwards cannot reach it.
+ */
+int asn1f_process_diag(asn1p_t *_asn,
+	enum asn1f_flags,
+	asn1c_diag_cb cb, void *key);
+
 
 /*
  * Explicitly mark type as known.

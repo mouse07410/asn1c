@@ -48,6 +48,10 @@ asn1f_lookup_module_ex(asn1p_t *asn, const char *module_name,
     arg.asn = asn;
     arg.eh = quiet_lookups ? 0 : a1f_replace_me_with_proper_interface_arg.eh;
     arg.debug = a1f_replace_me_with_proper_interface_arg.debug;
+    arg.diag_cb = quiet_lookups ? 0
+        : a1f_replace_me_with_proper_interface_arg.diag_cb;
+    arg.diag_key = quiet_lookups ? NULL
+        : a1f_replace_me_with_proper_interface_arg.diag_key;
     arg.flags = a1f_replace_me_with_proper_interface_arg.flags;
     return asn1f_lookup_module(&arg, module_name, oid, 0);
 }
@@ -65,6 +69,10 @@ asn1f_lookup_symbol_ex(asn1p_t *asn, asn1_namespace_t *ns, asn1p_expr_t *expr,
     arg.expr = expr;
     arg.eh = quiet_lookups ? 0 : a1f_replace_me_with_proper_interface_arg.eh;
     arg.debug = a1f_replace_me_with_proper_interface_arg.debug;
+    arg.diag_cb = quiet_lookups ? 0
+        : a1f_replace_me_with_proper_interface_arg.diag_cb;
+    arg.diag_key = quiet_lookups ? NULL
+        : a1f_replace_me_with_proper_interface_arg.diag_key;
     arg.flags = a1f_replace_me_with_proper_interface_arg.flags;
 
     return asn1f_lookup_symbol(&arg, expr->rhs_pspecs, ref);
@@ -87,6 +95,10 @@ asn1f_class_access_ex(asn1p_t *asn,
 	arg.expr = expr;
 	arg.eh = quiet_lookups ? 0 : a1f_replace_me_with_proper_interface_arg.eh;
 	arg.debug = a1f_replace_me_with_proper_interface_arg.debug;
+	arg.diag_cb = quiet_lookups ? 0
+	    : a1f_replace_me_with_proper_interface_arg.diag_cb;
+	arg.diag_key = quiet_lookups ? NULL
+	    : a1f_replace_me_with_proper_interface_arg.diag_key;
 	arg.flags = a1f_replace_me_with_proper_interface_arg.flags;
 
     return asn1f_class_access(&arg, rhs_pspecs, ref);
@@ -105,6 +117,10 @@ asn1f_find_terminal_type_ex(asn1p_t *asn, asn1_namespace_t *ns,
     arg.expr = expr;
     arg.eh = quiet_lookups ? 0 : a1f_replace_me_with_proper_interface_arg.eh;
     arg.debug = a1f_replace_me_with_proper_interface_arg.debug;
+    arg.diag_cb = quiet_lookups ? 0
+        : a1f_replace_me_with_proper_interface_arg.diag_cb;
+    arg.diag_key = quiet_lookups ? NULL
+        : a1f_replace_me_with_proper_interface_arg.diag_key;
     arg.flags = a1f_replace_me_with_proper_interface_arg.flags;
 
     return asn1f_find_terminal_type(&arg, expr);
@@ -121,6 +137,10 @@ asn1f_find_ancestor_type_with_PER_constraint_ex(asn1p_t *asn, asn1p_expr_t *expr
 	arg.expr = expr;
 	arg.eh = quiet_lookups ? 0 : a1f_replace_me_with_proper_interface_arg.eh;
 	arg.debug = a1f_replace_me_with_proper_interface_arg.debug;
+	arg.diag_cb = quiet_lookups ? 0
+	    : a1f_replace_me_with_proper_interface_arg.diag_cb;
+	arg.diag_key = quiet_lookups ? NULL
+	    : a1f_replace_me_with_proper_interface_arg.diag_key;
 	arg.flags = a1f_replace_me_with_proper_interface_arg.flags;
 
 	return asn1f_find_ancestor_type_with_PER_constraint(&arg, expr);
@@ -138,6 +158,10 @@ asn1f_fix_dereference_values_ex(asn1p_t *asn, asn1p_module_t *mod,
 	arg.expr = expr;
 	arg.eh = quiet_lookups ? 0 : a1f_replace_me_with_proper_interface_arg.eh;
 	arg.debug = a1f_replace_me_with_proper_interface_arg.debug;
+	arg.diag_cb = quiet_lookups ? 0
+	    : a1f_replace_me_with_proper_interface_arg.diag_cb;
+	arg.diag_key = quiet_lookups ? NULL
+	    : a1f_replace_me_with_proper_interface_arg.diag_key;
 	arg.flags = a1f_replace_me_with_proper_interface_arg.flags;
 
 	return asn1f_fix_dereference_values(&arg);
