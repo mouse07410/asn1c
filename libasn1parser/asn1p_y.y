@@ -57,6 +57,13 @@ const char *asn1p_parse_debug_filename;
 #define ASN_FILENAME asn1p_parse_debug_filename
 
 /*
+ * Set by asn1p_parse_file_diag()/asn1p_parse_buffer_diag() around the parse.
+ * When non-NULL, yyerror() reports through it instead of printing.
+ */
+extern asn1c_diag_cb asn1p_diag_cb;
+extern void *asn1p_diag_key;
+
+/*
  * Process directives as <ASN1C:RepresentAsPointer>
  */
 extern int asn1p_as_pointer;
@@ -3192,6 +3199,17 @@ int
 yyerror(void **param, const char *msg) {
 	(void)param;
 	extern char *asn1p_text;
+	if(asn1p_diag_cb) {
+		asn1c_diag_t diag;
+		diag.severity = ASN1C_DIAG_ERROR;
+		diag.file = ASN_FILENAME;
+		diag.line = yylineno;
+		diag.column = 0;
+		diag.token = asn1p_text;
+		diag.message = msg;
+		asn1p_diag_cb(asn1p_diag_key, &diag);
+		return -1;
+	}
 	fprintf(stderr,
 		"ASN.1 grammar parse error "
 		"near %s:%d (token \"%s\"): %s\n",

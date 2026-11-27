@@ -77,6 +77,7 @@ stamp-h*
 
 # /tests/
 /tests/tests-c-compiler/test-*
+/tests/tests-asn1c-compiler/check-diag
 
 # /tests/tests-skeletons
 /tests/tests-skeletons/check-*

@@ -57,11 +57,32 @@ typedef struct arg_s {
     /* Annotate the fields so Clang and GCC check calls through them. */
     error_logger_f eh __attribute__((format(printf, 2, 3))); /* Error/warning sink. */
     error_logger_f debug __attribute__((format(printf, 2, 3))); /* Optional debug sink. */
+    asn1c_diag_cb diag_cb;	/* Structured channel; exclusive with eh */
+    void *diag_key;		/* Callback key for diag_cb */
     void *key; /* The next level key */
     enum asn1f_flags flags;
 } arg_t;
 
 extern arg_t a1f_replace_me_with_proper_interface_arg;
+
+/*
+ * Internal entry point taking both diagnostic channels.  Diagnostics go to
+ * diag_cb when it is installed, otherwise to legacy_cb; with neither, the
+ * default stderr logger takes over.
+ */
+int asn1f_process_ex(asn1p_t *asn, enum asn1f_flags flags,
+                     void (*legacy_cb)(int, const char *, ...),
+                     asn1c_diag_cb diag_cb, void *diag_key);
+
+/*
+ * Emit one diagnostic as an asn1c_diag_t.  The message is formatted once,
+ * without the " in <source>" suffix: the file travels in the record.
+ */
+void asn1f_diag_report(arg_t *arg, asn1c_diag_severity severity,
+                       const char *fmt, ...)
+    __attribute__((format(printf, 3, 4)));
+void asn1f_diag_debug(arg_t *arg, const char *fmt, ...)
+    __attribute__((format(printf, 2, 3)));
 
 /*
  * Functions performing normalization of various types.
@@ -130,11 +151,20 @@ extern arg_t a1f_replace_me_with_proper_interface_arg;
         const char *src = arg->mod && arg->mod->source_file_name          \
                           ? arg->mod->source_file_name : "(no module)";                      \
         if(code < 0) {                                                   \
-            if(arg->debug) {                                             \
+            if(arg->diag_cb) {                                           \
+                if(arg->flags & A1F_DEBUG) {                             \
+                    asn1f_diag_debug(arg, "%s: " fmt " (%s:%d)",         \
+                           __func__, ##args, __FILE__, __LINE__);        \
+                }                                                        \
+            } else if(arg->debug) {                                      \
                 arg->debug(code, "%s: " fmt " in %s (%s:%d)", __func__,  \
                            ##args, src, __FILE__,                        \
                            __LINE__);                                    \
             }                                                            \
+        } else if(arg->diag_cb) {                                        \
+            asn1f_diag_report(arg, (asn1c_diag_severity)code, fmt,       \
+                              ##args);                                   \
+            errno = _save_errno;                                         \
         } else if(arg->eh) {                                             \
             if(arg->debug) {                                             \
                 arg->eh(code, fmt " in %s (%s:%d)", ##args,              \
