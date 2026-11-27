@@ -13,6 +13,7 @@
 #pragma GCC diagnostic ignored "-Wmisleading-indentation"
 
 int asn1p_lex(void);
+void asn1p_lexer_reset_position(void);			/* Used in asn1parser.c */
 void asn1p_lexer_hack_push_opaque_state(void);		/* Used in .y */
 void asn1p_lexer_hack_enable_with_syntax(void);		/* Used in .y */
 void asn1p_lexer_hack_push_encoding_control(void);	/* Used in .y */
@@ -51,6 +52,59 @@ static double          _lex_atod(const char *ptr);
 	(!asn1p_lexer_constructs_year			\
 	|| (fyr && fyr <= asn1p_lexer_constructs_year)	\
 	|| (lyr && lyr  > asn1p_lexer_constructs_year))
+
+/*
+ * Source column tracking.  asn1p_column is the 1-based column at which the
+ * token being returned starts; yycolumn is the scan position after the last
+ * match consumed.  Tabs count as one character and only '\n' resets the
+ * column, matching the line counter: a CR-only file is one long line, so its
+ * columns grow to the byte offset.
+ *
+ * YY_USER_ACTION runs once per match, but flex re-enters it for text it
+ * re-scans (REJECT and the ENCODING-CONTROL unput below).  Two mechanisms
+ * keep that from double-counting.  Remembering the last (yytext, yyleng)
+ * skips the second entry in the normal case, where the re-scan matches the
+ * same text.  The re-scan sites also call ASN1P_COLUMN_REWIND(), which puts
+ * the running column back at the token start and forgets that guard, so the
+ * count is right even when the fallback rule is shorter or unput() moved the
+ * buffer and changed yytext.
+ */
+static int yycolumn = 1;
+int asn1p_column = 1;
+
+/* Start column of the quoted string whose opening quote was just matched. */
+static int asn1p_string_column = 1;
+
+static const char *asn1p_last_match;
+static int asn1p_last_match_len = -1;
+
+#define	YY_USER_ACTION	do {						\
+		if(yytext != asn1p_last_match				\
+		|| yyleng != asn1p_last_match_len) {			\
+			int col;						\
+			asn1p_column = yycolumn;			\
+			asn1p_last_match = yytext;			\
+			asn1p_last_match_len = yyleng;			\
+			for(col = 0; col < yyleng; col++) {		\
+				if(yytext[col] == '\n')			\
+					yycolumn = 1;			\
+				else					\
+					yycolumn++;			\
+			}						\
+		}							\
+	} while(0);
+
+/*
+ * Rewind the tracker to the start of the token that is about to be re-scanned:
+ * flex moves the scan position back before running the next action, so the
+ * next YY_USER_ACTION has to count from this token's column again.  Clearing
+ * the match guard makes that happen whatever text the next rule matches.
+ */
+#define	ASN1P_COLUMN_REWIND()	do {				\
+		yycolumn = asn1p_column;			\
+		asn1p_last_match = NULL;			\
+		asn1p_last_match_len = -1;			\
+	} while(0)
 
 /*
  * Append quoted string.
@@ -100,7 +154,15 @@ WSP	[\t\r\v\f\n ]
 
 %%
 
-<INITIAL>"\xef\xbb\xbf"		return UTF8_BOM;
+<INITIAL>"\xef\xbb\xbf"	{
+			/*
+			 * The BOM is consumed before the first column and has
+			 * no visible width, so line 1 keeps the columns the
+			 * user sees; the token itself starts at column 1.
+			 */
+			yycolumn = 1;
+			return UTF8_BOM;
+		}
 
 -{3,}/[\r\n]	/* Immediately terminated long comment */
 -{3,}/[^-\r\n]	yy_push_state(idash_comment);	/* Incorrect, but acceptable */
@@ -181,6 +243,7 @@ WSP	[\t\r\v\f\n ]
 	}
 
 \"[^\"]*		{
+			asn1p_string_column = asn1p_column;
 			asn1p_lval.tv_opaque.buf = 0;
 			asn1p_lval.tv_opaque.len = 0;
 			QAPPEND(yytext+1, yyleng-1);
@@ -195,6 +258,12 @@ WSP	[\t\r\v\f\n ]
 			yy_pop_state();
 			/* Do not append last quote:
 			// QAPPEND(yytext, yyleng); */
+
+			/*
+			 * The token starts at the opening quote, not at this
+			 * closing one.
+			 */
+			asn1p_column = asn1p_string_column;
 
 			if(asn1p_lexer_pedantic_1990
 			&& strchr(yytext, '\n')) {
@@ -214,6 +283,13 @@ WSP	[\t\r\v\f\n ]
 			const char *s = "ENCODING-CONTROL";
 			const char *p = s + sizeof("ENCODING-CONTROL") - 2;
 			for(; p >= s; p--) unput(*p);
+			/*
+			 * The scan position is back at the start of this
+			 * token, which will be matched again in the initial
+			 * state; rewind the column with it and let that
+			 * re-scan advance it again.
+			 */
+			ASN1P_COLUMN_REWIND();
 			yy_pop_state();
 		}
 	END	{
@@ -231,6 +307,7 @@ WSP	[\t\r\v\f\n ]
 	STRING		return TOK_STRING;
 
 	\"[^\"]*	{
+			asn1p_string_column = asn1p_column;
 			asn1p_lval.tv_opaque.buf = 0;
 			asn1p_lval.tv_opaque.len = 0;
 			QAPPEND(yytext+1, yyleng-1);
@@ -299,6 +376,7 @@ ANY			{
 					return TOK_ANY;	
 				fprintf(stderr, "Keyword \"%s\" at line %d "
 					"is obsolete\n", yytext, yylineno);
+				ASN1P_COLUMN_REWIND();
 				REJECT;
 			}
 APPLICATION		return TOK_APPLICATION;
@@ -313,6 +391,7 @@ BIT			return TOK_BIT;
 BMPString		{
 				if(TYPE_LIFETIME(1994, 0))
 					return TOK_BMPString;
+				ASN1P_COLUMN_REWIND();
 				REJECT;
 			}
 BOOLEAN			return TOK_BOOLEAN;
@@ -332,6 +411,7 @@ DEFINED			{
 				fprintf(stderr, "Keyword \"%s\" at line %d "
 					"is obsolete\n", yytext, yylineno);
 				/* Deprecated since */
+				ASN1P_COLUMN_REWIND();
 				REJECT;
 			}
 DEFINITIONS		return TOK_DEFINITIONS;
@@ -400,12 +480,14 @@ UNIVERSAL		return TOK_UNIVERSAL;
 UniversalString		{
 				if(TYPE_LIFETIME(1994, 0))
 					return TOK_UniversalString;
+				ASN1P_COLUMN_REWIND();
 				REJECT;
 			}
 UTCTime			return TOK_UTCTime;
 UTF8String		{
 				if(TYPE_LIFETIME(1994, 0))
 					return TOK_UTF8String;
+				ASN1P_COLUMN_REWIND();
 				REJECT;
 			}
 VideotexString		return TOK_VideotexString;
@@ -616,6 +698,20 @@ void asn1p_lexer_hack_enable_with_syntax() { yy_push_state(with_syntax); }
 /* Yet another */
 void asn1p_lexer_hack_push_encoding_control() {
 	yy_push_state(encoding_control);
+}
+
+/*
+ * Start a new input at column 1 (the line counterpart is yylineno, set by
+ * asn1parser.c).  Called before each parse so that parsing several schemas
+ * in one process, as asn1de does, cannot carry a column over.
+ */
+void
+asn1p_lexer_reset_position(void) {
+	yycolumn = 1;
+	asn1p_column = 1;
+	asn1p_string_column = 1;
+	asn1p_last_match = NULL;
+	asn1p_last_match_len = -1;
 }
 
 static asn1c_integer_t

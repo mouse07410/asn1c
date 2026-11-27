@@ -1912,7 +1912,8 @@ append_opaque_open_type(arg_t *arg, asn1p_expr_t *choice,
     }
 
     /* ANY supplies the ordinary CHOICE copy, compare, and free ownership rules. */
-    member = asn1p_expr_new(choice->_lineno, choice->module);
+    member = asn1p_expr_new_at(choice->_lineno, choice->_column,
+                                choice->module);
     if(!member) return -1;
     member->Identifier = strdup(name);
     if(!member->Identifier) {
@@ -1956,7 +1957,8 @@ asn1c_lang_C_OpenType(arg_t *arg, asn1c_ioc_table_and_objset_t *opt_ioc,
     }
 
     asn1p_expr_t *open_type_choice =
-        asn1p_expr_new(arg->expr->_lineno, arg->expr->module);
+        asn1p_expr_new_at(arg->expr->_lineno, arg->expr->_column,
+                          arg->expr->module);
     if(!open_type_choice) return -1;
 
     open_type_choice->Identifier = strdup(arg->expr->Identifier);

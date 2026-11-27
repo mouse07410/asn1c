@@ -357,7 +357,8 @@ asn1f_promote_containing_node(asn1p_t *asn, asn1p_module_t *mod,
 				   < 0) return -1;
 			} while(asn1f_containing_name_exists(asn, name));
 			identifier = strdup(name);
-			reference = asn1p_expr_new(contained->_lineno, mod);
+			reference = asn1p_expr_new_at(contained->_lineno,
+					contained->_column, mod);
 			if(!identifier || !reference) {
 				free(identifier);
 				asn1p_expr_free(reference);

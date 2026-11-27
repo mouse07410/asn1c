@@ -31,7 +31,7 @@ asn1f_enum_add_implied_extension(arg_t *arg, asn1p_expr_t *expr) {
 			return 0;
 	}
 
-	marker = asn1p_expr_new(expr->_lineno, owner);
+	marker = asn1p_expr_new_at(expr->_lineno, expr->_column, owner);
 	if(!marker) {
 		FATAL("Out of memory while adding implied ENUMERATED extension");
 		return -1;
