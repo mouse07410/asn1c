@@ -160,6 +160,7 @@ static int asn1c_run_pipeline(asn1c_cli_options_t *, int, int, char **,
  * library that reports it continues its work.
  */
 static int fixer_fatal_count; /* FATAL diagnostics via fixer_error_logger */
+static int fixer_warned; /* Warning state variable set by fixer_error_logger. */
 static void fixer_error_logger(int _severity, const char *fmt, ...);
 
 /*
@@ -1060,7 +1061,8 @@ asn1c_import_and_fix_tree(asn1c_cli_options_t *options, asn1p_t *asn,
     /* Rust module paths disambiguate names, so its fixer may accept duplicates. */
     if(options->rust_target) fixer_flags |= A1F_COMPOUND_NAMES;
     fix_status = asn1f_process(asn, fixer_flags, fixer_error_logger);
-    if(fix_status == -1 || (fix_status == 1 && options->warnings_as_errors))
+    if(fix_status == -1
+    || (options->warnings_as_errors && (fix_status == 1 || fixer_warned)))
         return EX_DATAERR;
     if(fixer_fatal_count) {
         if(!(options->print_out && options->fix_n_print)) return EX_DATAERR;
@@ -1355,7 +1357,7 @@ importStandardModules(asn1p_t *asn, const char *skeletons_dir) {
 }
 
 /*
- * Same output as the default fixer logger. Counts FATAL diagnostics.
+ * Same output as the default fixer logger. Records warnings and counts FATAL diagnostics.
  */
 static void
 fixer_error_logger(int _severity, const char *fmt, ...) {
@@ -1364,7 +1366,7 @@ fixer_error_logger(int _severity, const char *fmt, ...) {
 
     switch(_severity) {
     case -1: pfx = "DEBUG: "; break;
-    case 0: pfx = "WARNING: "; break;
+    case 0: pfx = "WARNING: "; fixer_warned = 1; break;
     case 1: pfx = "FATAL: "; fixer_fatal_count++; break;
     }
 

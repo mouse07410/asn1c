@@ -864,8 +864,9 @@ _asn1f_collect_extension_tag_bounds(arg_t *arg, asn1p_expr_t *member,
 		return WITH_MODULE(member->module,
 			_asn1f_collect_extension_tag_bounds(arg, member, minimum, maximum));
 	memset(&tag, 0, sizeof(tag));
-	result = asn1f_fetch_outmost_tag(arg->asn, arg->ns, arg->mod,
-			member, &tag, AFT_IMAGINARY_ANY);
+	result = asn1f_fetch_outmost_tag_ex(arg->asn, arg->ns, arg->mod,
+			member, &tag, AFT_IMAGINARY_ANY,
+			arg->eh, arg->debug != NULL);
 	if(result == 0 && tag.tag_class != TC_NOCLASS)
 		return _asn1f_add_extension_tag_bound(&tag, minimum, maximum);
 
@@ -1110,7 +1111,8 @@ _asn1f_check_if_tag_must_be_explicit(arg_t *arg, asn1p_expr_t *v) {
 	 */
 	save_tag = v->tag;			/* Save existing tag */
 	memset(&v->tag, 0, sizeof(v->tag));	/* Remove it temporarily */
-	ret = asn1f_fetch_outmost_tag(arg->asn, arg->ns, arg->mod, v, &tag, 0);
+	ret = asn1f_fetch_outmost_tag_ex(arg->asn, arg->ns, arg->mod, v, &tag, 0,
+			arg->eh, arg->debug != NULL);
 	v->tag = save_tag;			/* Restore the tag back */
 
 	if(ret == 0) return 0;	/* If found tag, it's okay */
@@ -1222,8 +1224,8 @@ _asn1f_compare_unresolved_tags(arg_t *arg, asn1p_expr_t *a,
  * Source: Existing constructed-type tag distinctness checker.
  * Version: 2026-10-21.
  * Parameters: arg identifies the enclosing type; a and b are compared components.
- * Returns: zero for distinct tags, or -1 when tags may collide.
- * Errors: emits diagnostics for duplicate or imaginary ANY tags.
+ * Returns: zero when no collision is established, or -1 when tags may collide.
+ * Errors: emits diagnostics for duplicate, imaginary ANY, or unknown external tags.
  * Author: asn1c maintainers.
  * History: group leaf expansion moved to _asn1f_compare_group_tags.
  * Example: optional SEQUENCE fields are checked against their following component.
@@ -1238,15 +1240,22 @@ _asn1f_compare_tags(arg_t *arg, asn1p_expr_t *a, asn1p_expr_t *b) {
 	ret = _asn1f_compare_group_tags(arg, a, b, &group_handled);
 	if(group_handled) return ret;
 
-	ra = asn1f_fetch_outmost_tag(arg->asn, arg->ns, arg->mod, a,
-			&ta, AFT_IMAGINARY_ANY);
-	rb = asn1f_fetch_outmost_tag(arg->asn, arg->ns, arg->mod, b,
-			&tb, AFT_IMAGINARY_ANY);
+	ra = asn1f_fetch_outmost_tag_ex(arg->asn, arg->ns, arg->mod, a,
+			&ta, AFT_IMAGINARY_ANY, arg->eh, arg->debug != NULL);
+	rb = asn1f_fetch_outmost_tag_ex(arg->asn, arg->ns, arg->mod, b,
+			&tb, AFT_IMAGINARY_ANY, arg->eh, arg->debug != NULL);
 
 	/*
 	 * If both tags are explicitly or implicitly given, use them.
 	 */
 	DEBUG("Fetching outmost tags: %d, %d", ra, rb);
+	/* A known external reference does not provide a tag to compare. */
+	if(ra == ASN1F_TAG_EXTERNAL || rb == ASN1F_TAG_EXTERNAL) {
+		const asn1p_expr_t *external = ra == ASN1F_TAG_EXTERNAL ? a : b;
+		WARNING("Cannot verify tag uniqueness for external component %s at line %d",
+			external->Identifier ? external->Identifier : "(unnamed)", external->_lineno);
+		return 0;
+	}
 	if(ra == 0 && rb == 0) {
 		/*
 		 * Simple case: fetched both tags.

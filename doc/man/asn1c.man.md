@@ -145,6 +145,12 @@ cargo check --offline --manifest-path generated/Cargo.toml
 :   Pretend the specified type is known.
     The compiler will assume the target language source files
     for the given type have been provided manually.
+    A SEQUENCE or SET component or a CHOICE alternative of an external
+    type needs a known outer tag. Add an explicit component tag or use
+    AUTOMATIC TAGS where applicable. Automatic and implicit tagging assume
+    that the supplied type has a single tag. A SEQUENCE OF or SET OF can use an
+    external element descriptor directly. To generate a new descriptor
+    for an alias of the external type, supply its ASN.1 definition.
 
 -fline-refs
 :   Include ASN.1 module's line numbers in generated code comments.
