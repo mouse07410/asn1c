@@ -1,4 +1,7 @@
 Changes since v1.5.3:
+	* Generate large C BER tag constants with unsigned shifts. Reject tag
+	  numbers outside the C runtime's packed tag range before writing output,
+	  and reserve the all-ones member tag for unknown tags.
 	* Report tag-resolution debug traces, warnings, and errors through the
 	  active logger (issue #622 reported and PR #623 submitted by Javier /
 	  @mr-j0nes). Distinguish unknown external tags from resolved tags.

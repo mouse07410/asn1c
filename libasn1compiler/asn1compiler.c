@@ -153,6 +153,14 @@ asn1_compile_c(asn1p_t *asn, const char *datadir, const char *destdir,
 	ret = asn1c_compile_modules(arg, flags);
 	if(ret) return ret;
 
+	/* Some emitters report errors through the logger while filling streams.
+	 * Only the explicit debugging mode may print the incomplete output. */
+	if(!(flags & A1C_PRINT_COMPILED) && compiler_fatal_count > fatal_count_at_start) {
+		asn1c_cleanup_streams(asn);
+		c_name_clash_finder_destroy();
+		return -1;
+	}
+
 	if(c_name_clash(arg)) {
 		if(arg->flags & A1C_COMPOUND_NAMES) {
 			FATAL("Name clashes encountered even with -fcompound-names flag");

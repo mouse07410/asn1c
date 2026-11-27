@@ -55,7 +55,7 @@ static int asn1c_lang_C_type_SET_def(arg_t *arg, asn1c_ioc_table_and_objset_t *o
 static int asn1c_lang_C_type_CHOICE_def(arg_t *arg);
 static int asn1c_lang_C_type_SEx_OF_def(arg_t *arg, int seq_of);
 static int asn1c_lang_C_OpenType(arg_t *arg, asn1c_ioc_table_and_objset_t *opt_ioc, const char *column_name);
-static int _print_tag(arg_t *arg, struct asn1p_type_tag_s *tag_p);
+static int _print_tag(arg_t *arg, const struct asn1p_type_tag_s *tag, int member_tag);
 static int compute_extensions_start(asn1p_expr_t *expr);
 static int expr_break_recursion(arg_t *arg, asn1p_expr_t *expr);
 static int expr_as_xmlvaluelist(arg_t *arg, asn1p_expr_t *expr);
@@ -2720,8 +2720,36 @@ compute_extensions_start(asn1p_expr_t *expr) {
 	return -1;
 }
 
+/*
+ * Purpose: emit a tag constant for the C runtime's packed BER tag.
+ * Source: asn1c's C tag emitter and ber_tlv_tag_t in the runtime.
+ * Version: 2026-11-26. Responsible party: asn1c maintainers.
+ * Parameters: arg holds the output and diagnostic context; tag gives the class and number.
+ *             member_tag reserves the all-ones value in member descriptors.
+ * Returns: zero on success, or -1 with a fatal diagnostic if the number cannot fit.
+ * Errors: no exceptions. Invalid tag numbers abort C output publication.
+ * History: use unsigned arithmetic for tag numbers that risk a signed left shift.
+ * Example: context tag 1073741823 uses the expression (1073741823u << 2).
+ */
 static int
-_print_tag(arg_t *arg, struct asn1p_type_tag_s *tag) {
+_print_tag(arg_t *arg, const struct asn1p_type_tag_s *tag, int member_tag) {
+	unsigned int reserved = member_tag && tag->tag_class == TC_PRIVATE;
+	const char *number = asn1p_itoa(tag->tag_value);
+
+	/* The C runtime stores the tag number above two class bits in unsigned int. */
+	if(tag->tag_value < 0 || tag->tag_value > (asn1c_integer_t)((UINT_MAX >> 2) - reserved)) {
+		FATAL("Tag number %s at line %d is outside the C tag number range",
+			number, arg->expr->_lineno);
+		return -1;
+	}
+
+	/* Let the target enforce its own limit when its unsigned int is narrower. */
+	if(tag->tag_value > (asn1c_integer_t)((UINT16_MAX >> 2) - reserved)) {
+		OUT_NOINDENT("\n");
+		OUT_NOINDENT("#if ((UINT_MAX >> 2) - %uu) < %su\n", reserved, number);
+		OUT_NOINDENT("#error ASN.1 tag number exceeds the C target tag number range\n");
+		OUT_NOINDENT("#endif\n");
+	}
 
 	OUT("(");
 	switch(tag->tag_class) {
@@ -2732,7 +2760,9 @@ _print_tag(arg_t *arg, struct asn1p_type_tag_s *tag) {
 	case TC_NOCLASS:
 		break;
 	}
-	OUT(" | (%s << 2))", asn1p_itoa(tag->tag_value));
+	/* Preserve the spelling of small tags, including for targets with 16-bit int. */
+	OUT(" | (%s%s << 2))", number,
+		tag->tag_value > (INT16_MAX >> 2) ? "u" : "");
 
 	return 0;
 }
@@ -2967,7 +2997,7 @@ emit_tag2member_map(arg_t *arg, tag2el_t *tag2el, int tag2el_count, const char *
 		expr->_type_unique_index);
 	for(i = 0; i < tag2el_count; i++) {
 		OUT("    { ");
-		_print_tag(arg, &tag2el[i].el_tag);
+		_print_tag(arg, &tag2el[i].el_tag, 0);
 		OUT(", ");
 		OUT("%d, ", tag2el[i].el_no);
 		OUT("%d, ", tag2el[i].toff_first);
@@ -3045,7 +3075,7 @@ emit_tags_vectors(arg_t *arg, asn1p_expr_t *expr, int *tags_count_r, int *all_ta
 		/* Print the array of collected tags */			\
 		for(i = 0; i < tags_count; i++) {			\
 			if(i) OUT(",\n");				\
-			_print_tag(arg, &tags[i]);			\
+			_print_tag(arg, &tags[i], 0);			\
 		}							\
 		OUT("\n");						\
 		INDENT(-1);						\
@@ -5566,7 +5596,7 @@ emit_member_layout(arg_t *arg, asn1p_expr_t *expr, asn1c_ioc_table_and_objset_t 
 		if(outmost_tag->tag_value == -1)
 			OUT("-1 /* Ambiguous tag (ANY?) */");
 		else
-			_print_tag(arg, outmost_tag);
+			_print_tag(arg, outmost_tag, 1);
 	} else if(tag_status == ASN1F_TAG_EXTERNAL) {
 		/* An OF decoder can delegate the element tag check to its descriptor. */
 		OUT("-1 /* Tag supplied by the external type descriptor */");
